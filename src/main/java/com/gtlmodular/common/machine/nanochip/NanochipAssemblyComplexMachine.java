@@ -1905,24 +1905,18 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
 
         /**
-         * 电网等效成一个能源仓：电压等级与安培数来自配置（默认 MAX × 65536A）。
-         *
-         * <p>不能报 Long.MAX：模块是无限并行，并行数按这里的功率封顶；功率无限大时一条配方
-         * 就要 Long.MAX EU/t，整条配方的电量连 long 都装不下，缓存永远凑不够。
-         * 实际扣电不受这个功率限制，走 {@link #changeEnergy}，按余额真实扣。
+         * 电网功率不设上限，和 GTL 的电网舱一样：电网里有多少电就给多少，相当于无限超频，
+         * 不会出现超长时间的批次。电网供电的模块因此不预存整批（整批电量可能超出 long），
+         * 而是每 tick 现扣，见 {@code requestModuleEnergy}。
          */
         @Override
         public long getInputVoltage() {
-            if (user() == null) {
-                return 0L;
-            }
-            int tier = Math.max(1, Math.min(GTValues.MAX, GTLModularConfig.getNanochipGridPowerTier()));
-            return GTValues.V[tier];
+            return user() != null ? Long.MAX_VALUE : 0L;
         }
 
         @Override
         public long getInputAmperage() {
-            return user() != null ? Math.max(1L, GTLModularConfig.getNanochipGridPowerAmperage()) : 0L;
+            return 1L;
         }
 
         @Override
@@ -1987,7 +1981,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             if (!WirelessEnergyManager.addEUToGlobalEnergyMap(u, -paid, machine)) {
                 return 0L;                          // 扣失败（余额不足/未初始化）⇒ 如实返回 0
             }
-            cachedEu = Math.max(0L, cachedEu - paid);   // 本 tick 内读数跟着走，避免"重复承诺"
+            cachedAtTick = Long.MIN_VALUE;   // 付完重读真实余额：余额夹到 Long.MAX 后再做减法会误报成 0，别的模块就拿不到电
             return -paid;                              // 真实扣到的量
         }
 
@@ -5607,7 +5601,8 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     }
 
     /**
-     * 模块取电入口（模块自己没装能源仓时走这里）。
+     * 模块按 tick 直接向复合体要电：复合体是电网账户 / 无线电网终端这类按需供电时，模块不预存整批，
+     * 而是像 GTL 的电网舱那样每 tick 现扣。只在能全额付清时才扣，付不清就一点不扣，模块原地等电。
      *
      * <p>原版优先级语义：{@code Modules draw power from the NAC on a 'priority' system.
      * The Assembly Matrix has the lowest priority and will try to fill its buffer last,
@@ -5626,14 +5621,26 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             return false;
         }
         EnergyContainerList e = getEnergyContainer();
-        if (e == null || e.getEnergyStored() < amount) {
+        if (e == null || storedEU(e) < amount) {
             return false;
         }
-        e.changeEnergy(-amount);
-        // ★ 2026-10-27【饱和加法】：单个 amount 可达 Long.MAX 级（按需现取型电源），
-        //   两次 `+=` 若不判界会回绕成负数 ⇒ 界面「模块实付 EU/t」显示负值（见 saturatingAdd 注释）。
-        drawAccumulator = saturatingAdd(drawAccumulator, amount);
-        return true;
+        long paid = Math.max(0L, -e.changeEnergy(-amount));
+        drawAccumulator = saturatingAdd(drawAccumulator, paid);
+        return paid >= amount;
+    }
+
+    /**
+     * 各能源容器存量之和（饱和加法）。不用 {@code EnergyContainerList.getEnergyStored()}：
+     * 电网账户和无线电网终端的存量都是夹到 Long.MAX 的余额，直接相加会溢出成负数。
+     */
+    private static long storedEU(EnergyContainerList e) {
+        long stored = 0L;
+        for (com.gregtechceu.gtceu.api.capability.IEnergyContainer c : innerContainers(e)) {
+            if (c != null) {
+                stored = saturatingAdd(stored, Math.max(0L, c.getEnergyStored()));
+            }
+        }
+        return stored;
     }
 
     /** 是否有高优先级模块正因缺电等待（组装矩阵据此让电）。 */
@@ -7139,14 +7146,14 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         //   先消费"待办的催促"——它是 12 台模块那一波成形/失效的合并出口。
         //   放在周期重扫的间隔判断**之前**：合并执行的那一次会顺手把周期计时也推到 now，
         //   避免同一 tick 里"催一次 + 周期再扫一次"这种纯浪费。
-        // ★★ 2026-11-12【原初模式】总开关：不做「催办 + 20 tick 周期重扫 / 补登记」★★
-        //   置 true（默认）⇒ 模块 ↔ 主机的连接只由上游 onStructureFormed 那一刻决定，
-        //   我们不再周期性重扫、不再补登记、不再消费模块的催促（见 onStructureFormed 的同款开关）。
-        //   ⚠️ 位置在 tickNacSlotHeartbeat() 与 distributeModuleEnergy(now) **之后**：
-        //      仓位清单心跳与能量缓存分配都与「成形 / 连接」判定无关，原初模式下照跑。
-        //   置 false ⇒ 逐字恢复下面整条「催办 ⇒ 周期重扫」链（回退包见
-        //   _census/原初模式_回退包/ORIGINAL_HUNKS.md）。
+        // 原初模式：不消费模块的催促、不跑框架几何扫描，但仍按结构 F 位快照每 20 tick 补连一次。
+        // 模块自己不会去找主机（getHostScanPositions 为空），没有这一步，主机成形之后才成形的模块
+        // （新放的、拆了重放的）永远连不上。F 位最多十几个，开销可以忽略。
         if (GTLModularConfig.isNanochipOriginalMode()) {
+            if (lastRescanTick < 0 || now - lastRescanTick >= MODULE_REFRESH_INTERVAL) {
+                lastRescanTick = now;
+                refreshModulesFromStructure();
+            }
             return;
         }
         if (consumePendingResync(now)) {
@@ -7258,6 +7265,9 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         if (!isFormed() || !isWorkingEnabled()) {
             return;
         }
+        if (isEnergySourceEffectivelyUnlimited()) {
+            return;   // 电网 / 无线电网终端：模块每 tick 直接扣电（requestModuleEnergy），不预存整批
+        }
         List<NanochipModuleMachine> mods = new ArrayList<>();
         for (IModularMachineModule<NanochipAssemblyComplexMachine, ?> m : getModules()) {
             if (m instanceof NanochipModuleMachine mm && mm.isFormed() && mm.drawingFromHost()) {
@@ -7292,12 +7302,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         if (room <= 0L) {
             return 0L;
         }
-        long stored = 0L;
-        for (com.gregtechceu.gtceu.api.capability.IEnergyContainer c : innerContainers(e)) {
-            if (c != null) {
-                stored = saturatingAdd(stored, Math.max(0L, c.getEnergyStored()));
-            }
-        }
+        long stored = storedEU(e);
         if (stored <= 0L) {
             return -1L;
         }

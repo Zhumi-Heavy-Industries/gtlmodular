@@ -1455,9 +1455,14 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             long perTick = Math.max(1L, RecipeHelper.getInputEUt(recipe));
             long ticks = Math.max(1, recipe.duration);
             long full = perTick > Long.MAX_VALUE / ticks ? Long.MAX_VALUE : perTick * ticks;   // 溢出会变负数，起跑判定就失效了
-            // 起跑前缓存必须够整条配方（原版「不会中途断电」）。缓存不够就当场向复合体要一次；
-            // 电网账户 / 无线电网终端的余额会被真实扣掉，从不按"无限源"凭空放行。
-            if (getProgress() == 0) {
+            // 两种供电：
+            // - 复合体是电网账户 / 无线电网终端（按需供电）：像 GTL 的电网舱那样每 tick 现扣，不预存整批。
+            //   电网功率不设上限，一批可能有几十亿份，整批电量远超 long，预存既装不下，也会让一个模块吞掉
+            //   所有模块的电。
+            // - 复合体只有能源仓：原版「不会中途断电」——起跑前缓存必须够整条配方，缓存不够就当场向复合体要一次。
+            // 两种都是真实扣电，从不凭空放行。
+            final boolean onDemand = host.isEnergySourceEffectivelyUnlimited();
+            if (!onDemand && getProgress() == 0) {
                 module.ensureBufferCovers(full);   // 我方个别配方比 NH 页上的最大配方时间还长 ⇒ 容量至少覆盖它
                 if (module.getBufferEU() < full) {
                     host.requestBufferTopUp(module);
@@ -1472,7 +1477,10 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
                     return;
                 }
             }
-            if (module.consumeBufferEU(perTick)) {
+            // 缓存里剩的电先用掉（按需供电时也一样，免得浪费），不够再按需向复合体现扣
+            final boolean paid = module.consumeBufferEU(perTick)
+                    || (onDemand && host.requestModuleEnergy(perTick, module.energyPriority() < 0));
+            if (paid) {
                 setStatus(RecipeLogic.Status.WORKING);
                 if (!machine.onWorking()) {
                     interruptRecipe();

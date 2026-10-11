@@ -461,15 +461,6 @@ public final class GTLModularConfig {
                             "取电层是运行期读配置（改完即生效）；结构层「能源仓 min 0」在机器注册时构建一次，不受本项影响。")
                     .define("nanochipComplex.gridPower.enabled", true);
 
-    public static final ForgeConfigSpec.IntValue NANOCHIP_GRID_POWER_TIER =
-            BUILDER.comment("NAC 电网取电时等效的能源仓电压等级（默认 14 = MAX）。决定主机与模块能超频到哪一级。")
-                    .defineInRange("nanochipComplex.gridPower.tier", 14, 1, 14);
-
-    public static final ForgeConfigSpec.IntValue NANOCHIP_GRID_POWER_AMPERAGE =
-            BUILDER.comment("NAC 电网取电时等效的电流（安培，默认 65536）。电网功率 = 该电压等级 × 安培数，",
-                            "模块的无限并行按这个功率封顶。上限 262144：再大的话，长配方整条的电量会超出可记录的范围。",
-                            "结构成形或电网账户绑定变化时生效。")
-                    .defineInRange("nanochipComplex.gridPower.amperage", 65536, 1, 262144);
 
     /**
      * ★★ 2026-09-19（队长原话）★★
@@ -980,21 +971,6 @@ public final class GTLModularConfig {
         }
     }
 
-    public static int getNanochipGridPowerTier() {
-        try {
-            return NANOCHIP_GRID_POWER_TIER.get();
-        } catch (Throwable ignored) {
-            return 14;
-        }
-    }
-
-    public static long getNanochipGridPowerAmperage() {
-        try {
-            return NANOCHIP_GRID_POWER_AMPERAGE.get();
-        } catch (Throwable ignored) {
-            return 65536L;
-        }
-    }
 
     /**
      * 供游戏内配置界面写入。
