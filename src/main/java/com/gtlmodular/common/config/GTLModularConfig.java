@@ -453,15 +453,23 @@ public final class GTLModularConfig {
      * 结构层那条下限（能源仓 {@code min 0}）在机器注册时构建一次 ⇒ 那一项本开关管不到。
      */
     public static final ForgeConfigSpec.BooleanValue NANOCHIP_GRID_POWER =
-            BUILDER.comment("NAC 电网取电（默认 true）：没有能源仓时直接从放置者（或其 FTB 队伍）的 GTMThings 无线电网取电",
+            BUILDER.comment("NAC 电网取电（默认 true）：从绑定账户（或其 FTB 队伍）的 GTMThings 无线电网取电",
                             "true ：电网优先、能源仓兜底（电网余额不够时用仓；两者都没有 ⇒ 原地等电，不退进度、不掉料）",
-                            "false：逐字回到改动前（必须有能源仓；\"直接从电网取电\"整条关闭）",
-                            "★ 唯一附带项：NAC 会记一个「放置者 UUID」（@Persisted）。",
-                            "  旧存档没有这个键 ⇒ 读档后为 null ⇒ 该机器自动退回【必须有能源仓】的老行为，",
-                            "  并在日志里明确报一句（不会静默失效）；想恢复：拆放一次控制器重新登记放置者。",
+                            "false：必须有能源仓，\"直接从电网取电\"整条关闭",
+                            "电网账户：玩家放置控制器时自动绑定到放置者；没有绑定时空手潜行右键控制器绑定到自己。",
                             "本项独立于 nanochipComplex.originalMode 与 nanochipComplex.simpleLogisticsMode。",
                             "取电层是运行期读配置（改完即生效）；结构层「能源仓 min 0」在机器注册时构建一次，不受本项影响。")
                     .define("nanochipComplex.gridPower.enabled", true);
+
+    public static final ForgeConfigSpec.IntValue NANOCHIP_GRID_POWER_TIER =
+            BUILDER.comment("NAC 电网取电时等效的能源仓电压等级（默认 14 = MAX）。决定主机与模块能超频到哪一级。")
+                    .defineInRange("nanochipComplex.gridPower.tier", 14, 1, 14);
+
+    public static final ForgeConfigSpec.IntValue NANOCHIP_GRID_POWER_AMPERAGE =
+            BUILDER.comment("NAC 电网取电时等效的电流（安培，默认 65536）。电网功率 = 该电压等级 × 安培数，",
+                            "模块的无限并行按这个功率封顶。上限 262144：再大的话，长配方整条的电量会超出可记录的范围。",
+                            "结构成形或电网账户绑定变化时生效。")
+                    .defineInRange("nanochipComplex.gridPower.amperage", 65536, 1, 262144);
 
     /**
      * ★★ 2026-09-19（队长原话）★★
@@ -969,6 +977,22 @@ public final class GTLModularConfig {
             return NANOCHIP_GRID_POWER.get();
         } catch (Throwable ignored) {
             return true;
+        }
+    }
+
+    public static int getNanochipGridPowerTier() {
+        try {
+            return NANOCHIP_GRID_POWER_TIER.get();
+        } catch (Throwable ignored) {
+            return 14;
+        }
+    }
+
+    public static long getNanochipGridPowerAmperage() {
+        try {
+            return NANOCHIP_GRID_POWER_AMPERAGE.get();
+        } catch (Throwable ignored) {
+            return 65536L;
         }
     }
 

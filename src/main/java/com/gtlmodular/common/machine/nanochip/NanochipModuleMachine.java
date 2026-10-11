@@ -1087,7 +1087,7 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     //      绕开「EU 由零件的能源仓 trait 消耗」那条路（模块没有能源仓时那条路上没有处理器）。
     // 装了能源仓的模块仍然走自己的电（两条路互斥，见 drawingFromHost）。
 
-    private transient com.gregtechceu.gtceu.api.misc.EnergyContainerList hostEnergyList;
+    private transient HostEnergyContainer hostEnergyContainer;
 
     /**
      * 能量容器：自带能源仓优先；没装就用复合体代理。
@@ -1106,11 +1106,12 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         if (!hostConnected() || host == null) {
             return own;
         }
-        if (hostEnergyList == null) {
-            hostEnergyList = new com.gregtechceu.gtceu.api.misc.EnergyContainerList(
-                    List.of(new HostEnergyContainer(this)));
+        // 每次现建：EnergyContainerList 构造时就把电压定死，缓存下来会一直停在第一次读到的电压
+        // （主机还没成形时是 0），之后主机绑定电网、换能源仓都看不到。
+        if (hostEnergyContainer == null) {
+            hostEnergyContainer = new HostEnergyContainer(this);
         }
-        return hostEnergyList;
+        return new com.gregtechceu.gtceu.api.misc.EnergyContainerList(List.of(hostEnergyContainer));
     }
 
     /** 是否正在吃复合体的电（自带能源仓的模块为 false）。 */
@@ -1452,7 +1453,8 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
                 return;
             }
             long perTick = Math.max(1L, RecipeHelper.getInputEUt(recipe));
-            long full = perTick * (long) Math.max(1, recipe.duration);
+            long ticks = Math.max(1, recipe.duration);
+            long full = perTick > Long.MAX_VALUE / ticks ? Long.MAX_VALUE : perTick * ticks;   // 溢出会变负数，起跑判定就失效了
             // 起跑前缓存必须够整条配方（原版「不会中途断电」）。缓存不够就当场向复合体要一次；
             // 电网账户 / 无线电网终端的余额会被真实扣掉，从不按"无限源"凭空放行。
             if (getProgress() == 0) {

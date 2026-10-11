@@ -1,0 +1,14 @@
+# 仓库里统一存 LF；检出时按系统转换（Windows 上是 CRLF），diff 不会因为换行整篇变化。
+* text=auto
+
+# 必须保持固定换行的脚本
+gradlew   text eol=lf
+*.sh      text eol=lf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# 二进制
+*.jar     binary
+*.png     binary
+*.zip     binary
+*.bundle  binary

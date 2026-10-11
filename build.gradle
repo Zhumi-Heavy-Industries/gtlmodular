@@ -67,7 +67,7 @@ minecraft {
 }
 
 repositories {
-    // 依赖 jar 由 scripts/copy-libs.ps1 拷到 libs/ 下
+    // 依赖 jar 放在 libs/（不进 git，来源见 README.md）
     flatDir { dirs 'libs' }
     mavenCentral()
 }
@@ -83,6 +83,76 @@ dependencies {
 
     // 其余依赖全部来自 libs/ 下的本地 jar（含 gtceu-1.20.1-1.4.4 及其依赖）
     implementation fg.deobf(fileTree(dir: 'libs', include: ['*.jar']))
+}
+
+// ---------- 构建检查：gradlew build 会跑，不过就不能交付（规矩见 AGENTS.md） ----------
+
+// 每个 @Mixin 类都必须登记在会被加载的 mixin 配置里。只有 mods.toml 里列出的配置会被加载，
+// 没登记的 mixin 永远不生效 —— 0.3.132 里就有 7 个这样的 mixin。
+tasks.register('checkMixins') {
+    group = 'verification'
+    description = 'Every @Mixin class must be listed in a mixin config that mods.toml loads.'
+    def mixinRoot = file('src/main/java/com/gtlmodular/mixin')
+    def resources = file('src/main/resources')
+    def allowFile = file('checks/mixin-unregistered-allowlist.txt')
+    inputs.dir(mixinRoot)
+    inputs.dir(resources)
+    inputs.file(allowFile)
+    doLast {
+        def allow = allowFile.readLines('UTF-8')*.trim().findAll { it && !it.startsWith('#') } as Set
+        def toml = new File(resources, 'META-INF/mods.toml').getText('UTF-8')
+        def loaded = (toml =~ /(?m)^\s*config\s*=\s*"([^"]+)"/).collect { it[1] } as Set
+        def problems = []
+        def registered = [] as Set
+        resources.listFiles().findAll { it.name.endsWith('.mixins.json') }.each { cfg ->
+            if (!(cfg.name in loaded)) {
+                if (!(cfg.name in allow)) problems << "${cfg.name} 没有在 mods.toml 里登记，不会被加载"
+                return
+            }
+            def json = new groovy.json.JsonSlurper().parseText(cfg.getText('UTF-8').replace('﻿', ''))
+            ['mixins', 'client', 'server'].each { key -> (json[key] ?: []).each { registered << "${json.package}.${it}" } }
+        }
+        def classes = [] as Set
+        fileTree(mixinRoot).include('**/*.java').each { f ->
+            if (f.getText('UTF-8') =~ /(?m)^\s*@Mixin\b/) {
+                def rel = mixinRoot.toPath().relativize(f.toPath()).toString().replace(File.separator, '.')
+                classes << 'com.gtlmodular.mixin.' + rel.substring(0, rel.length() - '.java'.length())
+            }
+        }
+        (registered - classes).each { problems << "登记了但找不到这个类：$it" }
+        (classes - registered - allow).each { problems << "写了但没登记，不会生效：$it（登记进 gtlmodular.mixins.json，或者删掉）" }
+        (allow.findAll { it.startsWith('com.') } - (classes - registered)).each {
+            problems << "$it 已经登记或删除了，把它从 checks/mixin-unregistered-allowlist.txt 里去掉"
+        }
+        if (problems) throw new GradleException('mixin 登记检查没通过：\n  ' + problems.join('\n  '))
+    }
+}
+
+// 代码里带日期的行（流水账式注释）只许减少：历史写进 git 提交信息，玩家可见的变化写进 CHANGELOG.md。
+tasks.register('checkDatedComments') {
+    group = 'verification'
+    description = 'Lines containing dates in src/main/java may only decrease (see checks/dated-comment-baseline.txt).'
+    def src = file('src/main/java')
+    def baselineFile = file('checks/dated-comment-baseline.txt')
+    inputs.dir(src)
+    inputs.file(baselineFile)
+    doLast {
+        def date = ~/20\d\d-\d\d-\d\d/
+        int count = 0
+        fileTree(src).include('**/*.java').each { f -> f.eachLine('UTF-8') { if (it =~ date) count++ } }
+        int baseline = baselineFile.text.trim() as int
+        if (count > baseline) {
+            throw new GradleException("代码里带日期的行从 $baseline 增加到了 $count。" +
+                    '日期、版本、修改经过写进 git 提交信息；玩家可见的变化写进 CHANGELOG.md。')
+        }
+        if (count < baseline) {
+            logger.lifecycle("带日期的行减少到 $count（基线 $baseline）。把 checks/dated-comment-baseline.txt 改成 $count，锁住这次的减少。")
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkMixins', 'checkDatedComments'
 }
 
 tasks.named('processResources') {

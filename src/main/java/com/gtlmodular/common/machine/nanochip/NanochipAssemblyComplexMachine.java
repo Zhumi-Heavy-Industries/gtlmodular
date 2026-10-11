@@ -25,6 +25,7 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.logic.OCParams;
 import com.gregtechceu.gtceu.api.recipe.logic.OCResult;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
+import com.gregtechceu.gtceu.utils.GTUtil;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.NanochipBlocks;
@@ -1401,9 +1402,24 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     public void onMachinePlaced(@Nullable net.minecraft.world.entity.LivingEntity player, ItemStack stack) {
         if (player instanceof net.minecraft.world.entity.player.Player p) {
             this.gridPowerUser = p.getUUID();
+            this.gridUserChecked = true;
             GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网取电身份已登记：{}（玩家 {}）",
                     getPos(), this.gridPowerUser, p.getGameProfile().getName());
+            refreshEnergySnapshot();   // 结构检查可能抢在放置回调之前跑完，那时还没有账户
         }
+    }
+
+    /**
+     * 重算能源列表与电压等级。GTCEu 只在结构成形时算一次 tier、缓存一次能源列表
+     * （列表构造时就把电压和安培定死），电网账户绑定或解绑后电压变了必须手动重算，
+     * 否则主机和模块会一直按成形那一刻的电压工作（ULV 或无穷大）。
+     */
+    private void refreshEnergySnapshot() {
+        if (!isFormed()) {
+            return;
+        }
+        this.energyContainer = getEnergyContainer();
+        this.tier = GTUtil.getFloorTierByVoltage(getMaxVoltage());
     }
 
     /**
@@ -1425,6 +1441,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
                         getPos(), gridPowerUser);
                 gridPowerUser = null;
                 markDirty();
+                refreshEnergySnapshot();
             }
         }
         return gridPowerUser;
@@ -1471,6 +1488,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
                 gridPowerUser = uuid;
                 gridUserChecked = true;
                 markDirty();
+                refreshEnergySnapshot();
                 GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网账户绑定到 {}（{}）",
                         getPos(), player.getGameProfile().getName(), uuid);
             }
@@ -1887,30 +1905,24 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
 
         /**
-         * 同 {@link #getEnergyCapacity()}：开关开着就报哨兵电压（喂 {@code getOverclockVoltage()}）。
+         * 电网等效成一个能源仓：电压等级与安培数来自配置（默认 MAX × 65536A）。
          *
-         * <p>★ 2026-11-13【与"无线电网输入终端"对齐】：哨兵值由 {@code ON_DEMAND_POWER_FLOOR_EU}
-         * （= {@code Long.MAX_VALUE / 2} = 2^62 ⇒ 面板显示 {@code MAX+15}）改为
-         * {@code Long.MAX_VALUE}（⇒ 面板显示 {@code MAX+16}）。
-         * 依据：gtladditions 无线电网输入终端的官方 tooltip 逐字为
-         * {@code providing up to Long.MAX input power}（{@code strings_gtladditions-…txt:628-632}），
-         * 且 GTCEu 的 {@code GTValues.VEX[30] = Long.MAX_VALUE} 对应档名 {@code MAX+16}
-         * （{@code VEX}/{@code VNF} 均 31 项，{@code MAX}=14）。
-         *
-         * <p>本改动**只影响显示**：扣电走 {@code changeEnergy()}、配方结算走 capabilities proxy、
-         * 超频被 {@code MAX_OVERCLOCKS=2} 封顶，三者都不读本值。
-         * 唯一的例外是模块侧 {@code hatchTier = getTierByVoltage(...)}（29 → 30，可能多一次超频，
-         * 中置信待实测，且受时长/功率闸约束）。{@code ON_DEMAND_POWER_FLOOR_EU} 常量与起跑阈值
-         * （{@code :4894}）**保持不动** —— 那个才真影响起跑闸。
+         * <p>不能报 Long.MAX：模块是无限并行，并行数按这里的功率封顶；功率无限大时一条配方
+         * 就要 Long.MAX EU/t，整条配方的电量连 long 都装不下，缓存永远凑不够。
+         * 实际扣电不受这个功率限制，走 {@link #changeEnergy}，按余额真实扣。
          */
         @Override
         public long getInputVoltage() {
-            return user() != null ? Long.MAX_VALUE : 0L;
+            if (user() == null) {
+                return 0L;
+            }
+            int tier = Math.max(1, Math.min(GTValues.MAX, GTLModularConfig.getNanochipGridPowerTier()));
+            return GTValues.V[tier];
         }
 
         @Override
         public long getInputAmperage() {
-            return 1L;
+            return user() != null ? Math.max(1L, GTLModularConfig.getNanochipGridPowerAmperage()) : 0L;
         }
 
         @Override
