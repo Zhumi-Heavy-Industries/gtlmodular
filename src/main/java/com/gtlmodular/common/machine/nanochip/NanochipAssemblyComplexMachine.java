@@ -6,6 +6,7 @@ import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
+import com.gregtechceu.gtceu.api.machine.feature.IInteractedMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IMachineLife;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IDisplayUIMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
@@ -48,8 +49,12 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.players.GameProfileCache;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
@@ -58,6 +63,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.BlockHitResult;
 import com.gtladd.gtladditions.api.machine.feature.IThreadModifierPart;
 import com.gtladd.gtladditions.api.machine.multiblock.GTLAddWorkableElectricMultipleRecipesMachine;
 import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeRecipesLogic;
@@ -135,7 +141,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultipleRecipesMachine
         implements IDisplayUIMachine, IModularMachineHost<NanochipAssemblyComplexMachine>, IMachineLife,
-        NanochipStructureRefresh.Refreshable, MultiTypeLookupHost, NanochipThreadHost {
+        IInteractedMachine, NanochipStructureRefresh.Refreshable, MultiTypeLookupHost, NanochipThreadHost {
 
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER = new ManagedFieldHolder(
             NanochipAssemblyComplexMachine.class,
@@ -1240,21 +1246,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     /** 上次分配缓存的 tick（{@code -1} = 还没分过）。 */
     private long lastEnergyDistributeTick = -1L;
 
-    /**
-     * 「按可获取能力放行」这条诊断日志的限流间隔（tick）＝ 10 秒。
-     * 见 {@link #logUnlimitedEnergyAssist(String, long, long)}。
-     */
-    public static final int UNLIMITED_ASSIST_LOG_INTERVAL = 200;
-
-    /**
-     * 上次打「按可获取能力放行」的 tick（{@link Long#MIN_VALUE} = 还没打过）。
-     *
-     * <p>★ <b>刻意不是 {@code @Persisted} / {@code @DescSynced}</b>：它只用于日志限流，
-     * 不进存档、不进网络包 ⇒ <b>零存档格式变更</b>（与 {@link #lastEnergyDistributeTick} 同款，
-     * 不属于 {@link #MANAGED_FIELD_HOLDER} 管的同步/持久字段）。
-     */
-    private long lastUnlimitedAssistLogTick = Long.MIN_VALUE;
-
     /** 每 20 tick 按结构 {@code F} 位刷新模块连接的服务端订阅。 */
     private TickableSubscription moduleRefreshSub;
 
@@ -1341,11 +1332,8 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
      * 凭据必须持久化：{@code gtmthings} 的余额是<b>按 UUID/队伍</b>记的，
      * 读档后若 UUID 丢了就永远取不到电。
      *
-     * <p>★ <b>旧存档兜底（绝不静默失效）</b>：旧档没有这个键 ⇒ 读档后为 {@code null}
-     * ⇒ {@link #gridEnergyContainer()} 对本机<b>自动退回"必须有能源仓"的老行为</b>
-     * （逐字等于本改动之前），并且：① {@link #onLoad()} 载入时打一条 WARN；
-     * ② 电网容器取电被拒时按 {@link #GRID_USER_LOG_INTERVAL} 限流再报一次（含恢复办法）。
-     * <b>不是</b>"静默不取电"。
+     * <p>{@code null} = 未绑定 ⇒ 电网容器不参与供电，本机只用能源仓；{@link #onLoad()} 载入时报一句，
+     * 主机界面也显示怎么绑定（空手潜行右键控制器，见 {@link #onUse}）。
      *
      * <p>{@code @DescSynced} 只为让客户端那几行界面显示（"中央供电"读的就是能源容器实况）
      * 与服务端同口径；它不参与任何判定。
@@ -1419,45 +1407,114 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     }
 
     /**
-     * ★ 2026-11-14【照抄山海 · 身份兜底】<b>本机的电网账户 UUID；实在没有就现生成一个并持久化。</b>
+     * 本机的电网账户（{@code null} = 未绑定 ⇒ 电网容器不参与供电，退回"必须有能源仓"）。
      *
-     * <p>逐字照抄山海 {@code MatterCopierMachine.ensureWirelessUuid()}
-     * （{@code _census/shanhai-src/com/dishanhai/gt_shanhai/common/machine/misc/MatterCopierMachine.java:461-465}）：
-     * <pre>
-     *   private void ensureWirelessUuid() {
-     *       if (getUuid() == null) {
-     *           setUuid(UUID.randomUUID());
-     *       }
-     *   }
-     * </pre>
-     * 山海每一个对外入口（{@code :96/117/132/134/231}）都先调它 ⇒ <b>机器永远有一个自己的账户</b>。
-     * 山海的"登记制"因此**不会被"没登记"卡死**：放置者 UUID 只是**优先**的账户来源，不是唯一生路。
+     * <p>不自动生成账户：随机账户没有任何途径充值，余额永远是 0，机器会以"等电"的样子永久卡住。
+     * 没有放置者记录时，由玩家空手潜行右键控制器绑定（{@link #onUse}）。
      *
-     * <p>本机同款两条纪律：
-     * <ol>
-     *   <li>玩家放置 ⇒ {@link #onMachinePlaced} 已写入放置者 UUID（优先用它，直接吃放置者的电网）；</li>
-     *   <li>没写进去（旧存档 / 非玩家放置）⇒ 这里随机生成并 {@code markDirty()} 持久化
-     *       ⇒ 电网通道始终在线，余额为 0 时表现为<b>「等电」</b>而不是「必须有能源仓」。</li>
-     * </ol>
-     *
-     * <p>客户端**绝不**生成（{@link #gridPowerUser} 是 {@code @DescSynced}，客户端只读服务端镜像）。
-     * 读取路径（Jade / 中央供电）随时可能问到这里，故必须无副作用可重入。
+     * <p>0.3.132 及更早的版本给没有放置者的机器存过随机账户；第一次在服务端解析时识别并解绑
+     * （判据见 {@link #isOrphanGridAccount}）。
      */
     @Nullable
     private UUID resolveGridUser() {
-        if (gridPowerUser != null) {
-            return gridPowerUser;
+        if (gridPowerUser != null && !gridUserChecked && getLevel() instanceof ServerLevel serverLevel) {
+            gridUserChecked = true;
+            if (isOrphanGridAccount(serverLevel.getServer(), gridPowerUser)) {
+                GTLModular.LOGGER.warn("[gtlmodular] NAC @{} 电网账户 {} 不属于任何玩家且余额为 0"
+                                + "（旧版本自动生成的随机账户）⇒ 已解除绑定；空手潜行右键控制器即可绑定到自己",
+                        getPos(), gridPowerUser);
+                gridPowerUser = null;
+                markDirty();
+            }
         }
-        Level lv = getLevel();
-        if (lv == null || lv.isClientSide || !GTLModularConfig.isNanochipGridPowerEnabled()) {
-            return null;
+        return gridPowerUser;
+    }
+
+    /** 本次加载后是否已检查过 {@link #gridPowerUser} 是不是旧版本的随机账户（不进存档）。 */
+    private transient boolean gridUserChecked;
+
+    /**
+     * 这个 UUID 是不是旧版本生成的随机账户：服务器从没见过这个玩家（不在线、也不在 usercache 里），
+     * 并且它在无线电网里一点余额都没有。任何一项查不到都按"是玩家账户"处理，不解绑。
+     */
+    private static boolean isOrphanGridAccount(MinecraftServer server, UUID uuid) {
+        if (server.getPlayerList().getPlayer(uuid) != null) {
+            return false;
         }
-        this.gridPowerUser = UUID.randomUUID();
-        markDirty();
-        GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网取电身份：本机没有放置者记录 ⇒ "
-                + "按山海 ensureWirelessUuid 口径现生成机器自有账户 {} 并持久化（电网余额为 0 时本机原地等电）",
-                getPos(), this.gridPowerUser);
-        return this.gridPowerUser;
+        GameProfileCache profiles = server.getProfileCache();
+        if (profiles == null || profiles.get(uuid).isPresent()) {
+            return false;
+        }
+        try {
+            BigInteger balance = WirelessEnergyManager.getUserEU(uuid);
+            return balance == null || balance.signum() <= 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * 空手潜行右键控制器 ⇒ 把本机的电网账户绑定到自己。只能绑到自己的账户，所以只会花自己的电；
+     * 其余情况返回 PASS，照常打开界面。
+     */
+    @Override
+    public InteractionResult onUse(BlockState state, Level level, BlockPos pos, Player player,
+                                   InteractionHand hand, BlockHitResult hit) {
+        if (hand != InteractionHand.MAIN_HAND || !player.isShiftKeyDown()
+                || !player.getItemInHand(hand).isEmpty()
+                || !GTLModularConfig.isNanochipGridPowerEnabled()) {
+            return InteractionResult.PASS;
+        }
+        if (!level.isClientSide) {
+            UUID uuid = player.getUUID();
+            if (!uuid.equals(gridPowerUser)) {
+                gridPowerUser = uuid;
+                gridUserChecked = true;
+                markDirty();
+                GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网账户绑定到 {}（{}）",
+                        getPos(), player.getGameProfile().getName(), uuid);
+            }
+            player.displayClientMessage(Component.translatable(LANG_GRID_BOUND,
+                    FormattingUtil.formatNumbers(gridBalanceEU(uuid))), true);
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    public static final String LANG_GRID_BOUND = "gtlmodular.nanochip.grid.bound";
+    public static final String LANG_GRID_ACCOUNT = "gtlmodular.nanochip.grid.account";
+    public static final String LANG_GRID_UNBOUND = "gtlmodular.nanochip.grid.unbound";
+
+    /** 账户在无线电网里的余额（BigInteger，查不到按 0）。 */
+    private static BigInteger gridBalanceEU(UUID uuid) {
+        try {
+            BigInteger balance = WirelessEnergyManager.getUserEU(uuid);
+            return balance == null ? BigInteger.ZERO : balance;
+        } catch (Throwable t) {
+            return BigInteger.ZERO;
+        }
+    }
+
+    /** 主机界面的电网账户行（服务端调用）：绑定到谁、余额多少；未绑定时提示怎么绑。 */
+    private void addGridAccountLine(List<Component> textList) {
+        if (!GTLModularConfig.isNanochipGridPowerEnabled()) {
+            return;
+        }
+        UUID user = resolveGridUser();
+        if (user == null) {
+            textList.add(Component.translatable(LANG_GRID_UNBOUND).withStyle(ChatFormatting.YELLOW));
+            return;
+        }
+        String name = user.toString().substring(0, 8);
+        if (getLevel() instanceof ServerLevel serverLevel) {
+            GameProfileCache profiles = serverLevel.getServer().getProfileCache();
+            if (profiles != null) {
+                name = profiles.get(user).map(com.mojang.authlib.GameProfile::getName).orElse(name);
+            }
+        }
+        textList.add(Component.translatable(LANG_GRID_ACCOUNT,
+                Component.literal(name).withStyle(ChatFormatting.WHITE),
+                Component.literal(FormattingUtil.formatNumbers(gridBalanceEU(user)) + " EU")
+                        .withStyle(ChatFormatting.AQUA)).withStyle(ChatFormatting.GRAY));
     }
 
     /**
@@ -1582,8 +1639,8 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
     }
 
-    /** 电网取电被拒（没有放置者身份）时的限流说明 —— 绝不静默失效。 */
-    void warnGridDrawWithoutUser(String site) {
+    /** 电网取电接入失败时的限流说明 —— 绝不静默失效。 */
+    void warnGridDrawFailure(String site) {
         Level lv = getLevel();
         if (lv == null || lv.isClientSide) {
             return;
@@ -1593,11 +1650,8 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             return;
         }
         lastGridUserLogTick = now;
-        GTLModular.LOGGER.warn("[gtlmodular] NAC @{} 电网取电不可用（{}）：本机没有记录到放置者 UUID"
-                        + "（旧存档读档 / 非玩家放置）。★ 本机已自动退回【必须有能源仓】的老行为，"
-                        + "不会静默不取电。恢复办法：拆放一次控制器把放置者重新登记，"
-                        + "并确认 config 里 nanochipComplex.gridPower.enabled = true。"
-                        + "（没有能源仓的机器在恢复前会原地等电，不退进度、不掉料）",
+        GTLModular.LOGGER.warn("[gtlmodular] NAC @{} 电网取电不可用（{}）：本机只能用能源仓供电，"
+                        + "没有能源仓的机器会原地等电（不退进度、不掉料）",
                 getPos(), site);
     }
 
@@ -1677,7 +1731,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
                     getPos(), writable.size(), this.gridPowerUser);
         } catch (Throwable t) {
             // 取代理失败：不抛给结构检查线程，按"取电被拒"的限流口径出声（绝不静默）
-            warnGridDrawWithoutUser("电网处理器注册失败：" + t.getClass().getSimpleName());
+            warnGridDrawFailure("电网处理器注册失败：" + t.getClass().getSimpleName());
         }
     }
 
@@ -1762,16 +1816,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
 
         /**
-         * 取电身份（{@code null} = 开关已关；开关开着时由
-         * {@code NanochipAssemblyComplexMachine#resolveGridUser()} 保证非空）。
-         *
-         * <p>★ 2026-11-14【照抄山海 · 身份】原先这里直接读 {@code machine.gridPowerUser()}，
-         * 于是"没登记放置者"＝ {@code null} ＝ 本容器整段惰性。现在改走
-         * {@link NanochipAssemblyComplexMachine#resolveGridUser()}：**没登记就现生成一个随机 UUID
-         * 并持久化**，逐字照抄山海 {@code MatterCopierMachine.ensureWirelessUuid()}
-         * （{@code _census/shanhai-src/com/dishanhai/gt_shanhai/common/machine/misc/MatterCopierMachine.java:461-465}：
-         * {@code if (getUuid() == null) setUuid(UUID.randomUUID());}）。
-         * ⇒ 机器**永远有一个自己的电网账户**，"能不能从电网取电"不再由"有没有登记成功"决定。
+         * 取电身份（{@code null} = 开关已关或未绑定 ⇒ 本容器整段惰性：0 容量、0 输入，扣电一律返回 0）。
          */
         @Nullable
         private UUID user() {
@@ -1838,8 +1883,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
          */
         @Override
         public long getEnergyCapacity() {
-            return GTLModularConfig.isNanochipGridPowerEnabled()
-                    ? NanochipAssemblyComplexMachine.ON_DEMAND_POWER_FLOOR_EU : 0L;
+            return user() != null ? NanochipAssemblyComplexMachine.ON_DEMAND_POWER_FLOOR_EU : 0L;
         }
 
         /**
@@ -1861,8 +1905,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
          */
         @Override
         public long getInputVoltage() {
-            return GTLModularConfig.isNanochipGridPowerEnabled()
-                    ? Long.MAX_VALUE : 0L;
+            return user() != null ? Long.MAX_VALUE : 0L;
         }
 
         @Override
@@ -1916,8 +1959,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             }
             UUID u = user();
             if (u == null) {
-                machine.warnGridDrawWithoutUser("电网容器扣电");
-                return 0L;
+                return 0L;                      // 未绑定是正常状态（只用能源仓），由列表后面的能源仓供电
             }
             long need = amount == Long.MIN_VALUE ? Long.MAX_VALUE : -amount;
             if (need <= 0L) {
@@ -5553,39 +5595,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     }
 
     /**
-     * ★ 2026-10-08【无线电网供电兼容】<b>限流诊断日志：一行说明「按可获取能力放行」</b>。
-     *
-     * <p>触发时机＝「本条需要量 &gt; 已存」但源头是无限/按需现取型（容量 Long.MAX 级）时，
-     * 由模块起跑判定、模块逐 tick 扣电、主机灌缓存三处调用。
-     *
-     * <p><b>限流</b>：{@value #UNLIMITED_ASSIST_LOG_INTERVAL} tick（10 秒）最多一条 ——
-     * 判定每 tick 都会被问，不限流会刷屏。计数器 {@link #lastUnlimitedAssistLogTick} 是普通字段，
-     * 不进存档。
-     *
-     * @param site   触发点（写清是哪一处判定放的行，便于下次照日志定位）
-     * @param need   本条判定需要的 EU
-     * @param stored 该处读到的「已存」（模块侧是模块自己的缓存，主机侧是复合体蓄电）
-     */
-    public void logUnlimitedEnergyAssist(String site, long need, long stored) {
-        Level lv = getLevel();
-        if (lv == null || lv.isClientSide) {
-            return;
-        }
-        long now = lv.getGameTime();
-        if (lastUnlimitedAssistLogTick != Long.MIN_VALUE
-                && now - lastUnlimitedAssistLogTick < UNLIMITED_ASSIST_LOG_INTERVAL) {
-            return;
-        }
-        lastUnlimitedAssistLogTick = now;
-        EnergyContainerList e = getEnergyContainer();
-        GTLModular.LOGGER.info("[gtlmodular] NAC @{} 【按可获取能力放行】（{}）：需要 {} EU > 已存 {} EU，"
-                        + "但复合体容量 {} EU ≥ 哨兵 {} EU（不储能、按需现取型供电："
-                        + "GTL Additions「无线电网输入终端」/ 创造能源等）⇒ 视为已充足，放行不拦",
-                getPos(), site, need, stored,
-                e == null ? 0L : e.getEnergyCapacity(), ON_DEMAND_POWER_FLOOR_EU);
-    }
-
-    /**
      * 模块取电入口（模块自己没装能源仓时走这里）。
      *
      * <p>原版优先级语义：{@code Modules draw power from the NAC on a 'priority' system.
@@ -5924,16 +5933,15 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             //   管道模式 ⇒ 本图作废，等第一次搬运查询时重算。
             pipeGraph.markDirty();
             reconcileRoutingMode();
-            // ★★ 2026-11-13【NAC 电网取电 · 读档兜底】／ ★ 2026-11-14【照抄山海 · 取消"必须有能源仓"兜底】★★
-            //   本机进世界（含读档）时把"取电身份是谁"明确报一句（风险 B 的「读档不得静默失效」出声口）。
-            //   ★ 口径变更：身份缺失**不再**退回"必须有能源仓"的老行为 —— 按山海
-            //   `MatterCopierMachine.ensureWirelessUuid()` 的做法现生成机器自有账户（见 resolveGridUser），
-            //   电网通道始终在线；余额为 0 时表现为「等电」。
+            // 进世界（含读档）时报一句电网账户是谁；旧版本的随机账户在 resolveGridUser 里识别并解绑。
             if (GTLModularConfig.isNanochipGridPowerEnabled()) {
                 UUID gridUser = resolveGridUser();
-                GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网取电已就绪：取电身份 {}（读档往返正常；"
-                                + "电网余额为 0 时本机原地等电，不再退化成「必须有能源仓」）",
-                        getPos(), gridUser);
+                if (gridUser != null) {
+                    GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网账户 {}", getPos(), gridUser);
+                } else {
+                    GTLModular.LOGGER.info("[gtlmodular] NAC @{} 电网账户未绑定 ⇒ 只用能源仓供电；"
+                            + "空手潜行右键控制器即可绑定到自己的无线电网", getPos());
+                }
             }
         }
     }
@@ -7238,16 +7246,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         if (!isFormed() || !isWorkingEnabled()) {
             return;
         }
-        EnergyContainerList e = getEnergyContainer();
-        if (e == null) {
-            return;
-        }
-        final long unitCapacity = getMaxInputPower();
-        // ★ 2026-10-08【无线电网供电兼容】本复合体这一刻的「可获取能力」（见 getObtainableEnergyEU）。
-        //   储能式 = 已存（与改动前逐字同口径）；无限/按需现取型 = 容量；真·无电 = 0。
-        final boolean onDemand = isEnergySourceEffectivelyUnlimited();
-        final long obtainable = getObtainableEnergyEU();
-        final long storedForLog = e.getEnergyStored();
         List<NanochipModuleMachine> mods = new ArrayList<>();
         for (IModularMachineModule<NanochipAssemblyComplexMachine, ?> m : getModules()) {
             if (m instanceof NanochipModuleMachine mm && mm.isFormed() && mm.drawingFromHost()) {
@@ -7256,53 +7254,83 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
         // 优先级大的先补（1 → −1），组装矩阵因此在最后
         mods.sort(Comparator.comparingInt(NanochipModuleMachine::energyPriority).reversed());
+        final long hatchInput = finiteHatchInputPower();
         for (NanochipModuleMachine mm : mods) {
             NanochipModuleKind kind = mm.getModuleKind();
             int maxTicks = kind == null ? 100 : kind.maxRecipeTicks();
-            // ★ 【根因修复 · 溢出】饱和乘法。无线电网输入终端把「输入电压 × 安培」托到 Long.MAX 级
-            //   ⇒ getMaxInputPower() 饱和成 Long.MAX_VALUE ⇒ 原来的 `unitCapacity * 2L * maxTicks`
-            //   **回绕成负数**（如 600 tick 的加速生物调谐器：Long.MAX_VALUE×2×600 → −1200）。
-            //   而 setBufferCapacity 是「单调放大」语义（只在 capacity > 当前值时才写入）
-            //   ⇒ 负数被静默丢弃 ⇒ bufferCapacityEU 恒为 0 ⇒ fillBufferEU 开头就 `if (... <= 0L) return 0L`
-            //   直接返回 0，distributeModuleEnergy 里 room 也恒为 0 ⇒ **模块缓存永远是 0**，
-            //   模块侧于是恒显示「等待复合体蓄电：…复合体当前 0 EU」。
-            //   （改动前：`mm.setBufferCapacity(unitCapacity * 2L * (long) maxTicks);`）
-            mm.setBufferCapacity(saturatingMul(saturatingMul(unitCapacity, 2L), (long) maxTicks));
-            long room = mm.getBufferCapacityEU() - mm.getBufferEU();
-            if (room <= 0L) {
+            mm.setBufferCapacity(saturatingMul(saturatingMul(hatchInput, 2L), (long) maxTicks));
+            if (topUpModuleBuffer(mm) < 0L) {
+                break;    // 复合体这一刻一点电都没有
+            }
+        }
+    }
+
+    /**
+     * 把一个模块的缓存从复合体补满（缺多少要多少），返回实际补进去的量；复合体完全没电时返回 −1。
+     *
+     * <p>只按真实存量扣电，从不凭空记账：电网账户和无线电网终端的"存量"就是余额，扣电是全有或全无，
+     * 所以要的量必须是真实缺口 —— 按容量哨兵（Long.MAX 级）去要，余额永远不够，一分都扣不到。
+     */
+    long topUpModuleBuffer(NanochipModuleMachine mm) {
+        EnergyContainerList e = getEnergyContainer();
+        if (e == null) {
+            return -1L;
+        }
+        long room = mm.getBufferCapacityEU() - mm.getBufferEU();
+        if (room <= 0L) {
+            return 0L;
+        }
+        long stored = 0L;
+        for (com.gregtechceu.gtceu.api.capability.IEnergyContainer c : innerContainers(e)) {
+            if (c != null) {
+                stored = saturatingAdd(stored, Math.max(0L, c.getEnergyStored()));
+            }
+        }
+        if (stored <= 0L) {
+            return -1L;
+        }
+        long taken = -e.changeEnergy(-Math.min(room, stored));
+        if (taken <= 0L) {
+            return 0L;
+        }
+        long got = mm.fillBufferEU(taken);
+        if (got < taken) {
+            e.changeEnergy(taken - got);          // 缓存满了，没吃下的还回去
+        }
+        drawAccumulator = saturatingAdd(drawAccumulator, got);
+        return got;
+    }
+
+    /** 模块起跑缺电时当场补一次缓存，不等 20 tick 的统一分配；组装矩阵在别的模块等电时让路。 */
+    public void requestBufferTopUp(NanochipModuleMachine mm) {
+        if (!isFormed() || !isWorkingEnabled()) {
+            return;
+        }
+        if (mm.energyPriority() < 0 && highPriorityStarved()) {
+            return;
+        }
+        topUpModuleBuffer(mm);
+    }
+
+    /**
+     * 有限容量能源仓的输入功率之和（EU/t），用来定模块缓存上限。电网账户和无线电网终端这类
+     * 容量 Long.MAX 级的源不算：它们的输入功率也是 Long.MAX，拿来定上限会把整个电网余额灌进模块。
+     * 只有这类源时上限为 0，模块缓存按每条配方的实际需要现定（{@link NanochipModuleMachine#ensureBufferCovers}）。
+     */
+    private long finiteHatchInputPower() {
+        EnergyContainerList own = super.getEnergyContainer();
+        if (own == null) {
+            return 0L;
+        }
+        long total = 0L;
+        for (com.gregtechceu.gtceu.api.capability.IEnergyContainer c : innerContainers(own)) {
+            if (c == null || c.getEnergyCapacity() >= ON_DEMAND_POWER_FLOOR_EU) {
                 continue;
             }
-            // ★ 【根因修复 · 读错口径】原来只读 `e.getEnergyStored()`：按需现取型电源「不储能」，
-            //   已存恒为 0 ⇒ `avail <= 0` 直接 break，模块缓存一辈子灌不到电。
-            //   改用「可获取能力」（getObtainableEnergyEU）⇒ 无限源读到容量（Long.MAX 级）。
-            //   真·完全无电（容量 0 且存量 0）时 obtainable 仍为 0 ⇒ 照旧 break 拦住。
-            long avail = obtainable;
-            if (avail <= 0L) {
-                break;
-            }
-            long want = Math.min(room, avail);
-            long taken = -e.changeEnergy(-want);      // 负值 = 从复合体蓄电里取
-            boolean synthesized = false;
-            if (taken <= 0L) {
-                if (!onDemand) {
-                    continue;
-                }
-                // ★ 按需现取型源头（无线电网）不走「蓄电交割」：本容器不提供 changeEnergy 扣电
-                //   （它没有已存量可扣）⇒ 直接按承诺把 want 记入模块缓存。
-                //   语义上不是"凭空造电"：源头容量 Long.MAX 级、且模块缓存的用途只是
-                //   「起跑前预留整条配方、防中途断电」，对一个不会断电的源这条预留是空条件。
-                //   保守第一：宁可让模块开工，也不要卡死。真·无电时 onDemand == false，走不到这里。
-                taken = want;
-                synthesized = true;
-                logUnlimitedEnergyAssist("主机灌模块缓存", want, storedForLog);
-            }
-            long got = mm.fillBufferEU(taken);
-            if (!synthesized && got < taken) {
-                e.changeEnergy(taken - got);          // 保险：缓存满了，没吃下的还回去（真扣过电才需还）
-            }
-            // ★ 2026-10-27【饱和加法】：同 requestModuleEnergy —— 累加器回绕成负数会直接显示成负的「模块实付」。
-            drawAccumulator = saturatingAdd(drawAccumulator, got);
+            total = saturatingAdd(total,
+                    saturatingMul(Math.max(0L, c.getInputVoltage()), Math.max(0L, c.getInputAmperage())));
         }
+        return total;
     }
 
     /**
@@ -8285,6 +8313,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         textList.add(Component.literal("模块: "
                         + formedModuleCount() + " / " + getMaxModuleCount())
                 .withStyle(ChatFormatting.WHITE));
+        addGridAccountLine(textList);
         // ★★ 0.3.132【队长令：撤掉「真空传送带」这一行】★★（同一条队长令）
         //   ⚠ `syncedVacuumText` 同步字段与真空传送的全部判定/传输逻辑**一个字不动**
         //     ⇒ 颜色通道照常工作，只是不再在主机面板上列一览；仓室那边照样看得到。

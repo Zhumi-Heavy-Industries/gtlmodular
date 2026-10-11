@@ -1214,5 +1214,8 @@
   "gtlmodular.wildcard_buffer.machine_filter.short": "机器黑名单过滤槽",
   "gtlmodular.wildcard_buffer.machine_filter.hint.1": "放入机器的物品形态：",
   "gtlmodular.wildcard_buffer.machine_filter.hint.2": "产物命中这些机器的配方不生成样板",
-  "gtlmodular.wildcard_buffer.machine_filter.hint.3": "例：拉黑机器的产物一律不生成"
+  "gtlmodular.wildcard_buffer.machine_filter.hint.3": "例：拉黑机器的产物一律不生成",
+  "gtlmodular.nanochip.grid.bound": "§a电网账户已绑定到你§7 · 当前余额 §b%s EU",
+  "gtlmodular.nanochip.grid.account": "无线电网：%s · 余额 %s",
+  "gtlmodular.nanochip.grid.unbound": "无线电网：未绑定 · 空手潜行右键控制器绑定到自己（未绑定时只用能源仓供电）"
 }

@@ -734,11 +734,12 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     /**
      * 保证缓存上限**至少**能覆盖整条配方（否则该配方永远起不来）。
      *
-     * <p>只在主机真的按公式定过容量之后才允许放大（{@code bufferCapacityEU > 0}），
-     * 免得脱机状态下自己长出一个容量来。
+     * <p>只在模块确实吃复合体电、且已连上主机时调用（见 {@code handleRecipeWorking}）。
+     * 复合体只有电网账户 / 无线电网终端、没有有限容量能源仓时，主机给的公式容量是 0，
+     * 缓存上限就完全由这里按配方实际需要来定。
      */
     public void ensureBufferCovers(long fullRecipeEU) {
-        if (bufferCapacityEU > 0L && fullRecipeEU > bufferCapacityEU) {
+        if (fullRecipeEU > bufferCapacityEU) {
             bufferCapacityEU = fullRecipeEU;
         }
     }
@@ -1452,52 +1453,24 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             }
             long perTick = Math.max(1L, RecipeHelper.getInputEUt(recipe));
             long full = perTick * (long) Math.max(1, recipe.duration);
-            // ★ 2026-10-08【无线电网供电兼容】把「等待复合体蓄电」这道判定从「按**已存**电量」改成
-            //   「按主机**可获取能力**」。
-            //
-            //   现象（实测）：主机装 GTL Additions「无线电网输入终端」时，主机界面「中央供电:
-            //   9,223,372,036,854,775,807 / 9,223,372,036,854,775,807 EU · 模块实付 0 EU/t」看似充足，
-            //   模块界面却恒显示 lang 键 gtlmodular.nanochip.module.buffer 那句
-            //   「等待复合体蓄电：本条配方整条需要 … EU，复合体当前 0 EU；攒够才开始」⇒ 永不开工。
-            //
-            //   根因（两侧口径不一致）：本判据读的是 `module.getBufferEU()` —— **本模块自己的缓存字段**
-            //   `syncedBufferEU`（NanochipModuleMachine.java:569/575），由主机每 20 tick 灌；
-            //   而无线电网是「不储能、按需现取」型能源 ⇒ 主机那条灌电链（
-            //   NanochipAssemblyComplexMachine.distributeModuleEnergy）在它上面拿不到可交割的电量，
-            //   缓存恒为 0 ⇒ 判定恒失败。（主机侧的电源容器是 GTL Additions 的
-            //   `com.gtladd.gtladditions.common.machine.trait.NetworkEnergyContainer`，
-            //   签名 `NotifiableRecipeHandlerTrait<Long> + IEnergyContainer + IInt128EnergyContainer`，
-            //   即「容量 Long.MAX 级、无已存储量」那一类。）
-            //
-            //   改法（用户指定的「优先」档）：容量为 Long.MAX 级 / 供应源为无限 ⇒ 视为已充足、直接放行。
-            //   缓存模型的本意是「起跑前预留整条配方、避免中途断电」；对一个不会断电的无限源，
-            //   这个预留是空条件，不适用。
-            //
-            //   保守第一 + 真无电仍拦：容量为 0 且存量为 0 ⇒ hostUnlimited == false ⇒ 下面两道判定
-            //   与改动前**逐字一致**（照样置等待、照样走 FAIL_NO_ENOUGH_EU_IN）。
-            final boolean hostUnlimited = host.isEnergySourceEffectivelyUnlimited();
+            // 起跑前缓存必须够整条配方（原版「不会中途断电」）。缓存不够就当场向复合体要一次；
+            // 电网账户 / 无线电网终端的余额会被真实扣掉，从不按"无限源"凭空放行。
             if (getProgress() == 0) {
                 module.ensureBufferCovers(full);   // 我方个别配方比 NH 页上的最大配方时间还长 ⇒ 容量至少覆盖它
                 if (module.getBufferEU() < full) {
-                    if (!hostUnlimited) {
-                        setWaiting(Component.translatable("gtlmodular.nanochip.module.buffer",
-                                com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(full),
-                                com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(module.getBufferEU())));
-                        if (getStatus() == RecipeLogic.Status.WAITING) {
-                            doDamping();
-                        }
-                        return;
+                    host.requestBufferTopUp(module);
+                }
+                if (module.getBufferEU() < full) {
+                    setWaiting(Component.translatable("gtlmodular.nanochip.module.buffer",
+                            com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(full),
+                            com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(module.getBufferEU())));
+                    if (getStatus() == RecipeLogic.Status.WAITING) {
+                        doDamping();
                     }
-                    // 需要量 > 已存，但源头是无限/按需现取 ⇒ 记一行「按可获取能力放行」（限流）
-                    host.logUnlimitedEnergyAssist("模块起跑缓存判定", full, module.getBufferEU());
+                    return;
                 }
             }
-            final boolean paidFromBuffer = module.consumeBufferEU(perTick);
-            if (paidFromBuffer || hostUnlimited) {
-                if (!paidFromBuffer) {
-                    // 缓存一时没攒够，但源头按需现取 ⇒ 放行（同一句诊断，限流在主机侧）
-                    host.logUnlimitedEnergyAssist("模块逐 tick 扣电", perTick, module.getBufferEU());
-                }
+            if (module.consumeBufferEU(perTick)) {
                 setStatus(RecipeLogic.Status.WORKING);
                 if (!machine.onWorking()) {
                     interruptRecipe();

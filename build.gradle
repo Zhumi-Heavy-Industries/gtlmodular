@@ -5,11 +5,9 @@ plugins {
 }
 
 group = 'com.gtlmodular'
-// ★ 2026-09-19（队长：「你记得改版本号呀，我这边版本号显示的还是 0.1.13」）：
-//   每次部署前都要动这一行 —— mods.toml 用 `mod_version: project.version` 注入，
-//   jar 名也是 `gtlmodular-<version>.jar`（换版本号 ⇒ mods 目录里**必须删掉旧 jar**，
-//   否则同一个 modId 两份 jar，Forge 会以"Duplicate mod"拒绝加载）。
-version = '0.3.132'
+// 版本号只在 gradle.properties 的 mod_version 里改；mods.toml 和 jar 名都从这里取。
+// 换版本后 mods 目录里的旧 jar 必须删掉：同一个 modId 两份 jar，Forge 会以 "Duplicate mod" 拒绝加载。
+version = mod_version
 archivesBaseName = 'gtlmodular'
 
 // [2026-09-20] 编译 JDK 提到 21：整合包里的 gtladditions 3.2.8Custom_SubSpace-fix2 是 Java 21
@@ -69,9 +67,6 @@ minecraft {
 }
 
 repositories {
-    // LDLib 需要 maven，TM 也一样；两个 maven 都留着
-    maven { name = 'FirstDarkDev'; url = 'https://maven.firstdark.dev/snapshots' }
-    maven { name = 'SapsDev'; url = 'https://maven.saps.dev/minecraft' }
     // 依赖 jar 由 scripts/copy-libs.ps1 拷到 libs/ 下
     flatDir { dirs 'libs' }
     mavenCentral()

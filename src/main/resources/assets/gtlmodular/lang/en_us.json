@@ -1214,5 +1214,8 @@
   "gtlmodular.wildcard_buffer.machine_filter.short": "Machine blacklist slots",
   "gtlmodular.wildcard_buffer.machine_filter.hint.1": "Put a machine's item form here:",
   "gtlmodular.wildcard_buffer.machine_filter.hint.2": "recipes producing what those machines make are skipped",
-  "gtlmodular.wildcard_buffer.machine_filter.hint.3": "e.g. blacklisting a machine blocks its products"
+  "gtlmodular.wildcard_buffer.machine_filter.hint.3": "e.g. blacklisting a machine blocks its products",
+  "gtlmodular.nanochip.grid.bound": "§aGrid account bound to you§7 · balance §b%s EU",
+  "gtlmodular.nanochip.grid.account": "Wireless grid: %s · balance %s",
+  "gtlmodular.nanochip.grid.unbound": "Wireless grid: not bound · sneak-right-click the controller with an empty hand to bind it to yourself (energy hatches only until bound)"
 }
