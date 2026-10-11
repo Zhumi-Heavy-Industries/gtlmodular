@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "gtlmodular:block/casings/uhv_solenoid_superconductor_coil_top",
+    "bottom": "gtlmodular:block/casings/uhv_solenoid_superconductor_coil_top",
+    "side": "gtlmodular:block/casings/uhv_solenoid_superconductor_coil_side"
+  }
+}

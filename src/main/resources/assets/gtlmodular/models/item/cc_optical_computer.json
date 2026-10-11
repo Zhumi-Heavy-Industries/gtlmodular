@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "kubejs:item/optical_computer",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}

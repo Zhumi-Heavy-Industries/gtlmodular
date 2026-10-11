@@ -1,0 +1,93 @@
+{
+  "type": "gtceu:dimensionally_transcendent_plasma_forge",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 600,
+  "blastFurnaceTemp": 10800,
+  "data": {
+    "ebf_temp": 10800
+  },
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 400,
+          "value": {
+            "fluid": "gtceu:grade_8_purified_water"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2000,
+          "value": {
+            "fluid": "gtceu:superheavyradox"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:dimensionallytranscendentprosaiccatalyst"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:superheavy_h_alloy"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:heavy_quark_degenerate_matter"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 500,
+          "value": {
+            "fluid": "gtceu:cosmic_superconductor"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 7500,
+          "value": {
+            "fluid": "gtceu:dimensionally_offset_superfluid"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 250,
+          "value": {
+            "fluid": "gtceu:dimensionallytranscendentresidue"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 31457280
+      }
+    ]
+  }
+}

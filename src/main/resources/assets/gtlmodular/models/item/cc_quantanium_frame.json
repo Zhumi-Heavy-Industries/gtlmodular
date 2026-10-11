@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtceu:block/material_sets/dull/frame_gt",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}

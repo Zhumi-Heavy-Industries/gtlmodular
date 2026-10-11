@@ -1,0 +1,15 @@
+{
+    "required": false,
+    "minVersion": "0.8.5",
+    "package": "com.gtlmodular.mixin",
+    "compatibilityLevel": "JAVA_17",
+    "mixins": [
+        "enhancedcore.SuperBufferChineseNamesMixin"
+    ],
+    "client": [
+        "gtceu.MixinWorkableProgressBar"
+    ],
+    "injectors": {
+        "defaultRequire": 0
+    }
+}

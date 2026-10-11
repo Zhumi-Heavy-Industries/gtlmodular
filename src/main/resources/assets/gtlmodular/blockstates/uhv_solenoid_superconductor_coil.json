@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "gtlmodular:block/casings/uhv_solenoid_superconductor_coil"
+    }
+  }
+}

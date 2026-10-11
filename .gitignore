@@ -1,0 +1,15 @@
+# 构建产物与 Gradle 缓存
+build/
+.gradle/
+out/
+run/
+# 本地依赖 jar（来自 gtl-modular-libs_*.zip，不进仓库）
+libs/
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/

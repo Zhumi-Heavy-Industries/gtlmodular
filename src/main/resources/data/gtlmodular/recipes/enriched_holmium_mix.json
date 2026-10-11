@@ -1,0 +1,59 @@
+{
+  "type": "gtceu:mixer",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 300,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:enriched_naquadah_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:holmium_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 4
+        },
+        "chance": 0
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 5,
+          "ingredient": {
+            "item": "gtceu:enriched_holmium_dust"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 131072
+      }
+    ]
+  }
+}

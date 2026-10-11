@@ -1,0 +1,88 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="${mod_license}"
+issueTrackerURL="https://example.invalid/gtlmodular"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+authors="${mod_authors}"
+description='''
+GTL(格雷科技休闲版) 附属模组：熔岩模块化机组。
+新增主体“地心涌动能量转换枢纽”与高炉/星核剥离/天基炼矿三个模块多方块，
+模块复用整合包原有配方表并持续消耗岩浆 + 液态烈焰（IV 基准 83 mb/s，每高一档 ×4）。
+另含 MV~UIV 十级「猪咪样板总成」与「超级猪咪样板总成」：分页样板槽、逐槽配方模式、
+自动切换模式、不串配方（类型闸 + 样板身份闸）、样板倍率、神锻样板模式、专属催化剂槽。
+'''
+credits='''
+本模组复用以下模组的公开 API 与材质（只调用/引用，未打包也未复制其代码）：
+gtlcore（ME 样板总成、分页与催化剂界面基类，LGPLv3.0，作者 POWSDSSAG / EasterFG / Maple）、
+gtceu（GregTech，LGPL-3.0）与 ldlib（GPL-3.0）；
+gtladditions（LGPLv3.0，作者 アドニス、疏影）：神锻配置页图标；「超级猪咪样板总成」的外壳渲染
+沿用其 OverlayHullMachineRenderer 与 infinity_input_dual_hatch_casing 材质（未装该模组时自动退回本机外壳）。
+设计参考：gt_shanhai（星律，作者 dishanhai）——「配方模式识别 / 类型闸 / 样板身份闸 / 不串配方」
+的思路参考了其公开实现，本仓库为自写代码，未复制其源码。
+机器结构、材质与配方表的版权归各自作者所有。
+'''
+
+# Forge 本体
+[[mixins]]
+config="gtlmodular.mixins.json"
+
+[[dependencies.${mod_id}]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+# GTM / LDLib 必须
+[[dependencies.${mod_id}]]
+    modId="gtceu"
+    mandatory=true
+    versionRange="[1.4.4,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="ldlib"
+    mandatory=true
+    versionRange="[1.0,)"
+    ordering="NONE"
+    side="BOTH"
+
+# AE2：样板的 IPatternDetails / PatternDetailsHelper 直接来自它
+[[dependencies.${mod_id}]]
+    modId="ae2"
+    mandatory=true
+    versionRange="[15,)"
+    ordering="NONE"
+    side="BOTH"
+
+# GTL 系列：gtlcore 是样板总成的基类所在，必须
+[[dependencies.${mod_id}]]
+    modId="gtlcore"
+    mandatory=true
+    versionRange="[1.2,)"
+    ordering="AFTER"
+    side="BOTH"
+
+# gtladditions：只用来取「神锻」配置页的图标（Forge of the Antichrist），可选依赖；
+# 缺了只是图标退回本机图标，功能不受影响
+[[dependencies.${mod_id}]]
+    modId="gtladditions"
+    mandatory=false
+    versionRange="[3.2,)"
+    ordering="AFTER"
+    side="BOTH"
+
+# JEI（客户端）：只用一个插件把「NAC 孤儿封装件」在 JEI 里隐藏（2026-09-19 队长口径）。
+# 可选依赖：没装 JEI 时插件不会被加载，模组功能完全不受影响（side=CLIENT ⇒ 只影响客户端）。
+[[dependencies.${mod_id}]]
+    modId="jei"
+    mandatory=false
+    versionRange="[15,)"
+    ordering="AFTER"
+    side="CLIENT"
+

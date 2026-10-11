@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtceu:item/nano_cpu_chip",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}
