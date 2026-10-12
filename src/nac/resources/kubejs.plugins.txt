@@ -1,0 +1,1 @@
+com.gtlmodular.common.machine.nanochip.kubejs.NanochipKubeJSPlugin

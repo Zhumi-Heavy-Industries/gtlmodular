@@ -4,14 +4,6 @@ import net.minecraftforge.common.ForgeConfigSpec;
 
 import java.util.List;
 
-/**
- * 本模组公共配置（COMMON）。
- *
- * <p>M2 双流体税规则（用户规格，无 P 演算）：
- * 熔岩高炉单元每运行 1 秒扣一次税；每次「熔岩」与「液态烈焰」各自全额扣 X mb；
- * X = ivBaselineMbPerSecond（IV 档基准量），每高于 IV 一档电压 ×perTierMultiplier；
- * 低于 IV 不允许运行。
- */
 public final class GTLModularConfig {
 
     private GTLModularConfig() {
@@ -19,7 +11,6 @@ public final class GTLModularConfig {
 
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
-    // ---- 双流体税 ----
     private static final ForgeConfigSpec.BooleanValue DUAL_FLUID_TAX_ENABLED =
             BUILDER.comment("M2：熔岩高炉单元双流体税总开关")
                     .define("dualFluidTax.enabled", true);
@@ -55,7 +46,6 @@ public final class GTLModularConfig {
             BUILDER.comment("扣税周期（tick）。20 = 每游戏秒扣一次")
                     .defineInRange("dualFluidTax.drainIntervalTicks", 20, 1, 1200);
 
-    // ---- 线圈温度降耗（模块A：并行数量一律由并行控制仓提供；换高级线圈只降 EU/t）----
     private static final ForgeConfigSpec.BooleanValue COIL_DISCOUNT_ENABLED =
             BUILDER.comment("M3：按线圈温度降耗总开关（并行由并行控制仓提供，线圈不再提供并行）")
                     .define("coilDiscount.enabled", true);
@@ -80,7 +70,6 @@ public final class GTLModularConfig {
             BUILDER.comment("模块A 全局耗时倍率（配方耗时 × 该值；0.1 = 耗时缩短到 1/10）")
                     .defineInRange("coilDiscount.durationMultiplier", 0.1, 0.01, 1.0);
 
-    // ---- 猪咪黑奴挖矿机（原星核剥离单元）倍率 ----
     private static final ForgeConfigSpec.DoubleValue STRIPPER_ENERGY_MULTIPLIER =
             BUILDER.comment("猪咪黑奴挖矿机的耗能倍数（总耗能 × 该值；Jade 的『总耗能倍率』读的也是它）",
                             "默认 6 = 600%")
@@ -89,8 +78,6 @@ public final class GTLModularConfig {
     private static final ForgeConfigSpec.DoubleValue STRIPPER_DURATION_MULTIPLIER =
             BUILDER.comment("猪咪黑奴挖矿机的耗时倍数（默认 1 = 100%，不额外改耗时）")
                     .defineInRange("stripper.durationMultiplier", 1.0, 0.0, 1024.0);
-
-    // ---- 猪咪样板总成：样板身份闸 ----
 
     private static final ForgeConfigSpec.BooleanValue PATTERN_IDENTITY_GATE =
             BUILDER.comment("猪咪样板总成的「样板身份闸」开关（默认开）",
@@ -130,42 +117,7 @@ public final class GTLModularConfig {
     public static final ForgeConfigSpec.BooleanValue NANOCHIP_GRID_POWER = NANOCHIP.gridPowerValue();
     static final List<String> BUILT_IN_CALIBRATION_WHITELIST = NANOCHIP.defaultCalibrationRecipeWhitelist();
 
-    // ---- 天基矿石处理厂配方镜像（2026-10-01）----
-
-    /**
-     * ★★ 2026-10-01：<b>天基矿石处理厂（{@code gtceu:space_ore_processor}）配方镜像开关</b>（默认开）★★
-     *
-     * <h4>治的是什么</h4>
-     * gtladditions 分支 {@code 3.2.8Custom_SubSpace-fix2} 自带
-     * {@code RecipesModify.initSpaceOreProcessor()}，意图就是「同族矿石处理配方每造一条，
-     * 就 {@code copyFrom} 一条到 {@code space_ore_processor}」，但它（以及我们第一版照抄它的写法）
-     * 挂的 {@code onRecipeBuild} 回调<b>一次都没被触发</b> ⇒ {@code space_ore_processor} <b>0 条配方</b> ⇒
-     * 「天基无尽集成矿石处理厂」（{@code gtladditions:space_infinity_integrated_ore_processor}）
-     * 与我们的模块C（{@code gtlmodular:molten_space_ore_module}，共用同一张表）都没配方可跑。
-     *
-     * <h4>现在的做法（v2，2026-10-01 第二轮）</h4>
-     * 不再依赖「配方构建回调」✗ —— 改为在 <b>{@code ServerStartedEvent}</b>（配方管理器就绪的那一刻，
-     * 与 NAC 自检同一时机）里：反射读 {@code RecipeManager.byType} → 从 <b>首选源
-     * {@code gtceu:steam_space_ore_processor}</b>（实机日志 999 条）枚举该表的全部配方 →
-     * 逐条复制成 {@code space_ore_processor} 的配方（电压钳到 {@code VA[HV]}=512 EU/t、清空流体输入，
-     * 与 gtladditions 上游口径一致）→ <b>同时登记进目标表的 {@code GTRecipeLookup} 与 {@code byType}</b>
-     * （前者给机器用，后者给 JEI/计数用）。首选源一条都没有时自动回落到
-     * {@code gtceu:integrated_ore_processor}；目标表已有配方则直接跳过（幂等）。
-     *
-     * <table border="1">
-     *   <tr><th>取值</th><th>行为</th></tr>
-     *   <tr><td><b>{@code true}（默认）</b></td><td>镜像开启：{@code space_ore_processor} 与源表条数一致
-     *       （实机应为 999），JEI 里那个分类不再空、机器能跑。</td></tr>
-     *   <tr><td>{@code false}</td><td>完全不执行（退回现状：该配方表 0 条）。用于对照实验。</td></tr>
-     * </table>
-     *
-     * <p><b>改这一项需要重启游戏</b>：只在服务器启动完成（进世界 / 开服）时读一次。
-     * 日志里会打两行自证：挂载时一行 {@code 天基矿石处理厂配方镜像已挂载…}，
-     * 执行完一行 {@code 天基矿石处理厂配方镜像结果：源 … N 条 → 目标 … M 条，失败 K 条…}。
-     *
-     * <p>⚠️ <b>本定义必须放在 {@link #SPEC} 之前</b>：{@code SPEC = BUILDER.build()} 之后定义的项
-     * <b>不会进配置文件</b>（取值永远等于默认值）。
-     */
+    /** 必须在 SPEC 构建前定义，否则该配置项不会纳入配置规格。 */
     private static final ForgeConfigSpec.BooleanValue SPACE_ORE_RECIPE_MIRROR =
             BUILDER.comment("天基矿石处理厂（gtceu:space_ore_processor）配方镜像开关（默认 true = 开）",
                             "Mirror the gtceu:steam_space_ore_processor recipes into gtceu:space_ore_processor (default true)",
@@ -180,23 +132,14 @@ public final class GTLModularConfig {
                             "Requires a game restart: it is read once when the server has started.")
                     .define("spaceOre.recipeMirror", true);
 
-    // ---- ★ 2026-11-12【原初模式】总开关：把我们所有自定义的「结构 / 成型 / 连接」层变透明 ----
-
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
-    /**
-     * ★ 2026-10-01：天基矿石处理厂配方镜像是否开启（{@code spaceOre.recipeMirror}，默认 {@code true}）。
-     *
-     * <p>由 {@link com.gtlmodular.common.data.module.SpaceOreRecipeMirror} 在
-     * {@code ServerStartedEvent} 里读一次。
-     * 读配置失败（配置还没加载 / 测试环境）时回落到 {@code true} —— 与配置项默认值一致：
-     * 这个补丁本来就是「把该有的配方补回来」，宁可跑也不要静默关掉。
-     */
+    /** 配置尚不可读时沿用默认开启，避免配方镜像被静默禁用。 */
     public static boolean isSpaceOreRecipeMirrorEnabled() {
         try {
             return SPACE_ORE_RECIPE_MIRROR.get();
         } catch (Throwable ignored) {
-            return true;
+            return SPACE_ORE_RECIPE_MIRROR.getDefault();
         }
     }
 
@@ -272,12 +215,11 @@ public final class GTLModularConfig {
         NANOCHIP.setHideOrphanItemsEnabled(value);
     }
 
-    /** 调试日志是否开启（AE 推送明细 / 内部槽 / 网络存量对比）。 */
     public static boolean isPatternDebugLogsEnabled() {
         try {
             return PATTERN_DEBUG_LOGS.get();
         } catch (Throwable ignored) {
-            return false;
+            return PATTERN_DEBUG_LOGS.getDefault();
         }
     }
 
@@ -285,7 +227,7 @@ public final class GTLModularConfig {
         try {
             return PATTERN_IDENTITY_GATE.get();
         } catch (Throwable ignored) {
-            return true;
+            return PATTERN_IDENTITY_GATE.getDefault();
         }
     }
 
@@ -293,7 +235,7 @@ public final class GTLModularConfig {
         try {
             return AUTO_RECIPE_MODE_SWITCH.get();
         } catch (Throwable ignored) {
-            return true;
+            return AUTO_RECIPE_MODE_SWITCH.getDefault();
         }
     }
 
@@ -335,7 +277,6 @@ public final class GTLModularConfig {
         return DRAIN_INTERVAL_TICKS.get();
     }
 
-    // ---- 供游戏内配置界面写入（机器逻辑实时读取，改完即生效；退出时 Forge 自动落盘）----
     public static void setEnabled(boolean value) {
         if (DUAL_FLUID_TAX_ENABLED.get() != value) {
             DUAL_FLUID_TAX_ENABLED.set(value);
@@ -415,8 +356,6 @@ public final class GTLModularConfig {
     public static double getStripperDurationMultiplier() {
         return STRIPPER_DURATION_MULTIPLIER.get();
     }
-
-    // ---- 以下 setter 供游戏内配置界面写入（机器逻辑实时读取，改完即生效；退出时 Forge 自动落盘）----
 
     public static void setAutoRecipeModeSwitchEnabled(boolean value) {
         if (AUTO_RECIPE_MODE_SWITCH.get() != value) {

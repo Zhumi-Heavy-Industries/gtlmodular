@@ -17,11 +17,11 @@ Install either gtlmodular or gtl_nac. If both are installed, remove one of them.
 config="gtl_nac.mixins.json"
 
 # 两个产物共享包名，必须在 Forge 建立 GAME 层前拒绝双装。
-# Maven 认为 0 与 0.0 的边界等值；上界排除使区间恒空，范围文本会进入 Forge 报错。
+# 区间只有上界 0-…：任何正常版本号都大于它，所以只要装了 gtlmodular 就不满足；提示写在上界里，Forge 报错页只显示一次。
 [[dependencies.${mod_id}]]
 modId="gtlmodular"
 mandatory=false
-versionRange="[0-gtlmodular 与 gtl_nac 二选一；移除其中一个 / choose one; remove either mod,0.0-gtlmodular 与 gtl_nac 二选一；移除其中一个 / choose one; remove either mod)"
+versionRange="(,0-〔gtlmodular 与 gtl_nac 只能装一个，请移除其中一个 / install only one of gtlmodular and gtl_nac〕)"
 ordering="NONE"
 side="BOTH"
 
@@ -70,7 +70,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="gtladditions"
 mandatory=true
-versionRange="[3.3.1Custom_SubSpace,)"
+versionRange="[3.3.1Custom,)"
 ordering="AFTER"
 side="BOTH"
 
@@ -103,3 +103,10 @@ mandatory=false
 versionRange="[15,)"
 ordering="AFTER"
 side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="kubejs"
+mandatory=false
+versionRange="[2001.6.5-build.26,)"
+ordering="AFTER"
+side="BOTH"

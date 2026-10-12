@@ -4,7 +4,8 @@
     "package": "com.gtlmodular.mixin",
     "compatibilityLevel": "JAVA_17",
     "mixins": [
-        "enhancedcore.SuperBufferChineseNamesMixin"
+        "enhancedcore.SuperBufferChineseNamesMixin",
+        "gtlcore.NanochipCalibrationLookupMixin"
     ],
     "client": [
         "gtceu.MixinWorkableProgressBar"

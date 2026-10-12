@@ -1,7 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
-import com.gtlmodular.common.machine.nanochip.NanochipModuleKind;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.gtlcore.gtlcore.utils.datastructure.ModuleRenderInfo;
@@ -69,28 +68,13 @@ public final class NanochipModulePreview {
     }
 
     private static MultiblockMachineDefinition firstNacDefinition() {
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            MultiblockMachineDefinition def = NanochipMachines.NANOCHIP_MODULES.get(kind);
-            if (def != null) {
-                return def;
-            }
-        }
-        return null;
+        return NanochipMachines.moduleDefinitions().stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 
     private static MultiblockMachineDefinition nacDefinition(String moduleId) {
-        if (moduleId == null) {
-            return null;
-        }
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            if (moduleId.equals(kind.machineId())) {
-                MultiblockMachineDefinition def = NanochipMachines.NANOCHIP_MODULES.get(kind);
-                if (def != null) {
-                    return def;
-                }
-                break;
-            }
-        }
-        return ModulePreviewSupport.lookupDefinition(NanochipModContext.modId(), moduleId);
+        if (moduleId == null) return null;
+        var id = com.gtlmodular.common.machine.nanochip.registration.NanochipModules.parseId(moduleId);
+        var definition = NanochipMachines.moduleDefinition(id);
+        return definition != null ? definition : ModulePreviewSupport.lookupDefinition(id.getNamespace(), id.getPath());
     }
 }

@@ -16,3 +16,4 @@ deps-src/
 .project
 .settings/
 bin/
+logs/

@@ -17,7 +17,8 @@ GTL 整合包的附属模组，Forge 1.20.1 + GTCEu 1.4.4。同仓构建两个�
 ## 构建与验证
 
 - 编译和当前整包运行都需要 JDK 21（本项目产物仍是 Java 17 字节码，但 NAC 的 gtladditions 基类需要 Java 21）。依赖 jar 放在 `libs/`，不进 git，具体版本和运行依赖见 `README.md`。
-- 验证命令：`gradlew.bat build --offline`（Linux/macOS 用 `./gradlew build --offline`）；首次缓存开发环境时去掉 `--offline`。一条命令编译、打包并完成 `reobfJar` / `reobfNacJar`，生成 `build/libs/gtlmodular-<版本>.jar` 和 `build/libs/gtl_nac-<版本>.jar`，并跑全部检查。
+- 验证命令：`gradlew.bat build --offline`（Linux/macOS 用 `./gradlew build --offline`）；首次缓存开发环境和 JUnit 测试依赖时去掉 `--offline`，编译及测试运行依赖都缓存齐全后才能离线。一条命令编译、打包并完成 `reobfJar` / `reobfNacJar`，生成 `build/libs/gtlmodular-<版本>.jar` 和 `build/libs/gtl_nac-<版本>.jar`，并跑全部检查和单元测试。
+- 单独运行测试：`gradlew.bat test --offline`（Linux/macOS 用 `./gradlew test --offline`）。`src/test/java/com/gtlmodular/common/thread/` 使用 JUnit 5，测试 classpath 显式包含 `nac.output`；测试类和 JUnit 不打入发行 jar。标准链路为 `test → check → build`，单独 test 通过不能代替完整 build。纯核心测试无需启动 Minecraft，只覆盖状态机和纯 Java 存档契约，不能当作真实 GTRecipe CODEC / NBT、handler 或游戏验收通过。
 - **没跑过 build 并且通过，就不要说"改好了"。** 汇报时分清三类：编译和检查验证过的、进游戏测过的、还没测的。
 - 完整版调试：`gradlew.bat runClient` / `runServer`，工作目录 `run/`；独立版调试：`gradlew.bat runNacClient` / `runNacServer`，工作目录 `run-nac/`。两套实例分别补齐运行依赖，不要在开发实例中再安装本仓库的发行 jar。
 
@@ -50,10 +51,19 @@ GTL 整合包的附属模组，Forge 1.20.1 + GTCEu 1.4.4。同仓构建两个�
 | 源码根 | 内容与入口 |
 |---|---|
 | `src/main/` | `GTLModular.java` 完整版入口；`common/machine/` 的样板总成、归档、地心设备及 `pattern/` 共享组件；`common/data/GTLModularMachines` 总注册与地心结构；`GTLModularNacContext` 等 NAC 适配；旧配置门面和界面、非 NAC 客户端组件及其余 mixin |
-| `src/nac/` | `common/machine/nanochip/` 主机、模块、独立线程、并行、校准、真空物流；`MultiTypeLookupHost` 契约；`common/data/nanochip/` 注册、结构、上下文、预览、自检与扩展点；`NanochipBlocks`、`HatchPredicates`、`GTLModularAddon`；共享 `NanochipConfig` / `NanochipConfigPage`、事件和命令；CC 染色、CTM、NAC 渲染、Jade/JEI 和 `MixinWorkableProgressBar` |
+| `src/nac/` | `common/thread/` 纯 Java 批次核心及 `common/thread/gt/` 存档适配；`common/machine/nanochip/` 主机、模块、独立线程策略、并行、校准、真空物流；`MultiTypeLookupHost` 契约；`common/data/nanochip/` 注册、结构、上下文、预览、自检与扩展点；`NanochipBlocks`、`HatchPredicates`、`GTLModularAddon`；共享 `NanochipConfig` / `NanochipConfigPage`、事件和命令；CC 染色、CTM、NAC 渲染、Jade/JEI 和 `MixinWorkableProgressBar` |
 | `src/nacmod/` | `nac/GTLNac.java` 独立入口，以及 `GTLNacContext`、`GTLNacConfig`、`GTLNacRegistration`、`GTLNacAddon`、`GTLNacClient` 组合层 |
+| `src/test/` | `common/thread/ConcurrentBatchEngineTest` 状态机测试与 `BatchArchiveTest` 纯 Java 存档测试 |
 
-`NanochipConcurrentBatches` 虽位于 NAC 机器包，仍是与 NAC 无关的通用批次引擎。`common/data/host/ModulePreviewSlots` 留在 main，NAC 预览使用共享的 `NanochipModulePreview` / `ModulePreviewSupport`。共享代码中的旧类名（如 `GTLModularAddon`、`GTLModularCommands`、`GTLModularJeiPlugin`）不代表它依赖完整版入口。
+独立批次分为三层，全部位于 `src/nac/`：
+
+- `common/thread/`：`ConcurrentBatchEngine` 与 `BatchState` / 工厂、`BatchPolicy`、`BatchArchive` / `BatchCodec`，只管批次状态机与纯 Java 存档契约，不依赖 MC、GTCEu、gtladditions 或 NAC。
+- `common/thread/gt/`：`GtRecipeBatchPersistence` / `BatchNbtKeys`，依赖 MC、GTCEu 和 gtlcore，不依赖 NAC；键、兜底 ID 和诊断回调由调用方提供。普通 GTRecipe CODEC 适配不保证完整恢复无线配方扩展。
+- `common/machine/nanochip/`：`NanochipThreadedRecipeLogic` 等类提供 NAC 候选、并行、节流、能源及收尾策略；`NanochipBatchRuntime` 按 GTRecipe 对象身份管理概率缓存、预留和显示编号。`NanochipConcurrentBatches` 是兼容门面，保留旧全限定名、嵌套 `Batch` / `Host`、公开读口和旧存档键，委托前两层并与内核共用同一份批次状态；它仍使用 NAC 上下文与日志，不能再称为无 NAC 依赖的核心。
+
+共享引擎及 GT-NBT 适配层随两份 jar 打包，可供显式接入复用；独立版的机器功能仍只有 NAC。当前没有全局推广 mixin 或 `independentThreadsForOtherMachines` 配置开关，没有给所有 NAC 模块或其他机器新增独立线程。其他机器的适配边界见 [docs/independent-threads.md](docs/independent-threads.md)；完整版适配放在 main，经 `main → nac` 使用共享接口，不反向引入产品实现。
+
+`common/data/host/ModulePreviewSlots` 留在 main，NAC 预览使用共享的 `NanochipModulePreview` / `ModulePreviewSupport`。共享代码中的旧类名（如 `GTLModularAddon`、`GTLModularCommands`、`GTLModularJeiPlugin`）不代表它依赖完整版入口。
 
 完整版打包 `main + nac`，独立版打包 `nac + nacmod`。资源只维护 `src/main/resources/` 的原始语言、模型、贴图、配方等。`gradle/nac-resources.gradle` 从这些文件和共享注册源码生成 `build/generated/nac/resources/`，供 nacmod 打包；独立元数据单独维护在 `src/nacmod/resources/`。不要手改生成目录或复制一套资源。独立版注册与自有数据使用 `gtl_nac:`，复用模型/贴图仍使用 `assets/gtlmodular/`；独立方块状态、物品模型和语言文件生成到 `assets/gtl_nac/`，既有语言键和上游 ID 保持原样。
 

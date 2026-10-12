@@ -11,6 +11,7 @@ public final class NanochipRegistration {
     }
 
     public static void registerRecipeTypes(IEventBus modBus) {
+        com.gtlmodular.common.machine.nanochip.registration.NanochipModuleRegistration.bind(modBus);
         modBus.addGenericListener(GTRecipeType.class, NanochipRecipeTypes::onRecipeTypeRegisterEvent);
     }
 

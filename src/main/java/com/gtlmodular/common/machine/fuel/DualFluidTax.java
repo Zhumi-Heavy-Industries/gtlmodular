@@ -20,19 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.List;
 
-/**
- * M2 双流体税引擎（熔岩 + 液态烈焰），挂法仿 gtlcore 烈焰高炉：
- * 定义级回调 —— beforeWorking 做“电压门槛 + 两种流体余额预检”，onWorking 每
- * drainIntervalTicks（默认 20 tick = 每游戏秒）从输入流体仓真实扣除一次。
- *
- * <p>规则（无 P 演算，按用户规格）：
- * <ul>
- *   <li>每 1 秒扣一次；熔岩与液态烈焰各自全额扣 X mb；</li>
- *   <li>X = ivBaselineMbPerSecond × perTierMultiplier^(tier − voltageBaselineTier)，tier 取
- *       能量输入最大电压的 floor 档位（默认基准 = IV，此档倍率 1）；</li>
- *   <li>低于基准电压（默认 IV）不允许运行。</li>
- * </ul>
- */
 public final class DualFluidTax {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GTL-Modular");
@@ -40,7 +27,6 @@ public final class DualFluidTax {
     private DualFluidTax() {
     }
 
-    /** beforeWorking：配方开始前校验。不足/电压不够 → false（不启动，等待补料）。 */
     public static boolean onBeforeWorking(IRecipeLogicMachine machine, GTRecipe recipe) {
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
@@ -64,7 +50,6 @@ public final class DualFluidTax {
         return true;
     }
 
-    /** onWorking：运行中每间隔扣一次；任一不足返回 false → 中断等待，不空耗电流体。 */
     public static boolean onWorking(IRecipeLogicMachine machine) {
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
@@ -87,7 +72,7 @@ public final class DualFluidTax {
         if (amount <= 0 || lava == null || blaze == null) {
             return false;
         }
-        // 先无损预检两种流体都够，再扣，避免“只扣到一种”的放血
+        // 先模拟检查两种流体，再实际扣除，避免已知不足时只消耗其中一种。
         boolean lavaOk = hasFluid(wem, lava, amount);
         boolean blazeOk = hasFluid(wem, blaze, amount);
         if (!lavaOk || !blazeOk) {
@@ -99,7 +84,6 @@ public final class DualFluidTax {
         return true;
     }
 
-    /** 弹出点名提示：缺哪个流体明确说哪个；两者都需要才算充足。 */
     private static void notifyMissing(WorkableMultiblockMachine machine, boolean lavaOk, boolean blazeOk,
                                       Fluid lava, Fluid blaze, long amount) {
         try {
@@ -124,12 +108,10 @@ public final class DualFluidTax {
         return fluidName(lava, "熔岩");
     }
 
-    /** 熔岩税流体的显示名（按配置的 id 现取；供物品说明动态生成用）。 */
     public static Component lavaDisplayName() {
         return lavaName(lavaFluid());
     }
 
-    /** 液态烈焰税流体的显示名。 */
     public static Component blazeDisplayName() {
         return blazeName(blazeFluid());
     }
@@ -144,7 +126,6 @@ public final class DualFluidTax {
                 return FluidStack.create(fluid, 1).getDisplayName();
             }
         } catch (RuntimeException ignored) {
-            // fall through
         }
         return Component.literal(fallback);
     }
@@ -156,7 +137,6 @@ public final class DualFluidTax {
         return null;
     }
 
-    /** 电压门槛（默认 ≥IV） */
     private static boolean canRun(WorkableElectricMultiblockMachine machine) {
         int tier = machine.getTier();
         int baseline = GTLModularConfig.getBaselineTier();
@@ -166,7 +146,6 @@ public final class DualFluidTax {
         return true;
     }
 
-    /** 每次扣量 = IV 基准量 × 每档倍率^(tier − IV)。 */
     private static long amountPerDrain(WorkableElectricMultiblockMachine machine) {
         int tier = machine.getTier();
         int baseline = GTLModularConfig.getBaselineTier();
@@ -176,7 +155,6 @@ public final class DualFluidTax {
         return (long) Math.ceil(amount);
     }
 
-    // ---- 流体（命中即缓存；无效 id 的报错只打一次，避免每台机器每秒刷日志） ----
     private static final java.util.Set<String> WARNED_FLUID_IDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static String cachedLavaId;
     private static Fluid cachedLava;
@@ -194,7 +172,7 @@ public final class DualFluidTax {
         return fluid;
     }
 
-    /** 命中缓存时不再查注册表；未命中（含无效 id）下次仍会重试，避免过早固化失败结果。 */
+    /** 只缓存成功解析的流体，避免注册尚未就绪时永久固化失败结果。 */
     private static Fluid lavaFluid() {
         String id = GTLModularConfig.getLavaFluidId();
         if (cachedLava != null && java.util.Objects.equals(id, cachedLavaId)) {
@@ -215,7 +193,6 @@ public final class DualFluidTax {
         return cachedBlaze;
     }
 
-    /** 无损预检：统计机器输入流体仓中该流体的总量。 */
     private static boolean hasFluid(WorkableMultiblockMachine machine, Fluid fluid, long amount) {
         if (fluid == null || amount <= 0) {
             return false;
@@ -248,7 +225,6 @@ public final class DualFluidTax {
         return total >= amount;
     }
 
-    /** 运行时机器对象实现了 IRecipeCapabilityHolder；桥接转换以绕开静态类型检查。 */
     @SuppressWarnings("unchecked")
     private static IRecipeCapabilityHolder holderOf(WorkableMultiblockMachine machine) {
         try {

@@ -86,3 +86,9 @@ config="gtlmodular.mixins.json"
     ordering="AFTER"
     side="CLIENT"
 
+[[dependencies.${mod_id}]]
+    modId="kubejs"
+    mandatory=false
+    versionRange="[2001.6.5-build.26,)"
+    ordering="AFTER"
+    side="BOTH"

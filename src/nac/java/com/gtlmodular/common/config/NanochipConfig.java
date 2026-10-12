@@ -178,7 +178,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_VACUUM_REQUIRES_PIPES.get();
         } catch (Throwable ignored) {
-            return false;
+            return NANOCHIP_VACUUM_REQUIRES_PIPES.getDefault();
         }
     }
 
@@ -186,7 +186,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_ENABLED.get();
         } catch (Throwable ignored) {
-            return true;
+            return NANOCHIP_ENABLED.getDefault();
         }
     }
 
@@ -194,7 +194,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_ORIGINAL_MODE.get();
         } catch (Throwable ignored) {
-            return true;
+            return NANOCHIP_ORIGINAL_MODE.getDefault();
         }
     }
 
@@ -202,7 +202,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_DIRECT_PARALLEL_CAP.get();
         } catch (Throwable ignored) {
-            return 1024;
+            return NANOCHIP_DIRECT_PARALLEL_CAP.getDefault();
         }
     }
 
@@ -210,7 +210,7 @@ public final class NanochipConfig {
         try {
             return Math.max(1, NANOCHIP_DIRECT_THREADS.get());
         } catch (Throwable ignored) {
-            return 1;
+            return NANOCHIP_DIRECT_THREADS.getDefault();
         }
     }
 
@@ -218,7 +218,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_CALIBRATION_USE_FULL_WINDOW.get();
         } catch (Throwable ignored) {
-            return false;
+            return NANOCHIP_CALIBRATION_USE_FULL_WINDOW.getDefault();
         }
     }
 
@@ -234,7 +234,7 @@ public final class NanochipConfig {
         try {
             configured = NANOCHIP_CALIBRATION_RECIPE_WHITELIST.get();
         } catch (Throwable ignored) {
-            return builtInCalibrationWhitelist;
+            configured = NANOCHIP_CALIBRATION_RECIPE_WHITELIST.getDefault();
         }
         if (configured == null || configured.isEmpty()) {
 
@@ -251,7 +251,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_IMPURITY_PER_RECIPE.get();
         } catch (Throwable ignored) {
-            return 0.5D;
+            return NANOCHIP_IMPURITY_PER_RECIPE.getDefault();
         }
     }
 
@@ -259,7 +259,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_DEBUG_LOGS.get();
         } catch (Throwable ignored) {
-            return false;
+            return NANOCHIP_DEBUG_LOGS.getDefault();
         }
     }
 
@@ -267,7 +267,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_VERBOSE_STRUCTURE_LOGS.get();
         } catch (Throwable ignored) {
-            return true;
+            return NANOCHIP_VERBOSE_STRUCTURE_LOGS.getDefault();
         }
     }
 
@@ -277,12 +277,12 @@ public final class NanochipConfig {
         }
     }
 
-    // 未加载配置时保持原来的异常回退；它与文件中的默认值不同。
+    // 注册阶段配置可能尚不可读，必须使用该配置自身的默认值。
     public boolean isNanochipSimpleLogistics() {
         try {
             return NANOCHIP_SIMPLE_LOGISTICS.get();
         } catch (Throwable ignored) {
-            return false;
+            return NANOCHIP_SIMPLE_LOGISTICS.getDefault();
         }
     }
 
@@ -290,7 +290,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_GRID_POWER.get();
         } catch (Throwable ignored) {
-            return true;
+            return NANOCHIP_GRID_POWER.getDefault();
         }
     }
 
@@ -304,7 +304,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_HIDE_ORPHAN_ITEMS.get();
         } catch (Throwable ignored) {
-            return true;
+            return NANOCHIP_HIDE_ORPHAN_ITEMS.getDefault();
         }
     }
 

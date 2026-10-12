@@ -152,6 +152,11 @@ tasks.register('checkProductContents') {
             }
             def otherEntry = products.find { it.id != product.id }.entry
             if (entries.contains(otherEntry)) problem("混入另一产物的入口 $otherEntry，请移除错误的 source set")
+            def plugin = 'com.gtlmodular.common.machine.nanochip.kubejs.NanochipKubeJSPlugin'
+            def plugins = readText(jar, 'kubejs.plugins.txt').readLines()
+                    .collect { it.split('#', 2)[0].trim() }.findAll { it }
+            if (plugins.count { it == plugin } != 1) problem("KubeJS 插件缺失或重复：$plugin")
+            if (!entries.contains(plugin.replace('.', '/') + '.class')) problem("缺少 KubeJS 插件类：$plugin")
             if (product.id == 'gtl_nac') {
                 classes.findAll { path ->
                     def name = path.tokenize('/').last().replaceFirst(/(?:\$.*)?\.class$/, '')

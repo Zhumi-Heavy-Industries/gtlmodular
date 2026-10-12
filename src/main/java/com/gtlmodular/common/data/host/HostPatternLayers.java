@@ -1,7 +1,6 @@
 package com.gtlmodular.common.data.host;
 
-/** 由投影「地心涌动能量转换站」(替换后) 自动生成: 主机大楼 X=x宽, Y=y高, Z=z深。
- *  三模块区域已挖空为 '.'；'S' 唯一=主机(48,8,8)。 */
+/** 模块区域留作通配格，避免主机结构依赖模块是否安装。 */
 public final class HostPatternLayers {
     private HostPatternLayers() {}
 

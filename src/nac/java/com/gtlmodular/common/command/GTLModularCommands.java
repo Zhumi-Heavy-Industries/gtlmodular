@@ -13,15 +13,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 
 import java.util.List;
 
-/**
- * NAC 自检的入口：进世界自动跑一次（写进日志），也可以随时用命令重跑。
- *
- * <p><b>为什么</b>：静态自检能证明资源/配方文件自洽，但证明不了「注册表里真的有、
- * 数据包真的加载了、引用的流体真的存在」。这些只有跑起来才知道 ——
- * 而「进世界自动打日志」让这一层验证不需要玩家做任何操作就能完成。
- *
- * <p>命令：{@code /gtlmodular_nac}（权限等级 0，单人存档直接用）。
- */
+/** 静态检查无法确认运行注册表和数据包的加载结果，需要在服务器就绪后自检。 */
 public final class GTLModularCommands {
 
     private static boolean registered;
@@ -30,7 +22,6 @@ public final class GTLModularCommands {
     private GTLModularCommands() {
     }
 
-    /** 在 @Mod 构造里调用一次。 */
     public static void register() {
         register(MinecraftForge.EVENT_BUS, "gtlmodular_nac");
     }
@@ -63,7 +54,6 @@ public final class GTLModularCommands {
                 }));
     }
 
-    /** 服务器（含单人存档的集成服务器）启动完成后自动跑一次并写日志。 */
     private static void onServerStarted(ServerStartedEvent event) {
         try {
             NanochipSelfCheck.runAndLog(event.getServer());

@@ -17,6 +17,7 @@ public final class NanochipClientWiring {
     public static synchronized void register() {
         if (registered) return;
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        modBus.addListener(NanochipModuleResources::register);
         modBus.register(CcItemColorSetup.class);
         modBus.register(CtmClientSetup.class);
         MinecraftForge.EVENT_BUS.register(NacSlotRefreshTracker.class);

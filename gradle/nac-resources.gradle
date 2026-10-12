@@ -67,8 +67,8 @@ def generateNacResources = tasks.register('generateNacResources') {
         }
         def blocks = matches('common/data/NanochipBlocks.java',
                 /\b(?:cube|REGISTRATE_BLOCK|block)\(\s*"([a-z0-9_]+)"/)
-        def modules = matches('common/machine/nanochip/NanochipModuleKind.java',
-                /\b[A-Z_]+\(\s*"(nanochip_[a-z0-9_]+)"/)
+        def modules = matches('common/machine/nanochip/registration/NanochipBuiltinModules.java',
+                /\bbuiltin\(\s*"(nanochip_[a-z0-9_]+)"/)
         def machines = modules + matches('common/data/nanochip/NanochipMachines.java',
                 /\.(?:machine|multiblock)\(\s*"([a-z0-9_]+)"/)
         def components = matches('common/data/nanochip/NanochipCircuitComponents.java',
