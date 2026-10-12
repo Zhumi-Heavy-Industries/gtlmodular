@@ -1,8 +1,14 @@
 package com.gtlmodular;
 
 import com.gtlmodular.client.config.GTLModularConfigScreen;
+import com.gtlmodular.common.compat.PatternAssemblyRecipeCacheInvalidator;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.GTLModularMachines;
+import com.gtlmodular.common.data.GTLModularNacContext;
+import com.gtlmodular.common.data.GTLModularNacSelfCheck;
+import com.gtlmodular.common.event.NanochipEventWiring;
+import com.gtlmodular.common.data.nanochip.NanochipRegistration;
+import com.gtlmodular.common.data.nanochip.NanochipRecipeCacheHooks;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -26,7 +32,9 @@ public final class GTLModular {
     public static final Logger LOGGER = LoggerFactory.getLogger("GTL-Modular");
 
     public GTLModular() {
+        GTLModularNacContext.bind();
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        NanochipRecipeCacheHooks.register(new PatternAssemblyRecipeCacheInvalidator());
 
         // COMMON 配置（M2 双流体税参数等）
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, GTLModularConfig.SPEC);
@@ -43,8 +51,7 @@ public final class GTLModular {
         // ★ NAC 自有配方表的注册窗口：GTCEuAPI.RegisterEvent<RL, GTRecipeType>（在 GTRecipeTypes.init() 内、
         //   RECIPE_TYPES.freeze() **之前**）——与机器注册同款做法（gtlcore / gtmthings 都这么接）。
         //   必须走事件：freeze 之后 GTRegistry.register 直接抛 "registry has been frozen"。
-        modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
-                com.gtlmodular.common.data.nanochip.NanochipRecipeTypes::onRecipeTypeRegisterEvent);
+        NanochipRegistration.registerRecipeTypes(modBus);
 
         // ★ 2026-10-01：**天基矿石处理厂（gtceu:space_ore_processor）配方镜像**（v2，第二轮）。
         //   起因：gtladditions 分支 3.2.8Custom_SubSpace-fix2 自带的复制逻辑
@@ -75,12 +82,11 @@ public final class GTLModular {
         //   材料注册**必须挂在 MaterialEvent 上**：GTCEu 1.4.4 的 CommonProxy.initMaterials 在打印
         //   "Registering addon Materials" 之后是 `ModLoader.postEvent(new MaterialEvent())`，
         //   根本不调用 IGTAddon.registerMaterials()（javap -c 实测；本包 gtlcore 也是这么接的）。
-        modBus.addListener(com.gtlmodular.common.data.GTLModularAddon::onMaterialEvent);
-        com.gtlmodular.common.data.GTLModularAddon.registrate =
-                com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate.create(MOD_ID);
+        NanochipRegistration.registerMaterials(modBus);
 
         // NAC 自检：进世界自动跑一次写日志 + /gtlmodular_nac 随时重跑
         // （用来验证「注册表里真的有 / 数据包真的加载了 / 引用的流体真的存在」这类只有跑起来才知道的事）
+        GTLModularNacSelfCheck.register();
         com.gtlmodular.common.command.GTLModularCommands.register();
 
         // ★ 2026-09-27：GTL-Enhancedcore 兼容 mixin 的**条件注册**（见 registerEnhancedcoreMixins）。
@@ -89,6 +95,7 @@ public final class GTLModular {
         // 注意：机器注册不在此构造中执行，而是在 GTM 投递机器 RegisterEvent（MACHINES 未冻结
         // 的唯一窗口）时由 GTLModularMachines.init() 执行 —— 依据 gtlcore 同款做法。
         LOGGER.info("[gtlmodular] 加载中：机器注册委托给 GTM 机器注册事件窗口。");
+        NanochipEventWiring.register(modBus);
     }
 
     /** 兼容 mixin 的配置文件名（放在 {@code src/main/resources/} 根下）。 */

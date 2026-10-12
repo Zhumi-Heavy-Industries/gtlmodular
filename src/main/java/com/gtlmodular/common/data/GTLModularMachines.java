@@ -1,6 +1,7 @@
 package com.gtlmodular.common.data;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.data.nanochip.NanochipRegistration;
 import com.gtlmodular.api.module.ModuleKind;
 import com.gtlmodular.common.machine.LazyPatternAssemblyPartMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
@@ -185,31 +186,17 @@ public final class GTLModularMachines {
         registerLazyPatternAssembly();
         // ★ 2026-09-22 晚：自制通配符样板总成已退役（见上方注释）——改用第三方 mod
         //   `wildcard_pattern` + gtlcore 的官方兼容机器，这里不再注册任何通配符机器。
-        // NAC（纳米芯片组装复合体，GTNH 移植）：控制器 + 11 个模块
-        com.gtlmodular.common.data.nanochip.NanochipMachines.register();
+        NanochipRegistration.registerMachines();
     }
 
     /**
      * 结构方块的创建入口 —— <b>必须在 @Mod 构造里、Forge 的 RegisterEvent&lt;Block&gt; 之前调用</b>。
      *
-     * <p>原因：Registrate 的方块条目要在 {@code RegisterEvent<Block>} 窗口落库，而 GTM 的
-     * 机器注册窗口（{@code GTCEuAPI.RegisterEvent<...MachineDefinition>}）发生在
-     * {@code FMLCommonSetupEvent} 里，<b>晚于</b>方块注册。若在机器注册窗口里才创建方块条目，
-     * 它们就永远进不了方块注册表。
+     * <p>Registrate 的普通方块和物品必须先建好条目，才能在 Forge 注册事件中落库；
+     * 机器注册还受 GTCEu 的 MACHINES 冻结窗口约束，不能用同一个时机随意互换。
      */
     public static void initBlocks() {
-        com.gtlmodular.common.data.NanochipBlocks.init();
-        // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
-        // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
-        // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。
-        com.gtlmodular.common.data.nanochip.NanochipCircuitComponents.init();
-        // NAC 缺件层的 17 件自注册真实物品（PIC 六档 / 活晶体芯片 / 生物处理单元 / 光缆 /
-        // Piko·Quantum·Planck 电路 / Planck 流形 / 四种 itemCasing）—— 时序要求同上。
-        com.gtlmodular.common.data.nanochip.NanochipMissingItems.init();
-        // ★ 2026-09-19（队长批准新造晶圆 / 还原 NH 两步链）：NAC 缺件层的 **5 件新造 PIC 晶圆**
-        //   （量子/阿米/仄米/幺米/普朗克功率IC晶圆）—— 时序要求同上，且必须与缺件物品层同一个窗口。
-        //   独立成类的原因见 NanochipMissingWafers 的 javadoc（缺件表 14 行/10 件被两处体检钉死）。
-        com.gtlmodular.common.data.nanochip.NanochipMissingWafers.init();
+        NanochipRegistration.initBlocks();
         // ★ P2：样板仓「归档」工具物品（gtlmodular:pattern_archive）—— 时序要求同上：
         //   必须在 Forge 的 RegisterEvent<Item> **之前**建好 Registrate 条目，否则它永远进不了物品注册表。
         com.gtlmodular.common.item.PatternArchiveItem.register();

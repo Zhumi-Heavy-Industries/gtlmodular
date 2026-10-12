@@ -26,6 +26,38 @@ tasks.withType(JavaExec).configureEach {
     systemProperty 'file.encoding', 'UTF-8'
 }
 
+sourceSets {
+    nac
+    nacmod {
+        compileClasspath += sourceSets.nac.output
+        runtimeClasspath += sourceSets.nac.output
+    }
+    main {
+        compileClasspath += sourceSets.nac.output
+        runtimeClasspath += sourceSets.nac.output
+    }
+}
+
+apply from: 'gradle/nac-resources.gradle'
+
+// ForgeGradle 将映射后的 Minecraft/Forge 接入 implementation 的父配置；
+// 只继承依赖配置，避免把 main 输出反向带入 NAC 编译。
+configurations {
+    nacImplementation.extendsFrom implementation
+    nacCompileOnly.extendsFrom compileOnly
+    nacRuntimeOnly.extendsFrom runtimeOnly
+    nacAnnotationProcessor.extendsFrom annotationProcessor
+    nacmodImplementation.extendsFrom implementation
+    nacmodCompileOnly.extendsFrom compileOnly
+    nacmodRuntimeOnly.extendsFrom runtimeOnly
+    nacmodAnnotationProcessor.extendsFrom annotationProcessor
+}
+
+tasks.withType(JavaCompile).matching { it.name in ['compileNacJava', 'compileNacmodJava'] }.configureEach {
+    // 禁止 javac 从 classpath 隐式寻找源码，保持源码根之间的单向依赖。
+    options.sourcepath = files()
+}
+
 minecraft {
     mappings channel: 'official', version: '1.20.1'
 
@@ -37,6 +69,7 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
+                    source sourceSets.nac
                 }
             }
         }
@@ -47,6 +80,7 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
+                    source sourceSets.nac
                 }
             }
         }
@@ -60,9 +94,43 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
+                    source sourceSets.nac
                 }
             }
         }
+        // ForgeGradle 按 run 名排序合并父配置，派生 run 必须排在 client/server 之后。
+        standaloneClient {
+            taskName 'runNacClient'
+            parent minecraft.runs.client
+            workingDirectory project.file('run-nac')
+            setSources([sourceSets.nac, sourceSets.nacmod])
+            mods {
+                gtl_nac {
+                    source sourceSets.nac
+                    source sourceSets.nacmod
+                }
+            }
+        }
+        standaloneServer {
+            taskName 'runNacServer'
+            parent minecraft.runs.server
+            workingDirectory project.file('run-nac')
+            setSources([sourceSets.nac, sourceSets.nacmod])
+            mods {
+                gtl_nac {
+                    source sourceSets.nac
+                    source sourceSets.nacmod
+                }
+            }
+        }
+    }
+}
+
+// ForgeGradle 合并父 run 时也会合并 mods；独立启动只保留自己的源码和资源组。
+afterEvaluate {
+    [minecraft.runs.standaloneClient, minecraft.runs.standaloneServer].each { run ->
+        run.mods.removeAll { it.name != 'gtl_nac' }
+        run.setSources([sourceSets.nac, sourceSets.nacmod])
     }
 }
 
@@ -87,59 +155,18 @@ dependencies {
 
 // ---------- 构建检查：gradlew build 会跑，不过就不能交付（规矩见 AGENTS.md） ----------
 
-// 每个 @Mixin 类都必须登记在会被加载的 mixin 配置里。只有 mods.toml 里列出的配置会被加载，
-// 没登记的 mixin 永远不生效 —— 0.3.132 里就有 7 个这样的 mixin。
-tasks.register('checkMixins') {
-    group = 'verification'
-    description = 'Every @Mixin class must be listed in a mixin config that mods.toml loads.'
-    def mixinRoot = file('src/main/java/com/gtlmodular/mixin')
-    def resources = file('src/main/resources')
-    def allowFile = file('checks/mixin-unregistered-allowlist.txt')
-    inputs.dir(mixinRoot)
-    inputs.dir(resources)
-    inputs.file(allowFile)
-    doLast {
-        def allow = allowFile.readLines('UTF-8')*.trim().findAll { it && !it.startsWith('#') } as Set
-        def toml = new File(resources, 'META-INF/mods.toml').getText('UTF-8')
-        def loaded = (toml =~ /(?m)^\s*config\s*=\s*"([^"]+)"/).collect { it[1] } as Set
-        def problems = []
-        def registered = [] as Set
-        resources.listFiles().findAll { it.name.endsWith('.mixins.json') }.each { cfg ->
-            if (!(cfg.name in loaded)) {
-                if (!(cfg.name in allow)) problems << "${cfg.name} 没有在 mods.toml 里登记，不会被加载"
-                return
-            }
-            def json = new groovy.json.JsonSlurper().parseText(cfg.getText('UTF-8').replace('﻿', ''))
-            ['mixins', 'client', 'server'].each { key -> (json[key] ?: []).each { registered << "${json.package}.${it}" } }
-        }
-        def classes = [] as Set
-        fileTree(mixinRoot).include('**/*.java').each { f ->
-            if (f.getText('UTF-8') =~ /(?m)^\s*@Mixin\b/) {
-                def rel = mixinRoot.toPath().relativize(f.toPath()).toString().replace(File.separator, '.')
-                classes << 'com.gtlmodular.mixin.' + rel.substring(0, rel.length() - '.java'.length())
-            }
-        }
-        (registered - classes).each { problems << "登记了但找不到这个类：$it" }
-        (classes - registered - allow).each { problems << "写了但没登记，不会生效：$it（登记进 gtlmodular.mixins.json，或者删掉）" }
-        (allow.findAll { it.startsWith('com.') } - (classes - registered)).each {
-            problems << "$it 已经登记或删除了，把它从 checks/mixin-unregistered-allowlist.txt 里去掉"
-        }
-        if (problems) throw new GradleException('mixin 登记检查没通过：\n  ' + problems.join('\n  '))
-    }
-}
-
 // 代码里带日期的行（流水账式注释）只许减少：历史写进 git 提交信息，玩家可见的变化写进 CHANGELOG.md。
 tasks.register('checkDatedComments') {
     group = 'verification'
-    description = 'Lines containing dates in src/main/java may only decrease (see checks/dated-comment-baseline.txt).'
-    def src = file('src/main/java')
+    description = 'Lines containing dates in main/nac/nacmod Java sources may only decrease (see checks/dated-comment-baseline.txt).'
+    def sources = files(sourceSets.main.allJava, sourceSets.nac.allJava, sourceSets.nacmod.allJava)
     def baselineFile = file('checks/dated-comment-baseline.txt')
-    inputs.dir(src)
+    inputs.files(sources)
     inputs.file(baselineFile)
     doLast {
         def date = ~/20\d\d-\d\d-\d\d/
         int count = 0
-        fileTree(src).include('**/*.java').each { f -> f.eachLine('UTF-8') { if (it =~ date) count++ } }
+        sources.each { f -> f.eachLine('UTF-8') { if (it =~ date) count++ } }
         int baseline = baselineFile.text.trim() as int
         if (count > baseline) {
             throw new GradleException("代码里带日期的行从 $baseline 增加到了 $count。" +
@@ -153,6 +180,39 @@ tasks.register('checkDatedComments') {
 
 tasks.named('check') {
     dependsOn 'checkMixins', 'checkDatedComments'
+}
+
+// ---------- 开发辅助：上游依赖的可读源码 ----------
+
+// GTL 这边的依赖多是社区魔改版，没有文档，上游仓库也对不上实际版本。
+// 把 libs/ 里的 jar 反编译到 deps-src/<jar 名>/（不进 git），查上游行为以这里为准。
+// libs/runtime/ 放只在运行时由整合包提供、不参与编译的依赖（例如 GTL-Enhancedcore），也一起反编译。
+// 已经生成过的跳过；想重新生成就删掉对应目录。Minecraft 的方法名是 SRG 形式（m_xxxxx_）。
+configurations {
+    decompiler
+}
+dependencies {
+    decompiler 'org.vineflower:vineflower:1.12.0'
+}
+tasks.register('decompileDeps') {
+    group = 'help'
+    description = 'Decompile every jar in libs/ into deps-src/ (readable upstream sources, not tracked by git).'
+    doLast {
+        fileTree('libs').include('*.jar', 'runtime/*.jar').files.sort { it.length() }.each { jar ->
+            def out = file("deps-src/${jar.name.substring(0, jar.name.length() - '.jar'.length())}")
+            if (out.exists()) {
+                return
+            }
+            logger.lifecycle("反编译 ${jar.name} …")
+            out.mkdirs()
+            javaexec {
+                classpath = configurations.decompiler
+                mainClass = 'org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler'
+                maxHeapSize = '2g'
+                args '-dgs=1', '-log=WARN', '--skip-extra-files=true', jar.absolutePath, out.absolutePath
+            }
+        }
+    }
 }
 
 tasks.named('processResources') {
@@ -174,6 +234,8 @@ tasks.named('processResources') {
 }
 
 jar {
+    from sourceSets.nac.output
+    duplicatesStrategy = DuplicatesStrategy.FAIL
     manifest {
         attributes([
                 'Specification-Title'     : 'gtlmodular',
@@ -186,3 +248,44 @@ jar {
         ])
     }
 }
+
+tasks.named('processNacmodResources') {
+    filteringCharset = 'UTF-8'
+    def replaceProperties = [mod_id: 'gtl_nac', mod_version: project.version]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties
+    }
+}
+
+tasks.register('nacJar', Jar) {
+    archiveBaseName = 'gtl_nac'
+    from sourceSets.nac.output
+    from sourceSets.nacmod.output
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+    manifest {
+        attributes([
+                'Specification-Title'     : 'gtl_nac',
+                'Specification-Vendor'    : 'gtlmodular',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : 'gtl_nac',
+                'Implementation-Version'  : project.version,
+                'Implementation-Vendor'   : 'gtlmodular',
+                'MixinConfigs'            : 'gtl_nac.mixins.json'
+        ])
+    }
+    finalizedBy 'reobfNacJar'
+}
+
+reobf {
+    nacJar {
+        // 独立产物的继承关系解析也不能借用 main 类输出。
+        libraries.setFrom(sourceSets.nacmod.compileClasspath)
+    }
+}
+
+tasks.named('build') {
+    dependsOn 'reobfJar', 'reobfNacJar'
+}
+
+apply from: 'checks/product-invariants.gradle'

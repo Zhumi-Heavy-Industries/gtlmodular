@@ -1,0 +1,251 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+def originalResources = file('src/main/resources')
+def nacSources = file('src/nac/java/com/gtlmodular')
+def generatedResources = layout.buildDirectory.dir('generated/nac/resources')
+
+// 按用途声明归属，注册物入口从源码取名，避免维护第二份物品和语言全表。
+def recipeDirectories = ['nanochip/**', 'missing_acquisition/**', 'coolant/**']
+def supportRecipes = [
+        'degenerate_rhenium_frame_crafting', 'enriched_holmium_frame_crafting',
+        'enriched_holmium_mix', 'kevlar_frame_crafting', 'octiron_frame_crafting',
+        'radox_frame_crafting', 'superconductor_uev_base_dust_mix',
+        'superconductor_uev_base_frame_crafting', 'superconductor_uhv_base_dust_mix',
+        'superconductor_uhv_base_frame_crafting', 'superconductor_uhv_base_vf'
+]
+// 动态渲染器与 CTM 在运行时拼接这些地址，无法只沿 JSON 的 parent/texture 遍历。
+def dynamicAssets = [
+        'models/block/machine/part/nanochip_vacuum_*.json',
+        'models/block/machine/part/vacuum_pipe.json',
+        'textures/block/multiblock/nanochip_*/**',
+        'textures/block/overlay/vacuum_*.png*',
+        'textures/block/casings/vacuum_*.png*',
+        'textures/block/casings/ctm/nanochip_mesh_interface_casing/**',
+        'textures/block/ctm/nanochip_complex_glass/**',
+        'textures/block/ctm/naquadah_coil*/**',
+        'mcpatcher/ctm/nanochipglass/**',
+        'mcpatcher/ctm/nanochipmeshinterfacecasing/**'
+]
+
+def generateNacResources = tasks.register('generateNacResources') {
+    group = 'build'
+    description = 'Generate standalone NAC resources from the original resources and shared registrations.'
+    inputs.dir(originalResources).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(sourceSets.nac.allJava).withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.file('gradle/nac-resources.gradle')
+    outputs.dir(generatedResources)
+
+    doLast {
+        def output = generatedResources.get().asFile
+        // 全量重建这一份派生目录，保证归属收缩时不会残留上一次的文件。
+        delete output
+        def json = new JsonSlurper()
+        def readJson = { File f -> json.parseText(f.getText('UTF-8').replace('\uFEFF', '')) }
+        def write = { String path, byte[] bytes ->
+            def target = new File(output, path)
+            target.parentFile.mkdirs()
+            target.bytes = bytes
+        }
+        def writeText = { String path, String value -> write(path, value.getBytes('UTF-8')) }
+        def writeJson = { String path, value ->
+            writeText(path, JsonOutput.prettyPrint(JsonOutput.toJson(value)) + '\n')
+        }
+        def copy = { String path, String target = path ->
+            def source = new File(originalResources, path)
+            if (!source.isFile()) throw new GradleException("NAC 资源缺失：$path")
+            write(target, source.bytes)
+        }
+        def code = { String path ->
+            new File(nacSources, path).getText('UTF-8').replaceAll(
+                    /"(?:\\.|[^"\\])*"|(?s:\/\*.*?\*\/)|\/\/[^\r\n]*/) {
+                it.startsWith('"') ? it : ' '
+            }
+        }
+        def matches = { String path, pattern ->
+            (code(path) =~ pattern).collect { it[1] } as Set
+        }
+        def blocks = matches('common/data/NanochipBlocks.java',
+                /\b(?:cube|REGISTRATE_BLOCK|block)\(\s*"([a-z0-9_]+)"/)
+        def modules = matches('common/machine/nanochip/NanochipModuleKind.java',
+                /\b[A-Z_]+\(\s*"(nanochip_[a-z0-9_]+)"/)
+        def machines = modules + matches('common/data/nanochip/NanochipMachines.java',
+                /\.(?:machine|multiblock)\(\s*"([a-z0-9_]+)"/)
+        def components = matches('common/data/nanochip/NanochipCircuitComponents.java',
+                /\badd\(\s*"([A-Za-z0-9]+)"/).collect {
+            'cc_' + it.replaceAll(/([A-Z]+)([A-Z][a-z])/, '$1_$2')
+                    .replaceAll(/([a-z0-9])([A-Z])/, '$1_$2').toLowerCase(Locale.ROOT)
+        } as Set
+        def missingItems = matches('common/data/nanochip/NanochipMissingItems.java',
+                /\baddItem\(\s*"[^"]+"\s*,\s*\d+\s*,\s*"([a-z0-9_]+)"/)
+        def wafers = matches('common/data/nanochip/NanochipMissingWafers.java',
+                /\baddWafer\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z0-9_]+)"/)
+        def items = components + missingItems + wafers
+        def registeredItems = items + blocks + machines
+        def recipeTypes = matches('common/data/nanochip/NanochipRecipeTypes.java',
+                /\b(?:type|hiddenType)\(\s*"([a-z0-9_]+)"/)
+
+        def rootRecipes = blocks + machines + supportRecipes
+        def recipes = fileTree(new File(originalResources, 'data/gtlmodular/recipes')) {
+            include recipeDirectories
+            rootRecipes.each { include "${it}.json" }
+            blocks.each { include "${it}_eco.json" }
+        }.files.sort { it.path }
+        def recipeRoot = new File(originalResources, 'data/gtlmodular/recipes').toPath()
+        def recipePaths = recipes.collect {
+            recipeRoot.relativize(it.toPath()).toString().replace('\\', '/').replaceFirst(/\.json$/, '')
+        } as Set
+        def tags = new LinkedHashSet<String>()
+        def lootTables = new LinkedHashSet<String>()
+        def rewriteId = { String id, String kind ->
+            if (!id.startsWith('gtlmodular:')) return id
+            def path = id.substring('gtlmodular:'.length())
+            def available = [item: registeredItems, block: blocks + machines,
+                             type: recipeTypes, recipe: recipePaths][kind]
+            if (available != null && !available.contains(path)) {
+                throw new GradleException("NAC 的 $kind 引用没有对应注册或资源：$id")
+            }
+            if (kind == 'tag') tags.add(path)
+            if (kind == 'loot_table') lootTables.add(path)
+            return "gtl_nac:$path".toString()
+        }
+        // 只改注册/数据引用。模型、贴图、翻译键和 gtceu 材料继续使用原地址。
+        Closure rewriteData
+        rewriteData = { value ->
+            if (value instanceof List) return value.collect { rewriteData(it) }
+            if (!(value instanceof Map)) return value
+            value.collectEntries { key, child ->
+                def kind = key in ['type', 'item', 'block', 'tag', 'recipe', 'loot_table'] ? key : null
+                if (key == 'name' && value.type in ['minecraft:item', 'minecraft:tag', 'minecraft:loot_table']) {
+                    kind = value.type.substring('minecraft:'.length())
+                }
+                if (key == 'result' && child instanceof String) kind = 'item'
+                def changed = kind != null && child instanceof String
+                        ? rewriteId(child, kind) : rewriteData(child)
+                [(key): changed]
+            }
+        }
+        recipes.each { source ->
+            def path = recipeRoot.relativize(source.toPath()).toString().replace('\\', '/')
+            writeJson("data/gtl_nac/recipes/$path", rewriteData(readJson(source)))
+        }
+        blocks.each { lootTables.add("blocks/$it".toString()) }
+        def copiedLoot = [] as Set
+        while (lootTables.any { !copiedLoot.contains(it) }) {
+            def path = lootTables.find { !copiedLoot.contains(it) }
+            copiedLoot.add(path)
+            writeJson("data/gtl_nac/loot_tables/${path}.json", rewriteData(readJson(
+                    new File(originalResources, "data/gtlmodular/loot_tables/${path}.json"))))
+        }
+        // 本模组标签由使用处追入，嵌套标签仍按引用递归取入。
+        def copiedTags = [] as Set
+        while (tags.any { !copiedTags.contains(it) }) {
+            def path = tags.find { !copiedTags.contains(it) }
+            copiedTags.add(path)
+            def tag = readJson(new File(originalResources, "data/gtlmodular/tags/items/${path}.json"))
+            tag.values = tag.values.collect { entry ->
+                def id = entry instanceof Map ? entry.id : entry
+                def converted = id.startsWith('#') ? '#' + rewriteId(id.substring(1), 'tag') : rewriteId(id, 'item')
+                entry instanceof Map ? entry + [id: converted] : converted
+            }
+            writeJson("data/gtl_nac/tags/items/${path}.json", tag)
+        }
+        writeText('assets/gtl_nac/nac/expected_recipes.txt',
+                recipePaths.sort().collect { "gtl_nac:$it\n" }.join())
+
+        def modelPaths = new LinkedHashSet<String>()
+        def texturePaths = new LinkedHashSet<String>()
+        Closure findModels
+        findModels = { value ->
+            if (value instanceof Map) value.each { key, child ->
+                if (key in ['model', 'parent'] && child instanceof String && child.startsWith('gtlmodular:')) {
+                    modelPaths.add(child.substring('gtlmodular:'.length()))
+                }
+                if (key == 'textures' && child instanceof Map) child.values().each { texture ->
+                    if (texture.startsWith('gtlmodular:')) texturePaths.add(texture.substring('gtlmodular:'.length()))
+                }
+                findModels(child)
+            }
+            if (value instanceof List) value.each { findModels(it) }
+        }
+        (blocks + items).sort().each { path ->
+            def source = "assets/gtlmodular/models/item/${path}.json"
+            copy(source, "assets/gtl_nac/models/item/${path}.json")
+            findModels(readJson(new File(originalResources, source)))
+        }
+        blocks.sort().each { path ->
+            def source = "assets/gtlmodular/blockstates/${path}.json"
+            copy(source, "assets/gtl_nac/blockstates/${path}.json")
+            findModels(readJson(new File(originalResources, source)))
+        }
+        fileTree(new File(originalResources, 'assets/gtlmodular')) {
+            include dynamicAssets
+        }.files.sort { it.path }.each { source ->
+            def path = originalResources.toPath().relativize(source.toPath()).toString().replace('\\', '/')
+            copy(path)
+            if (path.endsWith('.json')) findModels(readJson(source))
+        }
+        def copiedModels = [] as Set
+        while (modelPaths.any { !copiedModels.contains(it) }) {
+            def path = modelPaths.find { !copiedModels.contains(it) }
+            copiedModels.add(path)
+            def source = "assets/gtlmodular/models/${path}.json"
+            copy(source)
+            findModels(readJson(new File(originalResources, source)))
+        }
+        texturePaths.sort().each { path ->
+            def source = "assets/gtlmodular/textures/${path}.png"
+            copy(source)
+            if (new File(originalResources, "${source}.mcmeta").isFile()) copy("${source}.mcmeta")
+        }
+        copy('assets/minecraft/atlases/blocks.json')
+
+        def sourceText = sourceSets.nac.allJava.files.sort { it.path }.collect {
+            code(nacSources.toPath().relativize(it.toPath()).toString())
+        }.join('\n')
+        fileTree(new File(originalResources, 'assets/gtlmodular/lang')).matching {
+            include '*.json'
+        }.files.sort { it.name }.each { language ->
+            def original = readJson(language)
+            def translated = new TreeMap<String, String>()
+            original.each { key, value ->
+                if (key.startsWith('gtlmodular.nanochip') || key.startsWith('gtlmodular.cc.') ||
+                        key.startsWith('material.gtceu.') || key == 'gt.circuitcomponent.base' ||
+                        key.startsWith('config.jade.plugin_gtlmodular.') ||
+                        sourceText.contains('"' + key + '"')) {
+                    translated[key] = value
+                }
+                ['block', 'item'].each { kind ->
+                    def prefix = "${kind}.gtlmodular."
+                    if (key.startsWith(prefix) && registeredItems.contains(key.substring(prefix.length()))) {
+                        translated["${kind}.gtl_nac.${key.substring(prefix.length())}".toString()] = value
+                    }
+                }
+                if (key.startsWith('config.jade.plugin_gtlmodular.')) {
+                    translated[key.replace('plugin_gtlmodular.', 'plugin_gtl_nac.')] = value
+                }
+            }
+            recipeTypes.each { path ->
+                def key = "gtlmodular.$path".toString()
+                if (!original.containsKey(key)) throw new GradleException("NAC 配方表缺少译名：${language.name}:$key")
+                translated["gtl_nac.$path".toString()] = original[key]
+            }
+            // 独立版提示应指向自己的配置文件，原语言资源仍保持原文。
+            def configHint = 'gtlmodular.nanochip.calibration.denominator.tip'
+            translated[configHint] = original[configHint].replace(
+                    'config/gtlmodular-common.toml', 'config/gtl_nac-common.toml')
+            translated['itemGroup.gtl_nac.creative_tab'] = original['gtlmodular.nanochip_assembly_complex']
+            writeJson("assets/gtl_nac/lang/${language.name}", translated)
+        }
+
+        def hidden = new File(originalResources, 'assets/gtlmodular/jei/hidden_orphans.txt')
+                .readLines('UTF-8').collect { it.trim() }.findAll { it && !it.startsWith('#') }
+                .collect { rewriteId(it, 'item') }
+        // JEI 的共享实现从此固定资源地址读取，两种产物各打包自己的内容。
+        writeText('assets/gtlmodular/jei/hidden_orphans.txt', hidden.join('\n') + '\n')
+        logger.lifecycle("NAC 资源：${recipes.size()} 配方、${blocks.size()} 结构方块、${machines.size()} 机器、${items.size()} 物品")
+    }
+}
+
+sourceSets.nacmod.resources.srcDir(generatedResources)
+tasks.named('processNacmodResources') { dependsOn generateNacResources }

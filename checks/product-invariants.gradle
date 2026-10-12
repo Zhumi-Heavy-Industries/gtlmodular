@@ -1,0 +1,187 @@
+import groovy.json.JsonSlurper
+import org.objectweb.asm.*
+
+import java.util.jar.JarFile
+
+// 使用 wrapper 自带的 ASM，离线构建无需新增依赖。
+buildscript {
+    dependencies {
+        classpath fileTree(dir: new File(gradle.gradleHomeDir, 'lib'), include: ['asm-*.jar'])
+    }
+}
+
+def products = [
+        [id: 'gtlmodular', task: 'jar', sources: [sourceSets.main, sourceSets.nac],
+         entry: 'com/gtlmodular/GTLModular.class'],
+        [id: 'gtl_nac', task: 'nacJar', sources: [sourceSets.nac, sourceSets.nacmod],
+         entry: 'com/gtlmodular/nac/GTLNac.class']
+]
+def json = new JsonSlurper()
+def readText = { JarFile jar, String path ->
+    def entry = jar.getJarEntry(path)
+    if (entry == null) throw new GradleException("${jar.name} 缺少 $path")
+    jar.getInputStream(entry).withCloseable { it.getText('UTF-8') }
+}
+def readJson = { JarFile jar, String path -> json.parseText(readText(jar, path).replace('\uFEFF', '')) }
+def annotations = { JarFile jar, String path ->
+    def found = [:]
+    jar.getInputStream(jar.getJarEntry(path)).withCloseable { stream ->
+        new ClassReader(stream).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                def values = [:]
+                found[descriptor] = values
+                return new AnnotationVisitor(Opcodes.ASM9) {
+                    @Override void visit(String key, Object value) { values[key] = value }
+                }
+            }
+        }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+    }
+    found
+}
+def checkProducts = { Closure verify ->
+    def problems = []
+    products.each { product ->
+        def archive = tasks.named(product.task, Jar).get().archiveFile.get().asFile
+        new JarFile(archive).withCloseable { jar ->
+            Set<String> entries = jar.entries().toList().findAll { !it.directory }*.name as Set
+            verify(product, jar, entries, { String problem -> problems << "${product.id}: $problem" })
+        }
+    }
+    if (problems) throw new GradleException('双产物静态不变量检查失败：\n  ' + problems.join('\n  '))
+}
+def configureArtifactCheck = { task ->
+    task.group = 'verification'
+    // 必须检查交付的重混淆产物，且打包任务不能反向依赖 check。
+    task.dependsOn 'reobfJar', 'reobfNacJar'
+    products.each { product -> task.inputs.file(tasks.named(product.task, Jar).flatMap { it.archiveFile }) }
+}
+
+tasks.register('checkMixins') {
+    configureArtifactCheck(delegate)
+    description = 'Check loaded mixin configs and required classes in each reobfuscated jar; no game launch.'
+    def allowFile = file('checks/mixin-unregistered-allowlist.txt')
+    inputs.file(allowFile)
+    doLast {
+        def legacyAllow = allowFile.readLines('UTF-8')*.trim().findAll { it && !it.startsWith('#') } as Set
+        checkProducts { product, jar, entries, problem ->
+            // 独立产物没有旧版未启用的兼容 mixin，不能继承其豁免。
+            def allow = product.id == 'gtlmodular' ? legacyAllow : [] as Set
+            def toml = readText(jar, 'META-INF/mods.toml')
+            def loaded = (toml =~ /(?m)^\s*config\s*=\s*"([^"]+)"/).collect { it[1] } as Set
+            def manifest = (jar.manifest?.mainAttributes?.getValue('MixinConfigs') ?: '')
+                    .split(',').collect { it.trim() }.findAll { it } as Set
+            def requiredConfig = "${product.id}.mixins.json".toString()
+            if (!loaded.contains(requiredConfig)) problem("mods.toml 缺少 $requiredConfig 登记")
+            if (!manifest.contains(requiredConfig)) problem("manifest 缺少 $requiredConfig 登记")
+            (loaded - manifest).each { problem("manifest 缺少 $it 登记") }
+            (manifest - loaded).each { problem("mods.toml 缺少 $it 登记") }
+            def registered = [] as Set
+            (loaded + manifest).each { config ->
+                if (!entries.contains(config)) {
+                    problem("缺少已声明的 mixin 配置 $config")
+                    return
+                }
+                def cfg = readJson(jar, config)
+                ['mixins', 'client', 'server'].each { side ->
+                    (cfg[side] ?: []).each { registered << "${cfg.package}.${it}".toString() }
+                }
+            }
+            (entries.findAll { it.endsWith('.mixins.json') } - loaded - allow).each {
+                problem("$it 缺少 mods.toml 登记")
+            }
+            def classes = entries.findAll { it.endsWith('.class') }.findAll {
+                annotations(jar, it).containsKey('Lorg/spongepowered/asm/mixin/Mixin;')
+            }.collect { it.replace('/', '.').replaceFirst(/\.class$/, '') } as Set
+            (registered - classes).each { problem("登记的 @Mixin 类缺失：$it") }
+            (classes - registered - allow).each { problem("@Mixin 类缺少加载登记：$it") }
+            (allow.findAll { it.startsWith('com.') } - (classes - registered)).each {
+                problem("$it 已登记或删除，应从历史 allowlist 移除")
+            }
+        }
+        logger.lifecycle('双产物 mixin 静态检查通过：按各自 TOML、manifest 和实际 @Mixin 类核对；未启动游戏。')
+    }
+}
+
+tasks.register('checkProductContents') {
+    configureArtifactCheck(delegate)
+    description = 'Keep pattern assemblies out of NAC sources/jar and require each jar to have only its own mod entry.'
+    products.each { product -> product.sources.each { inputs.files(it.output) } }
+    def nacSources = files(sourceSets.nac.allJava, sourceSets.nacmod.allJava)
+    // 从源码的职责目录取类名，新增样板组件不需要维护另一份禁止清单。
+    def patternSources = files(sourceSets.collect { it.allJava.matching {
+        include 'com/gtlmodular/common/machine/*Pattern*.java'
+        include 'com/gtlmodular/common/machine/pattern/**/*.java'
+        include 'com/gtlmodular/common/item/*PatternArchive*.java'
+        include 'com/gtlmodular/common/compat/*PatternAssembly*.java'
+        include 'com/gtlmodular/client/render/*Pattern*.java'
+    } })
+    inputs.files(nacSources, patternSources)
+    doLast {
+        def patternNames = patternSources.collect { it.name.replaceFirst(/\.java$/, '') } as Set
+        def forbiddenReference = java.util.regex.Pattern.compile(
+                /com[.\/]gtlmodular[.\/]common[.\/]machine[.\/]pattern\b|\b(?:/ +
+                (patternNames.collect { java.util.regex.Pattern.quote(it) }.join('|') ?: '(?!)') + /)\b/)
+        def sourceProblems = []
+        nacSources.each { source ->
+            source.eachLine('UTF-8') { line, number ->
+                def match = forbiddenReference.matcher(line)
+                if (match.find()) sourceProblems << "${relativePath(source)}:$number 引用了 ${match.group()}"
+            }
+        }
+        if (sourceProblems) throw new GradleException(
+                'NAC 不能引用样板总成实现（包括反射字符串）；请把适配放在 main，通过共享扩展点注入：\n  ' +
+                sourceProblems.join('\n  '))
+        checkProducts { product, jar, entries, problem ->
+            // 从当前输出推导必需文件，避免漏打包整个源码根时让玩家丢失机器。
+            product.sources.each { source ->
+                source.output.asFileTree.visit { details ->
+                    if (!details.directory && !entries.contains(details.relativePath.pathString)) {
+                        problem("编译/资源输出未打包：${details.relativePath}，请检查 ${product.task} 的 from 配置")
+                    }
+                }
+            }
+            def classes = entries.findAll { it.endsWith('.class') }
+            def modEntries = [:]
+            classes.each { path ->
+                def mod = annotations(jar, path)['Lnet/minecraftforge/fml/common/Mod;']
+                if (mod != null) modEntries[path] = mod.value
+            }
+            if (!entries.contains(product.entry)) problem("缺少模组入口 ${product.entry}，请检查 jar 的 source set")
+            if (modEntries != [(product.entry): product.id]) {
+                problem("必须只有 ${product.entry} 上的 @Mod(\"${product.id}\")，实际为 $modEntries")
+            }
+            def otherEntry = products.find { it.id != product.id }.entry
+            if (entries.contains(otherEntry)) problem("混入另一产物的入口 $otherEntry，请移除错误的 source set")
+            if (product.id == 'gtl_nac') {
+                classes.findAll { path ->
+                    def name = path.tokenize('/').last().replaceFirst(/(?:\$.*)?\.class$/, '')
+                    path.startsWith('com/gtlmodular/common/machine/pattern/') ||
+                            (path.startsWith('com/gtlmodular/') && patternNames.contains(name))
+                }.each { problem("独立版混入样板总成类 $it；nacJar 只能打包 nac + nacmod") }
+            }
+            def requireAsset = { String id, String directory, String extension, String origin ->
+                if (!(id.startsWith('gtlmodular:') || id.startsWith('gtl_nac:'))) return
+                def parts = id.split(':', 2)
+                def path = "assets/${parts[0]}/$directory/${parts[1]}.$extension".toString()
+                if (!entries.contains(path)) problem("$origin 引用的资源缺失：$path，请补齐资源或修正引用")
+            }
+            Closure visitModel
+            visitModel = { value, String origin ->
+                if (value instanceof Map) value.each { key, child ->
+                    if (key in ['model', 'parent'] && child instanceof String) requireAsset(child, 'models', 'json', origin)
+                    if (key == 'textures' && child instanceof Map) child.values().each { texture ->
+                        if (texture instanceof String) requireAsset(texture, 'textures', 'png', origin)
+                    }
+                    visitModel(child, origin)
+                }
+                if (value instanceof List) value.each { visitModel(it, origin) }
+            }
+            entries.findAll { it ==~ /assets\/[^\/]+\/(?:models|blockstates)\/.+\.json/ }.each {
+                visitModel(readJson(jar, it), it)
+            }
+        }
+        logger.lifecycle('双产物检查通过：源码与入口边界正确，必需输出及本地模型、贴图引用齐全。')
+    }
+}
+
+tasks.named('check') { dependsOn 'checkProductContents' }

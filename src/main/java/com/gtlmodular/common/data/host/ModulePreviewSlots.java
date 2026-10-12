@@ -1,210 +1,18 @@
 package com.gtlmodular.common.data.host;
 
-import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
-import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.GTLModularMachines;
-import com.gtlmodular.common.data.nanochip.NanochipComplexPattern;
-import com.gtlmodular.common.data.nanochip.NanochipMachines;
-import com.gtlmodular.common.machine.nanochip.NanochipModuleKind;
+import com.gtlmodular.common.data.nanochip.NanochipModulePreview;
+import com.gtlmodular.common.data.nanochip.ModulePreviewSupport;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
 import org.gtlcore.gtlcore.utils.datastructure.ModuleRenderInfo;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * <b>「点击显示机器模块」（{@code M:ON}）预览数据的唯一装配点</b> —— 给
- * {@link org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost#getModulesForRendering()}
- * 供数据。本类<b>只产出数据，不碰任何机器机制</b>（不写模块集合、不写同步字段、不动结构检查）。
- *
- * <h2>一、为什么需要它（根因）</h2>
- * gtlcore 的 {@code IModularMachineHost.getModulesForRendering()} 是<b>默认方法</b>，
- * 默认实现就是 {@code return Collections.emptyList();}
- * （字节码依据：{@code _enh2_extract/gtlcore_module_api.txt:1419-1422}
- * {@code 0: invokestatic Collections.emptyList / 3: areturn}）。
- * 预览侧的唯一消费点是 {@code PatternPreviewWidget$MBPattern.initializeModules(...)}
- * （同文件 {@code :3230-3246}）：它<b>第一件事</b>就是调 {@code getModulesForRendering()}，
- * 空表直接 {@code return List.of()} ⇒ 点 {@code M:OFF→M:ON} 画面不会有任何变化。
- *
- * <p>我方两台宿主（{@code MoltenModuleHostMachine} / {@code NanochipAssemblyComplexMachine}）
- * 原先都没有覆写它 ⇒ 列表恒空。本类把「真实模块位点」算出来交给那两个覆写点。
- *
- * <h2>二、{@link ModuleRenderInfo} 六个参数的语义（字节码依据，见类内逐处注释）</h2>
- * <table border="1">
- *   <tr><th>参数</th><th>字段</th><th>语义</th></tr>
- *   <tr><td>1</td><td>{@code worldOffset}</td>
- *       <td><b>模块图案原点（= 模块控制器那一格）相对宿主控制器的偏移</b>，用<b>第 2/3 参声明的
- *           宿主参照系</b>表达（我方 = 那台主在<b>实机里的真实朝向</b>；地心枢纽 = {@code NORTH}/{@code UP}）；
- *           预览时按幽灵宿主的实际朝向（= 预览外壳的 NORTH/UP）旋转</td></tr>
- *   <tr><td>2</td><td>{@code hostFront}</td>
- *       <td>「本偏移是在<b>宿主的哪个朝向参照系</b>里量的」。<b>★ 2026-10 修正：不是"必须 NORTH"</b>
- *           —— 必须与本机在<b>世界里的真实正脸</b>一致。我方两台宿主各填"实机/存档里那台主的真实正脸"：
- *           地心枢纽 <b>{@link Direction#NORTH}</b>（★★ 2026-10 实机修正，玩家原话「主机它面朝的是机器的背后」
- *           + 三台模块全 {@code facing=south}；旧值 {@code SOUTH} 就是"模块被摆到楼外"的根因）、
- *           NAC {@link Direction#NORTH}（施工记录 §50 实测，依据见
- *           {@link #MOLTEN_HOST_FRONT} 与下方「第 2/3 参的正确语义」）</td></tr>
- *   <tr><td>3</td><td>{@code hostUp}</td>
- *       <td>同上，取宿主真实「上」；两台宿主都是 {@link Direction#UP}（世界 Y 轴朝上）</td></tr>
- *   <tr><td>4</td><td>{@code moduleFront}</td>
- *       <td>该位点上<b>模块自己的真实正脸</b>（世界方向，与第 1 参的参照系无关；地心枢纽 = {@code SOUTH}）。
- *           <b>逐位点取值不同</b>，不是常量</td></tr>
- *   <tr><td>5</td><td>{@code moduleUp}</td>
- *       <td>模块自己的上方，同上</td></tr>
- *   <tr><td>6</td><td>{@code moduleDefinition}</td>
- *       <td>模块的 {@link MultiblockMachineDefinition}；预览用它取 {@code getMatchingShapes()}
- *           （空则跳过该条并打 WARN）与 {@code BlockInfo}/{@code BlockEntity} 造幽灵机器</td></tr>
- * </table>
- *
- * <h3>第 2/3 参（{@code hostFront}/{@code hostUp}）的正确语义 —— ★ 2026-10 修正</h3>
- *
- * <p><b>结论</b>：这两个字段<b>不是"必须 NORTH/UP"</b>，而是「第 1/4/5 参是在<b>哪个朝向参照系</b>里量的」。
- * gtlcore 的 {@code calculateModuleOffset(hostFront, hostUp)} 会把它们从「本字段声明的参照系」
- * 换算到「预览里那台<b>幽灵宿主</b>的实际朝向」⇒ <b>必须与本机在世界里的真实朝向同一口径</b>：
- * 我方两台宿主都填"<b>实机里那台主的真实正脸</b>"：
- * <ul>
- *   <li>地心枢纽：<b>★★ 2026-10 实机修正 { SOUTH → NORTH }</b> ⇒ 填 {@code NORTH}/{@code UP}。
- *       证据链（三条同向）：①玩家原话「<b>主机它面朝的是机器的背后</b>」；②三台模块实机全
- *       {@code facing=south}（blast/stripper/space，F3 逐台读数）⇒ 主机正脸与其相反 = {@code NORTH}；
- *       ③JEI 预览的幽灵宿主外壳由 {@code BlockPattern.getPreview} 固定按
- *       {@code NORTH}/{@code UP} 铺（{@code BlockPattern.txt:1211-1218}）⇒ {@code NORTH} 才与本预览同口径。
- *       <br>旧值 {@code SOUTH} 的来源是"{@code states_old.txt:212} 投影里那台主的方块状态写死
- *       {@code facing=south}"——那条<b>已被实机否掉</b>（玩家看到的是主机正对模块背面）：投影里那台主的
- *       {@code facing} 只反映"投影作者当时摆的方向"，<b>不等于实机存档里那台主的朝向</b>。
- *       <b>严禁</b>再由投影 {@code facing} 反推 {@code hostFront}。</li>
- *   <li>NAC：现役那台主是 {@code facing=north}（施工记录 §50 实测）⇒ 填 {@code NORTH}/{@code UP}
- *       （★ 与地心枢纽同向；若 NAC 那 12 台在实机里也是整体反向，须按同一口径重新取证 NAC 主机的
- *       {@code facing}，见交付报告 §⑤）。</li>
- * </ul>
- * <p><b>★ 两条"必须"（取代旧注释里"契约必须 NORTH/UP"那段误读）</b>：
- * {@code hostFront} 必须与本机在世界里的真实朝向一致（本机 = {@code NORTH}）；
- * {@code moduleFront} 必须与模块在世界里的真实朝向一致（= {@code SOUTH}）。
- * <b>两者允许互为相反方向</b>——它们各管一件事（偏移量的参照系 / 模块图案的摆放），
- * 旧注释把它们绑成"必须同值"是误读，也是本次 bug 的思想来源。</p>
- *
- * <p><b>反证（gtlcore 生态里的现成用法）</b>：GTLAdditions 的
- * {@code SubspaceCorridorHubIndustrialArray} 硬编码 12 条时第 2 参写的是 <b>{@code EAST}</b>，
- * 不是 {@code NORTH}（{@code _Enhancedcore兼容排查_CTM与模块.md:230-236} 引
- * {@code gtdadd_SubspaceHub.javap.txt:197-218}）⇒ "必须 NORTH" 这条"契约"从来不成立。
- *
- * <p><b>下面这段旧推导保留原文备查</b>：它摘录的字节码（{@code :3244-3315}、{@code :159-204}）
- * 都是真的；错的是由它们推出的两条结论：①"必须填 NORTH/UP"；②在 2026-10 上半轮里被用来把
- * 地心枢纽的 {@code hostFront} 改成 {@code SOUTH}（= 本次实机 bug 的直接根因）。
- * 注意 {@code :3268}/{@code :3271} 真正喂进去的是<b>预览里那台幽灵宿主的真实朝向</b>
- * （{@code getFrontFacing()}/{@code getUpwardsFacing()}），而预览外壳由
- * {@code BlockPattern.getPreview} 固定按 {@code NORTH}/{@code UP} 铺（{@code BlockPattern.txt:1211-1218}）
- * ⇒ 幽灵宿主的实际朝向就是 {@code NORTH}/{@code UP}，故声明 {@code NORTH} 才对齐。
- * <p><b>旧推导原文（备查，勿再据此改代码）</b>：
- *
- * <p>{@code initializeModules} 读的是<b>幽灵宿主机器实例</b>的朝向：
- * <pre>
- *   :3244  getstatic Direction.NORTH → astore 7      // 默认 hostFront = NORTH
- *   :3246  getstatic Direction.UP    → astore 8      // 默认 hostUp    = UP
- *   :3250  LEVEL.getBlockEntity(hostPos) instanceof IMachineBlockEntity
- *   :3268    MultiblockControllerMachine.getFrontFacing()   → astore 7
- *   :3271    MultiblockControllerMachine.getUpwardsFacing() → astore 8
- * </pre>
- * 随后对每一条：
- * <pre>
- *   :3301  info.calculateModuleOffset(hostFront, hostUp)      // 本字段参照系 → 幽灵宿主真实朝向
- *   :3305  hostPos.offset(那个偏移)                            // ⇒ 得到模块控制器的世界坐标
- *   :3310  info.calculateModuleFront(hostFront, hostUp)
- *   :3315  info.calculateModuleUp(hostFront, hostUp)
- * </pre>
- * 而 {@code calculateModuleOffset} 的<b>第一个分支</b>（{@code ModuleRenderInfo} 同文件 {@code :159-204}）：
- * <pre>
- *   :161  if (hostFront == this.hostFront &amp;&amp; hostUp == this.hostUp) return this.worldOffset;
- * </pre>
- * ⇒ 这一段只说明「第一个分支」的短路条件。<b>★ 不能</b>由此推出"必须填 NORTH/UP"：填别的值时
- * 走的是后面的通用旋转链（{@code reverseHorizontalRotation → applyHorizontalRotation →
- * rotateByFrontAxis}），照样能把「本字段参照系」换算到幽灵宿主的朝向。
- * 真正的要求是：<b>{@code hostFront}/{@code hostUp} 必须与 {@code worldOffset} 的测量口径一致</b>
- * —— 即"这些数字是在哪种朝向的世界里量的"。
- * （另一个 3 参构造器 {@code :123-133} 与此 6 参构造器<b>完全等价</b>：
- * 它把 {@code NORTH}/{@code UP} 直接喂给第 2/3 参、把两个方向参数复制给第 4/5 参。
- * 本类用 6 参重载，把四个方向都显式写出来。）
- *
- * <h3>第 4/5 参（{@code moduleFront}/{@code moduleUp}）的填法 —— ★ 2026-10 修正</h3>
- *
- * <p><b>结论</b>：填<b>该位点上模块自己的真实正脸</b>（世界方向——与第 2/3 参描述的"主机真实正脸"
- * 各管一件事，<b>允许与主机相反</b>，地心枢纽就是 主机 {@code NORTH} / 模块 {@code SOUTH}）。
- * <b>它不是常量</b>：
- * <ul>
- *   <li>地心枢纽三个模块<b>实机</b>全是 {@code facing=south}（★ 2026-10 F3 逐台实测；投影
- *       {@code states_old.txt:46,168,207} 同值）⇒ 三条都填 {@link Direction#SOUTH}（本次<b>未改</b>）；</li>
- *   <li>NAC 的 12 条<b>逐位点不同</b>：控制器落在基座哪条边、就朝哪边"脸朝外"
- *       （−z 边中点 → {@code NORTH}、+z → {@code SOUTH}、−x → {@code WEST}、+x → {@code EAST}）——
- *       依据 {@code _census/expect_table.md:39} + {@code _census/module_base_vs_host.md:11-61}
- *       的 48/48「模块底座逐格对齐主机基座」穷举，见
- *       {@link NanochipComplexPattern#moduleControllerOffsets()}。</li>
- * </ul>
- * <p>{@code moduleUp} 两台宿主都是 {@link Direction#UP}。
- *
- * <p><b>下面这段旧推导保留原文备查</b>：它论证的是"幽灵宿主参照系下的模块正脸摆放"，
- * 方向推得没错，但漏了"宿主自己的真实朝向"这一层，于是把 {@code moduleFront} 误当成恒 {@code NORTH}。
- *
- * <p>{@code calculateModuleFront} 最终调 {@code convertDirection}（{@code :226-280}），
- * 在 {@code hostFront==NORTH &amp;&amp; hostUp==UP} 时它<b>原样返回</b>第 3 个实参。
- * 于是真正决定朝向的是 {@code initializeModule} 往 dummy world 里放格子的方式
- * （{@code :3462-3474}）：
- * <pre>
- *   :260  local = 形状下标(i, row, j) - 控制器下标        // i=第 3 维、j=第 2 维（见 :3391-3396 构造 BlockPos(i,row,j)）
- *   :272  offset = ModuleRenderInfo.applyGTTransform(local, moduleFront, moduleUp)
- *   :280  world  = 模块原点 + offset
- * </pre>
- * 也就是说：<b>模块图案的内部坐标轴由 {@code applyGTTransform} 按我们给的
- * {@code moduleFront/moduleUp} 摆放</b>（{@code NORTH} = 原样、{@code SOUTH} = 转 180°、
- * {@code EAST/WEST} = 各转 90°，见 {@code applyGTTransform} 字节码 {@code :753-827}）。
- * 因此 {@code moduleFront} 必须填「该位点上模块在<b>真实世界</b>里的正脸」——
- * 地心枢纽三条是 {@code SOUTH}（投影实测）、NAC 十二台按"控制器坐哪条边就朝哪边"逐条不同；
- * {@code moduleUp} 两台宿主都是 {@code UP}。
- * （旧注释在这里断言"我方模块图案都在 facing=north 那一套、恒填 NORTH"，那是把
- * {@code ModuleRenderInfo} 的参照系语义与图案自身的编排混为一谈；投影实测已否掉它。）
- *
- * <h2>三、数据来源（不许编坐标）</h2>
- * <ul>
- *   <li><b>NAC</b>：⭐ 2026-10 修正 —— 已经改成<b>写死的实测表</b>，见
- *       {@link NanochipComplexPattern#moduleControllerOffsets()}（= 该类的
- *       {@code NAC_MODULE_PREVIEW_SLOTS}）。表里 12 条的来源 = <b>玩家存档实测</b>
- *       {@code _census/expect_table.md} §1 的「4 个 F 位(偏移)」列，
- *       并以「模块底座 7×3×7 与宿主基座 7×7 逐格对齐」的 48/48 穷举选出每基座唯一正确的那一条
- *       （{@code _census/module_base_vs_host.md}）。
- *       <br><b>为什么不再"从图案现算"</b>：旧实现那套「一个 F 格的 4 个轴向 ±3 邻居也都是 F ⇒
- *       它就是基座中心」的运行期判据在现役图案上<b>恒命中 0 个</b>（基座中心那格在 {@code row=1}
- *       且是 {@code 'C'}、4 个 F 位在 {@code row=2}），每次都抛
- *       {@code IllegalStateException: 基座中心判据命中 0 个（期望 12）} ⇒ 恒返回空表
- *       ⇒ 点 {@code M:ON} 无反应。该反推已停用（{@code @Deprecated} 死代码，禁止再调用）；
- *       写死的表是常量 ⇒ <b>恒 12 条、不会失败</b>。</li>
- *   <li><b>地心枢纽</b>：三个模块控制器坐标取自<b>现役投影 {@code 地心涌动能量转换站.litematic}
- *       的解码转储</b> {@code gtl-dev/api-dump/dump_full.txt}（该文件头 {@code REGION Unnamed
- *       size=97,-48,99} 与现役 {@code HostPatternLayers} 的 {@code X=97,Y=48,Z=99} 逐一吻合，
- *       且其坐标索引口径与 {@code HostPatternLayers} 的生成器 {@code HostFromLitematic} 完全一致）。
- *       三个坐标与「宿主控制器 (48,8,8)」的映射关系已用两处独立证据交叉核对，见
- *       {@link #MOLTEN_MODULE_CONTROLLERS}。</li>
- * </ul>
- *
- * <h2>四、性能与失效（为什么不会每帧重算，为什么有界）</h2>
- * <ul>
- *   <li>预览确实会<b>反复</b>调用（每开一次界面 / 每建一次 {@code MBPattern}）：每次调用只做
- *       「一次 {@code BlockPos} 相等比较」+ 返回缓存引用；</li>
- *   <li>每台宿主<b>至多缓存一份不可变列表</b>（{@code volatile} 字段 + 双检锁），
- *       缓存键 = 宿主自身坐标（控制器被拆/换位置 ⇒ 键变化 ⇒ 自动重算，旧列表被替换、不累积）；</li>
- *   <li>NAC 那张表与机器实例无关（只读图案常量），所以放<b>静态</b>缓存，全局一份（≤ 48 条）；</li>
- *   <li>诊断日志走「每台宿主只成功打一次」的<b>硬上限</b>集合（容量 {@value #MAX_LOGGED_KEYS}，
- *       满了只按次数抽样），不存在无界增长。</li>
- * </ul>
- *
- * <h2>五、失败姿态</h2>
- * 全程 {@code try/catch (Throwable)}：拿不到定义 / 图案异常 / 未成形 / 任何意外
- * ⇒ <b>返回空表</b>（等于回到 gtlcore 的默认行为，最多"点了没模块"，绝不外抛打断预览或服务端）。
- **/
+/** 地心预览与 NAC 兼容入口共存，避免旧调用方丢失原类及缓存类型。 */
 public final class ModulePreviewSlots {
 
     private ModulePreviewSlots() {
@@ -249,29 +57,7 @@ public final class ModulePreviewSlots {
      * @param hostPos 宿主控制器坐标（只用于日志；{@code null} 时返回空表）
      */
     public static List<ModuleRenderInfo> nacModules(BlockPos hostPos) {
-        if (hostPos == null) {
-            return List.of();
-        }
-        List<ModuleRenderInfo> cached = NAC_MODULES;
-        if (cached == null) {
-            synchronized (ModulePreviewSlots.class) {
-                if (NAC_MODULES == null) {
-                    List<ModuleRenderInfo> built;
-                    try {
-                        built = buildNac();
-                    } catch (Throwable t) {
-                        GTLModular.LOGGER.debug("[gtlmodular] 模块预览: NAC 模块表构建失败，返回空表: {}", t.toString());
-                        built = List.of();
-                    }
-                    NAC_MODULES = built;
-                    cached = built;
-                } else {
-                    cached = NAC_MODULES;
-                }
-            }
-        }
-        logOnce("nac@" + hostPos.asLong(), "纳米芯片组装复合体", hostPos, cached);
-        return cached;
+        return NanochipModulePreview.nacModules(hostPos);
     }
 
     // ------------------------------------------------------------------
@@ -294,81 +80,6 @@ public final class ModulePreviewSlots {
             this.key = hostPos.immutable();
             this.value = list;
         }
-    }
-
-    // ------------------------------------------------------------------
-    // NAC：从图案现算
-    // ------------------------------------------------------------------
-
-    /** NAC 模块表（只依赖图案常量 ⇒ 静态缓存一份；容量 ≤ 48）。 */
-    private static volatile List<ModuleRenderInfo> NAC_MODULES;
-
-    private static List<ModuleRenderInfo> buildNac() {
-        List<NanochipComplexPattern.ModuleControllerSlot> slots =
-                NanochipComplexPattern.moduleControllerOffsets();
-        if (slots.isEmpty()) {
-            // ★ 2026-10：写死的实测表是常量 ⇒ 这里**正常永远不会命中**（旧版"运行时反推失败"
-            //   才会走到这条）。保留它纯属防御（万一有人把 moduleControllerOffsets() 改坏）。
-            return List.of();
-        }
-        // ★ 2026-10：**保证条数 = 位点数（12）**。原实现遇到"该模块种类没注册"就 continue，
-        //   于是 cfg/加载顺序一变就会少几条（队长看到的"12 个基座只显示 9 台"那类问题）。
-        //   现在改成"该种类拿不到就退到任意一个已注册的 NAC 模块"——预览只要摆得出塔身即可，
-        //   模块种类的对应关系不影响"位点是否正确"这一验收点。
-        //   （模块 id 由 NanochipComplexPattern.moduleControllerOffsets() 按位点轮转
-        //    NanochipModuleKind.values() 合成；某个 kind 没注册 ⇒ nacDefinition 返回 null ⇒ 退到 anyDef。）
-        MultiblockMachineDefinition anyDef = firstNacDefinition();
-        if (anyDef == null) {
-            return List.of();
-        }
-        List<ModuleRenderInfo> out = new ArrayList<>(slots.size());
-        for (NanochipComplexPattern.ModuleControllerSlot slot : slots) {
-            MultiblockMachineDefinition def = nacDefinition(slot.moduleId());
-            if (def == null) {
-                def = anyDef;
-            }
-            // 第 2/3 参 = 宿主真实朝向参照系：现役 NAC 那台主是 facing=north（施工记录 §50 实测）
-            //   ⇒ NORTH/UP（与 slot.offset() 的来源口径一致，见类注释「第 2/3 参的正确语义」）。
-            // 第 4 参 slot.front()：模块控制器坐在自己基座「朝外」那条边的边中点上，
-            //   GTCEu 要求该位点上模块正脸朝外 ⇒ 12 条里四个朝向都可能出现（不是恒 NORTH），
-            //   依据 _census/expect_table.md:39 与 _census/module_base_vs_host.md:11-61 的 48/48 穷举。
-            out.add(new ModuleRenderInfo(slot.offset(), Direction.NORTH, Direction.UP,
-                    slot.front(), Direction.UP, def));
-        }
-        return List.copyOf(out);
-    }
-
-    /** 任意一个已注册的 NAC 模块定义（{@link #buildNac()} 的条数兜底用）。 */
-    private static MultiblockMachineDefinition firstNacDefinition() {
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            MultiblockMachineDefinition def = NanochipMachines.NANOCHIP_MODULES.get(kind);
-            if (def != null) {
-                return def;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 由 {@code NANOCHIP_MODULES} 的 id 反查定义。
-     *
-     * <p>先查已注册表（{@link NanochipMachines#NANOCHIP_MODULES}，注册窗口结束后必然已填），
-     * 查不到再走 GTCEu 注册表兜底；两条都拿不到返回 {@code null}（调用方跳过该条）。
-     */
-    private static MultiblockMachineDefinition nacDefinition(String moduleId) {
-        if (moduleId == null) {
-            return null;
-        }
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            if (moduleId.equals(kind.machineId())) {
-                MultiblockMachineDefinition def = NanochipMachines.NANOCHIP_MODULES.get(kind);
-                if (def != null) {
-                    return def;
-                }
-                break;
-            }
-        }
-        return lookupDefinition("gtlmodular", moduleId);
     }
 
     // ------------------------------------------------------------------
@@ -617,24 +328,12 @@ public final class ModulePreviewSlots {
 
     /** GTCEu 机器注册表兜底查询；拿不到 / 类型不符一律 {@code null}（绝不外抛）。 */
     private static MultiblockMachineDefinition lookupDefinition(String namespace, String path) {
-        try {
-            MachineDefinition def = GTRegistries.MACHINES.get(new ResourceLocation(namespace, path));
-            return def instanceof MultiblockMachineDefinition multi ? multi : null;
-        } catch (Throwable t) {
-            // 注册窗口内/未冻结时查表、或注册表尚未就绪 —— 静默跳过，不影响预览
-            return null;
-        }
+        return ModulePreviewSupport.lookupDefinition(namespace, path);
     }
 
     // ------------------------------------------------------------------
     // 诊断日志（限流：每台宿主成功打一次；键集合有硬上限，永不无界增长）
     // ------------------------------------------------------------------
-
-    /** 已打过日志的宿主键上限（超过后只按次数抽样，集合本身不再增长）。 */
-    private static final int MAX_LOGGED_KEYS = 64;
-
-    private static final Set<String> LOGGED_KEYS = new LinkedHashSet<>(16);
-    private static final AtomicInteger DROPPED = new AtomicInteger();
 
     /**
      * 埋点（验收抓手）：同一台宿主第一次调用打一条 INFO，之后静默。
@@ -647,21 +346,6 @@ public final class ModulePreviewSlots {
      * 返回 0 时也同样记录（那样一眼就能区分"没被调用"与"被调用了但表是空的"）。
      */
     private static void logOnce(String key, String hostName, BlockPos hostPos, List<ModuleRenderInfo> list) {
-        boolean emit;
-        synchronized (LOGGED_KEYS) {
-            if (LOGGED_KEYS.contains(key)) {
-                emit = false;
-            } else if (LOGGED_KEYS.size() < MAX_LOGGED_KEYS) {
-                LOGGED_KEYS.add(key);
-                emit = true;
-            } else {
-                // 键空间已满（异常场景：大量不同坐标的宿主）：不再新增键，按次数抽样打一条
-                emit = (DROPPED.incrementAndGet() & 0x3F) == 0;
-            }
-        }
-        if (emit) {
-            GTLModular.LOGGER.info("[gtlmodular] 模块预览: getModulesForRendering 被调用 主机={}@{} 返回={}",
-                    hostName, hostPos.toShortString(), list.size());
-        }
+        ModulePreviewSupport.logOnce(key, hostName, hostPos, list);
     }
 }

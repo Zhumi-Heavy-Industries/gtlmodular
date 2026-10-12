@@ -34,7 +34,7 @@ import java.util.function.IntConsumer;
  *
  * <p>布局自适应：两列排布，窗口窄时按当前宽度分列，不会顶出屏幕。
  */
-public final class GTLModularConfigScreen extends Screen {
+public final class GTLModularConfigScreen extends Screen implements NanochipConfigPage.Rows {
 
     private static final int MARGIN_X = 16;
     private static final int MARGIN_TOP = 30;
@@ -201,97 +201,7 @@ public final class GTLModularConfigScreen extends Screen {
         addBool("自动切换配方模式", GTLModularConfig.isAutoRecipeModeSwitchEnabled(), true,
                 GTLModularConfig::setAutoRecipeModeSwitchEnabled);
 
-        // ---- 第 5 组：NAC（纳米芯片组装复合体）物流模式 ----
-        // ★ 2026-09-19（队长：要简单模式 / 原版模式开关）。
-        // ★★ 2026-09-21 两处变更（**沿革写在这里，别抹掉**）：
-        //   ① 默认值 false → **true**（队长「让默认就是简单模式」）⇒ addBool 的第 3 个参数
-        //      （= 「恢复默认」按钮写回的值）必须同步改成 true；原来那处写死 false，
-        //      改了配置默认值而不同步它，就会出现「配置文件默认 true、点恢复默认变 false」的自相矛盾。
-        //   ② **产出不再随模式变**（口径变更，2026-09-18 → 2026-09-21 → 同日成阶梯）：
-        //      2026-09-18 定的是「原版 16 / 简单 8」——配方 JSON 写 16，简单模式在结算处 ×0.5；
-        //      2026-09-21 队长拍板「组装矩阵的 JSON 16 → 8（让 JEI 也显示 8，跟运行期一致）」⇒
-        //      产出直接写进配方（30 条 JSON + 两份规格 outCount 全部 16 → 8），运行期
-        //      SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER 改成 1.0D（×1 = 空操作）；
-        //      ★ 同一天再按队长令改成**阶梯**：最基础的处理器 8 / 装配 4 / 电脑 2 / 主机 1
-        //      （`_census/_apply_matrix_output_ladder.js`）
-        //      ⇒ **两种模式走同一套阶梯**，本开关现在只影响结构（真空仓下限）与物流玩法。
-        section("NAC 物流模式");
-        addBool("简单物流模式", GTLModularConfig.isNanochipSimpleLogistics(), true,
-                GTLModularConfig::setNanochipSimpleLogistics,
-                "简单物流模式 / Simple logistics mode",
-                "开（★ 2026-09-21 起为默认，简单）：用「样板总成 + 镜像连接」直接给模块供 CC/PC，不必铺真空仓（真空仓下限放宽为 0）；主机会额外挂上「换算」表 ⇒ 真件 ⇄ CC 双向都能用样板总成在 ME 终端直接下单",
-                "ON (default since 2026-09-21, simple): feed the modules with a pattern assembly + its mirror/proxy over AE2 (no vacuum hatch needed; its minimum drops to 0); the host also gains the CONVERSION table so both directions (real <-> CC) are orderable straight from the ME terminal",
-                "关（原版 NH）：CC/PC 走真空传送带仓；主机 H 位要求「真空传送带仓 ≥ 1」",
-                "OFF (vanilla NH): CC/PC travel through vacuum conveyor hatches; the host requires >=1 vacuum hatch",
-                "★ 产出与模式无关：两种模式的组装矩阵走同一套阶梯 —— 最基础的处理器 8 个、装配 4 个、电脑 2 个、主机 1 个电路（2026-09-18 曾一律 16、2026-09-21 改成阶梯；运行期不再缩放，JEI 与实出一致）",
-                "* Output does NOT depend on the mode: both modes share one ladder - the most basic processor 8, assembly 4, computer 2, mainframe 1 circuits per craft (a flat 16 back in 2026-09-18, laddered on 2026-09-21; runtime scaling is off, JEI agrees with the machine)",
-                "【简单模式怎么用】① 把样板总成插进主机 H 位（或任一模块的 V 位）并接上 ME 网络；② 每台要给料的模块 V 位各插一个镜像仓（gtlcore:me_pattern_buffer_proxy），用闪存右键样板总成存坐标、再右键各镜像仓绑定；③ 在 AE 样板编码台写样板（模块耗材液体也写进样板）放进样板总成，然后在 ME 终端下单，机器自动拉料自动加工；④ 产物自动回到样板总成 / ME 网络，下一个模块下单时自己来拉；⑤ 换算也能下单：主机 H 位挂「猪咪样板总成」，写「1 个 cc_xxx → 1 个真件」的样板（反向同理），ME 终端下单即可批量换算 —— 换算必须用「猪咪样板总成」（它会按样板自动切主机配方模式），gtlcore 原生样板总成不会切模式。",
-                "[How to use] 1) put a pattern assembly into the host H slots (or any module's V slots) and hook it to your ME network; 2) put one me_pattern_buffer_proxy (mirror) into each module's V slots and bind it with a data stick; 3) encode patterns (include the module's upkeep fluid) into the pattern assembly and order from the ME terminal; 4) products return straight to the pattern assembly / ME network for the next module to pull; 5) conversions are orderable too: put a piggy pattern assembly into the host H slots and encode '1 cc_xxx -> 1 real item' (or the reverse); the piggy pattern assembly auto-switches the host recipe mode, the stock gtlcore buffer does not.",
-                "⚠ 改这一项需要重启游戏：结构谓词在机器注册时只构建一次（产出与模式无关，不再随本项变化）",
-                "⚠ Changing this needs a game restart (the structure predicate is built once at registration; output no longer depends on this switch).");
-
-        // ---- 第 6 组：NAC 孤儿封装件（JEI 隐藏）----
-        // ★ 2026-09-19（队长：「那 42 个孤儿的话，就先隐藏吧」）。
-        // 默认 = 开 = 隐藏；关掉即主动撤销隐藏、恢复可见。只动 JEI 显示层，不动注册/配方。
-        section("NAC 孤儿封装件");
-        addBool("JEI 隐藏孤儿件", GTLModularConfig.isHideOrphanItemsEnabled(), true,
-                GTLModularConfig::setHideOrphanItemsEnabled,
-                "JEI 隐藏孤儿件 / Hide orphan items in JEI",
-                "开（默认）：_census/残留物品清理_队员.md §8.1 那 42 件（有产出配方、但现存配方没人消费的 CC 封装件）在 JEI 里不显示",
-                "ON (default): the 42 orphan circuit components are hidden in JEI",
-                "关：主动撤销隐藏，恢复可见（将来想找它们就关掉这一项）",
-                "OFF: un-hide them so they show up again",
-                "只影响 JEI 显示层：不删注册、不注销 Entry、不动任何配方 ⇒ 仍可用配方/指令/创造模式拿到",
-                "Display-layer only: nothing is unregistered and no recipe is changed");
-
-        // ---- 第 7 组：NAC 校准与排障（★ 2026-09-21 队长令「做」新增）----
-        //
-        // 队长原话（2026-09-21）：「做」—— 他此前的状态是「只能在 config/gtlmodular-common.toml 里手改，
-        // 找不到界面开关」，要的就是把下面这两个 nanochipComplex 项搬到游戏内配置界面来：
-        //   ① nanochipComplex.calibrationUseFullWindow（校准分母口径，代码里默认 false = 已记录数）
-        //   ② nanochipComplex.verboseStructureLogs（结构日志全打，代码里默认 true）
-        // ★ 边界纪律（本轮只许改本文件）：两项的**默认值一律没动**（仍是 false / true）——
-        //   界面只是让玩家能改；addBool 的第 3 个参数（「恢复默认」写回值）分别取 false / true，
-        //   与 GTLModularConfig 里 define(...) 的第二参逐字一致（配置屏与配置文件不许自相矛盾）。
-        // ★ 读写机制 = 上面六组同一套，没有另造：**读**走 GTLModularConfig 的公开 getter
-        //   （isNanochipCalibrationUseFullWindow / isNanochipVerboseStructureLogs，两者都是现读现取）；
-        //   **写**走 GTLModularConfig 的公开 setter（setNanochipCalibrationUseFullWindow /
-        //   setNanochipVerboseStructureLogs —— ★ 2026-09-21 队长令「做」第二轮补齐，与 setCoilDiscountEnabled
-        //   那批逐字同款：值没变不写 + ConfigValue.set(...)）。
-        //   沿革：第一轮这两项在 GTLModularConfig 里只有 getter、而边界只许改本文件 ⇒ 临时用反射够那个
-        //   ConfigValue；第二轮边界放宽到 GTLModularConfig 后已把 setter 补上、反射连同 import 一起删掉。
-        // ★ 位置依据：这两项都属于 nanochipComplex，与上面两组「NAC 物流模式 / NAC 孤儿封装件」同族，
-        //   所以并排放在右列同一个 NAC 段落里，队长一屏就能看到三个 NAC 开关。
-        section("NAC 校准与排障");
-        addBool("校准分母用原版10万", GTLModularConfig.isNanochipCalibrationUseFullWindow(), false,
-                GTLModularConfig::setNanochipCalibrationUseFullWindow,
-                "校准分母：用原版 10 万 / Calibration denominator: vanilla 100000",
-                "开（= 配置文件 nanochipComplex.calibrationUseFullWindow = true）= 原版旧口径：判定分母恒为写死的 100000（整个历史窗口）",
-                "ON (= config nanochipComplex.calibrationUseFullWindow = true) = the old vanilla denominator, hard-coded to 100000 (the whole history window)",
-                "      ⇒ 刚跑起来时各电路族占比只有千分之几，族条几乎不动，湿件第一档（20%）要攒够 20000 个对应电路才看得见",
-                "      => a freshly started machine shows only a few tenths of a percent, so tier 1 (20%) needs 20,000 matching circuits before anything moves",
-                "关（= false，★ 代码里的默认值，队长 2026-09-21 拍板）= 新口径：分母 = 你实际记录过的电路总数 ⇒ 做完一批就看得见；攒满 10 万个之后两种口径完全一致",
-                "OFF (= false, the code default since 2026-09-21) = the denominator is the number of circuits actually recorded so far, so a single batch is visible right away; identical to the vanilla branch once 100,000 circuits are recorded",
-                "只换分母：窗口容量 100000、批次数 100、每批 1000、9 个电路族与 0.2 / 0.4 / 0.6 阈值都不变",
-                "Only the divisor changes: window 100000, 100 batches, the 9 circuit families and the 0.2 / 0.4 / 0.6 thresholds are untouched",
-                "★ 改完点「保存并关闭」立即生效（机器每 tick 现读配置，无需重启）；同一次保存会立刻写回 config/gtlmodular-common.toml，不用再手改 toml",
-                "★ Saving applies it immediately (the machine re-reads the config every tick, no restart) and the same save also rewrites config/gtlmodular-common.toml, so no manual toml edit is needed");
-
-        addBool("结构日志全打（排障用）", GTLModularConfig.isNanochipVerboseStructureLogs(), true,
-                GTLModularConfig::setNanochipVerboseStructureLogs,
-                "结构日志全打（排障用）/ Verbose NAC structure logs (troubleshooting)",
-                "开（= true，★ 代码里的默认值）= 主机/模块每给一次结构结论，就把「尚未成形」的逐格原因打进日志（期望方块 vs 实际方块 + GTCEu 记录位置），一律 INFO、不折叠、不降 debug",
-                "ON (= true, the code default) = every structure conclusion logs its per-cell reasons at INFO (expected block vs actual block + the GTCEu-recorded position), never folded and never demoted to debug",
-                "      ⇒ 代价是日志量回到队长抱怨过的「一进游戏 NAC 一直刷」那种量级；查完请改回「关」",
-                "      => the cost is the noisy log volume the captain complained about; switch it back OFF when the investigation is over",
-                "关（= false）= 回到 0.1.40 的降噪口径：同一台机器 + 同一结论 + 同一原因 10 秒内只留一条 INFO，窗口内的重复降 debug，跨机器再合并成一条「NAC 结构结论未变汇总」",
-                "OFF (= false) = the quiet 0.1.40 behaviour: one INFO per machine/conclusion/reason per 10 seconds, repeats demoted to debug, plus one folded cross-machine summary line",
-                "队长原话（2026-09-21）：「我更新了add，还有core现在我们的模块都不做东西了」＋（对我给的三个选项回）「查」—— 他这台机器的 logs/debug.log 是 09/15 的旧文件 ⇒ 逐格原因看不见、只能猜，本开关就是把这个口子重新打开",
-                "Captain's own words (2026-09-21): after updating add/core the modules stopped doing anything, and he answered \"investigate\" -- his logs/debug.log was stale, so the per-cell reasons were invisible; this switch reopens that hole",
-                "★ 只改「打不打、打多细」，一个判定都不动：唯一落点是 NanochipStructureLogGate.shouldEmitInfo 的返回值（只决定 LOGGER.info 还是 LOGGER.debug）",
-                "★ Log verbosity only, no decision changes: the single hook is the return value of NanochipStructureLogGate.shouldEmitInfo, which only picks LOGGER.info vs LOGGER.debug",
-                "★ 在界面里改完点「保存并关闭」立即生效（闸门每次判定都现读配置，无需重启）；只有手改 config/gtlmodular-common.toml 才需要重启游戏",
-                "★ Saving the GUI applies it immediately (the gate re-reads the config on every check, no restart); only editing config/gtlmodular-common.toml by hand requires a game restart");
+        NanochipConfigPage.append(this, GTLModularConfig.NANOCHIP);
 
         // ---- 底部按钮 ----
         int buttonY = this.height - 26;
@@ -317,7 +227,8 @@ public final class GTLModularConfigScreen extends Screen {
         }
     }
 
-    private void section(String title) {
+    @Override
+    public void section(String title) {
         addRenderableWidget(new StringWidget(columnX, cursorY, LABEL_W + BOX_W, 10,
                 Component.literal("§e§l" + title), this.font));
         cursorY += SECTION_H;
@@ -337,7 +248,8 @@ public final class GTLModularConfigScreen extends Screen {
      * <p>★ 2026-09-19 新增：NAC 物流模式开关的两种取值差别较大（物流路径 + 结构硬要求 + 产出数量），
      * 只靠 132px 宽的中文标签说不清，所以在按钮上挂一段<b>中文 + 英文镜像</b>的说明。
      */
-    private void addBool(String label, boolean value, boolean fallback, Consumer<Boolean> save,
+    @Override
+    public void addBool(String label, boolean value, boolean fallback, Consumer<Boolean> save,
                          String... tooltipLines) {
         final BoolRow[] holder = new BoolRow[1];
         Button button = Button.builder(Component.empty(), b -> {
@@ -448,13 +360,8 @@ public final class GTLModularConfigScreen extends Screen {
         for (BoolRow row : boolRows) {
             row.save.accept(row.value);
         }
-        // ★ 2026-09-19：改完立刻把「孤儿件隐藏」重新应用一次（开=隐藏 / 关=撤销隐藏）。
-        // 走反射：本类是客户端类，但没有 JEI 时也不该因为直接引用插件类而加载失败。
-        try {
-            Class.forName("com.gtlmodular.client.jei.GTLModularJeiPlugin").getMethod("refresh").invoke(null);
-        } catch (Throwable ignored) {
-            // 没装 JEI / JEI 运行时还没就绪 ⇒ 本项无副作用。
-        }
+        GTLModularConfig.NANOCHIP.save();
+        NanochipConfigRefresh.refresh();
         GTLModular.LOGGER.info("[gtlmodular] 配置已更新（{} 个数值 / {} 个文本 / {} 个开关），实时生效",
                 intRows.size() + doubleRows.size(), stringRows.size(), boolRows.size());
         onClose();
@@ -482,12 +389,6 @@ public final class GTLModularConfigScreen extends Screen {
             this.minecraft.setScreen(this.parent);
         }
     }
-
-    // ★ 2026-09-21：这里原本有一段「临时写回器」（第一轮边界只许改配置屏、而 GTLModularConfig 里这两项
-    //   只有 getter ⇒ 当时只好靠反射去够那个 ConfigValue）。第二轮队长把边界放宽到 GTLModularConfig，
-    //   两个 setter（setNanochipCalibrationUseFullWindow / setNanochipVerboseStructureLogs）已补齐
-    //   ⇒ 那段反射与随之而来的两个 import 一并删掉，两处 save 改成普通方法引用。
-    //   注：本文件里剩下的反射只有 saveAndClose() 里调用 JEI 插件那一处（2026-09-19 起就有，不在本轮范围）。
 
     private static String trim(double value) {
         if (value == Math.rint(value)) {

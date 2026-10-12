@@ -3,8 +3,11 @@ build/
 .gradle/
 out/
 run/
+run-nac/
 # 本地依赖 jar（来自 gtl-modular-libs_*.zip，不进仓库）
 libs/
+# 依赖的反编译源码（gradlew decompileDeps 生成）
+deps-src/
 # IDE
 .idea/
 *.iml

@@ -11,7 +11,6 @@ import appeng.api.networking.ticking.TickingRequest;
 import appeng.api.stacks.AEFluidKey;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
-import appeng.api.stacks.GenericStack;
 import appeng.api.stacks.KeyCounter;
 import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
@@ -20,12 +19,28 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.machine.pattern.PatternArchiveSnapshots;
+import com.gtlmodular.common.machine.pattern.PatternAutoSwitch;
+import com.gtlmodular.common.machine.pattern.PatternClientSyncRefresh;
+import com.gtlmodular.common.machine.pattern.PatternIdentityGate;
+import com.gtlmodular.common.machine.pattern.PatternLookupNarrowing;
+import com.gtlmodular.common.machine.pattern.PatternModeContext;
+import com.gtlmodular.common.machine.pattern.PatternModeNaming;
+import com.gtlmodular.common.machine.pattern.PatternNameController;
+import com.gtlmodular.common.machine.pattern.PatternRecipeMatching;
+import com.gtlmodular.common.machine.pattern.PatternRecipeTypeSearch;
+import com.gtlmodular.common.machine.pattern.PatternRewriteCache;
+import com.gtlmodular.common.machine.pattern.PatternProviderRefresh;
+import com.gtlmodular.common.machine.pattern.PatternStacks;
+import com.gtlmodular.common.machine.pattern.ui.PatternCatalystWidgets;
+import com.gtlmodular.common.machine.pattern.ui.PatternArchiveConfigurator;
+import com.gtlmodular.common.machine.pattern.ui.PatternConfiguratorWidgets;
+import com.gtlmodular.common.machine.pattern.ui.PatternSlotRightClickOverlay;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.gui.GuiTextures;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.gui.widget.IntInputWidget;
-import com.gregtechceu.gtceu.api.gui.widget.ToggleButtonWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
@@ -34,9 +49,6 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
-import com.gregtechceu.gtceu.common.item.IntCircuitBehaviour;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 import com.gregtechceu.gtceu.integration.ae2.gui.widget.AETextInputButtonWidget;
 import com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture;
 import com.lowdragmc.lowdraglib.gui.texture.GuiTextureGroup;
@@ -48,8 +60,6 @@ import com.lowdragmc.lowdraglib.gui.util.ClickData;
 import com.lowdragmc.lowdraglib.gui.widget.ButtonWidget;
 import com.lowdragmc.lowdraglib.gui.widget.ImageWidget;
 import com.lowdragmc.lowdraglib.gui.widget.LabelWidget;
-import com.lowdragmc.lowdraglib.gui.widget.SlotWidget;
-import com.lowdragmc.lowdraglib.gui.widget.TankWidget;
 import com.lowdragmc.lowdraglib.gui.widget.Widget;
 import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.misc.FluidStorage;
@@ -68,15 +78,11 @@ import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import org.gtlcore.gtlcore.api.gui.MEPatternCatalystUIManager;
 import org.gtlcore.gtlcore.api.gui.PatternCircuitConfigurator;
 import org.gtlcore.gtlcore.api.machine.trait.IMERecipeHandlerTrait;
@@ -93,9 +99,7 @@ import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferReci
 import org.gtlcore.gtlcore.config.ConfigHolder;
 import org.gtlcore.gtlcore.integration.ae2.AEUtils;
 import org.gtlcore.gtlcore.integration.ae2.handler.MEBufferPatternHelper;
-import org.gtlcore.gtlcore.integration.ae2.widget.AEPatternViewExtendSlotWidget;
 
-import appeng.crafting.pattern.AEProcessingPattern;
 import appeng.crafting.pattern.ProcessingPatternItem;
 
 import it.unimi.dsi.fastutil.Pair;
@@ -119,7 +123,6 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -230,7 +233,8 @@ import java.util.Set;
  * 以及逐槽表 / 催化剂表 <b>一律不写</b> —— 它们都是「按槽下标对齐的内容」,而掉落时样板本身并不随方块带走
  * （样板由 {@code onMachineRemoved} 掉到地上），只写表 = 留下一堆指错槽的孤儿数据，也是复制漏洞的一半。
  */
-public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBase {
+public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBase
+        implements PatternArchiveConfigurator.Host {
 
     /** 预留空位（队长 2026-09-26 裁决：预留 = 2）。 */
     public static final int RESERVE = 2;
@@ -357,9 +361,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     private boolean usageSignatureValid = false;
     private TickableSubscription usageSubscription;
 
-    /** ★ 0.3.5：正在通知 AE 重取样板表（防重入）。★ 照搬现役机 {@code refreshingPatterns}。 */
-    private boolean refreshingPatterns;
-
     /** ★ 0.3.5：上一次打印「AE 推来一张本机没有的样板」的时间（gameTime），限流用。 */
     private long lastOrphanPushLog;
 
@@ -367,27 +368,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     private boolean loggedBaseSyncState;
 
     // ==================== 主动写一次自定义名（绕开 Enhancedcore 自动命名白名单）====================
-
-    /**
-     * ★ 2026-10-04：<b>GTL-Enhancedcore 自动命名词典的硬编码兜底串</b>「未命名加工模式」。
-     *
-     * <p><b>出处（逐条可核）</b>：作者源码
-     * {@code com.gtl.enhancedcore.common.recipe.iv.SuperBufferChineseNames:13}
-     * —— {@code private static final String FALLBACK = "\u672a\u547d\u540d\u52a0\u5de5\u6a21\u5f0f";}
-     * （源码里就是 Unicode 转义 ⇒ 用中文字面 grep 搜不到）；{@code :21-26} 的 {@code resolve()}
-     * 只在「它那份词典查不到 **且** 传入值不含汉字」时才返回它。
-     *
-     * <p><b>为什么一定落到我们头上</b>：{@code :36-72} 的 {@code load()} 只扫**固定 5 个 mod 的 jar**
-     * （{@code gtceu / gtmthings / gtlcore / gtladditions / gtl_enhancedcore}，关键 {@code :40}），
-     * <b>不含 gtlmodular</b> ⇒ 我们的键（{@code assets/gtlmodular/lang/zh_cn.json:415-429}，
-     * 形态 = {@code registryName.toLanguageKey()}，如 {@code gtlmodular.nanochip_assembly_complex}）
-     * 从不进词典 ⇒ {@code SuperBufferNaming.targetKey()} 递进来的键被 {@code resolve} 判成兜底
-     * ⇒ 部件自定义名被写成这四个字。
-     *
-     * <p>本类用它做一件事：<b>把"上游写的兜底串"识别成"这个名字不承载玩家意志"</b>，
-     * 从而允许我们自己改写它。判定是全等比较，不猜测。
-     */
-    private static final String AUTO_NAME_FALLBACK_UPSTREAM = "\u672a\u547d\u540d\u52a0\u5de5\u6a21\u5f0f";
 
     /**
      * ★ 本补丁的<b>总开关</b>（默认开）。<b>与现役机 {@code MoltenPatternAssemblyPartMachine} 上那个是
@@ -433,14 +413,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     private String lockedName = "";
 
-    /** 上一次<b>观察</b>到的 customName（内存态，不落盘）：识别"名字被别人改了"。 */
-    private String observedName;
-
-    /** 上一次套用名字时对应的模式 id（内存态，不落盘）：把玩家的改名归到"当时显示的那个模式"名下。 */
-    private String appliedModeKey;
-
-    /** 上一次命名时挂着的控制器（内存态，不落盘）：被搬到别的机器上 ⇒ 允许按新模式重新起名一次。 */
-    private IRecipeLogicMachine lastNamingController;
+    private PatternNameController patternNameController;
 
     /** 落盘上界：名字表最多 {@value} 条模式（读侧同样上界）。 */
     private static final int MAX_SAVED_MODE_NAMES = 64;
@@ -457,11 +430,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     /** 成型材质补丁的剩余窗口（服务端；见 {@link FormedRenderSyncNudge}）。 */
     private int formedNudgeTicks = FormedRenderSyncNudge.WINDOW_TICKS;
 
-    /** 客户端：载入后头若干次同步都补一次重烘焙（见 {@link #onSyncChanged} 的取证注释）。 */
-    private int clientRebakeLeft = 40;
-
-    /** 客户端同步诊断日志额度（有界）。 */
-    private int clientSyncDiagLeft = 6;
+    private final PatternClientSyncRefresh clientSyncRefresh = new PatternClientSyncRefresh();
 
     /**
      * 「保留副产物」开关（用于解样板时的身份计算）。
@@ -653,33 +622,197 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     // ==================== P2-② 自动切换配方模式 ====================
 
-    /** 轮询间隔计数（别每 tick 都扫槽位）。★ 照搬现役机 {@code autoSwitchCooldown}。 */
-    private int autoSwitchCooldown;
+    private PatternAutoSwitch autoSwitch;
 
-    /** 上一次自动切过去的类型；-1 = 没有待观察的切换。★ 照搬现役机 {@code pendingAutoSwitchType}。 */
-    private int pendingAutoSwitchType = -1;
+    private PatternAutoSwitch patternAutoSwitch() {
+        if (autoSwitch == null) {
+            autoSwitch = new PatternAutoSwitch(new AutoSwitchHost(), AUTO_SWITCH_INTERVAL_TICKS,
+                    AUTO_SWITCH_GRACE_TICKS, AUTO_SWITCH_BLOCK_TICKS, AUTO_SWITCH_STOCKLESS_TICKS, false);
+        }
+        return autoSwitch;
+    }
 
-    /**
-     * ★ 0.3.4：当前模式「最后还有活」的时刻（gameTime）；-1 = 现在有活/刚清过。
-     * 见 {@link #findModeWithWaitingStock(List, int, long)} 第一遍的「空转宽限期」。
-     */
-    private long activeModeBusySince = -1L;
+    private final class AutoSwitchHost implements PatternAutoSwitch.Host {
 
-    /** ★ 0.3.4：自动切模式诊断（只给日志用，不参与逻辑）：当前模式的样板数 / 其中有料数 / 其中未认配方数。 */
-    private int diagActivePatterns;
-    private int diagActiveStock;
-    private int diagActiveCold;
+        @Override
+        public IRecipeLogicMachine firstRecipeLogicController() { return LazyPatternAssemblyPartMachine.this.firstRecipeLogicController(); }
 
-    /** 待观察窗口的到期时间（gameTime）。★ 照搬现役机 {@code pendingAutoSwitchDeadline}。 */
-    private long pendingAutoSwitchDeadline;
+        @Override
+        public List<GTRecipeType> availableRecipeTypes() { return getAvailableRecipeTypes(); }
 
-    /** 「切过去但没跑起来」的类型 → 拉黑到期时间（gameTime），防止两个模式来回横跳。 */
-    private final Map<Integer, Long> autoSwitchBlockedUntil = new HashMap<>();
+        @Override
+        public Level level() { return getLevel(); }
 
-    /** {@code getAvailableRecipeTypes()} 的缓存（控制器与它返回的数组都没变就复用）。★ 照搬现役机同名字段。 */
-    private IRecipeLogicMachine cachedTypesController;
-    private GTRecipeType[] cachedTypesSource;
-    private List<GTRecipeType> cachedTypes = List.of();
+        @Override
+        public int activeRecipeTypeIndex() { return activeRecipeTypeIndex; }
+
+        @Override
+        public void setActiveRecipeTypeIndex(int index) { activeRecipeTypeIndex = index; }
+
+        @Override
+        public boolean modeCursorTouched() { return modeCursorTouched; }
+
+        @Override
+        public int modeCursorIndex() { return modeCursorIndex; }
+
+        @Override
+        public void setModeCursorIndex(int index) { modeCursorIndex = index; }
+
+        @Override
+        public void clearObservedModeCaches(int previous, int live) {}
+
+        @Override
+        public int findModeWithWaitingStock(List<GTRecipeType> types, int active, long now) {
+            return LazyPatternAssemblyPartMachine.this.findModeWithWaitingStock(types, active, now);
+        }
+
+        @Override
+        public int recipeTypeOfSlot(int slot) { return LazyPatternAssemblyPartMachine.this.recipeTypeOfSlot(slot); }
+
+        @Override
+        public boolean hasRecipeCacheInSlot(int slot) { return LazyPatternAssemblyPartMachine.this.hasRecipeCacheInSlot(slot); }
+
+        @Override
+        public boolean hasSlotWaitingStock(int slot) { return LazyPatternAssemblyPartMachine.this.hasSlotWaitingStock(slot); }
+
+        @Override
+        public void logCheck(List<GTRecipeType> types, RecipeLogic logic, int active, int target, long now) {
+            logAutoSwitchCheck(types, logic, active, target, now);
+        }
+
+        @Override
+        public void clearAutoSwitchCaches(int previous, int target) { clearAllSlotRecipeCaches(target); }
+
+        @Override
+        public void syncCustomNameToMode(int index) { LazyPatternAssemblyPartMachine.this.syncCustomNameToMode(index); }
+
+        @Override
+        public void onAutoSwitched(int previous, int target) {
+            GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪自动切换配方模式: {} -> {} pos={}",
+                    previous, target, getPos());
+        }
+
+        @Override
+        public boolean blocksPushModeSwitch(RecipeLogic logic) {
+            // WAITING 的 NAC 仍可能持有已扣料批次，重置会丢失这些批次。
+            return !ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES
+                    && logic instanceof com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic threaded
+                    && threaded.runningThreadCount() > 0;
+        }
+
+        @Override
+        public void clearPushModeSwitchCaches(int slot, int index) { clearAllSlotRecipeCaches(index); }
+    }
+
+    private void logAutoSwitchCheck(List<GTRecipeType> types, RecipeLogic logic, int active, int target, long now) {
+        long idleTicks = patternAutoSwitch().idleTicks(now);
+        String signature = active + "|" + target + "|" + logic.getStatus() + "|" + patternAutoSwitch().activePatterns()
+                + "|" + patternAutoSwitch().activeStock() + "|" + patternAutoSwitch().activeCold() + "|" + (idleTicks / 100);
+        if (!signature.equals(lastAutoSwitchSignature)) {
+            lastAutoSwitchSignature = signature;
+            GTLModular.LOGGER.info(
+                    "[gtlmodular] 惰性猪咪自动切模式检查: 当前={}/{} 状态={} 找到目标={} 当前模式样板={} 其中有料={} 未认配方={} 空转={}tick（满 {}tick 才允许切走）",
+                    active, types.size(), logic.getStatus(), target, patternAutoSwitch().activePatterns(), patternAutoSwitch().activeStock(),
+                    patternAutoSwitch().activeCold(), idleTicks, AUTO_SWITCH_STOCKLESS_TICKS);
+        }
+    }
+
+    // 上游构造期间可能调用覆写入口，延迟创建可避免依赖尚未初始化的机器字段。
+    private PatternModeContext modeContext;
+
+    private PatternModeContext modeContext() {
+        if (modeContext == null) {
+            modeContext = new PatternModeContext(new ModeContextHost());
+        }
+        return modeContext;
+    }
+
+    private final class ModeContextHost implements PatternModeContext.Host {
+
+        @Override
+        public List<GTRecipeType> availableRecipeTypes() { return getAvailableRecipeTypes(); }
+
+        @Override
+        public int activeRecipeTypeIndex() { return activeRecipeTypeIndex; }
+
+        @Override
+        public int modeCursorIndex() { return modeCursorIndex; }
+
+        @Override
+        public boolean modeCursorTouched() { return modeCursorTouched; }
+
+        @Override
+        public void selectModeCursor(int index) {
+            modeCursorIndex = index;
+            modeCursorTouched = true;
+        }
+
+        @Override
+        public void setRecipeType(int index) { LazyPatternAssemblyPartMachine.this.setRecipeType(index); }
+
+        @Override
+        public boolean isRemote() { return LazyPatternAssemblyPartMachine.this.isRemote(); }
+
+        @Override
+        public ResourceLocation boundModeType() { return boundModeType; }
+
+        @Override
+        public boolean boundModePendingResolve() { return boundModePendingResolve; }
+
+        @Override
+        public void storeBoundModeType(ResourceLocation typeId) {
+            boundModeType = typeId;
+            markDirty();
+        }
+
+        @Override
+        public void finishBoundModeResolve() { boundModePendingResolve = false; }
+
+        @Override
+        public void rememberBoundModeType() { LazyPatternAssemblyPartMachine.this.rememberBoundModeType(); }
+
+        @Override
+        public Map<Integer, ResourceLocation> manualSlotTypes() { return manualSlotTypes; }
+
+        @Override
+        public int manualTypeIndexOf(int slot, List<GTRecipeType> types) { return LazyPatternAssemblyPartMachine.this.manualTypeIndexOf(slot, types); }
+
+        @Override
+        public void prepareSlotRecipeTypes() { ensureRecipeTypeSlotCapacity(); }
+
+        @Override
+        public int slotRecipeTypeCount() { return slotRecipeTypes.size(); }
+
+        @Override
+        public int cachedSlotRecipeType(int slot) { return recipeTypeCacheAt(slot); }
+
+        @Override
+        public void cacheSlotRecipeType(int slot, int type) { setRecipeTypeCache(slot, type); }
+
+        @Override
+        public int detectRecipeType(int slot, List<GTRecipeType> types) { return LazyPatternAssemblyPartMachine.this.detectRecipeType(slot, types); }
+
+        @Override
+        public int manualAssignmentSlotCount() { return getCapacity(); }
+
+        @Override
+        public int maxPatternCount() { return maxPatternCount; }
+
+        @Override
+        public void invalidateManualAssignment(int slot) {
+            setRecipeTypeCache(slot, TYPE_NOT_TRIED);
+            clearSlotRecipeCache(slot);
+        }
+
+        @Override
+        public void clearAutoSwitchBlocked() { patternAutoSwitch().clearBlocked(); }
+
+        @Override
+        public void refreshManualAssignDisplay() { LazyPatternAssemblyPartMachine.this.refreshManualAssignDisplay(); }
+
+        @Override
+        public void syncCustomNameToMode(int index) { LazyPatternAssemblyPartMachine.this.syncCustomNameToMode(index); }
+    }
 
     /** 上一次打印过的自动切模式状态摘要：只有摘要<b>变化</b>时才再打印（现役机用它会话式打印，这里只在真的切换时打一条）。 */
     private String lastAutoSwitchSignature;
@@ -694,7 +827,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     // / 1864-1927（读写器）/ 840-946（推送侧一致性）。
     //
     // 语义一句话：**只改本仓向 AE 暴露的样板，仓里的样板物品一个字节都不动** ——
-    // 改写产物是新的 AEProcessingPattern 对象，进 rewrittenPatterns 缓存；
+    // 改写产物只进内存缓存，不改仓里的样板物品。
     // 关掉开关或把数值调回 1 立刻恢复（下一条取样板时返回原表）。
     //
     // 惰性化差异（唯一一处结构性差异，见正文注释）：现役机的底表是 gtlcore 具体类自己维护的
@@ -746,28 +879,10 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     @DescSynced
     private int foaMultiplier = DEFAULT_FOA_MULTIPLIER;
 
-    /**
-     * 改写后的样板缓存（样板或设置变化时失效）。★ 照搬现役机。
-     * <p>惰性化：这是**纯内存缓存**，构造期不建、不知道样板时不建 ⇒ 对"构造期不按满容量建对象"零影响。
-     */
-    private List<IPatternDetails> rewrittenPatterns;
-
-    /**
-     * 改写后的样板 → 原样板。
-     * <p><b>必须是 IdentityHashMap</b>（★ 照搬现役机）：AE 推回来的是我们改写出来的**那个对象实例**，
-     * 而改写后的样板与原始样板在值语义上不同（数量变了）⇒ 只有按<b>身份</b>反查才能翻译回原样板、
-     * 才找得到槽位。用 HashMap（值语义）在这里是错的。
-     */
-    private final IdentityHashMap<IPatternDetails, IPatternDetails> rewrittenToOriginal = new IdentityHashMap<>();
-
-    /**
-     * 改写缓存是否<b>已构建</b>。★ 照搬现役机 {@code rewriteCacheBuilt}。
-     *
-     * <p>不能拿 {@code rewrittenPatterns == null} 兼作"未构建"哨兵：打开了倍率/神锻、
-     * 但样板本身恰好没有任何实质变化时（例如 mul==div），结果也会被写成 null
-     * ⇒ 那样每次取样板都会把全部样板重新缩放+重编码（大仓就是每槽一次 NBT 编解码）。
-     */
-    private boolean rewriteCacheBuilt;
+    private final PatternRewriteCache rewriteCache = new PatternRewriteCache(
+            () -> foaMode, () -> foaMultiplier, () -> patternScale, () -> patternDivScale,
+            MIN_FOA_MULTIPLIER, MAX_FOA_MULTIPLIER, MIN_SCALE, MAX_SCALE);
+    private final PatternProviderRefresh providerRefresh = new PatternProviderRefresh();
 
     /** 「未改写」取样板日志的节流签名（只在状态变化时打印一次，避免刷屏）。★ 照搬现役机。 */
     private String lastQuerySignature;
@@ -1538,239 +1653,45 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     private int lookupNarrowingModeIndex = -1;
 
-    /**
-     * ★ <b>只读</b>解析「本总成自己负责的模式」，<b>只认本总成自己的两档指示，绝不回落到控制器当权威</b>。
-     *
-     * <p>判据顺序（与 {@link #currentModeIndexForNaming(int)} 的 ① ② ③ <b>逐条同源</b>，
-     * 保证「界面显示哪个模式」与「实际限哪个模式」是同一个下标 ✓）：
-     * <ol>
-     *   <li>{@link #modeCursorIndex}（模式页游标 = 本总成自己的模式，权威）；</li>
-     *   <li>{@link #activeRecipeTypeIndex}（本机缓存下标）。</li>
-     * </ol>
-     *
-     * <p><b>为什么不用 {@link #currentModeIndexForNaming(int)} 的第 ④ ⑤ 档</b>：
-     * 那两档的语义是「宁可显示主机模式 / 宁可显示第 0 个」，用于**命名**是合适的兜底（显示错总比不显示好），
-     * 但用于**收窄参与槽集合**是危险动作（收窄错 = 握着料不动 ✗）⇒ 这里一律 <b>fail-open</b> 返回 {@code -1}，
-     * 让调用方退回 {@code super} 的全量口径 ✓（方案 §4 步骤 1 的「取不到 ⇒ -1 ⇒ 退回 super」）。
-     *
-     * @return 模式下标（{@code >= 0}）；{@code -1} = 取不到 ⇒ 不收窄
-     */
     private int isolationOwnModeIndexReadOnly() {
-        try {
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            int size = types == null ? 0 : types.size();
-            if (size <= 0) {
-                return -1;   // 类型表还没就绪（刚成形 / 读档期）⇒ 不收窄
-            }
-            if (modeCursorIndex >= 0 && modeCursorIndex < size) {
-                return modeCursorIndex;   // ① 权威：本总成的模式页游标
-            }
-            if (activeRecipeTypeIndex >= 0 && activeRecipeTypeIndex < size) {
-                return activeRecipeTypeIndex;   // ② 本机缓存下标
-            }
-            return -1;   // 都取不到 ⇒ fail-open
-        } catch (Throwable failure) {
-            return -1;   // 只读解析也不许把查找路径掀翻
-        }
+        return PatternLookupNarrowing.ownModeIndex(this::getAvailableRecipeTypes,
+                () -> modeCursorIndex, () -> activeRecipeTypeIndex);
     }
 
-    /**
-     * ★ <b>R6 兜底闸：本次查找「该不该按本总成的模式收窄」</b>。
-     *
-     * <p><b>R6 是什么</b>（方案 §7-R6）：控制器的自动切模式
-     * （{@link #autoSwitchRecipeModes()} → 找有待料的模式 → {@code lockRecipeTypeForSlot(int)}）
-     * 改的是**控制器**的 {@code getActiveRecipeType()}，而本方案看的是**本总成自己的** {@link #modeCursorIndex}
-     * —— 两者按既有注释是**明确解耦**的（见 {@link #currentModeIndexForNaming(int)} 的「注意」段）。
-     * 若控制器私底下切到了别的模式、而本总成模式不跟随 ⇒ 按本总成模式收窄会让「控制器正在跑的那个模式」
-     * 的样板槽**被挡在原料树之外** ⇒ 表现就是「<b>握着料不动</b>」✗。
-     *
-     * <p><b>兜底取舍（三档，我们选最保守的③）</b>：
-     * <ol>
-     *   <li>按「并集」（本总成模式 ∪ 控制器模式）参与 ⇒ 安全但等于不收窄，且实现要两套判据（复杂）；</li>
-     *   <li>按控制器模式收窄 ⇒ 直接假设控制器说了算，与本方案「每个总成绑定一个模式」的口径矛盾 ✗；</li>
-     *   <li><b>★ 本实现：不一致 ⇒ 一律放行（不收窄）</b> ⇒ 退回 {@code super} 的全量口径，
-     *       最多少收窄一次，<b>绝不</b>因为模式不一致而把槽挡在门外 ✓。
-     *       代价：模式不一致的那段时间里跨模式样板又会被喂进查找 —— 但**结果侧闸门全在**
-     *       （类型闸 / 身份闸 / {@link PatternSlotIsolationGuard}）⇒ 不会串货，只是少省一点 ✓。</li>
-     * </ol>
-     *
-     * <p><b>本闸还要求「控制器存在且模式合法可解析」才允许收窄</b>：拿不到控制器（刚放下 / 未成形 /
-     * 控制器没挂上）时按保守放行 —— 方案 §2 的机制链条（查找按 {@code holder} 的能力集展开）在
-     * 「没有控制器」时根本无从判断，此时收窄纯属冒险 ✗。
-     *
-     * @return {@code >= 0} = 本次按该模式收窄；{@code -1} = <b>不收窄</b>（放行全量）
-     */
     private int lookupNarrowingModeIndex() {
-        lookupNarrowingModeIndex = -1;   // 先清缓存（任何异常路径上都不留上一 tick 的陈旧值）
+        lookupNarrowingModeIndex = -1;
         if (!LOOKUP_SIDE_SLOT_NARROWING) {
-            return -1;   // ★ 关 = 逐字等价于加本覆写之前
+            return -1;
         }
         try {
-            int own = isolationOwnModeIndexReadOnly();
+            int own = PatternLookupNarrowing.lookupModeIndex(this::isolationOwnModeIndexReadOnly,
+                    this::getAvailableRecipeTypes, this::firstRecipeLogicController);
             if (own < 0) {
-                return -1;   // 本总成模式取不到 ⇒ 不收窄（fail-open）
-            }
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            IRecipeLogicMachine controller = firstRecipeLogicController();
-            if (controller == null || types == null || types.isEmpty()) {
-                return -1;   // 没有控制器 / 类型表空 ⇒ 无从判定一致性 ⇒ 不收窄
-            }
-            int live = controller.getActiveRecipeType();
-            if (live < 0 || live >= types.size()) {
-                return -1;   // 控制器模式不可解析 ⇒ 不收窄
-            }
-            if (live != own) {
-                // ★ R6：控制器正在跑的模式 ≠ 本总成负责的模式 ⇒ 收窄会让控制器"握着料不动" ✗
-                //   ⇒ 本 tick 一律放行（不收窄），交由结果侧闸门保证不串。
                 return -1;
             }
-            if (controller instanceof MultiTypeLookupHost multiTypeHost && multiTypeHost.searchesAllRecipeTypes()) {
-                // ★ R6′（2026-10-27）：控制器这一轮会搜「多个类型」（复合型 / 多类型搜索）⇒ 本轮不收窄。
-                //   语义：**收窄面 = 本轮会被搜的类型集合**，而不是「单一激活模式」（收窄的合法前提是
-                //   「控制器这一轮只搜一个类型」，复合型机器破掉了这个前提 ⇒ 前提不成立就不该收）。
-                //   目标（队长的原话口径）：**保障多类型并发** —— 让跨配方线程能各跑不同模式的配方，
-                //   而不是掐死它们 ✗。不改这一条会怎样：非激活类型的**冷**样板槽（没有 recipes2SlotsMap
-                //   快路径）被摘出查找面，而冷槽只能走 MEPatternRecipeHandlePart.handleRecipe 的
-                //   「遍历 getActiveSlots()」回退分支 ⇒ 拿不到第一次匹配 ⇒ 该类冷样板永久饥饿
-                //   （热样板仍走快路径，故表现为「看似两类、只吃一类」）✗。
-                //   代价：本总成挂在多类型主机上时失去收窄的性能收益（多类型本来就要全遍历，无法两全）。
-                //   回退：删掉主机的 implements 即逐字回到此处不放行（见 MultiTypeLookupHost javadoc 三档）。
-                return -1;
-            }
-            lookupNarrowingModeIndex = own;   // 缓存给逐槽判据用（见字段注释）
+            lookupNarrowingModeIndex = own;
             return own;
         } catch (Throwable failure) {
             lookupNarrowingModeIndex = -1;
-            return -1;   // 任何意外 ⇒ 不收窄
+            return -1;
         }
     }
 
-    /**
-     * ★ <b>参与槽集合的收窄规则（唯一实现）</b> —— {@link #getActiveSlots()} 与
-     * {@link #getActiveAndUnCachedSlots()} <b>共用同一份判据</b>（方案 §4 步骤 3 R1：
-     * 只改一个会出现「配平扫描看得见、匹配却看不见」的怪象 ✗）。
-     *
-     * <p><b>硬纪律（性能，方案 §6.3 R2）</b>：本方法<b>只读缓存值</b> ——
-     * 手动指定表 {@link #manualSlotTypes}（经 {@link #manualTypeIndexOf(int, List)} 折算下标）
-     * 与逐槽识别缓存 {@link #slotRecipeTypes}（经 {@link #recipeTypeCacheAt(int)} 纯读）。
-     * <b>绝不</b>调用 {@link #recipeTypeOfSlot(int)} / {@link #autoDetectTypeOfSlot(int)} /
-     * {@link #detectRecipeType(int, List)} 这些**会触发表扫描**（逐类型 × 该类型全部配方 ×
-     * {@code patternIdentityMatches}）的解析方法 ✗ —— 本方法在每个槽上都跑，一旦误调就是
-     * 「每 tick × 每槽 全表扫描」✗（比不收窄还糟）。
-     * 缓存是"只写不主动读"的：识别与推送路径（{@code recipeTypeOfSlot} / {@code autoDetectTypeOfSlot}
-     * / {@code assignManualType} / 推送到槽）已经把它填好，这里只**读**，绝不改写它 ✓。
-     *
-     * <p><b>哨兵放行清单（方案 §4 步骤 2 / §7-R4：宁可少收窄，绝不误挡 ✗）</b>：
-     * {@code -1}（{@link #TYPE_NOT_TRIED}，还没试过识别，也包含 {@code null} 元素与越界读取）、
-     * {@link #TYPE_UNKNOWN}（试过但识别不出来）、任何不在 {@code [0, size)} 里的越界值、
-     * 缓存表未初始化 / 长度不匹配 / 下标越界 —— <b>一律「放行」（不参与收窄）</b>。
-     *
-     * <p><b>与现役机唯一的差别</b>：那边读的是定长 {@code int[] slotRecipeType}（长度不匹配就整份重建），
-     * 这边读的是**只增不减**的 {@link #slotRecipeTypes}（元素可为 {@code null}）⇒ 一律经
-     * {@link #recipeTypeCacheAt(int)} 读，<b>绝不</b>在这里调 {@link #ensureRecipeTypeSlotCapacity()}
-     * 去顺手扩容（那是写动作，不是只读）✓。
-     *
-     * @param base {@code super} 给出的原始参与槽集合（永远非 null，可直接遍历）
-     * @return 收窄后的新数组；<b>任何不确定情形都原样返回 {@code base}</b>（不返回 null —— 上游会直接遍历它）
-     */
     private int[] narrowSlotsToCurrentMode(int[] base) {
-        if (base == null || base.length == 0) {
-            return base;   // 原样返回（绝不给 null：上游 getActiveAndUnCachedSlotsLimitContentsMap 直接遍历）
-        }
-        if (lookupNarrowingModeIndex() < 0) {
-            return base;   // ★ 开关关 / 模式取不到 / R6 不一致 ⇒ 逐字等价于 super
-        }
-        int kept = 0;
-        try {
-            for (int i = 0; i < base.length; i++) {
-                if (slotParticipatesInLookup(base[i])) {
-                    base[kept++] = base[i];
-                }
-            }
-        } catch (Throwable failure) {
-            // 逐槽判据出任何意外 ⇒ 保守回落到"全量参与"（绝不让查找面被意外掏空 ✗）
-            return base;
-        }
-        if (kept == base.length) {
-            return base;   // 一个都没被收窄 ⇒ 原样交回（稳态零分配）
-        }
-        return Arrays.copyOf(base, kept);
+        return PatternLookupNarrowing.narrowSlots(base, this::lookupNarrowingModeIndex,
+                this::slotParticipatesInLookup);
     }
 
-    /**
-     * 该槽**是否参与**本次（按模式收窄后的）查找 —— 见 {@link #narrowSlotsToCurrentMode(int[])} 的纪律说明。
-     *
-     * <p><b>只读缓存</b>：① {@link #manualSlotTypes}（手动指定优先，与 {@link #recipeTypeOfSlot(int)} 同优先级）
-     * → ② {@link #slotRecipeTypes}。**绝不**触发表扫描 ✗。
-     *
-     * @return true = 参与（放行）；false = 已知类型与本次模式不同 ⇒ 不参与
-     */
     private boolean slotParticipatesInLookup(int slot) {
-        try {
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            if (types == null || types.isEmpty()) {
-                return true;   // 类型表空 ⇒ 放行
-            }
-            // ① 手动指定优先（只查 id 表 + 与类型表比 id，不扫配方表）
-            int manual = manualTypeIndexOf(slot, types);
-            if (manual >= 0) {
-                return manual == lookupNarrowingModeIndex;
-            }
-            // ② 逐槽识别缓存（**纯读**；未初始化 / 未试过 / 越界 一律放行）
-            int cached = recipeTypeCacheAt(slot);
-            if (cached == TYPE_UNKNOWN) {
-                return true;   // 试过但识别不出来 ⇒ 放行（R4：绝不把认不出的槽误锁在门外）
-            }
-            if (cached == TYPE_NOT_TRIED) {
-                return true;   // 还没试过识别（含 null 元素 / 越界读取）⇒ 放行（**绝不顺手触发识别** ✗）
-            }
-            if (cached < 0 || cached >= types.size()) {
-                return true;   // 哨兵/越界 ⇒ 放行
-            }
-            return cached == lookupNarrowingModeIndex;
-        } catch (Throwable failure) {
-            return true;   // 只读判据异常 ⇒ 放行（fail-open）
-        }
+        return PatternLookupNarrowing.slotParticipates(slot, this::getAvailableRecipeTypes,
+                this::manualTypeIndexOf, this::recipeTypeCacheAt, () -> lookupNarrowingModeIndex);
     }
 
-    /**
-     * ★ <b>查找侧「参与槽集合」收窄（第一处）</b> —— 本方法就是「哪些槽的料参与本次配方查找/匹配」的唯一口径入口
-     * （方案 §1.1-S7 / §1.3 / §3；调用方取证：{@code MEItemInputHandlerBase.getActiveSlots()} →
-     * {@code getMachine().getActiveSlots()}、{@code MEFluidHandlerBase} 同款、{@code MEPatternRecipeHandlePart.handleRecipe} 的回落分支）。
-     *
-     * <p><b>签名取证（确是 protected 且非 final ⇒ 可覆写）</b>：
-     * {@code _census/_javap_simple_gtlcore_bufferbase.txt:766} {@code protected int[] getActiveSlots();}
-     * <p><b>先例</b>：星律 {@code RecipeTypePatternBufferPartMachine:1102}（同类覆写）；
-     * Enhancedcore {@code IvBufferLifecycleMixin.java:57-60}（同目标，用 mixin 是因为要管别人的基类）。
-     *
-     * <p><b>为什么它 = 「查找侧」</b>：查找的作用域由控制器的能力代理（{@code holder.getCapabilitiesProxy()}）决定，
-     * 而 ME 那份能力的**参与槽范围**就是这两个方法给的
-     * （{@code _javap_simple_handlerbase.txt:41-46}、{:48-105}；{@code _javap_simple_upkeep_after.txt:299-312}）
-     * ⇒ 把返回集合收成「本总成当前模式的槽」= 按模式限查找 ✓（"逐槽"仍由结果侧闸门保证，见 §5）。
-     *
-     * <p><b>本机特有的注意</b>：{@code super} 的遍历是
-     * {@code IntStream.range(0, getInternalSlotCount()).filter(InternalSlot::isActive)}，
-     * 而本机 {@link #getInternalSlotCount()} = {@code min(getCapacity(), maxPatternCount)}（惰性容量）
-     * ⇒ 收窄**不会**改变这一层的遍历成本（方案 §6.3 的反向代价，与现役机同）。
-     */
     @Override
     protected int[] getActiveSlots() {
         return narrowSlotsToCurrentMode(super.getActiveSlots());
     }
 
-    /**
-     * ★ <b>查找侧「参与槽集合」收窄（第二处）</b> —— 与 {@link #getActiveSlots()} <b>必须一起改</b>
-     * （方案 §4 步骤 3 / §7-R1：只改一个 ⇒ 两处口径不一致 ⇒「配平扫描看得见、匹配却看不见」✗）。
-     *
-     * <p><b>签名取证</b>：{@code _census/_javap_simple_gtlcore_bufferbase.txt:778}
-     * {@code protected int[] getActiveAndUnCachedSlots();}
-     *
-     * <p><b>它为什么也在「查找侧」这条链上</b>：它是
-     * {@code getActiveAndUnCachedSlotsLimitContentsMap()} 的来源（{@code _javap_simple_handlerbase.txt:48-105}，
-     * 调用在 {@code :63}），后者被**配平/维持（upkeep）扫描**消费（{@code _javap_simple_upkeep_after.txt:299-312}），
-     * 而这条链的终点就是 gtlcore {@code GTRecipeLookupMixin} 构造的「按槽索引的原料树」
-     * —— 本类 {@link #hasRecipeCacheInSlot(int)} 的既有注释已经把这条链写清楚了（:1413-1416）⇒ 这条链就是查找侧本身 ✓。
-     */
     @Override
     protected int[] getActiveAndUnCachedSlots() {
         return narrowSlotsToCurrentMode(super.getActiveAndUnCachedSlots());
@@ -1791,7 +1712,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * <p>★ P1-②C 起完整照搬现役机 {@code pushPattern}（MoltenPatternAssemblyPartMachine 840-1043）的四段：
      * <ol>
      *   <li><b>(a) 反查原始样板</b>：AE 推回来的可能是<b>我们改写过的那个对象</b>
-     *       （改写是"给 AE 看的视图"，AE 缓存的就是改写后的实例）⇒ 先用 {@code rewrittenToOriginal}
+     *       （改写是"给 AE 看的视图"，AE 缓存的就是改写后的实例）⇒ 先用 {@code rewriteCache}
      *       按<b>身份</b>翻译回仓里那张原样板，之后认槽位/锁模式一律用原样板；</li>
      *   <li><b>(b) 存量不足判读</b>：网络可用量 &lt; 本次需求（含机器侧放大）时<b>只记一条限流日志</b> ——
      *       ★ 现役机的注释写着"直接返回 false"，但它的代码里<b>没有</b>那句 return（全方法只有末尾一处 return），
@@ -1815,7 +1736,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         boolean machineSideScaled = false;
         try {
             // 按【身份】反查：AE 推回来的是改写出来的那个实例，值语义（数量已变）对不上
-            original = rewrittenToOriginal.getOrDefault(patternDetails, patternDetails);
+            original = rewriteCache.originalPattern(patternDetails);
             aePushedOriginal = original == patternDetails;
             mul = effectiveMul();
             div = effectiveDiv();
@@ -2135,70 +2056,49 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     @Override
     public List<IPatternDetails> getAvailablePatterns() {
-        // ★★ 0.3.132【倍增交给 AE】开关打开时：直接返回仓里的原样板，绝不把改写样板报给 AE。★★
-        //   原版 gtlcore 的 getAvailablePatterns() 就是直接返回槽表（MEPatternBufferPartMachine:776-778），
-        //   倍增由 AE 的自动翻倍承担（CraftingCpuLogicMixin @Overwrite executeCrafting + CraftingPatternAutoExpand）。
-        //   为什么必须这样：我们改写样板会让"样板声明量"自身乘 N，与 AE 的 operations 放大重复且在相乘
-        //   ⇒ 需求被推到天上去 ⇒ AE 提取全有或全无 ⇒ 本 tick 零推送 ⇒「被占用、没有任务」。
-        //   一行回退：把 PATTERN_REWRITE_DISABLED 改成 false。
         if (PATTERN_REWRITE_DISABLED) {
             return baseAvailablePatterns();
         }
-        if (rewriteCacheBuilt && rewrittenPatterns != null) {
-            return rewrittenPatterns;   // 缓存有效且有改写结果：不必再让底表造一遍 List
-        }
-        List<IPatternDetails> base = baseAvailablePatterns();
-        if (base.isEmpty() || !isRewriteEnabled()) {
-            invalidateRewriteCacheQuietly();
-            // 诊断（临时）：只在"仓里/样板表里真有样板"时打印一次；完全空的机器静默，
-            // 否则会被 AE 网络每秒轮询刷屏（现役机实测那台空机器刷了 1300+ 行）。
-            String sig = base.size() + "|" + slotCount() + "|" + isRewriteEnabled() + "|" + patternScale + "|"
-                    + patternDivScale + "|" + foaMode + "|" + isOutputMode;
-            if (!sig.equals(lastQuerySignature)) {
-                lastQuerySignature = sig;
-                int patterns = 0;
-                for (int i = 0; i < getCapacity(); i++) {
-                    if (!patternInventory.getStackInSlot(i).isEmpty()) {
-                        patterns++;
-                    }
-                }
-                if (base.size() > 0 || patterns > 0) {
-                    GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪 取样板(未改写): @{} {} 原始={} 容量槽={} 仓内样板={}"
-                                    + " 开关={} 倍率={} 除率={} 神锻={}({}) 输出模式={}",
-                            getLevel() == null ? "?" : getLevel().dimension().location(), getPos(), base.size(),
-                            slotCount(), patterns, isRewriteEnabled(), patternScale, patternDivScale, foaMode,
-                            foaMultiplier, isOutputMode);
-                }
-            }
-            return base;
-        }
-        if (!rewriteCacheBuilt) {
-            rebuildRewriteCache(base);
-            rewriteCacheBuilt = true;
-        }
-        return rewrittenPatterns == null || rewrittenPatterns.isEmpty() ? base : rewrittenPatterns;
+        return rewriteCache.getAvailablePatterns(this::baseAvailablePatterns,
+                this::invalidateRewriteCacheQuietly, this::logUnrewrittenPatterns, this::rebuildRewriteCache);
     }
 
-    /** 当前容量（现役机这里叫 {@code slotCount()}，惰性机的容量是动态的 ⇒ 直接复用已有访问器）。 */
+    private void logUnrewrittenPatterns(List<IPatternDetails> base) {
+        String sig = base.size() + "|" + slotCount() + "|" + rewriteCache.isRewriteEnabled() + "|" + patternScale + "|"
+                + patternDivScale + "|" + foaMode + "|" + isOutputMode;
+        if (!sig.equals(lastQuerySignature)) {
+            lastQuerySignature = sig;
+            int patterns = 0;
+            for (int i = 0; i < getCapacity(); i++) {
+                if (!patternInventory.getStackInSlot(i).isEmpty()) {
+                    patterns++;
+                }
+            }
+            if (base.size() > 0 || patterns > 0) {
+                GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪 取样板(未改写): @{} {} 原始={} 容量槽={} 仓内样板={} 开关={} 倍率={} 除率={} 神锻={}({}) 输出模式={}",
+                        getLevel() == null ? "?" : getLevel().dimension().location(), getPos(), base.size(),
+                        slotCount(), patterns, rewriteCache.isRewriteEnabled(), patternScale, patternDivScale, foaMode,
+                        foaMultiplier, isOutputMode);
+            }
+        }
+    }
+
     private int slotCount() {
         return getCapacity();
     }
 
-    /** 是否启用了视图改写（倍率 / 除率 / 神锻 任一）。★ 照搬现役机 {@code isRewriteEnabled()}。 */
     private boolean isRewriteEnabled() {
-        return foaMode || patternScale > 1 || patternDivScale > 1;
+        return rewriteCache.isRewriteEnabled();
     }
 
     /** 有效倍率（神锻 × 倍率，两侧同倍）；与 {@link #rewritePattern} 同一套公式。★ 照搬现役机。 */
     private int effectiveMul() {
-        int bothMul = foaMode ? Math.max(MIN_FOA_MULTIPLIER, Math.min(MAX_FOA_MULTIPLIER, foaMultiplier)) : 1;
-        int sideMul = Math.max(MIN_SCALE, Math.min(MAX_SCALE, patternScale));
-        return bothMul * sideMul;
+        return rewriteCache.effectiveMul();
     }
 
     /** 有效除率。★ 照搬现役机。 */
     private int effectiveDiv() {
-        return Math.max(MIN_SCALE, Math.min(MAX_SCALE, patternDivScale));
+        return rewriteCache.effectiveDiv();
     }
 
     /**
@@ -2208,7 +2108,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * 例如神锻 15 + 倍率 2 → 两侧 ×30；除率 3 → 两侧 ÷3。总量不变、合成次数按倍率下降。
      */
     private String describeEffectiveScale() {
-        return "两侧×" + effectiveMul() + "÷" + effectiveDiv();
+        return rewriteCache.describeEffectiveScale();
     }
 
     /**
@@ -2235,9 +2135,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * 见 0.3.5 的 O(n²) 取证注释）。
      */
     private void invalidateRewriteCacheQuietly() {
-        rewrittenPatterns = null;
-        rewrittenToOriginal.clear();
-        rewriteCacheBuilt = false;
+        rewriteCache.invalidate();
     }
 
     /**
@@ -2247,79 +2145,14 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * 且集合按底表大小分配（底表 = 真实存在的样板数，不是 128/640）⇒ 空仓/半仓都不会白付。
      */
     private void rebuildRewriteCache(List<IPatternDetails> base) {
-        rewrittenToOriginal.clear();
-        List<IPatternDetails> result = new ArrayList<>(base.size());
-        int changedCount = 0;
-        for (IPatternDetails details : base) {
-            IPatternDetails rewritten = rewritePattern(details);
-            if (rewritten == null || rewritten == details) {
-                result.add(details);
-                continue;
-            }
-            result.add(rewritten);
-            rewrittenToOriginal.put(rewritten, details);
-            changedCount++;
-        }
-        rewrittenPatterns = changedCount > 0 ? result : null;
-        // 诊断（临时）：改倍率/神锻后若这行不出现 = 缓存没失效；出现但"已改写=0" = 改写逻辑本身没产出。
-        // 只在**重建时**打（本方法只在缓存未建时被调）⇒ 不会每 tick 刷。
+        int changedCount = rewriteCache.rebuild(base, this::rewritePattern);
         GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪 缩放缓存重建 @{}: 样板={} 已改写={} 有效缩放[{}] 倍率={} 除率={} 神锻={}({})",
                 getPos(), base.size(), changedCount, describeEffectiveScale(), patternScale, patternDivScale,
                 foaMode, foaMultiplier);
     }
 
-    /**
-     * 单个样板的缩放。★ 照搬现役机 {@code rewritePattern}（1811-1843）。
-     *
-     * <p><b>两侧同倍</b>（与神锻一致）：输入和输出用<b>同一个</b>倍率/除率。
-     * 原因：AE 只会把"样板声明里要的输入量"推给机器，机器就按推来的量做 ——
-     * 如果只放大某一侧（旧的"输出模式"），AE 以为能拿到 N 倍产出、机器实际只跑 1 倍，
-     * 声明与实际执行就对不上了。两侧同倍则永远自洽（N 倍输出必然配 N 倍输入）。
-     *
-     * <p>惰性化：返回 null 表示"这一张不用改写"（非处理样板 / 拿不到 level / 编码失败），
-     * 调用方会原样保留底表里的那一张 —— 与现役机同口径。
-     */
     private IPatternDetails rewritePattern(IPatternDetails details) {
-        Level level = getLevel();
-        if (level == null || !(details instanceof AEProcessingPattern pattern)) {
-            return null;
-        }
-        int bothMul = foaMode ? Math.max(MIN_FOA_MULTIPLIER, Math.min(MAX_FOA_MULTIPLIER, foaMultiplier)) : 1;
-        int sideMul = Math.max(MIN_SCALE, Math.min(MAX_SCALE, patternScale));
-        int sideDiv = Math.max(MIN_SCALE, Math.min(MAX_SCALE, patternDivScale));
-        int mul = bothMul * sideMul;   // 神锻 × 倍率（两者可叠加：神锻15 + 倍率2 = 30 批）
-        int div = sideDiv;
-        if (mul == 1 && div == 1) {
-            return null;
-        }
-        try {
-            GenericStack[] inputs = scaleStacks(pattern.getSparseInputs(), mul, div);
-            GenericStack[] outputs = scaleStacks(pattern.getSparseOutputs(), mul, div);
-            ItemStack encoded = PatternDetailsHelper.encodeProcessingPattern(inputs, outputs);
-            if (encoded == null || encoded.isEmpty()) {
-                return null;
-            }
-            return PatternDetailsHelper.decodePattern(encoded, level);
-        } catch (RuntimeException ignored) {
-            return null;
-        }
-    }
-
-    /** 把一组 stack 的量 ×mul÷div（向下取整但至少留 1，避免出现 0 数量的 stack）。★ 照搬现役机。 */
-    private static GenericStack[] scaleStacks(GenericStack[] source, int mul, int div) {
-        if (source == null) {
-            return null;
-        }
-        GenericStack[] result = new GenericStack[source.length];
-        for (int i = 0; i < source.length; i++) {
-            GenericStack stack = source[i];
-            if (stack == null) {
-                continue;
-            }
-            long amount = stack.amount() * (long) mul / Math.max(1, div);
-            result[i] = new GenericStack(stack.what(), Math.max(1, amount));
-        }
-        return result;
+        return rewriteCache.rewritePattern(details, this::getLevel);
     }
 
     // ---------- 倍率 / 除率 / 神锻 的字段读写（★ 逐条照搬现役机 1862-1927）----------
@@ -2750,41 +2583,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         }
     }
 
-    // ==================== P2-① 每槽配方模式（不串配方的核心） ====================
-    //
-    // 逐条照搬 MoltenPatternAssemblyPartMachine（现役机）：
-    //   getAvailableRecipeTypes / firstRecipeLogicController / cycleRecipeType / recipeTypeOfSlot /
-    //   manualTypeIndexOf / assignManualType / detectRecipeType / scanTypesForMatch /
-    //   patternIdentityMatches（+ 它的 6 个静态小工具）/ tableNameOf。
-    // 唯一改动 = 「固定数组 slotRecipeType[i]」→「跟随容量增长的 slotRecipeTypes.get(i)」。
-
-    /** 控制器暴露的全部配方类型（没有控制器时为空）。★ 照搬现役机同名方法，缓存口径一致。 */
     public List<GTRecipeType> getAvailableRecipeTypes() {
-        IRecipeLogicMachine controller = firstRecipeLogicController();
-        if (controller == null) {
-            cachedTypesController = null;
-            cachedTypesSource = null;
-            cachedTypes = List.of();
-            return cachedTypes;
-        }
-        GTRecipeType[] types = controller.getRecipeTypes();
-        if (controller == cachedTypesController && types == cachedTypesSource) {
-            return cachedTypes;   // 同一个控制器、同一个数组 → 直接复用，省掉 Arrays.asList
-        }
-        cachedTypesController = controller;
-        cachedTypesSource = types;
-        cachedTypes = types == null ? List.of() : java.util.Arrays.asList(types);
-        return cachedTypes;
+        return modeContext().availableRecipeTypes(firstRecipeLogicController());
     }
 
-    /** 第一个能当「配方机」用的控制器（多方块主机）。★ 照搬现役机同名方法。 */
     private IRecipeLogicMachine firstRecipeLogicController() {
-        for (IMultiController controller : getControllers()) {
-            if (controller instanceof IRecipeLogicMachine logicMachine) {
-                return logicMachine;
-            }
-        }
-        return null;
+        return PatternModeContext.firstRecipeLogicController(getControllers());
     }
 
     public int getActiveRecipeTypeIndex() {
@@ -2795,47 +2599,16 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         this.activeRecipeTypeIndex = index;
     }
 
-    /** 当前激活的配方类型（下标越界/空表时退回第一个）。★ 照搬现役机同名方法。 */
     public GTRecipeType getActiveRecipeType() {
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        if (activeRecipeTypeIndex >= 0 && activeRecipeTypeIndex < types.size()) {
-            return types.get(activeRecipeTypeIndex);
-        }
-        return types.isEmpty() ? null : types.get(0);
+        return modeContext().activeRecipeType();
     }
 
-    /**
-     * 手动切换模式（界面上的 ◀ / ▶）。
-     * ★ 照搬现役机 {@code cycleRecipeType} —— 注意它<b>只改本类的下标缓存</b>，不直接动控制器：
-     * 真正的切换由 {@link #lockRecipeTypeForSlot(int)}（推送时）与 {@link #autoSwitchRecipeModes()}
-     * （自动切换）去做，避免玩家点一下按钮就把正在跑的配方打断。
-     */
-    /**
-     * 手动切换模式（界面上的 ◀ / ▶）——
-     * ★ 0.3.2 起改的是<b>模式页游标</b> {@link #modeCursorIndex}（{@link #assignManualType(int, boolean)}
-     * 与模式页显示读的就是它），<b>不动控制器</b>：
-     * 真正的机器模式切换由 {@link #lockRecipeTypeForSlot(int)}（推送时）与 {@link #autoSwitchRecipeModes()}
-     * （自动切换）去做，避免玩家点一下按钮就把正在跑的配方打断（与现役机同一条纪律）。
-     *
-     * <p>0.3.1 的写法是 {@code activeRecipeTypeIndex = 下一个}，但那个字段每 tick 被「跟随控制器」改写
-     * ⇒ 玩家看到车床、指定下去的却是切割机（队长实测的 bug）。游标不受那条跟随影响，问题即消失。
-     */
     public void cycleRecipeType(boolean forward) {
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        if (types.isEmpty()) {
-            return;
-        }
-        int size = types.size();
-        int base = modeCursorIndex >= 0 && modeCursorIndex < size ? modeCursorIndex : activeRecipeTypeIndex;
-        setRecipeType(forward ? (base + 1) % size : (base - 1 + size) % size);
+        modeContext().cycleRecipeType(forward);
     }
 
     public void setRecipeType(int index) {
-        if (index >= 0 && index < getAvailableRecipeTypes().size()) {
-            this.modeCursorIndex = index;
-            this.modeCursorTouched = true;
-            rememberBoundModeType();   // ★ 绑定模式持久化：把"本总成负责的模式"记成类型 id（落盘用）
-        }
+        modeContext().setRecipeType(index);
     }
 
     /** 模式页游标（要「指定」下去的那个模式）。客户端标签读它。 */
@@ -2857,104 +2630,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     // ---------- 绑定模式持久化（gtlmodular$lazy_bound_mode_type）----------
 
-    /**
-     * ★ <b>绑定模式持久化</b>：把"本总成负责的模式"（模式页游标对应的 {@code GTRecipeType}）
-     * 的类型 id 记进 {@link #boundModeType} —— 它就是 {@link #saveCustomPersistedData} 写进
-     * {@link #NBT_BOUND_MODE_TYPE} 的那份影子副本。
-     *
-     * <p><b>调用点</b>（都是"玩家选定模式"那一步，绝不每 tick 调）：
-     * {@link #setRecipeType(int)}（模式页 ◀/▶ 与模式名芯片点击的落点）与
-     * {@link #assignManualType(int, boolean)}（点"指定"时顺带刷新一次）。
-     *
-     * <p><b>只在"玩家真的拨过"时才算绑定</b>（{@code modeCursorTouched}）：没拨过时游标是"跟随控制器"的
-     * 镜像 ⇒ 那不是绑定，不记也不写键（保持老档的"缺键 = 跟随控制器"语义）✓。
-     *
-     * <p><b>只在服务端记</b>（{@code isRemote()} 直接 return）：这个键是<b>服务端持久化</b>的，
-     * 客户端那份 BE 只做显示（模式页读 {@code @DescSynced modeCursorIndex}），不需要也不应该参与落盘。
-     * <b>本机这条守卫尤其必要</b>：本机的 ◀/▶ 回调刻意**没有** {@code isRemote()} 守卫
-     * （见 {@code cycle(...)} 的注释：那是照搬现役机早期口径）⇒ {@code cycleRecipeType} → 本方法会在
-     * 客户端也跑一次 ⇒ 必须在这里把客户端挡掉，绝不能把客户端镜像当成"玩家的绑定"写进字段 ✓。
-     *
-     * <p>幂等 + 廉价：id 没变时<b>不</b>调 {@code markDirty()}（稳态点击不产生多余的区块标脏）；
-     * 越界/空表/空 id 一律安全回退（什么都不改、不抛异常）。
-     */
     private void rememberBoundModeType() {
-        if (isRemote()) {
-            return;   // 服务端持久化字段：客户端不参与
-        }
-        if (!modeCursorTouched) {
-            return;   // 没拨过 = 没绑定 ⇒ 不记（继续"跟随控制器"，键也不写）
-        }
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        if (modeCursorIndex < 0 || modeCursorIndex >= types.size()) {
-            return;   // 空表 / 下标越界 ⇒ 安全回退（绝不动既有状态）
-        }
-        GTRecipeType type = types.get(modeCursorIndex);
-        if (type == null || type.registryName == null) {
-            return;   // 类型本身没 id ⇒ 记不了（不写半个值）
-        }
-        if (!type.registryName.equals(boundModeType)) {
-            this.boundModeType = type.registryName;
-            // 让服务端 BE 把这次改动纳入本次落盘（MetaMachine.markDirty() → BlockEntity.setChanged()，
-            // 取证：_census/_gtceu_MetaMachine_javap.txt:174-180 调 BlockEntity.m_6596_()）。
-            // 只在 id 真变了时调 ⇒ 不会每次点击/每 tick 刷脏。
-            markDirty();
-        }
-        this.boundModePendingResolve = false;   // 游标此刻就是权威值 ⇒ 不需要再"待解析"
+        modeContext().rememberBoundModeType();
     }
 
-    /**
-     * ★ <b>绑定模式持久化</b>：把 {@link #boundModeType} 落到 {@link #modeCursorIndex} 上，
-     * 并置 {@link #modeCursorTouched} = {@code true}。
-     *
-     * <p><b>{@code modeCursorTouched} 就是"禁止跟随"的开关</b>（本轮已确认）——
-     * 判定点有两处，都在 {@link #autoSwitchRecipeModes()}：
-     * <ol>
-     *   <li>「游标跟随控制器」：{@code if (!this.modeCursorTouched && this.modeCursorIndex != live)}
-     *       （0.3.2 那一行）⇒ 置真后<b>绝不</b>把玩家绑定的模式改回主机模式 ✓；</li>
-     *   <li>自动切换收尾：{@code if (!this.modeCursorTouched) this.modeCursorIndex = target;}
-     *       ⇒ 自动切换也只动"没绑定"的游标 ✓。</li>
-     * </ol>
-     * 不需要另造开关。
-     *
-     * <p><b>为什么读档时不直接解析，而要放到每 tick</b>：读档期机器还没挂到 level / 控制器上
-     * （本类既有注释已多次取证：{@code getControllers()} 为空）⇒ {@code getAvailableRecipeTypes()} 为空
-     * ⇒ 那时<b>无法区分</b>"类型被移除"与"控制器还没就绪"。所以读档只记 id + 置
-     * {@link #boundModePendingResolve}，由本方法在类型表非空时判定。
-     *
-     * <p>三种结果（全部不抛异常、不改任何既有键）：
-     * <ol>
-     *   <li>没有待解析（{@code boundModeType == null} 或已解析过）⇒ 立刻 return（一次引用比较 + 一次布尔判断）；
-     *   <li>类型表为空 ⇒ 保持待解析、什么都不做，下一 tick 再试（<b>绝不在空表时判失效</b>）；
-     *   <li>类型表非空：找到同 id ⇒ 游标 = 该下标 + {@code modeCursorTouched = true}（绑定生效 ✓，一步到位）；
-     *       找不到 ⇒ <b>忽略并视为未绑定</b>：保持 {@code modeCursorTouched = false}（游标继续跟随控制器 =
-     *       现有默认行为 ✓）、不报错、不抛异常；id 留在字段里（下次落盘照旧写回）⇒ 若该类型随控制器
-     *       回来自动复活，属于"只增不改"的一侧，不会破坏任何已有数据。
-     * </ol>
-     *
-     * <p>做成幂等 + O(类型数)：解析成功后 {@code boundModePendingResolve = false}
-     * ⇒ 之后每 tick 只有一次布尔判断，零对象构造 ✓。
-     */
     private void applyBoundModeTypeIfPossible() {
-        if (boundModeType == null || !boundModePendingResolve) {
-            return;
-        }
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        if (types.isEmpty()) {
-            return;   // 控制器/类型表还没就绪 ⇒ 下次再试（绝不在此判"类型已移除"）
-        }
-        for (int i = 0; i < types.size(); i++) {
-            GTRecipeType type = types.get(i);
-            if (type != null && boundModeType.equals(type.registryName)) {
-                this.modeCursorIndex = i;
-                this.modeCursorTouched = true;   // ★ 把"玩家已选定"这个状态一起恢复 ⇒ 跟随逻辑不再覆盖它
-                this.boundModePendingResolve = false;
-                return;
-            }
-        }
-        // 类型表已就绪却没有这个 id（模组更新/移除、或换了个不带该模式的控制器）⇒ 视为未绑定：
-        // 保持 modeCursorTouched = false ⇒ 完全走现有"跟随控制器"默认行为，不报错、不动既有键。
-        this.boundModePendingResolve = false;
+        modeContext().applyBoundModeTypeIfPossible();
     }
 
     /**
@@ -2992,46 +2673,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         slotRecipeTypes.set(slot, value);
     }
 
-    /** 某个样板槽的配方类型下标；识别不出来返回 -1。<b>手动指定的优先</b>。★ 照搬现役机 {@code recipeTypeOfSlot}。 */
     private int recipeTypeOfSlot(int slot) {
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        if (types.isEmpty() || slot < 0) {
-            return -1;
-        }
-        // ① 手动指定优先
-        int manual = manualTypeIndexOf(slot, types);
-        if (manual >= 0) {
-            return manual;
-        }
-        ensureRecipeTypeSlotCapacity();
-        if (slot >= slotRecipeTypes.size()) {
-            return -1;
-        }
-        int cached = recipeTypeCacheAt(slot);
-        if (cached >= 0 && cached < types.size()) {
-            return cached;
-        }
-        if (cached == TYPE_UNKNOWN) {
-            return -1;   // 试过了，识别不出来，别再扫一遍配方表（这是扣料热路径）
-        }
-        int detected = detectRecipeType(slot, types);
-        setRecipeTypeCache(slot, detected >= 0 ? detected : TYPE_UNKNOWN);
-        return detected;
+        return modeContext().recipeTypeOfSlot(slot, TYPE_UNKNOWN);
     }
 
-    /** 手动指定的类型在<b>当前</b>类型表里的下标；没指定 / 类型已不在表里 → -1。★ 照搬现役机 {@code manualTypeIndexOf}。 */
     private int manualTypeIndexOf(int slot, List<GTRecipeType> types) {
-        ResourceLocation id = manualSlotTypes.get(slot);
-        if (id == null) {
-            return -1;
-        }
-        for (int i = 0; i < types.size(); i++) {
-            GTRecipeType type = types.get(i);
-            if (type != null && id.equals(type.registryName)) {
-                return i;
-            }
-        }
-        return -1;
+        return PatternModeContext.manualTypeIndexOf(slot, types, manualSlotTypes);
     }
 
     /** 模式页上「要给哪个槽位指定」的槽号（1 起）。 */
@@ -3045,8 +2692,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     }
 
     public void setManualAssignSlot(int slot) {
-        this.manualAssignSlot = Math.max(1, Math.min(getPatternSlotCount(), slot));
-        refreshManualAssignDisplay();
+        PatternModeContext.setManualAssignSlot(slot, this::getPatternSlotCount,
+                value -> this.manualAssignSlot = value, this::refreshManualAssignDisplay);
     }
 
     public String getManualAssignTypeId() {
@@ -3237,49 +2884,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         }
     }
 
-    /**
-     * 把<b>当前选中的模式</b>手动指定给某个样板槽位（或清除指定）。
-     * 只是登记「这个槽的样板属于哪种类型」，不动样板本身。
-     *
-     * <p>★ 照搬现役机 {@code assignManualType}：三条路径里的「手动指定 / 手动清除」都走这里；
-     * 指定变了就把该槽的识别缓存与拉黑表作废（否则会自动识别出的旧结论继续压着手动指定）。
-     */
     public void assignManualType(int slotNumber, boolean clear) {
         try {
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            int slot = slotNumber - 1;
-            if (slot < 0 || slot >= getCapacity()) {
-                return;
-            }
-            if (clear) {
-                manualSlotTypes.remove(slot);
-            } else {
-                if (types.isEmpty()) {
-                    return;
-                }
-                // ★ 0.3.2：读**模式页游标**（玩家在界面上看到的那个模式），
-                //   不再读 activeRecipeTypeIndex（那个每 tick 被"跟随控制器"改写 ⇒ 永远指向主机当前模式）。
-                int index = Math.max(0, Math.min(types.size() - 1, modeCursorIndex));
-                GTRecipeType type = types.get(index);
-                if (type == null || type.registryName == null) {
-                    return;
-                }
-                manualSlotTypes.put(slot, type.registryName);
-            }
-            // 指定变了 → 该槽的识别缓存与拉黑表都作废
-            setRecipeTypeCache(slot, TYPE_NOT_TRIED);
-            // ★ 0.3.2（队长实测「钻石卡死在缓冲里」的那个事故的收尾）：
-            //   只清"类型缓存"不够 —— 主机侧「这台舱室能跑哪些配方」是从 **GT 配方缓存**
-            //   （{@code getSlot2RecipesCache()}）学的，而 GTRecipeLookupMixin 的快路径是
-            //   「缓存集非空就 iterator().next() 直接返回、不校验谓词」。
-            //   于是"上次用错模式时被主机配上过的配方"（比如切割机·钻石杆）会一直留着，
-            //   玩家把模式改对了它仍然把那条跑不动的配方喂给主机 ⇒ 料卡在缓冲里、产物不回流。
-            //   这里连同该槽的 GT 配方缓存一起清掉，逼主机按新模式重新搜一次。
-            clearSlotRecipeCache(slot);
-            autoSwitchBlockedUntil.clear();
-            refreshManualAssignDisplay();
-            rememberBoundModeType();                 // ★ 绑定模式持久化：指定动作顺带刷新一次绑定 id（只在玩家拨过时生效）
-            syncCustomNameToMode(modeCursorIndex);   // ★ 名字跟随模式（照搬现役机同一行）
+            modeContext().assignManualType(slotNumber, clear);
         } catch (Throwable failure) {
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：手动指定配方模式失败 pos={} 槽={} 原因={}",
                     getPos(), slotNumber, failure.toString());
@@ -3293,7 +2900,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     /**
      * 「读样板的配方类型」：把样板解成 AE 样板，然后在每一种配方类型的配方里找<b>身份匹配</b>的那一条
-     * （{@link #patternIdentityMatches}：非电路输入被样板输入覆盖 + 配方主产物落在样板输出里）。
+     * （{@link PatternRecipeMatching#patternIdentityMatches}：非电路输入被样板输入覆盖 + 配方主产物落在样板输出里）。
      *
      * <p>★ 逐条照搬现役机 {@code detectRecipeType}（含「两遍扫描、第一遍跳过主机表」那条 2026-09-21 的修复）：
      * 第一遍跳过主机表（唯一命中就直接采用，不再被它搅成歧义）；只有第一遍一个都不命中时，
@@ -3331,38 +2938,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         return hostTableOnly;
     }
 
-    /**
-     * 在 {@code types} 里逐类型找「身份匹配」的配方。★ 照搬现役机 {@code scanTypesForMatch}。
-     *
-     * @param skipHostTable {@code true} = <b>跳过</b>主机表（{@code NanochipRecipeTypes.ASSEMBLY_COMPLEX}）；
-     *                      {@code false} = <b>只看</b>主机表（两遍扫描的第二遍）。
-     * @return 唯一命中的类型下标／{@code -1}（≥2 个类型都命中 = 歧义，不猜）／{@link #MATCH_NONE}
-     */
+    /** 先清空中转，避免扫描失败时沿用上一次扫描的配方。 */
     private int scanTypesForMatch(List<GTRecipeType> types, IPatternDetails pattern, Level level, boolean skipHostTable) {
-        this.lastMatchedSlotRecipe = null;   // ★ 直供配方：本遍「唯一命中」时才记下那条配方（无命中/歧义 ⇒ 保持 null）
-        int matched = MATCH_NONE;
-        for (int i = 0; i < types.size(); i++) {
-            GTRecipeType type = types.get(i);
-            if (type == null) {
-                continue;
-            }
-            boolean isHostTable = type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX;
-            if (isHostTable == skipHostTable) {
-                continue;   // 第一遍跳过主机表；第二遍只看主机表
-            }
-            for (GTRecipe recipe : level.getRecipeManager().getAllRecipesFor(type)) {
-                if (patternIdentityMatches(recipe, pattern)) {
-                    if (matched >= 0 && matched != i) {
-                        this.lastMatchedSlotRecipe = null;   // ★ 直供配方：歧义 ⇒ 不直供（绝不给机器喂猜出来的配方）
-                        return -1;   // 两种类型都能匹配 → 歧义，交给手动指定
-                    }
-                    matched = i;
-                    this.lastMatchedSlotRecipe = recipe;     // ★ 直供配方：唯一命中 ⇒ 记住它（detectRecipeType 收尾时交给机器）
-                    break;
-                }
-            }
-        }
-        return matched;
+        this.lastMatchedSlotRecipe = null;
+        return PatternRecipeTypeSearch.scan(types, pattern, level, skipHostTable,
+                type -> type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX,
+                recipe -> this.lastMatchedSlotRecipe = recipe).typeIndex();
     }
 
     // ================= ★ 2026-10-27【直供配方】：把「该槽对应的那条配方」直接交给机器 =================
@@ -3402,51 +2983,19 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     private GTRecipe lastMatchedSlotRecipe;
 
-    /**
-     * ★ 2026-10-27【直供配方】：把「该槽对应的那条配方」写进该槽的配方缓存 ——
-     * 机器随后从 {@code getCachedGTRecipe()} 把它当<b>附加候选</b>直接拿到，不必遍历配方表去找它。
-     *
-     * <p>五条 fail-open 纪律与 {@code MoltenPatternAssemblyPartMachine#supplyResolvedRecipeToMachine}
-     * 逐条相同（开关/唯一命中/客户端/已有缓存不覆盖/任何异常都退回今天的行为），此处不再重复。
-     * 两台机的差别只有一处：本台写的是**我们自己的** {@code LazyMEPatternTrait} 的
-     * {@code slot2RecipesCache}（经由 {@code IMEPatternTrait.setSlotCacheRecipe} 这个官方口），
-     * 现役机写的是 gtlcore 具体 trait 的 {@code recipeMultipleCacheMap}。
-     *
-     * @param slot             样板槽下标
-     * @param detectedTypeIndex {@link #detectRecipeType(int, List)} 的结论；必须 {@code >= 0} 才算「唯一识别」
-     */
+    /** 只有类型唯一时才直供，避免把歧义样板交给机器。 */
     private void supplyResolvedRecipeToMachine(int slot, int detectedTypeIndex) {
         if (!DIRECT_SLOT_RECIPE_SUPPLY || detectedTypeIndex < 0) {
-            return;   // ① 没识别出唯一类型（含歧义 -1）⇒ 不直供
+            return;
         }
         GTRecipe recipe = this.lastMatchedSlotRecipe;
         if (recipe == null || isRemote()) {
-            return;   // ② 没有唯一命中的配方 / ③ 客户端 ⇒ 不直供
+            return;
         }
-        try {
-            if (getMETrait().hasCacheInSlot(slot)) {
-                return;   // ④ 该槽已有配方缓存 ⇒ 不重复写、不覆盖上游记账
-            }
-            getMETrait().setSlotCacheRecipe(slot, recipe);
-        } catch (Throwable ignored) {
-            // ⑤ 直供失败 = 逐字退回今天的行为（机器照旧自己搜配方表）⇒ 绝不影响扣料
-        }
+        PatternRecipeTypeSearch.supplyIfAbsent(slot, recipe, this::getMETrait);
     }
 
-    /**
-     * 把控制器的搜索端<b>锁到这个槽位的模式</b>上。★ 照搬现役机 {@code lockRecipeTypeForSlot}，
-     * 含 2026-09-26 那条<b>必须原样保留</b>的修复：
-     *
-     * <p>识别不出类型（{@code index < 0}）时<b>绝不回落、绝不动控制器</b>
-     * （老实现会回落到缓存下标 {@code activeRecipeTypeIndex} 并强行设置控制器 ⇒
-     * 「玩家手动设成车床，一推不认识的样板就被抢回卷板机」）。这里是 fail-open：认不出来就不动。
-     *
-     * <p>另外两条安全线也一并照搬：控制器已经在目标模式时只更新缓存不动 logic；
-     * {@code logic.isWorking()} 时不动（配方一旦开始输入就已扣掉，这时候 reset 会让已扣的料蒸发）。
-     *
-     * <p>入参用「样板所在槽」，从 {@code pushPattern} 里调（与现役机调用点一致）。
-     */
-    /** ★★ 0.3.132【止血开关】★★ 见 {@code lockRecipeTypeForSlot} 里那段注释。 */
+    /** WAITING 的独立线程仍可能持有已扣料批次，默认禁止推送锁模式重置这些批次。 */
     public static final boolean ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES = false;
 
     private void lockRecipeTypeForSlot(int slot) {
@@ -3456,631 +3005,130 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 return;
             }
             int index = recipeTypeOfSlot(slot);
-            if (index < 0 || index >= types.size()) {
-                // ★★ fail-open：认不出来就绝不动控制器（见方法注释，这条不许改回去）★★
-                return;
-            }
-            IRecipeLogicMachine controller = firstRecipeLogicController();
-            if (controller == null) {
-                return;
-            }
-            if (controller.getActiveRecipeType() == index) {
-                this.activeRecipeTypeIndex = index;
-                return;
-            }
-            RecipeLogic logic = controller.getRecipeLogic();
-            if (logic.isWorking()) {
-                return;
-            }
-            // ★★ 0.3.132【止血 · 队长裁决 ①②③④ 里的第 ② 步】★★
-            //   **为什么光判 `isWorking()` 不够**：`RecipeLogic.isWorking()` 的判据是
-            //   **`status == WORKING`**（字节码逐字见 `_census/_javap_simple_recipelogic.txt:819-828`），
-            //   而 NAC 的独立线程逻辑在「**有批次，但在等电 / 等料**」时置的是 **WAITING**
-            //   ⇒ **等的瞬间 `isWorking() == false` ⇒ 闸门打开 ⇒ 下面的 `logic.resetRecipeLogic()`
-            //     把【整张批次表】丢掉（含已经扣掉的料，不退）**。
-            //   取证：`NanochipThreadedRecipeLogic.resetRecipeLogic`（`:1859-1862`）
-            //     `super.resetRecipeLogic(); batches.clear(); batchStates.clear();`
-            //     并在丢弃非空表时打 `NAC 独立线程：配方逻辑被重置 ⇒ 丢弃 N 条在跑批次`。
-            //   ⇒ 这里补一道：**只要还有批次在跑（或已开好尚未收尾），就不许切模式**。
-            //   ⚠ 本步只"止血"：它**不**让两个表同时跑（跨表并行是第 ③ 步的事），
-            //     只是**不再无故丢掉整张批次表**。代价 = 换模式可能被推迟到当前批次跑完（更保守）。
-            //   一行回退：把 `ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES` 改成 true。
-            if (!ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES
-                    && logic instanceof com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic threaded
-                    && threaded.runningThreadCount() > 0) {
-                return;
-            }
-            controller.setActiveRecipeType(index);
-            // 只切类型不够：GT 的 RecipeLogic 会优先继续跑 lastRecipe，必须 reset 才会按新模式重新搜
-            logic.resetRecipeLogic();
-            // ★ 0.3.2：模式真的换了 ⇒ 把主机学到的 GT 配方缓存清一遍。
-            //   否则「上一个模式里被配上过的那条配方」还在缓存里，而快路径不校验谓词
-            //   ⇒ 主机切了模式却仍旧拿到旧模式的配方（0.3.1 实测：料卡在缓冲里、产物不回流）。
-            //   ★★ 0.3.133【跨表并行】★★ 改成**只失效"换过去的那张表"**（另一张表的候选必须留着，
-            //   否则 A/B 两表永远不可能在同一 tick 同时可见）；"快路径不校验谓词"这个前提由
-            //   `LazyMEPatternTrait.getCachedGTRecipe()` 里新增的**读侧类型校验**堵住（见那两个开关的 javadoc）。
-            //   一行回退：`KEEP_FOREIGN_SLOT_RECIPE_CACHE_ON_MODE_SWITCH = false`。
-            clearAllSlotRecipeCaches(index);
-            this.activeRecipeTypeIndex = index;
+            patternAutoSwitch().lockRecipeTypeForSlot(slot, index, types);
         } catch (Throwable ignored) {
-            // 锁模式失败只是"少锁一次"，绝不打断推样板本身
+            // 锁模式失败不能阻止原本的样板推送。
         }
     }
 
     // ==================== P2-② 自动切换配方模式 ====================
 
-    /**
-     * 自动模式轮询：当前模式已经跑不动（既不 WORKING，处于 IDLE/WAITING）时，
-     * 扫描仓里其它「有料在槽位等着」的样板槽，把控制器切到那个模式并重置配方逻辑。
-     * 一台机器可以同时挂多种模式的样板、轮流自动跑。
-     *
-     * <p><b>★ 本方法并进已有的 {@code lazyTick()} 服务端订阅</b>（不新增第二个
-     * {@code subscribeServerTick}，避免同一件事被订阅两次）。
-     *
-     * <p>判据顺序（逐条照搬现役机 {@code autoSwitchTick}，第 1048-1127 行）：
-     * <ol>
-     *   <li>客户端直接 return；</li>
-     *   <li><b>名字跟随</b>（{@link #syncCustomNameToMode(int)}）：<b>每 tick 都调</b>（★ 2026-10-04b；
-     *       原来"只在名字为空/等于兜底串时才调"⇒ 写一次之后名字再也不会跟模式变 ✗），
-     *       真正要不要写由方法内部的幂等判据 + 廉价性能闸决定 ⇒ 机器模式一变名字立刻跟 ✓ ——
-     *       与自动切换开关无关（起名是显示层的事）；</li>
-     *   <li><b>下标跟随控制器</b>（只读同步）：玩家在主机的模式页上改了模式、或结构重成形把模式重置时，
-     *       我们的缓存不能停在旧值，否则锁模式/起名/模式页都会用错模式；</li>
-     *   <li>{@code GTLModularConfig.isAutoRecipeModeSwitchEnabled()} 为 false → 到此为止
-     *       （即：开关关掉后，只有"起名 + 跟随"仍然生效，切换策略完全停手）；</li>
-     *   <li>类型表 ≤ 1 或拿不到控制器 → return；</li>
-     *   <li>{@code logic.isWorking()} → 清掉待观察窗口并 return（跑动中打断会让已扣输入蒸发）；</li>
-     *   <li><b>观察窗口</b>：上一次切过去的类型若在 {@value #AUTO_SWITCH_GRACE_TICKS} tick 内还没开跑，
-     *       就把它拉黑 {@value #AUTO_SWITCH_BLOCK_TICKS} tick，然后 return；</li>
-     *   <li>冷却：{@value #AUTO_SWITCH_INTERVAL_TICKS} tick 才扫一次（别每 tick 扫槽）；</li>
-     *   <li>{@link #findModeWithWaitingStock(List, int, long)} 找目标；<b>返回 -1 时绝不回退抢占控制器</b>
-     *       —— 这条是队长报过的 bug 修复，原样保留；</li>
-     *   <li>真正切换：{@code setActiveRecipeType} + {@code logic.resetRecipeLogic()} +
-     *       记下标 + 名字跟随 + 记待观察窗口 + 记一条 INFO。</li>
-     * </ol>
-     */
     private void autoSwitchRecipeModes() {
         try {
             if (isRemote()) {
                 return;
             }
-            // ★ 2026-10-14（绑定模式持久化）：读档拿到的"本总成负责的模式"在这里落到模式页游标上
-            //   （见 applyBoundModeTypeIfPossible 的注释）。放在本方法**最前面**的两条理由：
-            //   ① 读档期类型表还没就绪 ⇒ 那时只记 id，这里等类型表就绪后补解析；
-            //   ② 名字跟随（下面的 syncCustomNameToMode）取的就是本总成的模式游标 ⇒ 先解析再起名，
-            //      读档后第一 tick 就起对名字，不会先按"类型表第 0 个"误命名一次再改回来 ✓。
-            //   解析成功即置 modeCursorTouched=true ⇒ 下面「游标跟随控制器」绝不再覆盖它；
-            //   已解析过 / 无绑定时它只做一次引用比较 + 一次布尔判断（零开销）✓。
             applyBoundModeTypeIfPossible();
-            // ★ 名字跟随（照搬现役机：判据 ="这个名字归我们管"，手填过的名字绝不覆盖）。
-            //   一开始取不到控制器/类型表时静默返回，下一 tick 再试 ⇒ 结构一成形就会自动起名（自愈）。
-            //   ★ 2026-10-04：判据扩成"名字为空 **或** 等于上游 Enhancedcore 的兜底串
-            //   「未命名加工模式」"（isUpstreamPlaceholderName）—— 否则上游一写上那四个字，
-            //   这里就再也不填名了（那正是本补丁要修的症状）；玩家手填的名字仍然绝不覆盖 ✗。
-            //   ★ 2026-10-04b（**本轮改动：名字跟随当前机器模式**）：这里**去掉了守卫**
-            //   ——原来只在"名字还空着 / 等于兜底串"时才调本方法 ⇒ 名字写下去一次之后就再也进不来，
-            //   机器从「纳米芯片组装复合体」切到「纳米芯片换算」名字却一动不动（队长本轮报的症状 ✗）。
-            //   现在**每 tick 都调**，"要不要真写"由方法内部的幂等判据 + 廉价性能闸决定
-            //   ⇒ 模式一变名字立刻跟 ✓、切回来再改回来 ✓；
-            //   ★ 2026-10-15（本轮重做）：判据不再是任何"白名单"，而是**按「本总成 + 模式」查名字表**
-            //   （{@link #syncCustomNameToMode(int)}）：有名的模式沿用、没名的写一次显示名、
-            //   玩家改过名则永久让位 ✗。**名字与"控制器当前模式"解耦** ✗（主机切模式不改名字）。
-            //   ★ 2026-10-14（用户口径「每个总成绑定一个固定模式」）：这里传进去的 hint 只是**兜底**，
-            //   真正决定名字的是**本总成自己的模式**（模式页选中模式 {@link #modeCursorIndex}，
-            //   见 {@link #currentModeIndexForNaming(int)}）⇒ 主机在跑别的模式时，本行**不会**改名字 ✓；
-            //   玩家在**这台总成上**换了自己负责的模式 ⇒ 下一次服务端 tick 就把名字换成新模式名 ✓。
             syncCustomNameToMode(activeRecipeTypeIndex);
-            // ★ 让 activeRecipeTypeIndex 跟随控制器（只读同步，自动切换关掉也照样执行）。
-            //   0.3.2：模式页游标 modeCursorIndex 在玩家**还没拨过**模式页时也一起跟随
-            //   （打开界面看到的默认值就等于「机器现在的模式」）；玩家拨过之后游标归玩家管，
-            //   绝不被这行改回去 —— 这一行就是 0.3.1「选车床、指定下去却是切割机」的根因。
-            IRecipeLogicMachine controller = firstRecipeLogicController();
-            if (controller != null) {
-                int live = controller.getActiveRecipeType();
-                if (this.activeRecipeTypeIndex != live) {
-                    this.activeRecipeTypeIndex = live;
-                }
-                if (!this.modeCursorTouched && this.modeCursorIndex != live) {
-                    this.modeCursorIndex = live;
-                }
-            }
-            if (!GTLModularConfig.isAutoRecipeModeSwitchEnabled()) {
-                return;
-            }
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            if (types.size() <= 1) {
-                return;
-            }
-            if (controller == null) {
-                return;
-            }
-            RecipeLogic logic = controller.getRecipeLogic();
-            if (logic.isWorking()) {
-                pendingAutoSwitchType = -1;   // 跑起来了，观察结束
-                return;
-            }
-            Level level = getLevel();
-            if (level == null) {
-                return;
-            }
-            long now = level.getGameTime();
-            if (pendingAutoSwitchType >= 0) {
-                if (now < pendingAutoSwitchDeadline) {
-                    return;   // 还在观察窗口里，先别乱切
-                }
-                autoSwitchBlockedUntil.put(pendingAutoSwitchType, now + AUTO_SWITCH_BLOCK_TICKS);
-                pendingAutoSwitchType = -1;
-            }
-            if (autoSwitchCooldown > 0) {
-                autoSwitchCooldown--;
-                return;
-            }
-            autoSwitchCooldown = AUTO_SWITCH_INTERVAL_TICKS;
-
-            int active = controller.getActiveRecipeType();
-            int target = findModeWithWaitingStock(types, active, now);
-            // ★ 0.3.4：把「自动切模式检查」诊断也搬进惰性机（现役机本来就有这一行）。
-            //   只在与上次不同的口径下打一条 —— 这次「不会自动切换」之所以只能靠读代码反推，
-            //   就是因为惰性机这条路径之前**一条日志都没有**（只有真切换时才打）。
-            long idleTicks = activeModeBusySince < 0L ? 0L : now - activeModeBusySince;
-            String signature = active + "|" + target + "|" + logic.getStatus() + "|" + diagActivePatterns
-                    + "|" + diagActiveStock + "|" + diagActiveCold + "|" + (idleTicks / 100);
-            if (!signature.equals(lastAutoSwitchSignature)) {
-                lastAutoSwitchSignature = signature;
-                GTLModular.LOGGER.info(
-                        "[gtlmodular] 惰性猪咪自动切模式检查: 当前={}/{} 状态={} 找到目标={} 当前模式样板={} 其中有料={} 未认配方={} 空转={}tick（满 {}tick 才允许切走）",
-                        active, types.size(), logic.getStatus(), target, diagActivePatterns, diagActiveStock,
-                        diagActiveCold, idleTicks, AUTO_SWITCH_STOCKLESS_TICKS);
-            }
-            if (target < 0 || target == active) {
-                // ★ -1 = 没有任何「类型已识别 + 槽里有料等着」的候选 ⇒ 原样保留（不回退、不抢占控制器）。
-                return;
-            }
-            controller.setActiveRecipeType(target);
-            logic.resetRecipeLogic();
-            // ★ 0.3.2：同 lockRecipeTypeForSlot —— 换模式就清掉主机学到的旧配方缓存
-            //   ★★ 0.3.133【跨表并行】★★ 同上：只失效"换过去的 target 这张表"，
-            //   另一张表的候选留着 ⇒ searchIsolating 同一 tick 能同时拿到两表候选。
-            clearAllSlotRecipeCaches(target);
-            this.activeRecipeTypeIndex = target;
-            if (!this.modeCursorTouched) {
-                this.modeCursorIndex = target;   // 玩家没拨过模式页 ⇒ 游标跟着机器走
-            }
-            syncCustomNameToMode(target);   // ★ 名字跟随模式
-            this.pendingAutoSwitchType = target;
-            this.pendingAutoSwitchDeadline = now + AUTO_SWITCH_GRACE_TICKS;
-            GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪自动切换配方模式: {} -> {} pos={}",
-                    active, target, getPos());
+            patternAutoSwitch().tick();
         } catch (Throwable ignored) {
-            // tick 路径一律不许把异常抛出去
+            // 调度失败不能打断同一 tick 的其他机器维护。
         }
     }
 
-    /**
-     * 找一个「类型已识别 + 槽里有料等着 + 不是当前模式 + 没被拉黑」的模式下标。
-     * ★ 逐条照搬现役机 {@code findModeWithWaitingStock}（第 1130-1175 行），含两条关键语义：
-     *
-     * <ol>
-     *   <li><b>第一遍：当前模式「还有活」就绝不切走</b>（直接返回 -1）。0.3.4 把"有活"的判据从
-     *       现役机的「还有样板」改成了两条（队长 2026-09-26 晚实测：「他现在不会自动切换机器模式了」——
-     *       现役机那条判据会让"多模式样板常驻仓里"这种最正常用法**永远切不动**）：
-     *       <ol>
-     *         <li>该模式的槽里<b>还有料等着</b> ⇒ 有活，绝不走；</li>
-     *         <li>该模式的槽里没料了 ⇒ 先<b>空转 {@value #AUTO_SWITCH_STOCKLESS_TICKS} tick</b> 再放行
-     *             （这一段宽限期兜住"这一模式的料还在 AE 推送路上"，就是队长 2026-09-26 那条原始口径；
-     *             料真到了会走「推送锁模式」那条路把机器切回来，不会漏跑）；</li>
-     *       </ol>
-     *       「主机还没认过这条配方」只做<b>诊断统计</b>、不作为拦截条件 —— 拿它拦截会过头：
-     *       玩家把多种模式的样板一起插进来、其中只有一种有订单时，机器会被一张认不出配方的样板摁住。
-     *       控制器停在<b>一个样板都没有</b>的模式上时不受这两条限制（原有的自愈场景）；</li>
-     *   <li><b>第二遍：类型必须已识别</b>（{@code recipeTypeOfSlot < 0} 一律跳过）—— 这就是
-     *       「只在该类型确实有等待中的样板时才能选」；没有任何候选时返回 -1，
-     *       调用方据此<b>不许回退抢占控制器</b>。</li>
-     * </ol>
-     * 「槽里有料等着」的判据与现役机一致：该槽内部槽的 {@code getItemStackInputMap()} /
-     * {@code getFluidStackInputMap()} 都不为空（未实体化的槽直读 {@link #internalInventory} 表，不为了查询而实体化）。
-     */
     private int findModeWithWaitingStock(List<GTRecipeType> types, int active, long now) {
         int capacity = getCapacity();
         ensureRecipeTypeSlotCapacity();
         int slots = Math.min(capacity, slotRecipeTypes.size());
-        // ★★ 0.3.4 第一遍（修订，见方法 javadoc）：判「当前模式还有活吗」，而不是「当前模式还有样板吗」。
-        diagActivePatterns = 0;
-        diagActiveStock = 0;
-        diagActiveCold = 0;
-        boolean hasWaitingStock = false;
-        for (int slot = 0; slot < slots; slot++) {
-            if (patternInventory.getStackInSlot(slot).isEmpty()) {
-                continue;
-            }
-            if (recipeTypeOfSlot(slot) != active) {
-                continue;
-            }
-            diagActivePatterns++;
-            if (!hasRecipeCacheInSlot(slot)) {
-                // 主机还没把这条配方配上过 ⇒ 大概率"料还在 AE 路上"。**只统计、不拦截**：
-                // 拦截会过头 —— 玩家把多种模式的样板一起插进来、其中只有一种有订单时，
-                // 机器会被一张"永远认不出配方"的样板摁住，又变成"不会自动切换"。判定交给下面的空转宽限期。
-                diagActiveCold++;
-            }
-            if (hasSlotWaitingStock(slot)) {
-                diagActiveStock++;
-                hasWaitingStock = true;
-                break;   // 有活，后面的槽不用再看了
-            }
-        }
-        if (hasWaitingStock) {
-            activeModeBusySince = -1L;   // 有料在等 ⇒ 就是它该跑，绝不切走
-            return -1;
-        }
-        if (diagActivePatterns > 0) {
-            // 样板都在、槽里却没料 ⇒ 可能这一轮干完了、也可能"料还在 AE 路上"：
-            // 先空转够 AUTO_SWITCH_STOCKLESS_TICKS 再放行（真到了料会走推送锁模式那条路回来）。
-            if (activeModeBusySince < 0L) {
-                activeModeBusySince = now;
-                return -1;
-            }
-            if (now - activeModeBusySince < AUTO_SWITCH_STOCKLESS_TICKS) {
-                return -1;
-            }
-        } else {
-            activeModeBusySince = -1L;   // 当前模式一个样板都没有 ⇒ 自愈场景，随时可以对齐
-        }
-        for (int slot = 0; slot < slots; slot++) {
-            // 空槽先跳过：先做类型识别（含手动指定查表）再判空是纯浪费
-            if (patternInventory.getStackInSlot(slot).isEmpty()) {
-                continue;
-            }
-            int type = recipeTypeOfSlot(slot);   // 手动指定的优先，其次才是自动识别
-            if (type < 0 || type >= types.size() || type == active) {
-                continue;
-            }
-            Long blocked = autoSwitchBlockedUntil.get(type);
-            if (blocked != null && now < blocked) {
-                continue;   // 刚切过去没跑起来的类型，暂时不再选
-            }
-            if (hasSlotWaitingStock(slot)) {
-                return type;   // 找到了一个有料等着、且不属于当前模式的候选
-            }
-        }
-        return -1;
+        return patternAutoSwitch().findModeWithWaitingStock(types, active, now, slots,
+                slot -> patternInventory.getStackInSlot(slot).isEmpty());
     }
 
-    /**
-     * 该槽里有没有料等着（模板：{@code getItemStackInputMap()/getFluidStackInputMap()} 有一侧非空）。
-     * <b>直读槽表</b>：未实体化的槽 = 没料 ⇒ 返回 false，绝不为了这次查询把槽建出来（惰性化红线）。
-     */
     private boolean hasSlotWaitingStock(int slot) {
-        try {
-            InternalSlot internal = slot >= 0 && slot < internalInventory.size()
-                    ? internalInventory.get(slot) : null;
-            if (internal == null) {
-                return false;
-            }
-            return !internal.getItemStackInputMap().isEmpty() || !internal.getFluidStackInputMap().isEmpty();
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return PatternAutoSwitch.hasWaitingStock(() -> slot >= 0 && slot < internalInventory.size()
+                ? internalInventory.get(slot) : null,
+                internal -> !internal.getItemStackInputMap().isEmpty(),
+                internal -> !internal.getFluidStackInputMap().isEmpty());
     }
 
     // ==================== P2-③ 名字跟随 ====================
 
-    /**
-     * ★ 2026-10-15（本轮重做，<b>与现役机同款</b>）：<b>总成的名字 = 本总成"绑定的那个模式"的名字</b>，
-     * 按「本总成 + 模式」记在 {@link #modeNames} 里并<b>落盘</b>（{@link #NBT_MODE_NAMES}）。
-     *
-     * <p><b>规则（用户口径逐条落地）</b>：
-     * <ol>
-     *   <li><b>名字跟着"模式"走，不跟着控制器当前模式走</b> ✗：命名用的模式 = 本总成自己的模式
-     *       （{@link #modeCursorIndex}，绑定持久化在 {@link #NBT_BOUND_MODE_TYPE}）
-     *       ⇒ 同一控制器下两台总成各绑一个模式 ⇒ <b>各叫各的</b>，主机在跑什么与名字无关 ✓；</li>
-     *   <li><b>该模式已经有名字</b>（我们设过 / 玩家改过）⇒ <b>继续用那个名字</b>（"延续"）；</li>
-     *   <li><b>该模式还没有名字</b> ⇒ 用该模式的<b>显示名</b>（{@link #modeNameForNaming}，真翻译）写一次；</li>
-     *   <li><b>玩家手动改名 ⇒ 永久让位</b>（{@link #lockedName}，落盘 {@link #NBT_LOCKED_NAME}）：
-     *       此后换模式、改绑定、主机切模式、重进游戏、拆装重成型都<b>不再改写</b> ✗
-     *       （唯一例外：名字被清空时把玩家那个名字写回来）；</li>
-     *   <li>取不到显示名（连原文都取不到）⇒ <b>保持原名不动</b> ✗（绝不写空）。</li>
-     * </ol>
-     *
-     * <p><b>★ 为什么删掉了旧的"白名单"判据</b>：旧版允许"名字逐字等于本控制器某个模式显示名"
-     * （{@code isModeDisplayNameOfController}）时改写 —— 玩家把总成命名成某个模式的名字就会被当成
-     * "我们自己写的"而<b>被改回自动名</b> ✗；而且它只认<b>当前控制器</b>的模式名 ⇒ 总成换挂到另一台机器后，
-     * 旧自动名不在新模式的名单里 ⇒ 从此一个字都不写（「接在电路组装机上的总成没有起名」✗）。
-     * 该判据整条删除 ✓。
-     *
-     * <p><b>纪律</b>：起名纯粹是显示层的事，任何异常都不许影响机器逻辑 ⇒ 整个方法包在 try 里、
-     * 失败就静默跳过（连日志都不打，免得刷屏）。
-     */
+    private PatternNameController patternNameController() {
+        if (patternNameController == null) {
+            patternNameController = new PatternNameController(new NameControllerHost());
+        }
+        return patternNameController;
+    }
+
+    private final class NameControllerHost implements PatternNameController.Host {
+
+        @Override
+        public List<GTRecipeType> availableRecipeTypes() { return getAvailableRecipeTypes(); }
+
+        @Override
+        public String customName() { return getCustomName(); }
+
+        @Override
+        public void setCustomName(String name) { LazyPatternAssemblyPartMachine.this.setCustomName(name); }
+
+        @Override
+        public void markDirty() { LazyPatternAssemblyPartMachine.this.markDirty(); }
+
+        @Override
+        public boolean isRemote() { return LazyPatternAssemblyPartMachine.this.isRemote(); }
+
+        @Override
+        public boolean activeCustomNamingEnabled() { return enableActiveCustomNaming; }
+
+        @Override
+        public boolean boundModePendingResolve() { return boundModePendingResolve; }
+
+        @Override
+        public boolean modeCursorTouched() { return modeCursorTouched; }
+
+        @Override
+        public int modeCursorIndex() { return modeCursorIndex; }
+
+        @Override
+        public int activeRecipeTypeIndex() { return activeRecipeTypeIndex; }
+
+        @Override
+        public IRecipeLogicMachine firstRecipeLogicController() { return LazyPatternAssemblyPartMachine.this.firstRecipeLogicController(); }
+
+        @Override
+        public int namingModeIndexOf(boolean bound, int hint, List<GTRecipeType> types) {
+            return LazyPatternAssemblyPartMachine.this.namingModeIndexOf(bound, hint, types);
+        }
+
+        @Override
+        public int currentModeIndexForNaming(int hint) { return LazyPatternAssemblyPartMachine.this.currentModeIndexForNaming(hint); }
+
+        @Override
+        public java.util.Map<String, String> modeNames() { return modeNames; }
+
+        @Override
+        public String lockedName() { return lockedName; }
+
+        @Override
+        public void setLockedName(String name) { lockedName = name; }
+
+        @Override
+        public boolean allowDefaultName(IRecipeLogicMachine controller, List<GTRecipeType> types, int mode) {
+            return true;
+        }
+    }
+
     private void syncCustomNameToMode(int modeIndexHint) {
-        // ★ 只在服务端做（与 Enhancedcore 的 `SuperBufferNaming.applyNames` 同口径：它第一句就是
-        //   `if (machine.isRemote()) return;`；本类 autoSwitchRecipeModes() 也是首句即 isRemote() 早退）。
         if (isRemote()) {
             return;
         }
         try {
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            String current = getCustomName();
-            // ① 识别"别人改了名字"（玩家在界面里改、或上游/别的代码写进来）⇒ 记为"玩家改名"
-            //   （{@link #lockedName} 永久让位），并归到"当时显示的那个模式"名下。
-            //   上游兜底串「未命名加工模式」不算名字；名字被清空不算改名。成本 = 一次 String.equals ✓。
-            if (observedName != null && current != null && !current.isEmpty()
-                    && !current.equals(observedName) && !isUpstreamPlaceholderName(current)) {
-                this.lockedName = current;
-                if (appliedModeKey != null) {
-                    modeNames.put(appliedModeKey, current);
-                }
-                markDirty();
-            }
-            // ② 开关关掉 ⇒ 逐字回到改动前的行为（唯一允许写的情况 = 名字为空），不写名字表、不记让位 ✓。
-            if (!enableActiveCustomNaming) {
-                if (current == null || current.isEmpty()) {
-                    int legacy = currentModeIndexForNaming(modeIndexHint);
-                    if (legacy >= 0 && legacy < types.size()) {
-                        String legacyName = modeNameForNaming(types.get(legacy));
-                        if (legacyName != null) {
-                            setCustomName(legacyName);
-                        }
-                    }
-                }
-                this.observedName = getCustomName();
-                return;
-            }
-            // ③ 绑定模式还在"待解析"（读档后类型表还没就绪）⇒ 本 tick 什么都不做（免得记到下标 0 名下）✓
-            if (boundModePendingResolve) {
-                this.observedName = current;
-                return;
-            }
-            boolean bound = this.modeCursorTouched;
-            int mode = namingModeIndexOf(bound, modeIndexHint, types);
-            IRecipeLogicMachine controller = firstRecipeLogicController();
-            boolean movedToAnotherController = controller != null && this.lastNamingController != null
-                    && this.lastNamingController != controller;
-            this.lastNamingController = controller;
-            String key = mode < 0 ? null : modeKeyOf(types.get(mode));
-            if (key == null) {
-                this.observedName = current;
-                return;
-            }
-            // ④ 玩家改过名 ⇒ 名字永久归玩家：只在"名字为空"时把玩家那个名字写回来 ✓
-            if (!this.lockedName.isEmpty()) {
-                if (current == null || current.isEmpty()) {
-                    setCustomName(this.lockedName);
-                    this.observedName = this.lockedName;
-                } else {
-                    this.observedName = current;
-                }
-                this.appliedModeKey = key;
-                return;
-            }
-            // ⑤ 目标名字 = 该模式已经记着的名字（"延续"）；没有 ⇒ 用该模式显示名并记下来
-            String target = modeNames.get(key);
-            if (target == null || target.isEmpty()) {
-                if (!bound && current != null && !current.isEmpty() && !movedToAnotherController) {
-                    // 未绑定 + 名字已有主 + 没换过控制器 ⇒ 一个字都不写（绝不因为主机换模式就改名 ✓）
-                    this.observedName = current;
-                    this.appliedModeKey = key;
-                    return;
-                }
-                String display = modeNameForNaming(types.get(mode));
-                if (display == null) {
-                    this.observedName = current;
-                    return;
-                }
-                target = display;
-                modeNames.put(key, target);
-                markDirty();
-            }
-            // ⑥ 幂等写：值已经对了就一个 setter 都不调
-            if (!target.equals(current)) {
-                setCustomName(target);
-            }
-            this.observedName = target;
-            this.appliedModeKey = key;
+            patternNameController().syncCustomNameToMode(modeIndexHint);
         } catch (Throwable ignored) {
-            // 起名失败绝不影响机器
+            // 起名失败不能影响机器逻辑。
         }
     }
 
-    /**
-     * ★ 2026-10-15：<b>玩家在界面里确认了改名</b>（{@code AETextInputButtonWidget.setOnConfirm} 的落点）。
-     * 当场把"玩家亲手改的"记下来（{@link #lockedName} ⇒ 落盘 ⇒ 永久让位），不依赖"下一 tick 对比名字"
-     * 那条兜底判据。LDLib 控件回调两端都会跑：客户端那次只更新本地字段，权威落盘在服务端那次 ✓。
-     */
     public void onPlayerConfirmedCustomName(String name) {
-        if (name == null) {
-            return;
-        }
-        if (!isRemote()) {
-            this.lockedName = name;
-            String key = this.appliedModeKey;
-            if (key == null) {
-                List<GTRecipeType> types = getAvailableRecipeTypes();
-                int mode = namingModeIndexOf(this.modeCursorTouched, activeRecipeTypeIndex, types);
-                key = mode < 0 ? null : modeKeyOf(types.get(mode));
-            }
-            if (key != null) {
-                modeNames.put(key, name);
-            }
-            markDirty();
-        }
-        setCustomName(name);
-        this.observedName = name;
+        patternNameController().onPlayerConfirmedCustomName(name);
     }
 
-    /**
-     * ★ 2026-10-15：命名用哪一个模式 —— <b>绑定模式优先，未绑定才跟随控制器的当前模式</b>
-     * （顺序与理由见现役机 {@code MoltenPatternAssemblyPartMachine#namingModeIndexOf}，逐条同款）。
-     */
     private int namingModeIndexOf(boolean bound, int modeIndexHint, List<GTRecipeType> types) {
-        int size = types.size();
-        if (size <= 0) {
-            return -1;
-        }
-        if (bound && modeCursorIndex >= 0 && modeCursorIndex < size) {
-            return modeCursorIndex;
-        }
-        IRecipeLogicMachine controller = firstRecipeLogicController();
-        if (controller != null) {
-            int live = controller.getActiveRecipeType();
-            if (live >= 0 && live < size) {
-                return live;
-            }
-        }
-        if (modeIndexHint >= 0 && modeIndexHint < size) {
-            return modeIndexHint;
-        }
-        if (activeRecipeTypeIndex >= 0 && activeRecipeTypeIndex < size) {
-            return activeRecipeTypeIndex;
-        }
-        return modeCursorIndex >= 0 && modeCursorIndex < size ? modeCursorIndex : -1;
+        return patternNameController().namingModeIndexOf(bound, modeIndexHint, types);
     }
 
-    /** ★ 2026-10-15：模式类型 ⇒ 名字表的键（模式 id）。取不到 id ⇒ {@code null}（放弃本次命名）。 */
-    private static String modeKeyOf(GTRecipeType type) {
-        return type == null || type.registryName == null ? null : type.registryName.toString();
-    }
-
-    // ★ 2026-10-15：旧的"能不能由我们改名"白名单判据（canAutoWriteCustomName / isModeDisplayNameOfController /
-    //   modeDisplayNames + 它们的缓存）**整段删除**（与现役机同款）—— 那一套正是"玩家手动名被改回自动名"
-    //   的根因（名字逐字等于某个模式显示名 ⇒ 被当成我们自己写的 ✗），也是"换挂到别的机器后永不起名"的根因
-    //   （只认当前控制器的模式名 ✗）。现在由「按模式记名字 + 玩家改名永久让位」决定，不再猜名字归属 ✓。
-
-    /**
-     * ★ 2026-10-14：**"本总成自己负责的模式"的权威取值** —— 自动命名只认这一个来源
-     * （<b>与现役机同款</b>）。
-     *
-     * <p><b>为什么权威从控制器换成本总成</b>（用户口径原话：「<b>每个总成绑定一个固定模式</b>」）：
-     * 一台主机有两（多）个模式时，玩家放两（多）个样板总成、<b>各自负责一种模式</b>，
-     * 名字必须**固定显示自己负责的那个模式**、<b>不随主机当前在跑什么而变</b> ✗。
-     * 上一版以主机当前模式为准 ⇒ 同一主机下所有总成必然显示同一个名字（撞车 ✗）。
-     *
-     * <p>取值顺序（逐条都有依据）：
-     * <ol>
-     *   <li><b>{@link #modeCursorIndex} = 权威</b> —— 它就是"<b>这台总成自己的模式</b>"：
-     *       模式页（{@code RecipeModeConfigurator}）上 ◀/▶ 选中的那一个，也是「指定」按钮真正
-     *       写下去的那个（{@link #assignManualType(int, boolean)} 读的就是它，:2597）；
-     *       {@link #syncCustomNameToMode(int)} 的另一个调用点给的也是它（:2616）。
-     *       ⇒ "用户在总成上选定、并用于决定这台总成匹配/推送哪个模式"的那个就是它 ✓。
-     *       <b>已知边界</b>：它带 {@code @DescSynced}、<b>无</b> {@code @Persisted}（:533），
-     *       既不在本类 {@code saveCustomPersistedData} 也不在 {@code loadCustomPersistedData} 里
-     *       ⇒ <b>读档后回默认值 0</b>（随后由 tick 里的"游标跟随控制器"改写，:2804）。
-     *       这一条<b>本轮不动</b>（不新增/不改任何 {@code @Persisted} 字段 ⇒ 存档格式零变化是硬纪律 ✗），
-     *       所以"重启后名字要重新跟随玩家在本总成上选的那次操作"这一点<b>未取证/未解决</b>，
-     *       详见 _census/命名绑定自有模式_执行记录.md 的「未取证项」；</li>
-     *   <li>调用点给的 {@code modeIndexHint} —— 只在 {@link #modeCursorIndex} <b>非法</b>时兜底
-     *       （换控制器导致类型表变短、下标越界等）。调用点：
-     *       {@link #assignManualType(int, boolean)} 给 {@link #modeCursorIndex}；
-     *       tick / 读档路径给本类缓存下标 {@link #activeRecipeTypeIndex}；</li>
-     *   <li>{@link #activeRecipeTypeIndex}（同样要求下标合法）—— 再退一档的本机缓存；</li>
-     *   <li><b>控制器的 {@code getActiveRecipeType()} 只作最后兜底</b>（★ 2026-10-14 从"权威"降级）：
-     *       本机模式完全不可得时宁可显示"主机现在的模式"，也不要空着/不动 ——
-     *       这是<b>兜底</b>、不是权威，正常路径永不走到它 ✓；</li>
-     *   <li>以上全不成立 ⇒ 回落 <b>{@code 0}</b>（= "机器自己的第 0 个类型"，★ 注释义务：
-     *       类型表非空时下标 0 恒合法 ⇒ 一定有名字，最保守的兜底）。</li>
-     * </ol>
-     *
-     * <p><b>注意</b>：{@link #modeCursorIndex} 与主机实际模式<b>解耦</b>（0.3.2 的既定设计：
-     * 拨游标不打断正在跑的配方）—— 这正是本轮要的语义：<b>拨本总成的模式页 = 改这台总成负责谁</b>
-     * ⇒ 名字跟着变 ✓；主机真的切了模式（主机模式页 / 自动切换 / 推送锁模式）⇒ <b>名字不动</b> ✓。
-     *
-     * @return 合法的模式下标；类型表为空 ⇒ {@code -1}
-     *         （调用方据此**保持当前名字不动** ✗）
-     */
     private int currentModeIndexForNaming(int modeIndexHint) {
-        List<GTRecipeType> types = getAvailableRecipeTypes();
-        int size = types.size();
-        if (size <= 0) {
-            return -1;
-        }
-        // ① ★ 2026-10-14 权威：**本总成自己的模式**（模式页选中 / 「指定」写下去的那个）
-        if (modeCursorIndex >= 0 && modeCursorIndex < size) {
-            return modeCursorIndex;
-        }
-        // ② 调用点给的兜底下标
-        if (modeIndexHint >= 0 && modeIndexHint < size) {
-            return modeIndexHint;
-        }
-        // ③ 本机缓存下标
-        if (activeRecipeTypeIndex >= 0 && activeRecipeTypeIndex < size) {
-            return activeRecipeTypeIndex;
-        }
-        // ④ ★ 2026-10-14 降级为**最后兜底**：控制器（主机）当前的模式（正常路径永不走到这里）
-        IRecipeLogicMachine controller = firstRecipeLogicController();
-        if (controller != null) {
-            int live = controller.getActiveRecipeType();
-            if (live >= 0 && live < size) {
-                return live;
-            }
-        }
-        // ⑤ 最后：机器自己的第 0 个类型（类型表非空 ⇒ 下标 0 恒合法）
-        return 0;
-    }
-
-    /**
-     * ★ 2026-10-15：一个配方类型 ⇒ <b>可以写进自定义名的显示名</b>（<b>与现役机同款</b>）。
-     *
-     * <p><b>取名的权威口径 = 上游自己用的那一个</b>：{@code Component.translatable(registryName.toLanguageKey())}
-     * —— GTCEu 的 JEI 分类标题就是这一句（{@code GTRecipeTypeCategory.getTitle} 字节码，
-     * 转述见 {@code NanochipRecipeTypes.java:103-104}）⇒ 我们与 JEI/模式页显示的名字<b>永远同一个来源</b> ✓。
-     * 键形态逐字实证：{@code gtceu:circuit_assembler ⇒ "gtceu.circuit_assembler" ⇒ 语言文件里
-     * 「电路组装机」（_census/_probe_chain_lang/gtceu-1.20.1-1.4.4/assets/gtceu/lang/zh_cn.json:2626）}。
-     *
-     * <p>判定顺序：① {@link #nameOverride}（本模组自己的少量覆盖表，与现役机同表）；
-     * ② 真翻译（{@code Language} 自带 en_us 兜底 ⇒ 中文客户端得中文、英文客户端得英文 ✓）；
-     * ③ 连原文都取不到（键整个不存在）⇒ 退回<b>原文路径名</b>（如 {@code circuit_assembler}）——
-     * 用户口径「取不到中文就退回英文/原文，不允许因为取不到就整条不生效」✓；绝不写空、
-     * 也绝不把带命名空间的 lang 键写进玩家看到的名字 ✗。
-     */
-    private static String modeNameForNaming(GTRecipeType type) {
-        if (type == null || type.registryName == null) {
-            return null;
-        }
-        String overridden = nameOverride(type, null);
-        if (overridden != null && !overridden.isEmpty()) {
-            return overridden;
-        }
-        try {
-            String key = type.registryName.toLanguageKey();
-            String translated = Component.translatable(key).getString();
-            if (translated == null || translated.isEmpty() || translated.equals(key)) {
-                String path = type.registryName.getPath();
-                return path == null || path.isEmpty() ? null : path;
-            }
-            return translated;
-        } catch (RuntimeException ignored) {
-            return null;
-        }
-    }
-
-    /**
-     * ★ 2026-10-15：自动命名的**名字覆盖表**（<b>与现役机同表、同一口径</b>；队长要求）。
-     *
-     * <p>只列需要特殊处理的模式，其余一律走 {@link #modeNameForNaming} 的真翻译。
-     * <b>刻意不做"统一去掉末尾的『机』"</b> —— 那会把「线材轧机」变成「线材轧」✗。
-     * 现有条目：{@code gtceu:circuit_assembly} / {@code gtceu:circuit_assembler} ⇒ 「<b>电路组装</b>」
-     * （用户口径：接电路组装机的总成应显示「电路组装」，不叫「电路组装机」）。
-     * 判据是<b>配方类型的注册路径</b>（不是机器 id / 类名）⇒ 任何挂在该模式上的总成都一致 ✓。
-     */
-    private static String nameOverride(GTRecipeType type, String fallback) {
-        if (type != null && type.registryName != null) {
-            String path = type.registryName.getPath();
-            if ("circuit_assembly".equals(path) || "circuit_assembler".equals(path)) {
-                return "电路组装";
-            }
-        }
-        return fallback;
-    }
-
-    /**
-     * ★ 2026-10-04：这个字符串是不是上游 Enhancedcore 写的兜底串「未命名加工模式」。
-     *
-     * <p><b>为什么在我们自己的代码里也用 Unicode 转义字面量</b>：与上游
-     * {@code SuperBufferChineseNames:13} 的写法**逐字同款** —— ① 一眼能看出"这就是上游那个常量"；
-     * ② 不受本仓库文件编码/工具链影响；③ 用中文字面 grep 本仓库时不会误当成我们的文案。
-     * 判据是全等（{@code String.equals}），不含任何模糊匹配 ✓。
-     */
-    private static boolean isUpstreamPlaceholderName(String name) {
-        return name != null && AUTO_NAME_FALLBACK_UPSTREAM.equals(name);
+        return patternNameController().currentModeIndexForNaming(modeIndexHint);
     }
 
     /** 这个名字是不是已经被「<b>同一控制器下别的样板总成</b>」用了（队长口径里的「已经有了」）。★ 照搬现役机同名方法。 */
@@ -4106,23 +3154,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             // 枚举不到就当没占用（宁可重名，也不要因为枚举失败而不起名）
         }
         return false;
-    }
-
-    /**
-     * 配方表 → <b>中文名</b>（与模式页同一套口径：{@code registryName.toLanguageKey()} 查语言文件；
-     * 查不到就退回路径名）。★ 照搬现役机 {@code tableNameOf}。
-     */
-    private static String tableNameOf(GTRecipeType type) {
-        if (type == null || type.registryName == null) {
-            return "?";
-        }
-        try {
-            String key = type.registryName.toLanguageKey();
-            String translated = Component.translatable(key).getString();
-            return (!translated.isEmpty() && !translated.equals(key)) ? translated : type.registryName.getPath();
-        } catch (RuntimeException ignored) {
-            return type.registryName.getPath();
-        }
     }
 
     // ==================== P1-②D 样板身份闸（扣料入口的<b>额外</b>一道）====================
@@ -4160,92 +3191,20 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     /** 上面那本台账的上限（惰性机标称上限 640 槽，不能让台账无限长）。★ 照搬现役机 {@code MISIDENTIFY_NOTE_LIMIT}。 */
     private static final int MISIDENTIFY_NOTE_LIMIT = 64;
 
-    /**
-     * 这个槽的样板能不能执行这条配方。<b>两道闸</b>：
-     * <ol>
-     *   <li><b>类型闸</b>：该槽识别出的配方类型必须与候选配方的类型一致
-     *       （只在识别出来时生效；识别不出来就跳过这层）——
-     *       挡住"两种类型的输入输出长得一样"那种（例如 0.144B 液态铁+1 铁粉，分子解构/提取机都能匹配）；</li>
-     *   <li><b>身份闸</b>：见 {@link #patternIdentityMatches}（惰性机 0.3.x 已照搬，直接复用）。</li>
-     * </ol>
-     *
-     * <p><b>一律 fail-open</b>：开关关掉、样板为空、解不出来、出任何异常 → 放行（退回 gtlcore 原生行为）。
-     * 宁可漏挡一次，也绝不让机器因为闸门而卡死。
-     *
-     * <p>★ 逐条照搬现役机 {@code slotAllowsRecipe}（1412-1460）。<b>惰性化差异</b>：
-     * 现役机的槽位是固定 {@code int[]}、容量来自 {@code getPatternInventory()}（128/640 写死），
-     * 惰性机的容量是<b>动态</b>的（{@link #getCapacity()}）⇒ 越界（= 这个槽还没被建出来）
-     * 直接放行，不抛、不猜。
-     */
+    /** 槽读取延后到类型判断之后，避免未知类型也触发样板解码。 */
     boolean slotAllowsRecipe(int slot, GTRecipe recipe) {
-        if (recipe == null || slot < 0) {
-            return true;
-        }
-        if (!GTLModularConfig.isPatternIdentityGateEnabled()) {
-            return true;
-        }
-        try {
-            // ---- ① 类型闸 ----
-            int detected = recipeTypeOfSlot(slot);
-            if (detected >= 0) {
-                List<GTRecipeType> types = getAvailableRecipeTypes();
-                if (detected < types.size()) {
-                    GTRecipeType expected = types.get(detected);
-                    // GTRecipeType 是注册期单例，直接比引用即可
-                    if (expected != null && recipe.recipeType != expected && !PatternTypeGate.allows(expected, recipe.recipeType)) {
-                        return false;
+        return PatternIdentityGate.allows(slot, recipe, GTLModularConfig::isPatternIdentityGateEnabled,
+                () -> recipeTypeOfSlot(slot), this::getAvailableRecipeTypes, () -> {
+                    if (slot >= getCapacity()) {
+                        return ItemStack.EMPTY;
                     }
-                }
-            } else {
-                // 类型识别不出来（样板涉及多种类型 / 识别有歧义）→ 不做身份判定，直接放行。
-                // 实测踩过：大型化学反应釜的石脑油配方在"识别类型下标=-1"时仍被身份闸拒掉，
-                // 机器握着料却不消费 → 表现为"材料明明够却卡住"。
-                // 按 fail-open 原则：我们没有可靠信息时不该拦。
-                return true;
-            }
-
-            // ---- ② 身份闸 ----
-            // ★ 惰性化差异：容量动态增长，槽位先按本机口径夹一次（现役机这里是
-            //   `slot >= inventory.getSlots()`，语义相同，只是容量来源不同）。
-            if (slot >= getCapacity()) {
-                return true;
-            }
-            ItemStack stack = patternInventory.getStackInSlot(slot);
-            if (stack.isEmpty()) {
-                return true;
-            }
-            Level level = getLevel();
-            if (level == null) {
-                return true;
-            }
-            // 解出来的就是 gtlcore 存在 slot2PatternMap 里的那份样板身份（已剥电路、按 keepByProduct 裁副产）
-            IPatternDetails pattern = getRealPatternHelper().processPatternWithCircuit(
-                    stack, count -> {
-                    }, level, keepByProduct);
-            if (pattern == null) {
-                return true;
-            }
-            return patternIdentityMatches(recipe, pattern);
-        } catch (Throwable ignored) {
-            return true;
-        }
+                    return patternInventory.getStackInSlot(slot);
+                }, this::getLevel, (stack, level) -> getRealPatternHelper().processPatternWithCircuit(
+                        stack, count -> {
+                        }, level, keepByProduct));
     }
 
-    /**
-     * 身份闸拒绝时的诊断日志（2 秒最多一条）。★ 逐条照搬现役机 {@code logGateReject}（1334-1360）。
-     *
-     * <p>拒绝是"静默 return false"，机器会表现为<b>握着料却不动</b>（配方取不到输入）。
-     * 所以一旦闸门挡了正确的配方，必须能看出来：这里把槽位/识别类型/配方类型都打出来。
-     *
-     * <p>★ 用<b>中文表名</b>而不是下标：一眼就能看出是"标识判错了"还是"闸门在干正事"。
-     *
-     * <p>文案是<b>硬编码中文</b>（与现役机逐字一致），因此<b>不需要任何语言键</b>
-     * ⇒ 本次纵切一个字都没动 {@code zh_cn.json} / {@code en_us.json}。
-     *
-     * <p>★ 与现役机的唯一差别（有意为之）：整个方法体包在 {@code try/catch (Throwable)} 里 ——
-     * 它跑在扣料热路径上，本仓库红线是"热路径一律不外抛"；现役机靠下游 {@code tableNameOf}
-     * 自己的 try/catch 兜，这里再加一层，行为不变（它只写日志、不 return 判定结果）。
-     */
+    /** 拒绝发生在扣料入口，限频日志便于定位握着料却不工作的原因。 */
     void logGateReject(int slot, GTRecipe recipe, String side) {
         try {
             long now = getLevel() == null ? 0 : getLevel().getGameTime();
@@ -4253,247 +3212,23 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 return;
             }
             lastGateRejectLogTick = now;
-            // ★ 2026-09-21（队长「那个配方表到底叫什么名字」）：日志一律给**中文表名**，不再只给下标 + id。
-            //   ⇒ 一眼就能看出是"标识判错了"还是"闸门在干正事"，不用再对着下标猜。
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            int detectedIndex = recipeTypeOfSlot(slot);
-            String detectedName = (detectedIndex >= 0 && detectedIndex < types.size())
-                    ? tableNameOf(types.get(detectedIndex))
-                    : "识别不出来";
-            GTLModular.LOGGER.info("[gtlmodular] 身份闸拒绝配方（{}侧）槽位[{}]: 该槽样板标识=『{}』(下标{})，"
-                            + "而这条配方属于『{}』({}) —— 若这台机器本该跑它，就是标识判错了："
-                            + "Shift+右键该样板槽可手动指定正确标识（模式页也能填槽号指定）",
-                    side, slot + 1, detectedName, detectedIndex,
-                    tableNameOf(recipe == null ? null : recipe.recipeType),
-                    recipe == null ? "null" : String.valueOf(recipe.recipeType));
+            PatternIdentityGate.logReject(slot, recipe, side, this::getAvailableRecipeTypes,
+                    () -> recipeTypeOfSlot(slot));
             noteIfHostTableMisidentified(slot, recipe);
         } catch (Throwable ignored) {
-            // 诊断日志绝不允许影响扣料本身
+            // 诊断日志绝不允许影响扣料本身。
         }
     }
 
-    /**
-     * ★ 2026-09-21 <b>只读判读</b>：识别到"主机表"但配方类型是别的表时，记一条（默认就记，每个组合只记一次）。
-     * ★ 逐条照搬现役机 {@code noteIfHostTableMisidentified}（1376-1410）。
-     *
-     * <p>为什么需要它：主机表在 {@code byType} 里有了电路组装机配方之后，
-     * {@code detectRecipeType} 的过近似判据**有能力**把非主机表的样板判成下标 0；而实机日志里
-     * 「识别类型下标=0 + 配方类型=另一个模块的类型」这个组合<b>确实出现过</b>。
-     * 光看现有日志分不清那是"该槽本就不属于这条配方"（闸门干正事）还是"样板被误判成主机表"（潜在缺陷）。
-     *
-     * <p><b>本方法的纪律（不许改坏）</b>：
-     * <ul>
-     *   <li><b>零行为影响</b>：不 return、不改 {@code slotAllowsRecipe} 的结论、不动闸门开关、
-     *       不动 {@code slotRecipeTypes} 缓存 —— 它只在"已经决定拒绝之后"被调用，只写日志；</li>
-     *   <li><b>默认就开</b>（照搬现役机 2026-09-21 的改动）：判读本身只读、且每个
-     *       「槽位 → 配方类型」组合只打一次（{@link #hostTableMisidentifyNotes} 台账），
-     *       调用点还被 {@code logGateReject} 的 40 tick 节流挡着 ⇒ 代价可忽略；</li>
-     *   <li><b>台账有界</b>：上限 {@value #MISIDENTIFY_NOTE_LIMIT} 条，满了就不再新增
-     *       （惰性机标称容量上限 640 槽，不能让它无限长）。</li>
-     * </ul>
-     */
+    /** 主机表可能包含代理配方，需在拒绝后留下有界诊断供排查误识别。 */
     private void noteIfHostTableMisidentified(int slot, GTRecipe recipe) {
-        if (recipe == null) {
-            return;
-        }
-        try {
-            List<GTRecipeType> types = getAvailableRecipeTypes();
-            int detected = recipeTypeOfSlot(slot);
-            if (detected < 0 || detected >= types.size()) {
-                return;
-            }
-            GTRecipeType detectedType = types.get(detected);
-            if (detectedType == null || detectedType == recipe.recipeType) {
-                return;   // 类型一致（不该走到这里，闸门已放行）⇒ 没什么好记的
-            }
-            // 只在「识别结论是主机表」且「配方属于别的表」时记 —— 这正是需要事后判读的那个组合
-            if (detectedType != com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX) {
-                return;
-            }
-            if (hostTableMisidentifyNotes.size() >= MISIDENTIFY_NOTE_LIMIT) {
-                return;
-            }
-            String key = slot + "->" + recipe.recipeType;
-            if (!hostTableMisidentifyNotes.add(key)) {
-                return;   // 这个组合已经记过了
-            }
-            GTLModular.LOGGER.warn("[gtlmodular] 【只读判读】槽位[{}] 的样板标识被认成 **『{}』**，"
-                            + "但正在跑的配方属于『{}』 ⇒ 二选一：① 该槽样板本就属于别的机器"
-                            + "（闸门在干正事，可忽略本行）；② 标识判错了（潜在缺陷，请把本行与"
-                            + "紧跟其后的『身份闸拒绝配方』一起发回）；也可 Shift+右键该样板槽手动指定正确标识。"
-                            + "本行只读、不改任何判定 @{}",
-                    slot + 1, tableNameOf(detectedType), tableNameOf(recipe.recipeType), getPos());
-        } catch (Throwable ignored) {
-            // 诊断代码绝不允许影响游戏
-        }
+        PatternIdentityGate.noteIfHostTableMisidentified(slot, recipe, this::getAvailableRecipeTypes,
+                () -> recipeTypeOfSlot(slot),
+                type -> type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX,
+                hostTableMisidentifyNotes, MISIDENTIFY_NOTE_LIMIT, this::getPos);
     }
 
     // ==================== 样板身份判据（照搬现役机的静态小工具） ====================
-
-    /**
-     * 配方身份匹配：非电路输入被样板输入覆盖 + 配方主产物落在样板输出里。
-     * ★ 逐条照搬现役机 {@code patternIdentityMatches}（含它的 6 个静态小工具）。
-     *
-     * <p>为什么不用「产物集合完全相等」：gtlcore 的样板身份在 {@code keepByProduct=false} 时
-     * <b>会裁掉副产物</b>，拿它去和「配方全部产物集合」比相等会永远不相等 → 识别全失败。
-     * 用身份匹配口径和扣料时的身份闸完全一致，且<b>多类型命中就判为歧义、返回 -1 不猜</b>。
-     */
-    static boolean patternIdentityMatches(GTRecipe recipe, IPatternDetails pattern) {
-        if (recipe == null || pattern == null) {
-            return true;
-        }
-        Set<Item> patternOutItems = new HashSet<>();
-        Set<Fluid> patternOutFluids = new HashSet<>();
-        collectFingerprint(pattern.getOutputs(), patternOutItems, patternOutFluids);
-
-        Set<Item> patternInItems = new HashSet<>();
-        Set<Fluid> patternInFluids = new HashSet<>();
-        IPatternDetails.IInput[] inputs = pattern.getInputs();
-        if (inputs != null) {
-            for (IPatternDetails.IInput input : inputs) {
-                if (input != null) {
-                    collectFingerprint(input.getPossibleInputs(), patternInItems, patternInFluids);
-                }
-            }
-        }
-
-        // 输入：配方（除电路外）每一路都要被样板输入覆盖
-        if (!recipeInputItemsCovered(recipe, patternInItems) || !recipeInputFluidsCovered(recipe, patternInFluids)) {
-            return false;
-        }
-
-        // 输出：配方主产物（物品或流体，任一命中即可）要落在样板输出里
-        boolean itemMatches = !patternOutItems.isEmpty() && primaryItemOutputCovered(recipe, patternOutItems);
-        boolean fluidMatches = !patternOutFluids.isEmpty() && primaryFluidOutputCovered(recipe, patternOutFluids);
-        return itemMatches || fluidMatches;
-    }
-
-    private static void collectFingerprint(GenericStack[] stacks, Set<Item> items, Set<Fluid> fluids) {
-        if (stacks == null) {
-            return;
-        }
-        for (GenericStack stack : stacks) {
-            if (stack == null) {
-                continue;
-            }
-            AEKey key = stack.what();
-            if (key instanceof AEItemKey itemKey) {
-                items.add(itemKey.getItem());
-            } else if (key instanceof AEFluidKey fluidKey) {
-                fluids.add(fluidKey.getFluid());
-            }
-        }
-    }
-
-    private static boolean recipeInputItemsCovered(GTRecipe recipe, Set<Item> patternItems) {
-        List<Content> contents = recipe.getInputContents(ItemRecipeCapability.CAP);
-        if (contents == null || contents.isEmpty()) {
-            return true;
-        }
-        for (Content content : contents) {
-            if (content == null || content.chance <= 0) {
-                continue;   // 非硬性输入不构成约束
-            }
-            if (!(content.getContent() instanceof Ingredient ingredient)) {
-                continue;
-            }
-            if (isCircuitIngredient(ingredient)) {
-                continue;   // 编程电路：样板身份里已被剥离
-            }
-            if (!ingredientCoveredByItems(ingredient, patternItems)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean recipeInputFluidsCovered(GTRecipe recipe, Set<Fluid> patternFluids) {
-        List<Content> contents = recipe.getInputContents(FluidRecipeCapability.CAP);
-        if (contents == null || contents.isEmpty()) {
-            return true;
-        }
-        for (Content content : contents) {
-            if (content == null || content.chance <= 0) {
-                continue;
-            }
-            if (!(content.getContent() instanceof FluidIngredient ingredient)) {
-                continue;
-            }
-            if (!fluidIngredientCoveredByFluids(ingredient, patternFluids)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean primaryItemOutputCovered(GTRecipe recipe, Set<Item> patternItems) {
-        List<Content> contents = recipe.getOutputContents(ItemRecipeCapability.CAP);
-        if (contents == null) {
-            return false;
-        }
-        for (Content content : contents) {
-            if (content != null && content.getContent() instanceof Ingredient ingredient) {
-                return ingredientCoveredByItems(ingredient, patternItems);
-            }
-        }
-        return false;
-    }
-
-    private static boolean primaryFluidOutputCovered(GTRecipe recipe, Set<Fluid> patternFluids) {
-        List<Content> contents = recipe.getOutputContents(FluidRecipeCapability.CAP);
-        if (contents == null) {
-            return false;
-        }
-        for (Content content : contents) {
-            if (content != null && content.getContent() instanceof FluidIngredient ingredient) {
-                return fluidIngredientCoveredByFluids(ingredient, patternFluids);
-            }
-        }
-        return false;
-    }
-
-    private static boolean ingredientCoveredByItems(Ingredient ingredient, Set<Item> patternItems) {
-        ItemStack[] stacks = ingredient.getItems();
-        if (stacks == null || stacks.length == 0) {
-            return true;   // 空 Ingredient 不构成约束
-        }
-        for (ItemStack stack : stacks) {
-            if (stack != null && !stack.isEmpty() && patternItems.contains(stack.getItem())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean fluidIngredientCoveredByFluids(FluidIngredient ingredient, Set<Fluid> patternFluids) {
-        FluidStack[] stacks = ingredient.getStacks();
-        if (stacks == null || stacks.length == 0) {
-            return true;
-        }
-        for (FluidStack stack : stacks) {
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-            Fluid fluid = stack.getFluid();
-            if (fluid != null && fluid != Fluids.EMPTY && patternFluids.contains(fluid)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isCircuitIngredient(Ingredient ingredient) {
-        ItemStack[] stacks = ingredient.getItems();
-        if (stacks == null) {
-            return false;
-        }
-        for (ItemStack stack : stacks) {
-            if (stack != null && !stack.isEmpty() && IntCircuitBehaviour.isIntegratedCircuit(stack)) {
-                return true;
-            }
-        }
-        return false;
-    }
 
     // ==================== 生命周期 / 内容变化 ====================
 
@@ -4531,24 +3266,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     @Override
     public void onSyncChanged(IRef ref, boolean isClient) {
-        if (!isClient) {
-            return;
-        }
-        String field = ref.getKey().getName();
-        boolean controllerField = "controllerPositions".equals(field);
-        boolean early = this.clientRebakeLeft > 0;
-        if (!early && !controllerField) {
-            return;
-        }
-        if (early) {
-            this.clientRebakeLeft--;
-        }
-        if (this.clientSyncDiagLeft > 0) {
-            this.clientSyncDiagLeft--;
-            GTLModular.LOGGER.info("[gtlmodular] 客户端同步: {} pos={} 字段={} 控制器数={}",
-                    getDefinition().getId(), getPos(), field, getControllers().size());
-        }
-        scheduleRenderUpdate();
+        clientSyncRefresh.onSyncChanged(ref, isClient, () -> getDefinition().getId(), this::getPos,
+                () -> getControllers().size(), this::scheduleRenderUpdate);
     }
 
     /**
@@ -4791,26 +3510,13 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * 两个官方入口都调 —— 现役机的实测注释说明只调其中一个在它的场景里不生效。
      */
     private void refreshPatternsNow() {
-        if (isRemote() || refreshingPatterns) {
+        if (isRemote()) {
             return;
         }
-        refreshingPatterns = true;
         try {
-            appeng.api.networking.IManagedGridNode mainNode = getMainNode();
-            appeng.api.networking.IGrid grid = mainNode.getGrid();
-            if (grid != null) {
-                appeng.api.networking.crafting.ICraftingService crafting = grid.getCraftingService();
-                appeng.api.networking.IGridNode node = mainNode.getNode();
-                if (crafting != null && node != null) {
-                    crafting.refreshNodeCraftingProvider(node);
-                }
-            }
-            // AE2 官方入口二：通用的"样板表变了"通知（gtlcore 基类的 update() 用的也是它）。
-            appeng.api.networking.crafting.ICraftingProvider.requestUpdate(mainNode);
+            providerRefresh.refresh(this::getMainNode);
         } catch (Throwable ignored) {
-            // 拿不到就算了：映射已作废，AE 下次主动取样板仍会重建
-        } finally {
-            refreshingPatterns = false;
+            // 拿不到网络就算了：缓存已失效，下次取样板仍会重建。
         }
     }
 
@@ -4912,7 +3618,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             setRecipeTypeCache(slot, TYPE_NOT_TRIED);
             // 该槽的类型结论变了 ⇒ 拉黑表作废（否则新样板会被上一次的拉黑误伤）
-            autoSwitchBlockedUntil.clear();
+            patternAutoSwitch().clearBlocked();
             // ★【① 冷槽重识别】样板换了 ⇒ 把该槽的重试记账一起作废，
             //   让"重置缓存 + 重识别"对这张新样板重新有一次机会（冷槽重识别本身有总量闸，不会失控）。
             coldSlotHealTried.remove(slot);
@@ -5264,9 +3970,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             if (!isRemote()) {
                 modeNames.clear();
                 this.lockedName = "";
-                this.observedName = null;
-                this.appliedModeKey = null;
-                this.lastNamingController = null;
+                if (patternNameController != null) {
+                    patternNameController.reset();
+                }
                 if (tag.contains(NBT_MODE_NAMES, Tag.TAG_COMPOUND)) {
                     CompoundTag names = tag.getCompound(NBT_MODE_NAMES);
                     int accepted = 0;
@@ -5726,32 +4432,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     // ==================== P1-②B 专属催化剂槽：催化剂表的存档 ====================
 
-    /** 该催化剂物品仓里有没有东西（有才值得写档）。 */
-    private static boolean hasAnyCatalystItem(ItemStackTransfer transfer) {
-        if (transfer == null) {
-            return false;
-        }
-        for (int i = 0; i < transfer.getSlots(); i++) {
-            if (!transfer.getStackInSlot(i).isEmpty()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /** 该催化剂流体仓里有没有东西。 */
-    private static boolean hasAnyCatalystFluid(FluidTransferList fluids) {
-        if (fluids == null) {
-            return false;
-        }
-        for (int i = 0; i < fluids.getTanks(); i++) {
-            if (!fluids.getFluidInTank(i).isEmpty()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * ★ P1-②B：逐槽催化剂仓写档（<b>稀疏</b>：只写"真有内容 / 阈值非默认"的槽，键 {@code s<槽下标>}）。
      *
@@ -5773,12 +4453,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 CompoundTag entry = new CompoundTag();
                 boolean any = false;
                 ItemStackTransfer items = catalystItemTransferAt(i);
-                if (hasAnyCatalystItem(items)) {
+                if (PatternStacks.hasAnyCatalystItem(items)) {
                     entry.put(NBT_CATALYST_ITEMS, items.serializeNBT());
                     any = true;
                 }
                 FluidTransferList fluids = catalystFluidTransferAt(i);
-                if (hasAnyCatalystFluid(fluids)) {
+                if (PatternStacks.hasAnyCatalystFluid(fluids)) {
                     entry.put(NBT_CATALYST_FLUIDS, fluids.serializeNBT());
                     any = true;
                 }
@@ -6383,10 +5063,21 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             setCatalystViewSlot(slot + 1);
             setCatalystPageOpen(true);
         }));
-        // ★ P1-②B：样板槽上的透明右键/中键层（照搬现役机 SlotRightClickOverlay）。
-        //   必须加在最后（LDLib 从子控件列表末尾往前派点击，末尾 = 最上层）；
-        //   它只接管右键/中键，左键一律透传 ⇒ 不影响分页样板区原有的左键/拖拽行为。
-        group.addWidget(new SlotRightClickOverlay(this, group, uiWidth, uiHeight));
+        // LDLib 从末尾开始派发点击；覆盖层必须放在分页控件之后。
+        group.addWidget(new PatternSlotRightClickOverlay(group, uiWidth, uiHeight,
+                slot -> {
+                    setManualAssignSlot(slot + 1);
+                    assignManualType(slot + 1, false);
+                }, slot -> {
+                    setManualAssignSlot(slot + 1);
+                    CatalystAccessConfigurator page = activeCatalystPage;
+                    if (page != null) {
+                        page.openSlotFromPattern(slot);
+                    } else {
+                        setCatalystViewSlot(slot + 1);
+                        setCatalystPageOpen(true);
+                    }
+                }));
         return group;
     }
 
@@ -6889,15 +5580,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     /** 源机所在维度的 id（诊断用；拿不到返回空串）。 */
     private String archiveDimensionId() {
-        try {
-            Level level = getLevel();
-            if (level == null) {
-                return "";
-            }
-            return level.dimension().location().toString();
-        } catch (Throwable ignored) {
-            return "";
-        }
+        return PatternArchiveSnapshots.dimensionId(this::getLevel);
     }
 
     /**
@@ -6934,33 +5617,11 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             settings.putBoolean(NBT_OUTPUT_MODE, isOutputMode);
             payload.settings = settings;
         }
-        int highest = -1;
-        int capacity = getCapacity();
-        for (int i = 0; i < capacity; i++) {
-            ItemStack stack;
-            try {
-                stack = patternInventory.getStackInSlot(i);
-            } catch (Throwable ignored) {
-                continue;   // 这一槽读不出来 ⇒ 跳过它（绝不因此丢掉别的槽）
-            }
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-            Integer recipeType = null;
-            int cached = recipeTypeCacheAt(i);
-            if (cached != TYPE_NOT_TRIED) {
-                recipeType = cached;
-            }
-            ResourceLocation manual = manualSlotTypes.get(i);
-            CompoundTag catalyst = buildArchivedCatalyst(i);
-            payload.entries.add(new LazyPatternArchiveCodec.Entry(i, stack.copy(), recipeType, manual, catalyst));
-            if (i > highest) {
-                highest = i;
-            }
-        }
-        payload.slotCount = highest + 1;
-        payload.patternCount = payload.entries.size();
-        return payload;
+        return PatternArchiveSnapshots.buildPayload(payload, getCapacity(),
+                i -> patternInventory.getStackInSlot(i), i -> {
+                    int cached = recipeTypeCacheAt(i);
+                    return cached == TYPE_NOT_TRIED ? null : cached;
+                }, i -> manualSlotTypes.get(i), this::buildArchivedCatalyst);
     }
 
     /**
@@ -6970,20 +5631,16 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      */
     private CompoundTag buildArchivedCatalyst(int slot) {
         try {
-            CompoundTag entry = new CompoundTag();
-            ItemStackTransfer items = catalystItemTransferAt(slot);
-            if (hasAnyCatalystItem(items)) {
-                entry.put(NBT_CATALYST_ITEMS, items.serializeNBT());
-            }
-            FluidTransferList fluids = catalystFluidTransferAt(slot);
-            if (hasAnyCatalystFluid(fluids)) {
-                entry.put(NBT_CATALYST_FLUIDS, fluids.serializeNBT());
-            }
-            int count = cacheRecipeCountAt(slot);
-            if (count != DEFAULT_CACHE_RECIPE_COUNT) {
-                entry.putByte(NBT_CATALYST_COUNT, (byte) count);
-            }
-            return entry.isEmpty() ? null : entry;
+            return PatternArchiveSnapshots.buildCatalyst(entry -> {
+                ItemStackTransfer items = catalystItemTransferAt(slot);
+                if (PatternStacks.hasAnyCatalystItem(items)) {
+                    entry.put(NBT_CATALYST_ITEMS, items.serializeNBT());
+                }
+                FluidTransferList fluids = catalystFluidTransferAt(slot);
+                if (PatternStacks.hasAnyCatalystFluid(fluids)) {
+                    entry.put(NBT_CATALYST_FLUIDS, fluids.serializeNBT());
+                }
+            }, () -> cacheRecipeCountAt(slot), DEFAULT_CACHE_RECIPE_COUNT);
         } catch (Throwable failure) {
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：第 {} 槽催化剂打包失败（该槽只搬样板）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
@@ -7065,17 +5722,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         }
     }
 
-    /** 写一槽的手动指定（归档粘贴用）。★ 与存档同口径：存 id，不存下标。 */
     void writeArchivedManualType(int slot, ResourceLocation typeId) {
-        try {
-            if (slot < 0 || slot >= maxPatternCount || typeId == null) {
-                return;
-            }
-            manualSlotTypes.put(slot, typeId);
-            refreshManualAssignDisplay();
-        } catch (Throwable ignored) {
-            // 同上
-        }
+        modeContext().writeArchivedManualType(slot, typeId);
     }
 
     /**
@@ -7178,14 +5826,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     /** 写归档里的机器名字（只有调用方确认"档案带了 + 玩家勾了"才会走到这里）。 */
     void writeArchivedName(String name) {
-        try {
-            if (name == null || name.isEmpty()) {
-                return;
-            }
-            setCustomName(name);
-        } catch (Throwable ignored) {
-            // 改名失败不影响样板
-        }
+        patternNameController().writeArchivedName(name);
     }
 
     /**
@@ -7193,27 +5834,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
      * 给「归档」页的实时文本用（面板每帧都会问 ⇒ 只扫一遍仓、不做任何解码）。
      */
     public int[] archiveSummary() {
-        int count = 0;
-        int min = -1;
-        int max = -1;
-        int capacity = getCapacity();
-        for (int i = 0; i < capacity; i++) {
-            ItemStack stack;
-            try {
-                stack = patternInventory.getStackInSlot(i);
-            } catch (Throwable ignored) {
-                continue;
-            }
-            if (stack == null || stack.isEmpty()) {
-                continue;
-            }
-            count++;
-            if (min < 0) {
-                min = i;
-            }
-            max = i;
-        }
-        return new int[]{count, min + 1, max + 1};
+        return PatternArchiveSnapshots.summary(getCapacity(), i -> patternInventory.getStackInSlot(i));
     }
 
     // ==================== P2：与 gtlcore **同签名**的四个方法 ====================
@@ -7424,351 +6045,23 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             WidgetGroup group = new WidgetGroup(0, 0, 124, 56);
             group.addWidget(new LabelWidget(4, 2,
                     Component.translatable("gtlmodular.pattern_assembly.scale.multiply.label").getString()));
-            group.addWidget(new IntInputWidget(4, 14, 58, 14,
-                    machine::getPatternScale, machine::setPatternScale)
-                    .setMin(MIN_SCALE).setMax(MAX_SCALE));
+            group.addWidget(PatternConfiguratorWidgets.scaleInput(4, 14, 58, 14,
+                    machine::getPatternScale, machine::setPatternScale, MIN_SCALE, MAX_SCALE));
             group.addWidget(new LabelWidget(62, 2,
                     Component.translatable("gtlmodular.pattern_assembly.scale.divide.label").getString()));
-            group.addWidget(new IntInputWidget(58, 14, 58, 14,
-                    machine::getPatternDivScale, machine::setPatternDivScale)
-                    .setMin(MIN_SCALE).setMax(MAX_SCALE));
+            group.addWidget(PatternConfiguratorWidgets.scaleInput(58, 14, 58, 14,
+                    machine::getPatternDivScale, machine::setPatternDivScale, MIN_SCALE, MAX_SCALE));
             // 旧的「侧别（输入/输出）」按钮已移除：倍率/除率现在与神锻一样两侧同倍，
             // 单侧缩放会让"AE 声明"与"机器实际执行"对不上（详见 rewritePattern 的说明）。
-            group.addWidget(new ButtonWidget(4, 34, 110, 14,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.scale.apply").getString())),
-                    data -> machine.invalidateRewriteCache())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.scale.apply.tip")));
+            group.addWidget(PatternConfiguratorWidgets.applyButton(4, 34, 110, 14,
+                    machine::invalidateRewriteCache));
             return group;
         }
     }
 
-    // ==================== P2 归档（复制 / 剪切）页 ====================
-
-    /**
-     * ★ <b>「归档」页</b>（设计稿第三节）：复制 / 剪切 / 粘贴 / 清空 + 「含设置」「含名字」两个开关
-     * + <b>「落位模式」开关（0.3.13 新增：默认=追加〔往后延伸、绝不覆盖〕/ 打开=按原槽对齐〔占用则跳过〕）</b>
-     * + 本机仓内容与手上工具档案的<b>只读</b>张数展示。
-     *
-     * <h3>页序</h3>
-     * 挂在**最后一页之后**（模式页 / 倍率页 / 神锻页 / 催化剂页 / 电路页之后，见
-     * {@link LazyPatternAssemblyPartMachine#attachConfigurators}）：只是追加一个 tab，
-     * 不动任何已有页的下标，也不碰催化剂页那套"挂它之前抓 {@code getTabs().size()}"的绑定。
-     *
-     * <h3>三个动作的落点（全部走同一个引擎 {@link LazyPatternArchiveApi}）</h3>
-     * <ul>
-     *   <li><b>复制</b>：源机 → 手上的工具（源机一个字节都不动）；</li>
-     *   <li><b>剪切</b>：源机 → 工具，<b>写成功之后才</b>清空源机（"先写后清"的唯一落点）；</li>
-     *   <li><b>粘贴</b>：工具 → 本机（容量装不下 ⇒ <b>整体拒绝</b>，机器一个字节都不动；
-     *       落位方式看本页的「落位模式」开关：默认追加、打开则按原槽对齐);</li>
-     *   <li><b>清空工具</b>：只清工具里的档案数据（物品本身留在手上）。</li>
-     * </ul>
-     *
-     * <p><b>玩家是谁</b>：配置面板（{@code IFancyConfigurator}）的构造只给得到机器，
-     * 而"手上的工具"必须有玩家才能拿到。这里用与 gtlcore 的 {@code PatternTestBehavior} 同一套口径
-     * —— <b>按坐标找最近的玩家</b>（打开本机界面的那个人一定站在旁边），拿不到就退回"最近的玩家"，
-     * 再拿不到就只是提示"没找到玩家"，绝不猜一个别人的背包。
-     *
-     * <p><b>控件只用已验证的三种</b>（{@code ButtonWidget} / {@code GuiTextures.BUTTON} / {@code LabelWidget}）：
-     * 这一页刻意不引入 {@code ToggleButtonWidget}（它会把 {@code tooltipText} 拼上 {@code .enabled/.disabled}
-     * 当语言键用），改用"文字随状态变"的按钮 —— 少一个会踩坑的隐式契约。
-     */
-    static final class ArchiveConfigurator implements IFancyConfigurator {
-
-        /** 面板尺寸（与模式页同宽 240，保证展开后不越出主界面）。 */
-        private static final int PAGE_WIDTH = 240;
-        /** 0.3.13：第三行（含设置 / 含名字）之后多了一行"落位模式"开关 ⇒ 高度 118 → 134。 */
-        private static final int PAGE_HEIGHT = 134;
-
-        /** 找玩家的半径（玩家就站在机器旁边开界面）。 */
-        private static final double FIND_PLAYER_RADIUS = 8.0D;
-
-        private final LazyPatternAssemblyPartMachine machine;
-
+    static final class ArchiveConfigurator extends PatternArchiveConfigurator {
         ArchiveConfigurator(LazyPatternAssemblyPartMachine machine) {
-            this.machine = machine;
-        }
-
-        @Override
-        public Component getTitle() {
-            return Component.translatable("gtlmodular.pattern_assembly.archive.title");
-        }
-
-        @Override
-        public IGuiTexture getIcon() {
-            // 直接复用 gtlcore 那件工具物品的贴图（取证：assets/gtlcore/textures/item/me_pattern_buffer_copy.png，
-            // 见 _javap_p2_api.txt【3】）——语义一致（都是"把样板总成整仓搬走"），不额外造图。
-            return new ResourceTexture("gtlcore:textures/item/me_pattern_buffer_copy.png");
-        }
-
-        @Override
-        public List<Component> getTooltips() {
-            return List.of(Component.translatable("gtlmodular.pattern_assembly.archive.title"));
-        }
-
-        @Override
-        public Widget createConfigurator() {
-            WidgetGroup group = new WidgetGroup(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
-            // ---- 第一行：复制 / 剪切 ----
-            group.addWidget(new ButtonWidget(4, 4, 74, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.archive.copy").getString())),
-                    data -> doCopy())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.copy.tip")));
-            group.addWidget(new ButtonWidget(82, 4, 74, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.archive.cut").getString())),
-                    data -> doCut())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.cut.tip")));
-            // 复制 / 剪切作用的是**手上的工具**，这里显式说明，免得玩家以为按钮是"存到机器里"。
-            group.addWidget(new LabelWidget(160, 8, this::heldText));
-
-            // ---- 第二行：粘贴 / 清空工具 ----
-            group.addWidget(new ButtonWidget(4, 24, 74, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.archive.paste").getString())),
-                    data -> doPaste())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.paste.tip")));
-            group.addWidget(new ButtonWidget(82, 24, 74, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.archive.clear").getString())),
-                    data -> doClearTool())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.clear.tip")));
-
-            // ---- 第三行：两个"含什么"开关（默认都关：设置与名字属于"这台机器"而不是"这批样板"）----
-            group.addWidget(new ButtonWidget(4, 46, 116, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(this::settingsToggleText)),
-                    data -> toggleSettings())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.include_settings.tip")));
-            group.addWidget(new ButtonWidget(124, 46, 112, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(this::nameToggleText)),
-                    data -> toggleName())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.include_name.tip")));
-
-            // ---- 第四行（0.3.13 新增）：粘贴的**落位模式**开关 ----
-            // 默认"追加"= 往后延伸、绝不覆盖；打开 = "按原槽对齐"（占用则跳过）。
-            // 与上面两个开关同款控件（ButtonWidget + 文字随状态变），不引入 ToggleButtonWidget。
-            group.addWidget(new ButtonWidget(4, 66, 232, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(this::placeToggleText)),
-                    data -> togglePlaceMode())
-                    .setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.archive.place.tip")));
-
-            // ---- 第五 / 六 / 七行：只读展示（本机读的是活仓，工具读的是手上那份 NBT）----
-            group.addWidget(new LabelWidget(4, 86, this::machineLineText));
-            group.addWidget(new LabelWidget(4, 100, this::toolLineText));
-            group.addWidget(new LabelWidget(4, 114, () ->
-                    Component.translatable("gtlmodular.pattern_assembly.archive.hint").getString()));
-            return group;
-        }
-
-        // ---------- 动作（全部服务端权威；客户端点了只会被服务端拒掉并回一条提示） ----------
-
-        private void doCopy() {
-            try {
-                ServerPlayer player = findPlayer();
-                ItemStack stack = heldTool(player);
-                if (stack == null || player == null) {
-                    GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪归档页：复制未执行 —— 没找到在场玩家 pos={}", machine.getPos());
-                    return;
-                }
-                LazyPatternArchiveApi.copyFrom(machine, stack, player).tell(player);
-            } catch (Throwable failure) {
-                GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档页：复制异常（已忽略）pos={} 原因={}",
-                        machine.getPos(), failure.toString());
-            }
-        }
-
-        private void doCut() {
-            try {
-                ServerPlayer player = findPlayer();
-                ItemStack stack = heldTool(player);
-                if (stack == null || player == null) {
-                    GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪归档页：剪切未执行 —— 没找到在场玩家 pos={}", machine.getPos());
-                    return;
-                }
-                // ★ 先写成功再清源：整个顺序在 LazyPatternArchiveApi.cutFrom 里（见那边的三步注释）。
-                LazyPatternArchiveApi.cutFrom(machine, stack, player).tell(player);
-            } catch (Throwable failure) {
-                GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档页：剪切异常（已忽略）pos={} 原因={}",
-                        machine.getPos(), failure.toString());
-            }
-        }
-
-        private void doPaste() {
-            try {
-                ServerPlayer player = findPlayer();
-                ItemStack stack = heldTool(player);
-                if (stack == null || player == null) {
-                    GTLModular.LOGGER.info("[gtlmodular] 惰性猪咪归档页：粘贴未执行 —— 没找到在场玩家 pos={}", machine.getPos());
-                    return;
-                }
-                LazyPatternArchiveApi.pasteInto(machine, stack, player).tell(player);
-            } catch (Throwable failure) {
-                GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档页：粘贴异常（已忽略）pos={} 原因={}",
-                        machine.getPos(), failure.toString());
-            }
-        }
-
-        private void doClearTool() {
-            try {
-                ServerPlayer player = findPlayer();
-                ItemStack stack = heldTool(player);
-                if (stack == null || player == null) {
-                    return;
-                }
-                int before = LazyPatternArchiveApi.archivePatternCount(stack);
-                LazyPatternArchiveApi.clearArchive(stack);
-                LazyPatternArchiveApi.tellKey(player, "gtlmodular.pattern_assembly.archive.cleared", before);
-            } catch (Throwable failure) {
-                GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档页：清空工具异常（已忽略）pos={} 原因={}",
-                        machine.getPos(), failure.toString());
-            }
-        }
-
-        private void toggleSettings() {
-            if (machine.isRemote()) {
-                // 客户端只发按钮事件、不改本侧字段（与"指定/清除"两个按钮同口径：服务端权威）
-                return;
-            }
-            machine.setArchiveIncludeSettings(!machine.isArchiveIncludeSettings());
-        }
-
-        private void toggleName() {
-            if (machine.isRemote()) {
-                return;
-            }
-            machine.setArchiveIncludeName(!machine.isArchiveIncludeName());
-        }
-
-        /**
-         * 切换粘贴落位模式（追加 ⇄ 按原槽对齐）。与上面两个开关同口径：<b>服务端权威</b>
-         * （客户端只发按钮事件、不改本侧字段 ⇒ 真值永远来自服务端 {@code @DescSynced} 同步）。
-         */
-        private void togglePlaceMode() {
-            if (machine.isRemote()) {
-                return;
-            }
-            machine.setArchiveAlignSlots(!machine.isArchiveAlignSlots());
-        }
-
-        // ---------- 只读展示 ----------
-
-        /** 第三行右半：手上工具的状态（有没有档案 / 几张）。 */
-        private String heldText() {
-            ItemStack stack = heldTool(findPlayer());
-            if (stack == null) {
-                return Component.translatable("gtlmodular.pattern_assembly.archive.no_tool").getString();
-            }
-            int count = LazyPatternArchiveApi.archivePatternCount(stack);
-            if (count <= 0) {
-                return Component.translatable("gtlmodular.pattern_assembly.archive.tool_empty").getString();
-            }
-            return Component.translatable("gtlmodular.pattern_assembly.archive.tool_count", count).getString();
-        }
-
-        private String settingsToggleText() {
-            return Component.translatable("gtlmodular.pattern_assembly.archive.include_settings",
-                    onOff(machine.isArchiveIncludeSettings())).getString();
-        }
-
-        private String nameToggleText() {
-            return Component.translatable("gtlmodular.pattern_assembly.archive.include_name",
-                    onOff(machine.isArchiveIncludeName())).getString();
-        }
-
-        /**
-         * 「落位模式」按钮上的文字（随状态变，与上面两个开关同款做法）。
-         * <p>默认（{@code archiveAlignSlots = false}）= 追加；打开 = 按原槽对齐。
-         */
-        private String placeToggleText() {
-            return Component.translatable(machine.isArchiveAlignSlots()
-                    ? "gtlmodular.pattern_assembly.archive.place.align"
-                    : "gtlmodular.pattern_assembly.archive.place.append").getString();
-        }
-
-        private static String onOff(boolean value) {
-            return Component.translatable(value
-                    ? "gtlmodular.pattern_assembly.archive.on"
-                    : "gtlmodular.pattern_assembly.archive.off").getString();
-        }
-
-        /** 第五行：本机仓的只读摘要（张数 + 槽位范围）。 */
-        private String machineLineText() {
-            int[] summary = machine.archiveSummary();
-            if (summary[0] <= 0) {
-                return Component.translatable("gtlmodular.pattern_assembly.archive.machine_empty").getString();
-            }
-            return Component.translatable("gtlmodular.pattern_assembly.archive.machine_line",
-                    summary[0], summary[1], summary[2]).getString();
-        }
-
-        /** 第六行：手上工具档案的只读摘要（张数 + 来源）。 */
-        private String toolLineText() {
-            ItemStack stack = heldTool(findPlayer());
-            if (stack == null) {
-                return "";
-            }
-            int count = LazyPatternArchiveApi.archivePatternCount(stack);
-            if (count <= 0) {
-                return "";
-            }
-            String source = LazyPatternArchiveApi.archiveSource(stack);
-            if (source.isEmpty()) {
-                return Component.translatable("gtlmodular.pattern_assembly.archive.tool_count", count).getString();
-            }
-            return Component.translatable("gtlmodular.pattern_assembly.archive.tool_source", count, source).getString();
-        }
-
-        // ---------- 玩家 / 工具定位 ----------
-
-        /**
-         * 打开本机界面的那个玩家：先按坐标找最近的（半径 8 格），再退回"最近的玩家"。
-         * 与 gtlcore {@code PatternTestBehavior} 同口径；拿不到就返回 {@code null}（调用方提示、不猜别人）。
-         */
-        private ServerPlayer findPlayer() {
-            try {
-                Level level = machine.getLevel();
-                if (level == null || level.isClientSide || machine.getPos() == null) {
-                    return null;
-                }
-                net.minecraft.server.level.ServerLevel serverLevel = level.getServer() == null
-                        ? null : level.getServer().getLevel(level.dimension());
-                if (serverLevel == null) {
-                    return null;
-                }
-                net.minecraft.world.phys.Vec3 center =
-                        net.minecraft.world.phys.Vec3.atCenterOf(machine.getPos());
-                Player nearest = serverLevel.getNearestPlayer(
-                        center.x, center.y, center.z, FIND_PLAYER_RADIUS, false);
-                if (nearest instanceof ServerPlayer serverPlayer) {
-                    return serverPlayer;
-                }
-                // 兜底：世界里只有一个人时也让他能用（否则"没反应"会被当成 bug）
-                List<ServerPlayer> players = level.getServer() == null
-                        ? java.util.Collections.emptyList() : level.getServer().getPlayerList().getPlayers();
-                return players.isEmpty() ? null : players.get(0);
-            } catch (Throwable ignored) {
-                return null;
-            }
-        }
-
-        /** 玩家主手上的"样板仓归档"工具；没拿工具返回 {@code null}（调用方提示，绝不改别的物品）。 */
-        private ItemStack heldTool(ServerPlayer player) {
-            if (player == null) {
-                return null;
-            }
-            try {
-                ItemStack stack = player.getMainHandItem();
-                if (stack == null || stack.isEmpty()) {
-                    return null;
-                }
-                if (!(stack.getItem() instanceof com.gtlmodular.common.item.PatternArchiveItem)) {
-                    return null;
-                }
-                return stack;
-            } catch (Throwable ignored) {
-                return null;
-            }
+            super(machine, Layout.LAZY, null);
         }
     }
 
@@ -7815,20 +6108,15 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         @Override
         public Widget createConfigurator() {
             WidgetGroup group = new WidgetGroup(0, 0, 124, 56);
-            group.addWidget(new ToggleButtonWidget(6, 5, 20, 20, GuiTextures.BUTTON_POWER,
-                    machine::isFoaModeEnabled, machine::setFoaModeEnabled)
-                    // ★ 照搬现役机：ToggleButtonWidget.updateScreen() 会把这个字符串拼上
-                    // .enabled / .disabled 再当【语言键】用（javap 实证，见 _javap_p1c_api.txt 第【12】节），
-                    // 而 gtlmodular.pattern_assembly.foa.enabled / .foa.disabled 两个键现役机已在用
-                    // ⇒ 这里一个字都不用改、也【不需要新增语言键】。
-                    .setTooltipText("gtlmodular.pattern_assembly.foa"));
+            group.addWidget(PatternConfiguratorWidgets.foaToggle(6, 5, 20, 20,
+                    machine::isFoaModeEnabled, machine::setFoaModeEnabled));
             group.addWidget(new LabelWidget(32, 10,
                     Component.translatable("gtlmodular.pattern_assembly.foa.mode").getString()));
             group.addWidget(new LabelWidget(6, 36,
                     Component.translatable("gtlmodular.pattern_assembly.foa.multiplier.label").getString()));
-            group.addWidget(new IntInputWidget(58, 31, 54, 20,
-                    machine::getFoaPatternOutputMultiplier, machine::setFoaPatternOutputMultiplier)
-                    .setMin(MIN_FOA_MULTIPLIER).setMax(MAX_FOA_MULTIPLIER));
+            group.addWidget(PatternConfiguratorWidgets.scaleInput(58, 31, 54, 20,
+                    machine::getFoaPatternOutputMultiplier, machine::setFoaPatternOutputMultiplier,
+                    MIN_FOA_MULTIPLIER, MAX_FOA_MULTIPLIER));
             return group;
         }
     }
@@ -7870,9 +6158,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             // ★ 0.3.2：悬停把「要指定的模式」与「机器当前模式」都列出来（游标与机器实际模式是两个概念）
             return List.of(
                     Component.translatable("gtlmodular.pattern_assembly.mode.pick",
-                            modeComponent(types.get(pick)).getString(), pick + 1, types.size()),
+                            PatternConfiguratorWidgets.modeComponent(types.get(pick)).getString(), pick + 1, types.size()),
                     Component.translatable("gtlmodular.pattern_assembly.mode.live",
-                            modeComponent(types.get(live)).getString(), live + 1, types.size()));
+                            PatternConfiguratorWidgets.modeComponent(types.get(live)).getString(), live + 1, types.size()));
         }
 
         @Override
@@ -7908,28 +6196,21 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             group.addWidget(new IntInputWidget(46, 26, 92, 16,
                     machine::getManualAssignSlot, machine::setManualAssignSlot)
                     .setMin(1).setMax(machine.getPatternSlotCount()));
-            group.addWidget(new ButtonWidget(144, 26, 42, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.mode.manual_assign").getString())),
-                    data -> {
+            group.addWidget(PatternConfiguratorWidgets.manualActionButton(144, 26, 42, 16, false,
+                    () -> {
                         if (!machine.isRemote()) {
                             machine.assignManualType(machine.getManualAssignSlot(), false);
                         }
-                    }).setHoverTooltips(
-                            // ★ P1-②B：这里把现役机那条 manual_rc.tip（「Shift + 右键/中键点样板槽」）**挂回去** ——
-                            //   惰性机现在也有 SlotRightClickOverlay 了，不再是假提示。
-                            Component.translatable("gtlmodular.pattern_assembly.mode.manual_assign.tip"),
-                            Component.translatable("gtlmodular.pattern_assembly.mode.manual_rc.tip")));
-            group.addWidget(new ButtonWidget(190, 26, 42, 16,
-                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
-                            Component.translatable("gtlmodular.pattern_assembly.mode.manual_clear").getString())),
-                    data -> {
+                    }));
+            group.addWidget(PatternConfiguratorWidgets.manualActionButton(190, 26, 42, 16, true,
+                    () -> {
                         if (!machine.isRemote()) {
                             machine.assignManualType(machine.getManualAssignSlot(), true);
                         }
-                    }).setHoverTooltips(Component.translatable("gtlmodular.pattern_assembly.mode.manual_clear.tip")));
+                    }));
             // 以下三行都是活文本：手动指定 / 该槽自检（含"指定与自检不一致"告警）/ 机器当前模式
-            group.addWidget(new LabelWidget(4, 50, this::assignStateText));
+            group.addWidget(new LabelWidget(4, 50,
+                    () -> PatternConfiguratorWidgets.assignStateText(machine.getManualAssignTypeId())));
             group.addWidget(new LabelWidget(4, 64, this::autoDetectStateText));
             group.addWidget(new LabelWidget(4, 78, this::liveModeText));
             return group;
@@ -7948,60 +6229,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
         }
 
-        /**
-         * 配方类型 → 组件。用 {@code registryName.toLanguageKey()}（即 {@code gtceu.cutter} 这种）
-         * 去查语言文件，所以显示的是「切割机」这种中文名；没翻译时才退回路径名。★ 照搬现役机同名方法。
-         */
-        private static Component modeComponent(GTRecipeType type) {
-            if (type == null || type.registryName == null) {
-                return Component.literal("?");
-            }
-            String key = type.registryName.toLanguageKey();
-            String translated = Component.translatable(key).getString();
-            if (translated.isEmpty() || translated.equals(key)) {
-                return Component.literal(type.registryName.getPath());
-            }
-            return Component.literal(translated);
-        }
-
-        /** 该槽当前的手动指定状态（活文本，跟着同步字段走）。★ 照搬现役机同名方法。 */
-        private String assignStateText() {
-            String id = machine.getManualAssignTypeId();
-            if (id == null || id.isEmpty()) {
-                return Component.translatable("gtlmodular.pattern_assembly.mode.manual_state.none").getString();
-            }
-            return Component.translatable("gtlmodular.pattern_assembly.mode.manual_state.assigned",
-                    recipeTypeName(id)).getString();
-        }
-
-        /** 类型 id → 中文模式名（和模式页同一套口径）。★ 照搬现役机同名方法。 */
-        private static String recipeTypeName(String typeId) {
-            try {
-                ResourceLocation id = ResourceLocation.tryParse(typeId);
-                if (id != null) {
-                    String key = id.toLanguageKey();
-                    String translated = Component.translatable(key).getString();
-                    if (!translated.isEmpty() && !translated.equals(key)) {
-                        return translated;
-                    }
-                }
-            } catch (RuntimeException ignored) {
-                // 退回落路径名
-            }
-            try {
-                ResourceLocation id = ResourceLocation.tryParse(typeId);
-                return id == null ? typeId : id.getPath();
-            } catch (RuntimeException ignored) {
-                return typeId;
-            }
-        }
-
         private String modeName(int index) {
-            List<GTRecipeType> types = machine.getAvailableRecipeTypes();
-            if (types.isEmpty()) {
-                return "?";
-            }
-            return modeComponent(types.get(Math.max(0, Math.min(types.size() - 1, index)))).getString();
+            return PatternConfiguratorWidgets.modeName(machine.getAvailableRecipeTypes(), index);
         }
 
         /**
@@ -8029,7 +6258,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             if (auto == null || auto.isEmpty()) {
                 return Component.translatable("gtlmodular.pattern_assembly.mode.slot_auto.none").getString();
             }
-            String autoName = recipeTypeName(auto);
+            String autoName = PatternConfiguratorWidgets.recipeTypeName(auto);
             String manual = machine.getManualAssignTypeId();
             if (manual != null && !manual.isEmpty() && !manual.equals(auto)) {
                 return Component.translatable("gtlmodular.pattern_assembly.mode.slot_conflict", autoName).getString();
@@ -8198,8 +6427,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     Component.translatable("gtlmodular.pattern_assembly.catalyst.slot").getString()));
             root.addWidget(new IntInputWidget(6, 18, 74, 20,
                     machine::getCatalystViewSlot, machine::setCatalystViewSlot).setMin(1).setMax(slots));
-            root.addWidget(new ButtonWidget(86, 18, 110, 20, buttonTexture(false), data -> toggle())
-                    .setHoverTexture(buttonTexture(true)));
+            root.addWidget(new ButtonWidget(86, 18, 110, 20,
+                    PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, false), data -> toggle())
+                    .setHoverTexture(PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, true)));
 
             // ★★ 惰性化 + 结构永不变：交给 UIManager 的是「长度 1 的数组」，里面装的是视图代理。
             //    · 物品侧：1 个代理（getSlots() 恒为 9）⇒ 9 个物品槽控件；
@@ -8237,35 +6467,14 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             return root;
         }
 
-        private IGuiTexture buttonTexture(boolean hover) {
-            TextTexture text = new TextTexture(
-                    () -> Component.translatable(machine.isCatalystPageOpen()
-                            ? "gtlmodular.pattern_assembly.catalyst.close"
-                            : "gtlmodular.pattern_assembly.catalyst.open").getString());
-            text.setWidth(114);
-            text.setDropShadow(true);
-            if (hover) {
-                return new GuiTextureGroup(GuiTextures.BUTTON,
-                        new ColorRectTexture(0x40FFFFFF), text);
-            }
-            return new GuiTextureGroup(GuiTextures.BUTTON, text);
-        }
-
         private void toggle() {
             machine.setCatalystPageOpen(!machine.isCatalystPageOpen());
         }
 
         /** 右键/中键样板槽（只在服务器侧调用）：切到该槽 + 展开本页 + 把配置面板切到这一页。 */
         void openSlotFromPattern(int slotIndex) {
-            machine.setCatalystViewSlot(slotIndex + 1);
-            machine.setCatalystPageOpen(true);
-            try {
-                if (panel != null && tab != null && panel.getExpanded() != tab) {
-                    panel.expandTab(tab);
-                }
-            } catch (RuntimeException ignored) {
-                // 面板结构拿不到就只切槽位
-            }
+            PatternCatalystWidgets.openSlotFromPattern(slotIndex, machine::setCatalystViewSlot,
+                    () -> machine.setCatalystPageOpen(true), () -> panel, () -> tab);
         }
 
         /**
@@ -8425,165 +6634,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             if (catalystUI == null) {
                 return;
             }
-            List<Widget> children = catalystUI.widgets;
-            removeCacheCountWidget();
-            Widget itemBox = findContainer(children, SlotWidget.class, null);
-            Widget fluidBox = findContainer(children, TankWidget.class, itemBox);
-            if (itemBox == null || fluidBox == null) {
-                return;
-            }
-            itemBox.setSelfPosition(4, 0);
-            fluidBox.setSelfPosition(4 + itemBox.getSizeWidth() + 8, 0);
-            catalystUI.setSize(PAGE_WIDTH - 8, PAGE_OPEN_HEIGHT - 48);
-            if (root != null) {
-                root.setSize(PAGE_WIDTH, PAGE_OPEN_HEIGHT);
-            }
-        }
-
-        private void removeCacheCountWidget() {
-            if (catalystUI == null) {
-                return;
-            }
-            List<Widget> children = catalystUI.widgets;
-            for (int i = children.size() - 1; i >= 0; i--) {
-                if (containsIntInput(children.get(i))) {
-                    children.remove(i);
-                }
-            }
-        }
-
-        private static boolean containsIntInput(Widget widget) {
-            if (widget instanceof IntInputWidget) {
-                return true;
-            }
-            if (widget instanceof WidgetGroup group) {
-                for (Widget child : group.widgets) {
-                    if (containsIntInput(child)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-
-        private static WidgetGroup findContainer(List<Widget> widgets, Class<?> slotType, Widget exclude) {
-            for (Widget child : widgets) {
-                if (child instanceof WidgetGroup group && group != exclude && containsSlot(group, slotType)) {
-                    return group;
-                }
-            }
-            return null;
-        }
-
-        private static boolean containsSlot(Widget widget, Class<?> slotType) {
-            if (slotType.isInstance(widget)) {
-                return true;
-            }
-            if (widget instanceof WidgetGroup group) {
-                for (Widget child : group.widgets) {
-                    if (containsSlot(child, slotType)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
+            PatternCatalystWidgets.layoutSideBySide(catalystUI, root, PAGE_WIDTH, PAGE_OPEN_HEIGHT, false);
         }
     }
 
-    // ==================== P1-②B 样板槽右键/中键层 ====================
-
-    /**
-     * 样板槽上的透明点击层：<b>右键/中键</b>点样板槽 → 打开该槽的专属催化剂槽；
-     * <b>Shift + 右键/中键</b> → 把当前选中的模式指定给该槽。
-     * 只接管右键和中键，左键返回 false 透传；手上拿着东西时右键也透传。
-     * 客户端只发 client action，槽位/展开状态写在服务器侧的同步字段上。★ 逐条照搬现役机。
-     *
-     * <p><b>风险评估（P1-②B 结论：做了）</b>：覆盖层与现役机作用在**同一套控件**上
-     * （同一个 {@code PaginationUIManager} 建出来的 {@code AEPatternViewExtendSlotWidget}），
-     * 而现役机是长期在跑的产线代码 ⇒ 判定"可控"。
-     * 已知的**行为变化**（与现役机一致，故接受）：样板格上的普通右键不再透传给分页器
-     * （现役机同样如此），而是打开该槽的催化剂页；左键/拖拽完全不受影响。
-     */
-    private static final class SlotRightClickOverlay extends WidgetGroup {
-        private static final int ACTION_OPEN_CATALYST_SLOT = 20;
-        private static final int ACTION_ASSIGN_MODE_SLOT = 21;
-
-        private final LazyPatternAssemblyPartMachine machine;
-        private final WidgetGroup base;
-
-        SlotRightClickOverlay(LazyPatternAssemblyPartMachine machine, WidgetGroup base, int width, int height) {
-            super(0, 0, width, height);
-            this.machine = machine;
-            this.base = base;
-        }
-
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (button != 1 && button != 2) {
-                return false;
-            }
-            if (button == 1 && handsNotEmpty()) {
-                return false;
-            }
-            int slot = findPatternSlotIndex(base, mouseX, mouseY);
-            if (slot < 0) {
-                return false;
-            }
-            // Shift + 右键/中键 = 把当前选中的模式指定给这个样板槽；普通右键/中键 = 开该槽的催化剂页
-            boolean assign = net.minecraft.client.gui.screens.Screen.hasShiftDown();
-            writeClientAction(assign ? ACTION_ASSIGN_MODE_SLOT : ACTION_OPEN_CATALYST_SLOT,
-                    buffer -> buffer.writeVarInt(slot));
-            return true;
-        }
-
-        @Override
-        public void handleClientAction(int id, FriendlyByteBuf buffer) {
-            super.handleClientAction(id, buffer);
-            if (id == ACTION_ASSIGN_MODE_SLOT) {
-                int slot = buffer.readVarInt();
-                machine.setManualAssignSlot(slot + 1);
-                machine.assignManualType(slot + 1, false);
-                return;
-            }
-            if (id != ACTION_OPEN_CATALYST_SLOT) {
-                return;
-            }
-            int slot = buffer.readVarInt();
-            machine.setManualAssignSlot(slot + 1);   // 顺手让模式页的槽号跟着走
-            CatalystAccessConfigurator page = machine.activeCatalystPage;
-            if (page != null) {
-                page.openSlotFromPattern(slot);
-            } else {
-                machine.setCatalystViewSlot(slot + 1);
-                machine.setCatalystPageOpen(true);
-            }
-        }
-
-        private static boolean handsNotEmpty() {
-            try {
-                net.minecraft.client.Minecraft minecraft = net.minecraft.client.Minecraft.getInstance();
-                return minecraft.player != null && !minecraft.player.containerMenu.getCarried().isEmpty();
-            } catch (RuntimeException ignored) {
-                return false;
-            }
-        }
-
-        private static int findPatternSlotIndex(Widget widget, double mouseX, double mouseY) {
-            if (widget instanceof AEPatternViewExtendSlotWidget slot) {
-                if (!slot.isMouseOverElement(mouseX, mouseY) || slot.getHandler() == null) {
-                    return -1;
-                }
-                return slot.getHandler().getContainerSlot();
-            }
-            if (widget instanceof WidgetGroup group) {
-                for (Widget child : group.widgets) {
-                    int found = findPatternSlotIndex(child, mouseX, mouseY);
-                    if (found >= 0) {
-                        return found;
-                    }
-                }
-            }
-            return -1;
-        }
-    }
 }
