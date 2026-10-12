@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
@@ -159,6 +160,7 @@ public final class LazyPatternArchiveCodec {
             stack.getOrCreateTag().put(NBT_STAMP, stamp);
             return stamp.getInt(K_PATTERN_COUNT) > 0;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveCodec#writeToStackInternal", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：写档案进物品失败（物品保持不变）原因={}",
                     failure.toString());
             return false;
@@ -210,6 +212,7 @@ public final class LazyPatternArchiveCodec {
             }
             return stamp;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveCodec#encode", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：档案序列化失败 原因={}", failure.toString());
             return null;
         }
@@ -238,6 +241,7 @@ public final class LazyPatternArchiveCodec {
             }
             return read(root);
         } catch (Throwable failure) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#readFromTag", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：读档案失败（按空档处理）原因={}",
                     failure.toString());
             return null;
@@ -249,6 +253,7 @@ public final class LazyPatternArchiveCodec {
             Payload payload = readFromStack(stack);
             return payload != null && payload.cutSourced;
         } catch (Throwable ignored) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#isCutSourced", ignored);
             return false;
         }
     }
@@ -267,6 +272,7 @@ public final class LazyPatternArchiveCodec {
                 stack.setTag(null);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveCodec#clearStack", ignored);
         }
     }
 
@@ -302,6 +308,7 @@ public final class LazyPatternArchiveCodec {
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#stackPatternCount", ignored);
         }
         return 0;
     }
@@ -323,6 +330,7 @@ public final class LazyPatternArchiveCodec {
             net.minecraft.core.BlockPos pos = net.minecraft.core.BlockPos.of(stamp.getLong(K_POS));
             return dimension + " (" + pos.getX() + ", " + pos.getY() + ", " + pos.getZ() + ")";
         } catch (Throwable ignored) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#stackSource", ignored);
             return "";
         }
     }
@@ -404,6 +412,7 @@ public final class LazyPatternArchiveCodec {
             }
             payload.patternCount = payload.entries.size();
         } catch (Throwable failure) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#read", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：解析档案失败（已解析的部分保留）原因={}",
                     failure.toString());
         }
@@ -428,6 +437,7 @@ public final class LazyPatternArchiveCodec {
             ItemStack stack = ItemStack.of(tag);
             return stack == null ? ItemStack.EMPTY : stack;
         } catch (Throwable failure) {
+            SwallowedErrors.reportDebug("LazyPatternArchiveCodec#readStack", failure);
             return ItemStack.EMPTY;
         }
     }
@@ -537,6 +547,7 @@ public final class LazyPatternArchiveCodec {
                     landed[i] = true;
                     written++;
                 } catch (Throwable failure) {
+                    SwallowedErrors.report("LazyPatternArchiveCodec#apply.writePattern", failure);
                     failed++;
                     GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：第 {} 槽样板写入失败（该槽保持原样）pos={} 原因={}",
                             placement.slot + 1, machine.pos(), failure.toString());
@@ -579,6 +590,7 @@ public final class LazyPatternArchiveCodec {
                 try {
                     machine.afterBulkChange();
                 } catch (Throwable failure) {
+                    SwallowedErrors.report("LazyPatternArchiveCodec#apply.afterBulkChange", failure);
                     GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：粘贴后的收尾失败"
                                     + "（样板已写好，缓存最迟由下一 tick 的签名轮询兜住）pos={} 原因={}",
                             machine.pos(), failure.toString());
@@ -597,6 +609,7 @@ public final class LazyPatternArchiveCodec {
                     new Object[]{written, metadata, failed, skipped, neededFinal},
                     written, metadata, failed, neededFinal, skipped);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveCodec#apply", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：粘贴异常（已中止）pos={} 原因={}",
                     machine == null ? "?" : machine.pos(), failure.toString());
             return ApplyResult.fail("gtlmodular.pattern_assembly.archive.result.error");
@@ -636,6 +649,7 @@ public final class LazyPatternArchiveCodec {
             ItemStack stack = machine.patternAt(slot);
             return stack != null && !stack.isEmpty();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveCodec#isSlotOccupied", ignored);
             return true;
         }
     }

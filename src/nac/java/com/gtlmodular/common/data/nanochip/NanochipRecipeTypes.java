@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.GTCEuAPI;
 import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
@@ -240,6 +241,7 @@ public final class NanochipRecipeTypes {
                 }
                 return gt;
             } catch (Throwable ignored) {
+                SwallowedErrors.report("NanochipRecipeTypes#toGTrecipe", ignored);
                 return gt;
             }
         }
@@ -256,6 +258,7 @@ public final class NanochipRecipeTypes {
                     }
                 } catch (NoSuchMethodException ignored) {
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("NanochipRecipeTypes#gtlmodular$copyRecipe-noArgs", ignored);
                 }
             }
             for (Class<?> c = k; c != null; c = c.getSuperclass()) {
@@ -270,6 +273,7 @@ public final class NanochipRecipeTypes {
                             return out;
                         }
                     } catch (Throwable ignored) {
+                        SwallowedErrors.report("NanochipRecipeTypes#gtlmodular$copyRecipe-oneArg", ignored);
                     }
                 }
             }
@@ -288,6 +292,7 @@ public final class NanochipRecipeTypes {
                     }
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("NanochipRecipeTypes#gtlmodular$markType-setter", ignored);
             }
             for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
                 try {
@@ -297,6 +302,7 @@ public final class NanochipRecipeTypes {
                     return true;
                 } catch (NoSuchFieldException ignored) {
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("NanochipRecipeTypes#gtlmodular$markType-field", ignored);
                     return false;
                 }
             }

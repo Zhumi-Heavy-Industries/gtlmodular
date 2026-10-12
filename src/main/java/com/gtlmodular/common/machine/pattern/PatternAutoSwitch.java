@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.world.level.Level;
 
 import java.util.HashMap;
@@ -209,6 +210,7 @@ public final class PatternAutoSwitch {
             T internal = readSlot.get();
             return internal != null && (hasItems.test(internal) || hasFluids.test(internal));
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternAutoSwitch#hasWaitingStock", ignored);
             return false;
         }
     }

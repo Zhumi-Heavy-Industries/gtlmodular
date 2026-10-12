@@ -1,0 +1,181 @@
+import java.security.MessageDigest
+import java.time.Duration
+import groovy.json.JsonSlurper
+
+apply from: 'gradle/gametest-log-audit.gradle'
+
+def dependencyRows = file('docs/依赖.md').getText('UTF-8')
+        .split('<!-- test-dependencies:start -->')[1]
+        .split('<!-- test-dependencies:end -->')[0].readLines()
+        .findAll { it.startsWith('|') }.drop(2)
+        .collect { it.split(/\|/, -1)[1..-2].collect { it.trim() } }
+        .findAll { it[3] in ['是', '仅完整版'] }
+
+sourceSets {
+    gametest {
+        compileClasspath = sourceSets.nac.compileClasspath + sourceSets.nac.output
+    }
+    fullGameTestProduct
+    nacGameTestProduct
+}
+
+// 运行分组只复用已编译输出，避免 ForgeGradle 自动带入生产源码集的全部 libs。
+def productGroups = [
+        [id: 'gtlmodular', source: sourceSets.fullGameTestProduct,
+         outputs: [sourceSets.main, sourceSets.nac], run: 'gameTestServer',
+         task: 'runFullGameTest', directory: 'run-test'],
+        [id: 'gtl_nac', source: sourceSets.nacGameTestProduct,
+         outputs: [sourceSets.nacmod, sourceSets.nac], run: 'standaloneGameTestServer',
+         task: 'runNacGameTest', directory: 'run-test-nac']
+]
+productGroups.each { product ->
+    product.source.output.classesDirs.setFrom(product.outputs.collect { it.output })
+    product.source.output.resourcesDir = product.outputs[0].output.resourcesDir
+    product.source.runtimeClasspath = files(product.source.output, sourceSets.gametest.output,
+            product.id == 'gtlmodular' ? configurations.fullGameTestProductRuntimeClasspath
+                    : configurations.gametestRuntimeClasspath)
+}
+
+repositories {
+    dependencyRows.each { row ->
+        ivy {
+            name = "gameTestLocal_${row[1]}"
+            url = uri('libs/testrun')
+            patternLayout { artifact row[0] }
+            metadataSources { artifact() }
+            content { includeModule 'gtl.gametest.local', row[1] }
+        }
+    }
+}
+
+configurations.gametestRuntimeOnly.extendsFrom(
+        configurations.minecraft, configurations.minecraftLibrary, configurations.minecraftEmbed)
+configurations.fullGameTestProductRuntimeOnly.extendsFrom(configurations.gametestRuntimeOnly)
+dependencies {
+    dependencyRows.each { row ->
+        def scope = row[3] == '仅完整版' ? 'fullGameTestProductRuntimeOnly' : 'gametestRuntimeOnly'
+        add(scope, fg.deobf("gtl.gametest.local:${row[1]}:${row[8]}"))
+    }
+}
+
+tasks.register('verifyGameTestDependencies') {
+    group = 'verification'
+    inputs.file('docs/依赖.md')
+    inputs.files(dependencyRows.collect { file("libs/testrun/${it[0]}") })
+    doLast {
+        dependencyRows.each { row ->
+            def jar = file("libs/testrun/${row[0]}")
+            if (!jar.isFile()) throw new GradleException("缺少 libs/testrun/${jar.name}；解压测试依赖 zip，或运行 scripts/download-test-deps.py（见 docs/依赖.md）")
+            ['SHA-1': row[7], 'SHA-256': row[8]].each { algorithm, expected ->
+                def digest = MessageDigest.getInstance(algorithm)
+                jar.withInputStream { input ->
+                    byte[] buffer = new byte[1024 * 1024]
+                    int size
+                    while ((size = input.read(buffer)) != -1) digest.update(buffer, 0, size)
+                }
+                if (digest.digest().encodeHex().toString() != expected) {
+                    throw new GradleException("测试依赖 ${jar.name} 的 $algorithm 不符；请对照 docs/依赖.md 的测试依赖表")
+                }
+            }
+        }
+    }
+}
+
+productGroups.each { product ->
+    def report = layout.buildDirectory.file("reports/gameTest/${product.id}.json")
+    def logReport = layout.buildDirectory.file("reports/gameTest/${product.id}-logs.json")
+    def logFile = file("${product.directory}/logs/latest.log")
+    def logAudit = tasks.register(product.id == 'gtlmodular' ? 'checkFullGameTestLog' : 'checkNacGameTestLog') {
+        group = 'verification'
+        description = "检查 ${product.id} 最近一次 GameTest 日志"
+        doLast { auditGameTestLog(logFile, product.id, logReport.get().asFile) }
+    }
+    def prepare = tasks.register("prepare${product.id}GameTest") {
+        dependsOn 'verifyGameTestDependencies'
+        doLast {
+            def directory = file(product.directory)
+            directory.mkdirs()
+            new File(directory, 'eula.txt').text = 'eula=true\n'
+            if (fileTree(new File(directory, 'mods')).matching { include '**/*.jar' }.files) {
+                throw new GradleException("${product.directory}/mods 必须为空；测试依赖由专用 classpath 加载")
+            }
+            copy {
+                from 'src/gametest/instance'
+                into directory
+                rename 'product-common.toml', "${product.id}-common.toml"
+            }
+            if (product.id == 'gtlmodular') {
+                copy {
+                    from 'src/gametest/full-instance'
+                    into directory
+                }
+            }
+        }
+    }
+    minecraft.runs.create(product.run) {
+        if (product.id == 'gtl_nac') parent minecraft.runs.gameTestServer
+        taskName product.task
+        workingDirectory file(product.directory)
+        setSources([product.source, sourceSets.gametest])
+        if (product.id == 'gtlmodular') jvmArg '-Xmx6G'
+        property 'forge.logging.console.level', 'info'
+        property 'forge.enabledGameTestNamespaces', product.id
+        property 'gtl.gametest.product', product.id
+        property 'gtl.gametest.assetRoot', '{assets_root}'
+        property 'gtl.gametest.assetIndex', '{asset_index}'
+        property 'gtl.gametest.report', report.get().asFile.absolutePath
+        property 'mixin.env.remapRefMap', 'true'
+        property 'mixin.env.refMapRemappingFile', file('build/createSrgToMcp/output.srg').absolutePath
+        mods {
+            create(product.id) { source product.source }
+            gtl_gametest { source sourceSets.gametest }
+        }
+    }
+    gradle.projectsEvaluated {
+        def run = minecraft.runs.getByName(product.run)
+        run.mods.removeAll { !(it.name in [product.id, 'gtl_gametest']) }
+        run.setSources([product.source, sourceSets.gametest])
+        tasks.matching { it.name == product.task }.configureEach {
+            dependsOn prepare, 'createSrgToMcp', product.outputs.collect { it.classesTaskName }
+            finalizedBy logAudit
+            if (product.id == 'gtl_nac') mustRunAfter 'runFullGameTest'
+            timeout = Duration.ofMinutes(10)
+            doFirst {
+                delete report, logReport, logFile
+                delete layout.buildDirectory.file("reports/gameTest/${product.id}-resources.json")
+                // 源码运行没有发行 jar 的 manifest，需显式加载当前产物的 mixin 配置。
+                // 在具体任务上追加，避免独立版继承完整版 run 的配置参数。
+                args '--mixin', "${product.id}.mixins.json"
+                delete layout.buildDirectory.file("reports/gameTest/${product.id}-recipe-conflicts.json")
+            }
+            doLast {
+                if (!report.get().asFile.isFile()) throw new GradleException('GameTest 未生成完整结果报告')
+                def result = new JsonSlurper().parse(report.get().asFile)
+                if (result.product != product.id || result.complete != true || !result.discovered ||
+                        result.discovered.toSet() != result.results.keySet()) {
+                    throw new GradleException("GameTest 发现与结果不完整：${report.get().asFile}")
+                }
+                result.results.each { name, outcome ->
+                    if (!(outcome.status in ['PASS', 'XFAIL', 'XPASS'])) {
+                        throw new GradleException("GameTest 非预期失败：$name ${outcome.error}")
+                    }
+                    if (outcome.issue) logger.lifecycle("GameTest 已知问题：$name ${outcome.status} ${outcome.issue}")
+                    if (outcome.status == 'XPASS') logger.lifecycle("$name 已通过守恒断言，请移除已知失败标记")
+                }
+                logger.lifecycle("GameTest ${product.id}：${result.counts}；报告 ${report.get().asFile}")
+            }
+        }
+        // 专服不需要客户端音频与本地库；不改变普通 client/server 的准备任务。
+        tasks.matching { it.name == run.prepareTaskName }.configureEach { setDependsOn(['createSrgToMcp']) }
+    }
+}
+
+// ForgeGradle 实现延迟任务时会追加 main 运行依赖，任务图就绪后才能完整替换。
+gradle.taskGraph.whenReady { graph ->
+    graph.allTasks.findAll { it.name in productGroups*.task }.each { task ->
+        task.runtimeClasspathArtifacts.setFrom(task.name == 'runFullGameTest'
+                ? configurations.fullGameTestProductRuntimeClasspath : configurations.gametestRuntimeClasspath)
+    }
+}
+
+tasks.named('build') { dependsOn 'gametestClasses' }

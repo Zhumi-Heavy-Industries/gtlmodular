@@ -1,6 +1,7 @@
 package com.gtlmodular.client.renderer;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.block.IMachineBlock;
 import com.gregtechceu.gtceu.api.data.RotationState;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
@@ -142,6 +143,7 @@ public final class NacMachineShellRenderer {
         try {
             renderShells(event);
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacMachineShellRenderer#onRenderLevelStage", failure);
             warnFailure(failure);
         }
     }
@@ -423,6 +425,7 @@ public final class NacMachineShellRenderer {
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NacMachineShellRenderer#frontFace", ignored);
         }
         if (block instanceof IMachineBlock machineBlock) {
             RotationState rotation = machineBlock.getRotationState();
@@ -523,6 +526,7 @@ public final class NacMachineShellRenderer {
             frame = derived;
             return true;
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacMachineShellRenderer#ensureGeometry", failure);
             warnFailure(failure);
             geometryFailure = "解析抛异常：" + failure;
             return false;

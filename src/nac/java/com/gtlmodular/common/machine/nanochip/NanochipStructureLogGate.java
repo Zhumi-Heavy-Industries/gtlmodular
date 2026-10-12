@@ -35,8 +35,7 @@ public final class NanochipStructureLogGate {
                 verboseNoticeLogged = true;
                 NanochipModContext.logger().info("[gtlmodular] NAC 结构日志已进入「全打」模式（配置 nanochipComplex.verboseStructureLogs=true）："
                         + "结构结论与逐格原因一律 INFO、不折叠、不降 debug；"
-                        + "排障结束后把该项改成 false（在游戏内配置界面「NAC 校准与排障」里点一下、保存即生效，无需重启；只有手改 config/gtlmodular-common.toml 才要重启）即可恢复 0.1.40 的降噪口径。"
-                        + "（队长 2026-09-21：「我更新了add，还有core现在我们的模块都不做东西了」＋「查」）");
+                        + "排障结束后把该项改成 false（在游戏内配置界面「NAC 校准与排障」里点一下、保存即生效，无需重启；只有手改 config/gtlmodular-common.toml 才要重启）即可恢复降噪。");
             }
             this.lastConclusion = conclusion;
             this.lastDetail = detail;

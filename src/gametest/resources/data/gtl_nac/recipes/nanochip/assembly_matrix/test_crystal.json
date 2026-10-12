@@ -1,0 +1,46 @@
+{
+  "type": "gtl_nac:nanochip_assembly_matrix",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtl_nac"
+    }
+  ],
+  "duration": 20,
+  "data": {
+    "circuit-calibration": "CRYSTAL"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "kubejs:nac_calibration_crystal_input"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "kubejs:nac_calibration_crystal_output"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 32
+      }
+    ]
+  }
+}

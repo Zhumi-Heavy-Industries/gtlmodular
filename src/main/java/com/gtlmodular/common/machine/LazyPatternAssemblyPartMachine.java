@@ -19,6 +19,7 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.pattern.PatternArchiveSnapshots;
 import com.gtlmodular.common.machine.pattern.PatternAutoSwitch;
 import com.gtlmodular.common.machine.pattern.PatternClientSyncRefresh;
@@ -30,6 +31,7 @@ import com.gtlmodular.common.machine.pattern.PatternNameController;
 import com.gtlmodular.common.machine.pattern.PatternRecipeMatching;
 import com.gtlmodular.common.machine.pattern.PatternRecipeTypeSearch;
 import com.gtlmodular.common.machine.pattern.PatternRewriteCache;
+import com.gtlmodular.common.machine.pattern.PatternStaleSlotCache;
 import com.gtlmodular.common.machine.pattern.PatternProviderRefresh;
 import com.gtlmodular.common.machine.pattern.PatternStacks;
 import com.gtlmodular.common.machine.pattern.ui.PatternCatalystWidgets;
@@ -157,6 +159,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             method.setAccessible(true);
             return method;
         } catch (Throwable failure) {
+            // 探测：通知入口随上游版本可能缺失，此处仅解析方法，缺失时保留主机轮询退路。
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：拿不到 notifyListeners() ⇒ 缓冲内容变化将不通知主机配方逻辑"
                     + "（主机会退回自行轮询）。原因: {}", failure.toString());
             return null;
@@ -649,6 +652,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 slotRecipeTypes.add(null);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#growCapacityFor.recipeTypes", ignored);
         }
         patternSlotMapDirty = true;
         // 所有扩容入口在此汇合，发布权威容量才能让客户端分页槽数同步增长。
@@ -675,6 +679,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             GTLModular.LOGGER.info("[gtlmodular] 惰性机样板页: 服务端发布视图 槽={} 容量={} 签名={}",
                     countNonEmptyPatterns(), capacity, patternViewSignature());
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#publishPatternCapacity", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性机样板页: 服务端发布容量失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -699,6 +704,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             GTLModular.LOGGER.info("[gtlmodular] 惰性机样板页: 客户端应用视图 槽={} 容量={} 本侧原容量={}",
                     countNonEmptyPatterns(), target, local);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#applySyncedPatternCapacity", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性机样板页: 客户端应用容量失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -728,6 +734,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             return count;
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#countNonEmptyPatterns", ignored);
             return -1;
         }
     }
@@ -751,6 +758,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             builder.append(nonEmpty).append(':').append(highestUsedSlot() + 1).append(':').append(slots);
             return builder.toString();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#patternViewSignature", ignored);
             return "?";
         }
     }
@@ -942,6 +950,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 notify.invoke(recipeHandler.getMeFluidHandler());
                 fired = true;
             } catch (Throwable ignored) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine#notifyMERecipeHandlers", ignored);
             }
         }
         if (!fired) {
@@ -960,6 +969,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#wakeHostRecipeLogic", ignored);
             // 唤醒失败时保留机器状态，交由主机自行轮询。
         }
     }
@@ -967,6 +977,14 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     @Override
     protected boolean hasPatternInSlot(int slot) {
         return slot >= 0 && slot < getCapacity() && !patternInventory.getStackInSlot(slot).isEmpty();
+    }
+
+    @Override
+    public ItemStack getCircuitForRecipe(int slotIndex) {
+        if (getInternalSlot(slotIndex) instanceof LazyPatternBufferInternalSlot slot) {
+            slot.syncPatternCircuit();
+        }
+        return super.getCircuitForRecipe(slotIndex);
     }
 
     @Override
@@ -1002,6 +1020,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             lookupNarrowingModeIndex = own;
             return own;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#lookupNarrowingModeIndex", failure);
             lookupNarrowingModeIndex = -1;
             return -1;
         }
@@ -1050,6 +1069,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             scalingApplies = aePushedOriginal && isRewriteEnabled()
                     && inputHolder != null && (mul != 1 || div != 1);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.originalPattern", ignored);
             original = patternDetails;
             aePushedOriginal = true;
             scalingApplies = false;
@@ -1084,6 +1104,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                                 shortName = "『" + entry.getKey().getDisplayName().getString() + "』("
                                         + entry.getKey().getId() + ")";
                             } catch (Throwable ex) {
+                                SwallowedErrors.reportDebug("LazyPatternAssemblyPartMachine#pushPattern.shortageName", ex);
                                 shortName = entry.getKey().getId().toString();
                             }
                             break outer;
@@ -1104,6 +1125,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                         aeRequestingAny = stockGrid.getCraftingService().isRequestingAny();
                     }
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.craftingRequests", ignored);
                     // 查询失败时不伪造在途量或任务追踪读数。
                 }
                 boolean trueDeadlock = shortHave <= 0 && inFlight <= 0 && aeRequestingAny;
@@ -1129,8 +1151,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                                         + "但 AE 侧仍有合成任务**（AE追踪本件={}，AE全局有任务={}，本次需要={}）@{} —— "
                                         + "这是「料已交付、还没被消费/产出」的**空窗期**：请等下一轮 `AE 推送样板`"
                                         + "（对照 `累计推来` 看是不是刚被吃光），**不要**「全部取消」"
-                                        + "（那对空窗期没有帮助，只会把已排好的任务丢掉）。（本条 30 秒最多一条。"
-                                        + "0.3.132【C1】修正：旧文案「被占用且没有任何任务在合成它」经实机取证是误报）",
+                                        + "（那对空窗期没有帮助，只会把已排好的任务丢掉）。（本条 30 秒最多一条）",
                                 shortName, aeRequesting, aeRequestingAny, shortNeed, getPos());
                     } else {
                         GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪提示：{} **被占用，且整个 AE 当前没有任何手工合成任务**"
@@ -1143,6 +1164,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.stockDiagnostic", ignored);
         }
 
         // AE 声明的推入量必须与机器消费量对应，不能在机器侧再次放大 inputHolder。
@@ -1152,8 +1174,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             if (scalingApplies && !this.machineScaleDisabledWarned) {
                 this.machineScaleDisabledWarned = true;
                 GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪样板总成 @{}：AE 推送的是【原样板】而机器侧二次放大"
-                                + "已按 0.3.132 撤销 ⇒ 本次按 AE 声明量执行，倍率/神锻未在机器侧生效（有效缩放[{}]）。"
-                                + "这是与 AE 一致的回落，不是故障；根治见 _census/NAC合成链路_原初对照与重构方案.md §⑤-A2。",
+                                + "已撤销 ⇒ 本次按 AE 声明量执行，倍率/神锻未在机器侧生效（有效缩放[{}]）。"
+                                + "这是与 AE 一致的回落，不是故障。",
                         getPos(), describeEffectiveScale());
             }
             if (GTLModularConfig.isPatternDebugLogsEnabled()
@@ -1181,6 +1203,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                         getPos(), !aePushedOriginal, machineSideScaled, pushed, describeEffectiveScale(), detail);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.inputDiagnostic", ignored);
             // 诊断日志不能影响样板推送。
         }
 
@@ -1192,6 +1215,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 lockRecipeTypeForSlot(slot);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.lockRecipeType", ignored);
             // 锁模式失败不能中断原本的样板推送。
         }
         try {
@@ -1207,6 +1231,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pushPattern.slotDiagnostic", ignored);
             // 诊断日志不能影响样板推送。
         }
         // 父类的槽映射和扣料以原样板为准，改写实例只供 AE 展示。
@@ -1242,6 +1267,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             ItemStack stack = patternInventory.getStackInSlot(slot);
             return stack.isEmpty() ? "(空)" : stack.getHoverName().getString();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#patternItemName", ignored);
             return "?";
         }
     }
@@ -1759,6 +1785,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             this.manualAssignAutoTypeId =
                     autoType == null || autoType.registryName == null ? "" : autoType.registryName.toString();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#refreshManualAssignDisplay", ignored);
             this.manualAssignAutoTypeId = "";
         }
     }
@@ -1793,6 +1820,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             ((LazyMEPatternTrait) getMETrait()).clearSlotCache(slot);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearSlotRecipeCache", ignored);
         }
     }
 
@@ -1830,6 +1858,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearAllSlotRecipeCaches", ignored);
         }
     }
 
@@ -1848,6 +1877,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             return types.contains(type);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#recipeTypeIsUsableByThisMachine", ignored);
             return true;
         }
     }
@@ -1856,6 +1886,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             modeContext().assignManualType(slotNumber, clear);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#assignManualType", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：手动指定配方模式失败 pos={} 槽={} 原因={}",
                     getPos(), slotNumber, failure.toString());
         }
@@ -1874,11 +1905,11 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         if (stack.isEmpty()) {
             return -1;
         }
-        IPatternDetails pattern;
+        PatternRecipeMatching.DecodedPattern pattern;
         try {
-            pattern = getRealPatternHelper().processPatternWithCircuit(stack, count -> {
-            }, level, keepByProduct);
+            pattern = PatternRecipeMatching.decode(getRealPatternHelper(), stack, level, keepByProduct);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#detectRecipeType.decodePattern", ignored);
             return -1;
         }
         if (pattern == null) {
@@ -1895,7 +1926,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     }
 
     /** 先清空中转，避免扫描失败时沿用上一次扫描的配方。 */
-    private int scanTypesForMatch(List<GTRecipeType> types, IPatternDetails pattern, Level level, boolean skipHostTable) {
+    private int scanTypesForMatch(List<GTRecipeType> types, PatternRecipeMatching.DecodedPattern pattern, Level level,
+                                  boolean skipHostTable) {
         this.lastMatchedSlotRecipe = null;
         return PatternRecipeTypeSearch.scan(types, pattern, level, skipHostTable,
                 type -> type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX,
@@ -1930,6 +1962,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             int index = recipeTypeOfSlot(slot);
             patternAutoSwitch().lockRecipeTypeForSlot(slot, index, types);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#lockRecipeTypeForSlot", ignored);
             // 锁模式失败不能阻止原本的样板推送。
         }
     }
@@ -1943,6 +1976,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             syncCustomNameToMode(activeRecipeTypeIndex);
             patternAutoSwitch().tick();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#autoSwitchRecipeModes", ignored);
             // 调度失败不能打断同一 tick 的其他机器维护。
         }
     }
@@ -2034,6 +2068,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             patternNameController().syncCustomNameToMode(modeIndexHint);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#syncCustomNameToMode", ignored);
             // 起名失败不能影响机器逻辑。
         }
     }
@@ -2080,17 +2115,26 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     private static final int MISIDENTIFY_NOTE_LIMIT = 64;
 
+    private final PatternStaleSlotCache staleSlotCache = new PatternStaleSlotCache();
+
     /** 槽读取延后到类型判断之后，避免未知类型也触发样板解码。 */
     boolean slotAllowsRecipe(int slot, GTRecipe recipe) {
+        boolean allowed = slotIdentityAllows(slot, recipe);
+        if (!allowed) {
+            staleSlotCache.noteRejected(slot, recipe, getMETrait().getSlot2RecipesCache());
+        }
+        return allowed;
+    }
+
+    private boolean slotIdentityAllows(int slot, GTRecipe recipe) {
         return PatternIdentityGate.allows(slot, recipe, GTLModularConfig::isPatternIdentityGateEnabled,
                 () -> recipeTypeOfSlot(slot), this::getAvailableRecipeTypes, () -> {
                     if (slot >= getCapacity()) {
                         return ItemStack.EMPTY;
                     }
                     return patternInventory.getStackInSlot(slot);
-                }, this::getLevel, (stack, level) -> getRealPatternHelper().processPatternWithCircuit(
-                        stack, count -> {
-                        }, level, keepByProduct));
+                }, this::getLevel, (stack, level) -> PatternRecipeMatching.decode(getRealPatternHelper(),
+                        stack, level, keepByProduct));
     }
 
     /** 拒绝发生在扣料入口，限频日志便于定位握着料却不工作的原因。 */
@@ -2105,6 +2149,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     () -> recipeTypeOfSlot(slot));
             noteIfHostTableMisidentified(slot, recipe);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#logGateReject", ignored);
             // 诊断日志绝不允许影响扣料本身。
         }
     }
@@ -2144,6 +2189,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             applySyncedPatternCapacity();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clientTick", ignored);
         }
     }
 
@@ -2166,6 +2212,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             needPatternSync = false;
             refreshPatternsNow();
         }
+        staleSlotCache.drain(this::invalidateSlotRecipeCache, this::getPos);
         selfHealColdSlotCaches();
         if (!loggedBaseSyncState) {
             loggedBaseSyncState = true;
@@ -2232,6 +2279,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 return;   // 每 tick 最多重识别一个槽，分摊配方表扫描成本。
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#selfHealColdSlotCaches", failure);
             GTLModular.LOGGER.debug("[gtlmodular] 惰性猪咪冷槽重识别失败（已忽略，不影响机器本身）：pos={} {}",
                     getPos(), failure.toString());
         }
@@ -2266,6 +2314,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             providerRefresh.refresh(this::getMainNode);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#refreshPatternsNow", ignored);
             // 网络暂不可用时缓存仍已失效，下次读取会重建。
         }
     }
@@ -2303,20 +2352,24 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             internal.clearVirtualSupply();
             refundSlot(internal.getItemInventory(), internal.getFluidInventory());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onSlotPatternChanged.refundSlot", ignored);
         }
         // 退款先进入 buffer，需立即尝试推网并唤醒 ticker，否则休眠时残料可能长期滞留。
         try {
             AEUtils.reFunds(buffer, getMainNode().getGrid(), actionSource);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onSlotPatternChanged.refundToGrid", ignored);
         }
         try {
             getMETrait().notifySelfIO();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onSlotPatternChanged.notifySelfIO", ignored);
         }
         // 镜像也维护配方到槽的映射，移除本机槽缓存时必须同步通知镜像。
         try {
             notifyProxySlotRemoved(slot);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onSlotPatternChanged.notifyProxy", ignored);
         }
         LazyMEPatternTrait patternTrait = (LazyMEPatternTrait) getMETrait();
         if (patternTrait != null) {
@@ -2330,6 +2383,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             coldSlotHealTried.remove(slot);
             coldSlotHealPattern.remove(slot);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onSlotPatternChanged.resetRecipeType", ignored);
         }
     }
 
@@ -2348,6 +2402,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onMachineRemoved", ignored);
         }
     }
 
@@ -2495,6 +2550,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             invalidateRewriteCacheQuietly();
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCustomPersistedData.rewriteSettings", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：视图改写设置读档失败（已忽略，按默认值）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2522,6 +2578,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 setRecipeTypeCache(slot, value);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCustomPersistedData.slotRecipeTypes", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：逐槽配方类型读档失败（已忽略，按未识别处理）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2548,6 +2605,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             refreshManualAssignDisplay();
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCustomPersistedData.manualTypes", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：手动指定表读档失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2563,6 +2621,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCustomPersistedData.boundMode", failure);
             this.boundModeType = null;
             this.boundModePendingResolve = false;
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：绑定模式读档失败（已忽略，按未绑定处理）pos={} 原因={}",
@@ -2597,6 +2656,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCustomPersistedData.modeNames", failure);
             modeNames.clear();
             this.lockedName = "";
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：名字表读档失败（已忽略，按「该模式还没有名字」处理）pos={} 原因={}",
@@ -2614,10 +2674,45 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         private final Object2LongMap<AEItemKey> itemCatalystInventory = new Object2LongArrayMap<>();
         private final Object2LongMap<AEFluidKey> fluidCatalystInventory = new Object2LongArrayMap<>();
 
+        private ItemStack circuitSource;
+        private int patternCircuit = -1;
+
         LazyPatternBufferInternalSlot(int index) {
             super(index);
             itemCatalystInventory.defaultReturnValue(0L);
             fluidCatalystInventory.defaultReturnValue(0L);
+        }
+
+        /**
+         * 上游按槽电路缓存校验配方电路，而本机不经过上游样板解码，缓存只能自己跟随样板里的电路。
+         * 槽可能在读档、扩容时才实体化，且读档期间没有 Level 无法解码，所以在用到电路的地方按需同步。
+         */
+        void syncPatternCircuit() {
+            int index = getSlotIndex();
+            ItemStack stack = index < getCapacity() ? patternInventory.getStackInSlot(index) : ItemStack.EMPTY;
+            if (stack != circuitSource) {
+                Level level = getLevel();
+                if (level == null) {
+                    return;
+                }
+                int previous = patternCircuit;
+                PatternRecipeMatching.DecodedPattern decoded = stack.isEmpty() ? null
+                        : PatternRecipeMatching.decode(getRealPatternHelper(), stack, level, keepByProduct);
+                patternCircuit = decoded == null ? -1 : decoded.circuit();
+                circuitSource = stack;
+                if (patternCircuit < 0 && previous >= 0) {
+                    getCacheManager().clearCircuitCache();
+                }
+            }
+            if (patternCircuit >= 0 && getCacheManager().getCircuitCache() != patternCircuit) {
+                getCacheManager().setCircuitCache(patternCircuit);
+            }
+        }
+
+        @Override
+        public boolean handleItemInternal(Object2LongMap<Ingredient> left, int leftCircuit, boolean simulate) {
+            syncPatternCircuit();
+            return super.handleItemInternal(left, leftCircuit, simulate);
         }
 
         @Override
@@ -2831,6 +2926,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 callback.run();
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#reCalculateCatalystItemMap", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂物品重算失败（已忽略）pos={} 槽={} 原因={}",
                     getPos(), index + 1, failure.toString());
         }
@@ -2863,6 +2959,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 callback.run();
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#reCalculateCatalystFluidMap", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂流体重算失败（已忽略）pos={} 槽={} 原因={}",
                     getPos(), index + 1, failure.toString());
         }
@@ -2873,6 +2970,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             reCalculateCatalystItemMap(index);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onCatalystItemContentsChanged", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂物品回调异常（已忽略）pos={} 槽={} 原因={}",
                     getPos(), index + 1, failure.toString());
         }
@@ -2882,6 +2980,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         try {
             reCalculateCatalystFluidMap(index);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onCatalystFluidContentsChanged", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂流体回调异常（已忽略）pos={} 槽={} 原因={}",
                     getPos(), index + 1, failure.toString());
         }
@@ -2896,10 +2995,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 trait.notifyPatternChange(slot);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#invalidateSlotRecipeCache.local", ignored);
         }
         try {
             notifyProxySlotRemoved(slot);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#invalidateSlotRecipeCache.proxy", ignored);
         }
     }
 
@@ -2934,6 +3035,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 tag.put(NBT_LAZY_CATALYST_SLOTS, root);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#saveCatalystSlots", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂表写档失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2986,6 +3088,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 reCalculateCatalystFluidMap(index);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#loadCatalystSlots", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：催化剂表读档失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3307,6 +3410,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             invalidateSlotRecipeCache(slot);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onCacheCountChangedFromUi", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：缓存阈值同步失败（已忽略）pos={} 槽={} 原因={}",
                     getPos(), slot + 1, failure.toString());
         }
@@ -3388,18 +3492,21 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 panel.attachConfigurators(new RecipeModeConfigurator(this));
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.recipeModePage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：配方模式页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
         try {
             panel.attachConfigurators(new ScaleConfigurator(this));
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.scalePage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：样板倍率页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
         try {
             panel.attachConfigurators(new FoaConfigurator(this));
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.foaPage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：神锻样板模式页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3411,6 +3518,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             List<ConfiguratorPanel.Tab> tabs = panel.getTabs();
             catalystPage.bindPanel(panel, tabs.size() > before ? tabs.get(before) : null);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.catalystPage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：专属催化剂槽页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3423,12 +3531,14 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     this::applyConfiguredCircuit,
                     this::removeAllPatternCircuits));
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.circuitPage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：样板电路写入页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
         try {
             panel.attachConfigurators(new ArchiveConfigurator(this));
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.archivePage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：归档页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3499,6 +3609,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             try {
                 helper = getRealPatternHelper();
             } catch (Throwable ignored) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.patternHelper", ignored);
                 helper = null;
             }
             if (helper == null) {
@@ -3517,6 +3628,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 try {
                     current = patternInventory.getStackInSlot(i);
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.readSlot", ignored);
                     continue;
                 }
                 if (current == null || current.isEmpty()) {
@@ -3528,6 +3640,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                             ? helper.createPatternWithCircuit(current, config, overwrite, level)
                             : helper.removeCircuitFromPattern(current, level);
                 } catch (Throwable failure) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.calculateSlot", failure);
                     calcFailed++;
                     continue;
                 }
@@ -3548,6 +3661,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     patternInventory.setStackInSlot(targetSlots.get(k), targetStacks.get(k));
                     applied++;
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.writeSlot", ignored);
                     writeFailed++;
                 }
             }
@@ -3557,6 +3671,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 try {
                     onPatternInventoryChanged();
                 } catch (Throwable failure) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.afterWrite", failure);
                     GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪样板电路{}：写入后的收尾失败"
                                     + "（样板本身已经写好，缓存最迟由下一 tick 的签名轮询兜住）pos={} 原因={}",
                             embed ? "写入" : "清空", getPos(), failure.toString());
@@ -3586,8 +3701,10 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                             applied, slotText.toString(), calcFailed, writeFailed, getPos());
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits.summary", ignored);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#rewritePatternCircuits", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪样板电路{}异常（本次操作已中止，仓内样板保持操作前状态）pos={} 原因={}",
                     embed ? "写入" : "清空", getPos(), failure.toString());
         }
@@ -3683,6 +3800,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }, () -> cacheRecipeCountAt(slot), DEFAULT_CACHE_RECIPE_COUNT);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#buildArchivedCatalyst", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：第 {} 槽催化剂打包失败（该槽只搬样板）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
             return null;
@@ -3697,13 +3815,16 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 try {
                     patternInventory.setStackInSlot(i, ItemStack.EMPTY);
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearArchiveContent.patternInventorySlot", ignored);
                 }
                 try {
                     setRecipeTypeCache(i, TYPE_NOT_TRIED);
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearArchiveContent.recipeTypeSlot", ignored);
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearArchiveContent.patterns", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：清空样板失败（已尽力而为）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3711,6 +3832,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             manualSlotTypes.clear();
             refreshManualAssignDisplay();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearArchiveContent.manualTypes", ignored);
         }
         try {
             int tables = Math.max(catalystItems.size(),
@@ -3735,6 +3857,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#clearArchiveContent.catalysts", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：清空催化剂失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3745,6 +3868,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             ensureRecipeTypeSlotCapacity();
             setRecipeTypeCache(slot, recipeType);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#writeArchivedRecipeType", ignored);
         }
     }
 
@@ -3771,6 +3895,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     try {
                         items.onContentsChanged();
                     } catch (Throwable ignored) {
+                        SwallowedErrors.report("LazyPatternAssemblyPartMachine#writeArchivedCatalyst.itemsContentsChanged", ignored);
                     }
                     reCalculateCatalystItemMap(slot);
                     wrote = true;
@@ -3783,6 +3908,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     try {
                         fluids.onContentsChanged();
                     } catch (Throwable ignored) {
+                        SwallowedErrors.report("LazyPatternAssemblyPartMachine#writeArchivedCatalyst.fluidsContentsChanged", ignored);
                     }
                     reCalculateCatalystFluidMap(slot);
                     wrote = true;
@@ -3794,6 +3920,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 wrote = true;
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#writeArchivedCatalyst", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：第 {} 槽催化剂写入失败（该槽催化剂保持原样）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
         }
@@ -3825,6 +3952,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             invalidateRewriteCacheQuietly();
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#writeArchivedSettings", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：设置类写入失败（已忽略，按原设置）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3851,6 +3979,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             }
             return tag;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#copyToTag", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：复制失败（本机未改动）pos={} 原因={}",
                     getPos(), failure.toString());
             return tag;
@@ -3870,6 +3999,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     this, payload, archiveIncludeSettings, archiveIncludeName, archivePlaceMode());
             return result != null && result.ok;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#pasteFromTag", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：粘贴失败（已中止，仓内容按操作前）pos={} 原因={}",
                     getPos(), failure.toString());
             return false;
@@ -3892,6 +4022,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     result == null ? "?" : (result.ok ? result.messageKey : "拒绝/空"),
                     result == null ? 0 : result.patternCount, result == null ? 0 : result.metadataCount);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#copyFromTag", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：按档案覆盖失败（已中止）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -3916,6 +4047,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             try {
                 onPatternInventoryChanged();
             } catch (Throwable failure) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine#cutToTag.afterClear", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：剪切后的收尾失败"
                                 + "（样板已清空，缓存最迟由下一 tick 的签名轮询兜住）pos={} 原因={}",
                         getPos(), failure.toString());
@@ -3924,6 +4056,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     payload.patternCount, payload.entries.size(), getPos());
             return tag;
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternAssemblyPartMachine#cutToTag", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪归档：剪切异常（已中止）pos={} 原因={}",
                     getPos(), failure.toString());
             return tag;
@@ -4366,6 +4499,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 machine.catalystViewPayload = payload.toString();
                 lastSentIndex = index;
             } catch (Throwable failure) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine.CatalystAccessConfigurator#publishCatalystViewToMachine", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪催化剂页: 内容同步失败（已忽略）pos={} 槽={} 原因={}",
                         machine.getPos(), index + 1, failure.toString());
             }
@@ -4402,6 +4536,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                             nonEmpty, CATALYST_ITEM_SLOTS, currentViewIndex() + 1);
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("LazyPatternAssemblyPartMachine.CatalystAccessConfigurator#applyCatalystViewFromMachine", ignored);
             }
         }
 

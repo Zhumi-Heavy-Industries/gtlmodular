@@ -1,6 +1,8 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.nanochip.vacuum.NanochipVacuumPort;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
@@ -157,6 +159,7 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             NanochipColor c = color();
             super.setPaintingColor(c == null ? 0xFFFFFFFF : c.paintArgb());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipVacuumHatchMachine#syncPaintingColor", ignored);
         }
     }
 
@@ -196,6 +199,7 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
     @Override
     public void onAddFancyInformationTooltip(java.util.List<Component> tooltips) {
         super.onAddFancyInformationTooltip(tooltips);
+        tooltips.add(NanochipLogisticsText.deprecated());
         NanochipColor c = color();
         if (c == null) {
             tooltips.add(Component.translatable("gtlmodular.nanochip.vacuum.color.unpainted")
@@ -203,7 +207,7 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             return;
         }
         tooltips.add(Component.translatable("gtlmodular.nanochip.vacuum.color.line",
-                        Component.literal(c.nameZh()).withStyle(s -> s.withColor(c.textColor())))
+                        NanochipLogisticsText.colorName(c))
                 .withStyle(net.minecraft.ChatFormatting.GRAY));
     }
 
@@ -237,11 +241,7 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             NanochipColor next = current == null ? NanochipColor.WHITE : current.next();
             setColor(next);
             if (player != null) {
-                player.displayClientMessage(
-                        Component.literal("[真空传送] 颜色 → ")
-                                .append(Component.literal(next.nameZh())
-                                        .withStyle(style -> style.withColor(next.textColor()))),
-                        true);
+                player.displayClientMessage(NanochipLogisticsText.colorChanged(next), true);
             }
         }
         return InteractionResult.sidedSuccess(level != null && level.isClientSide);
@@ -474,7 +474,7 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             return cur == null
                     ? Component.translatable("gtlmodular.nanochip.vacuum.color.unpainted").getString()
                     : Component.translatable("gtlmodular.nanochip.vacuum.color.current",
-                            Component.literal(cur.nameZh()).withStyle(s -> s.withColor(cur.textColor())))
+                            NanochipLogisticsText.colorName(cur))
                     .getString();
         }));
         for (int i = 0; i < 16; i++) {
@@ -490,10 +490,11 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             group.addWidget(new ButtonWidget(x, y, 20, 16, texture, data -> {
                 machine.setColor(option);
                 syncIcon(icon, option);
-            }).setHoverTooltips(Component.literal(option.nameZh())));
+            }).setHoverTooltips(NanochipLogisticsText.colorName(option)));
         }
         group.addWidget(new LabelWidget(4, 96,
-                Component.translatable("gtlmodular.nanochip.vacuum.color.hint").getString()));
+                Component.translatable("gtlmodular.nanochip.vacuum.color.hint").getString())
+                .setHoverTooltips(NanochipLogisticsText.deprecated()));
         group.addWidget(new ButtonWidget(100, 92, 48, 16, new com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture(0xFF3A3A3A),
                 data -> machine.clearChannel())
                 .setHoverTooltips(Component.translatable("gtlmodular.nanochip.vacuum.color.clear.tip")));
@@ -522,7 +523,8 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
 
         @Override
         public List<Component> getTooltips() {
-            return List.of(Component.translatable("gtlmodular.nanochip.vacuum.title"));
+            return List.of(Component.translatable("gtlmodular.nanochip.vacuum.title"),
+                    NanochipLogisticsText.deprecated());
         }
 
         @Override

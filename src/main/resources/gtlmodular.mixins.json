@@ -2,12 +2,33 @@
     "required": false,
     "minVersion": "0.8.5",
     "package": "com.gtlmodular.mixin",
+    "plugin": "com.gtlmodular.integration.mixin.GTLModularFullMixinPlugin",
     "compatibilityLevel": "JAVA_17",
     "mixins": [
         "enhancedcore.SuperBufferChineseNamesMixin",
-        "gtlcore.NanochipCalibrationLookupMixin"
+        "gtlcore.NanochipCalibrationLookupMixin",
+        "gtlcore.NanochipCalibrationInputMixin",
+        "gtlcore.NanochipLocalBatchEnergyMixin",
+        "independent.MultipleRecipeLogicInvoker",
+        "independent.MultipleRecipeEnergyInvoker",
+        "independent.MutableRecipeLogicInvoker",
+        "independent.IndependentEnergyObservationMixin",
+        "independent.OtherMachineRecipeLogicMixin",
+        "independent.MultipleRecipeEntryMixin",
+        "independent.WirelessRecipeEntryMixin",
+        "independent.MutableRecipeEntryMixin",
+        "independent.MultipleRecipeWorkingMixin",
+        "independent.IndependentMachineLifecycleMixin",
+        "independent.IndependentMachineDropMixin",
+        "independent.IndependentClonePlacementMixin",
+        "independent.IndependentCloneCommandMixin",
+        "independent.IndependentMachineDisplayMixin",
+        "independent.EnhancedcoreScopeMixin",
+        "independent.EnhancedcoreEngineMixin",
+        "independent.EnhancedcoreAdmissionMixin"
     ],
     "client": [
+        "ConfiguratorPanelTabMixin",
         "gtceu.MixinWorkableProgressBar"
     ],
     "injectors": {

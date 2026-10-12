@@ -97,8 +97,7 @@ public final class NanochipMirrorBindGuard {
             lastOutcome = "请求重建 " + sent + " 处 → 已入链 " + proxiesNow + " 条";
             if (ok) {
                 consecutiveFailures = 0;
-                NanochipModContext.logger().info("[gtlmodular] NAC 镜像绑定恢复 @{}：{}（上一刻 记录={} 已入链=0）"
-                                + "—— 依据 _census/镜像绑定为零_修复记录.md §③-2 / §⑥",
+                NanochipModContext.logger().info("[gtlmodular] NAC 镜像绑定恢复 @{}：{}（上一刻 记录={} 已入链=0）",
                         host.getPos(), lastOutcome, now.recordedTotal);
             } else {
                 consecutiveFailures++;
@@ -194,8 +193,7 @@ public final class NanochipMirrorBindGuard {
         warnedHalt = true;
         NanochipModContext.logger().warn("[gtlmodular] NAC 镜像绑定恢复 @{}：已停机不再尝试（{}；累计 {} 次尝试）。"
                         + "这一招在这个环境不管用 —— 请用闪存重新绑定镜像部件"
-                        + "（或先确认镜像部件本身还在、且与样板总成互相在结构里）。"
-                        + "依据 _census/镜像绑定为零_修复记录.md §③-2。",
+                        + "（或先确认镜像部件本身还在、且与样板总成互相在结构里）。",
                 host.getPos(), reason, attempts);
     }
 

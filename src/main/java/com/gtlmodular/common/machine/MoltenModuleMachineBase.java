@@ -98,8 +98,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     private BlockPos hostPosition;
     private MoltenModuleHostMachine host;
 
-    private transient EnergyContainerList hostEnergyList;
-
     public MoltenModuleMachineBase(IMachineBlockEntity holder) {
         super(holder);
     }
@@ -167,10 +165,8 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
 
     @Override
     public EnergyContainerList getEnergyContainer() {
-        if (hostEnergyList == null) {
-            hostEnergyList = new EnergyContainerList(List.of(new HostEnergyContainer(this)));
-        }
-        return hostEnergyList;
+        // EnergyContainerList 在构造时记录电压，每次重新包装才能看到主机供电变化。
+        return new EnergyContainerList(List.of(new HostEnergyContainer(this)));
     }
 
     /** 基类界面读取缓存字段，需要随主机更新，否则更换能源仓后仍显示旧电压。 */
@@ -179,11 +175,10 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         MoltenModuleHostMachine h = getHost();
         boolean hostLive = h != null && h.isFormed();
         EnergyContainerList live = hostLive
-                ? new EnergyContainerList(List.of(new HostEnergyContainer(this)))
+                ? getEnergyContainer()
                 : null;
         this.energyContainer = live;
         this.tier = hostLive ? h.getTier() : 0;
-        hostEnergyList = live;
         super.addDisplayText(textList);
         addHostPowerLine(textList);
     }

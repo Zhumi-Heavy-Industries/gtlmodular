@@ -1,6 +1,7 @@
 package com.gtlmodular.client.ctm;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.block.IMachineBlock;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
@@ -246,6 +247,7 @@ public final class CtmHullGroup {
                 return hatch.isCasingFromStructure();
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("CtmHullGroup#isCasingFromStructure", ignored);
         }
         return true;
     }

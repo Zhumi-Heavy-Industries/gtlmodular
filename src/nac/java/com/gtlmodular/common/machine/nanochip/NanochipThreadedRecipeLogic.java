@@ -5,6 +5,9 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.machine.display.IndependentThreadDisplay;
+import com.gtlmodular.common.machine.display.ThreadDisplaySnapshot;
+import com.gtlmodular.common.machine.nanochip.display.NanochipInputSnapshot;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -16,11 +19,11 @@ import java.util.function.Predicate;
 import static com.gtlmodular.common.machine.nanochip.NanochipBatchAdmission.NO_PROBE;
 
 /** 通过 NanochipConcurrentBatches 复用批次状态机，在本层接入 NAC 候选、供电和结算策略。 */
-public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeRecipesLogic implements NanochipConcurrentBatches.Host {
+public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeRecipesLogic implements NanochipConcurrentBatches.Host, IndependentThreadDisplay {
 
     public static final String TAG_THREADS = NanochipConcurrentBatches.TAG_BATCHES;
 
-    /** 默认关闭同配方多批次分发，同一配方最多占一条批次；开启后可继续使用空闲槽位。 */
+    /** 保留默认常量供配置定义与外部引用；运行分支使用服务端每轮读取的选项。 */
     public static final boolean FAN_OUT_SAME_RECIPE = false;
 
     /** 开批需要修改配方、探测并行和扣料，限制每 tick 新开数量以控制服务端开销。 */
@@ -37,7 +40,7 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
     /** 默认让上游估算与最终匹配共用同一并行上界，避免两处搜索范围分歧。 */
     public static final boolean PARALLEL_LIMIT_BOUNDED = true;
 
-    /** 默认采用上游并行上界；开启后可用单槽最大容量扩大搜索范围，仍须通过实际匹配。 */
+    /** 默认沿用上游估算，避免未选择实验选项时改变并行搜索。 */
     public static final boolean PER_SLOT_PARALLEL_BOUND = false;
 
     /** 默认限制空闲搜索频率，避免无料时反复枚举所有配方类型；输入变化会解除冷却。 */
@@ -81,7 +84,27 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
 
     private final NanochipBatchLifecycle lifecycle;
 
+    private final NanochipStallDiagnostics stallDiagnostics;
+
     private int waitReasonCooldown;
+
+    private record SchedulingOptions(boolean fanOutSameRecipe, boolean perSlotParallelBound, long tick) {}
+
+    private SchedulingOptions schedulingOptions = new SchedulingOptions(FAN_OUT_SAME_RECIPE,
+            PER_SLOT_PARALLEL_BOUND, -1L);
+
+    boolean fanOutSameRecipe() {
+        return schedulingOptions.fanOutSameRecipe();
+    }
+
+    boolean perSlotParallelBound() {
+        return schedulingOptions.perSlotParallelBound();
+    }
+
+    public NanochipInputSnapshot inputDiagnosticSnapshot() {
+        return new NanochipInputSnapshot(
+                schedulingOptions.tick(), fanOutSameRecipe(), perSlotParallelBound(), inputs.diagnosticSample());
+    }
 
     // 保留嵌套类型的全限定名；附注的生命周期由独立组件管理。
     static final class BatchState {
@@ -102,10 +125,35 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
             resolved = null;
         }
         this.host = resolved;
+        this.stallDiagnostics = new NanochipStallDiagnostics(this, candidateHost);
         this.candidates = new NanochipThreadCandidates(this, machine, host, batches, admission);
         this.display = new NanochipThreadDisplay(this, machine, batches, batchRuntime, ThreadRec::new);
         this.diagnostics = new NanochipThreadDiagnostics(this, host, batches, inputs, admission, candidates, display);
         this.lifecycle = new NanochipBatchLifecycle(machine, admission, batchRuntime, diagnostics);
+    }
+
+    @Override
+    public void onMachineLoad() {
+        super.onMachineLoad();
+        stallDiagnostics.load();
+    }
+
+    @Override
+    public void onMachineUnLoad() {
+        stallDiagnostics.unload();
+        super.onMachineUnLoad();
+    }
+
+    NanochipStallDiagnostics stallDiagnostics() {
+        return stallDiagnostics;
+    }
+
+    boolean recipeTickSubscribed() {
+        return subscription != null && subscription.isStillSubscribed();
+    }
+
+    void diagnosticsInputChanged() {
+        diagnostics.inputChanged();
     }
 
     public int getThreadLimit() {
@@ -134,6 +182,11 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
 
     public NanochipConcurrentBatches.Batch batchAt(int index) {
         return batches.get(index);
+    }
+
+    @Override
+    public ThreadDisplaySnapshot threadDisplaySnapshot() {
+        return display.displaySnapshot();
     }
 
     public List<Map.Entry<Integer, ThreadRec>> snapshot() {
@@ -182,13 +235,21 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
 
     @Override
     public void serverTick() {
+        stallDiagnostics.logicTick();
+        var config = NanochipModContext.config();
+        // 同一轮候选、准入和日志必须使用一致的选项，不能在候选之间重新读取配置。
+        schedulingOptions = new SchedulingOptions(config.isFanOutSameRecipe(), config.isPerSlotParallelBound(),
+                machine.self().getLevel().getGameTime());
+        display.beginTick();
         if (isSuspend()) {
+            stallDiagnostics.scheduling("工作已暂停");
             return;   // 暂停只停止推进，保留已经扣料的批次，避免丢失投入。
         }
         if (machine instanceof NanochipAssemblyComplexMachine nac) {
             nac.nanochipTickSync();
         }
         if (!machine.isRecipeLogicAvailable()) {
+            stallDiagnostics.scheduling("配方逻辑不可用/零件未就绪");
             diagnostics.diagnoseUnavailableOnce();
             return;   // 零件暂不可用时保留批次，避免读档过程被当成需要清空任务。
         }
@@ -239,6 +300,10 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
                         e.toString());
             }
         }
+        if (!machineAllowsWork) {
+            stallDiagnostics.scheduling("机器级 onWorking 否决/异常");
+            display.machineBlocked();
+        }
         long workStartNanos = System.nanoTime();
         if (machineAllowsWork) {
             working = batches.tick(this);
@@ -284,6 +349,8 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
         int lost = batches.size();
         super.resetRecipeLogic();
         batches.clear();
+        inputs.clearDiagnostic();
+        display.beginTick();
         batchRuntime.clear();
         candidates.candidatePool = null;
         candidates.candidateCursor = 0;
@@ -328,13 +395,23 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
 
     @Override
     public boolean tickInputs(GTRecipe recipe) {
-        return lifecycle.tickInputs(recipe);
+        boolean advanced = lifecycle.tickInputs(recipe);
+        display.recordTick(recipe, advanced);
+        return advanced;
     }
 
-    /** 校准和日志先读取尚未交给输出 handler 的配方，避免 handler 改写产出后漏记。概率缓存与预留保留到收尾结束，避免完成一条批次时影响其他批次。 */
     @Override
     public void finishOutputs(GTRecipe recipe) {
-        lifecycle.finishOutputs(recipe);
+        tryFinishOutputs(recipe);
+    }
+
+    @Override
+    public boolean tryFinishOutputs(GTRecipe recipe) {
+        boolean finished = lifecycle.tryFinishOutputs(recipe);
+        if (!finished) {
+            display.recordTick(recipe, false);
+        }
+        return finished;
     }
 
     /** 在跑批次尚未消耗的 tick 输入和输出空间须合并模拟，避免多个批次占用同一额度。 */
@@ -400,6 +477,8 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
     public void loadCustomPersistedData(CompoundTag tag) {
         super.loadCustomPersistedData(tag);
         batches.load(tag);
+        inputs.clearDiagnostic();
+        display.beginTick();
         batchRuntime.clear();   // 概率缓存和预留属于运行期附注，读档后按需重建。
     }
 }

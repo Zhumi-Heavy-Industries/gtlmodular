@@ -22,6 +22,8 @@ public final class NanochipConfigPage {
         rows.addBool("简单物流模式", config.isNanochipSimpleLogistics(), true,
                 config::setNanochipSimpleLogistics,
                 "简单物流模式 / Simple logistics mode",
+                "关（原版 NH 真空物流）已废弃，不保证可用；建议保持简单模式。originalMode 是独立的结构开关，不在废弃范围内。",
+                "OFF (vanilla NH vacuum logistics) is deprecated; functionality is not guaranteed. Keep simple mode enabled (recommended). originalMode is a separate structure option and is not deprecated.",
                 "开（默认，简单）：主机 H 位真空仓下限为 0，可用样板仓或普通输入/输出仓供料、取料。",
                 "ON (default, simple): the host H-slot vacuum-hatch minimum is 0; use pattern buffers or ordinary input/output buses and hatches.",
                 "关（原版 NH）：CC/PC 走真空传送带仓，主机 H 位要求至少 1 个真空仓；不追加简单模式的换算配方表。",
@@ -45,12 +47,22 @@ public final class NanochipConfigPage {
         rows.addBool("JEI 隐藏孤儿件", config.isHideOrphanItemsEnabled(), true,
                 config::setHideOrphanItemsEnabled,
                 "JEI 隐藏孤儿件 / Hide orphan items in JEI",
-                "开（默认）：_census/残留物品清理_队员.md §8.1 那 42 件（有产出配方、但现存配方没人消费的 CC 封装件）在 JEI 里不显示",
-                "ON (default): the 42 orphan circuit components are hidden in JEI",
+                "开（默认）：41 件有产出配方、但没有任何配方消费的 CC 封装件在 JEI 里不显示",
+                "ON (default): the 41 orphan circuit components are hidden in JEI",
                 "关：主动撤销隐藏，恢复可见（将来想找它们就关掉这一项）",
                 "OFF: un-hide them so they show up again",
                 "只影响 JEI 显示层：不删注册、不注销 Entry、不动任何配方 ⇒ 仍可用配方/指令/创造模式拿到",
                 "Display-layer only: nothing is unregistered and no recipe is changed");
+
+        rows.section(net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.title"));
+        rows.addBool(net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.fan_out"),
+                config.isFanOutSameRecipe(), false, config::setFanOutSameRecipe,
+                net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.fan_out.tip"),
+                net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.server.tip"));
+        rows.addBool(net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.per_slot"),
+                config.isPerSlotParallelBound(), false, config::setPerSlotParallelBound,
+                net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.per_slot.tip"),
+                net.minecraft.client.resources.language.I18n.get("gtlmodular.nanochip.thread_tuning.server.tip"));
 
         rows.section("NAC 校准与排障");
         rows.addBool("校准分母用原版10万", config.isNanochipCalibrationUseFullWindow(), false,
@@ -60,28 +72,26 @@ public final class NanochipConfigPage {
                 "ON (= config nanochipComplex.calibrationUseFullWindow = true) = the old vanilla denominator, hard-coded to 100000 (the whole history window)",
                 "      ⇒ 刚跑起来时各电路族占比只有千分之几，族条几乎不动，湿件第一档（20%）要攒够 20000 个对应电路才看得见",
                 "      => a freshly started machine shows only a few tenths of a percent, so tier 1 (20%) needs 20,000 matching circuits before anything moves",
-                "关（= false，★ 代码里的默认值，队长 2026-09-21 拍板）= 新口径：分母 = 你实际记录过的电路总数 ⇒ 做完一批就看得见；攒满 10 万个之后两种口径完全一致",
-                "OFF (= false, the code default since 2026-09-21) = the denominator is the number of circuits actually recorded so far, so a single batch is visible right away; identical to the vanilla branch once 100,000 circuits are recorded",
+                "关（= false，默认）= 新口径：分母 = 你实际记录过的电路总数 ⇒ 做完一批就看得见；攒满 10 万个之后两种口径完全一致",
+                "OFF (= false, default) = the denominator is the number of circuits actually recorded so far, so a single batch is visible right away; identical to the vanilla branch once 100,000 circuits are recorded",
                 "只换分母：窗口容量 100000、批次数 100、每批 1000、9 个电路族与 0.2 / 0.4 / 0.6 阈值都不变",
                 "Only the divisor changes: window 100000, 100 batches, the 9 circuit families and the 0.2 / 0.4 / 0.6 thresholds are untouched",
-                "★ 改完点「保存并关闭」立即生效（机器每 tick 现读配置，无需重启）；同一次保存会立刻写回 config/" + config.fileName() + "，不用再手改 toml",
-                "★ Saving applies it immediately (the machine re-reads the config every tick, no restart) and the same save also rewrites config/" + config.fileName() + ", so no manual toml edit is needed");
+                "改完点「保存并关闭」立即生效（机器每 tick 现读配置，无需重启）；同一次保存会立刻写回 config/" + config.fileName() + "，不用再手改 toml",
+                "Saving applies it immediately (the machine re-reads the config every tick, no restart) and the same save also rewrites config/" + config.fileName() + ", so no manual toml edit is needed");
 
         rows.addBool("结构日志全打（排障用）", config.isNanochipVerboseStructureLogs(), true,
                 config::setNanochipVerboseStructureLogs,
                 "结构日志全打（排障用）/ Verbose NAC structure logs (troubleshooting)",
-                "开（= true，★ 代码里的默认值）= 主机/模块每给一次结构结论，就把「尚未成形」的逐格原因打进日志（期望方块 vs 实际方块 + GTCEu 记录位置），一律 INFO、不折叠、不降 debug",
-                "ON (= true, the code default) = every structure conclusion logs its per-cell reasons at INFO (expected block vs actual block + the GTCEu-recorded position), never folded and never demoted to debug",
-                "      ⇒ 代价是日志量回到队长抱怨过的「一进游戏 NAC 一直刷」那种量级；查完请改回「关」",
-                "      => the cost is the noisy log volume the captain complained about; switch it back OFF when the investigation is over",
-                "关（= false）= 回到 0.1.40 的降噪口径：同一台机器 + 同一结论 + 同一原因 10 秒内只留一条 INFO，窗口内的重复降 debug，跨机器再合并成一条「NAC 结构结论未变汇总」",
-                "OFF (= false) = the quiet 0.1.40 behaviour: one INFO per machine/conclusion/reason per 10 seconds, repeats demoted to debug, plus one folded cross-machine summary line",
-                "队长原话（2026-09-21）：「我更新了add，还有core现在我们的模块都不做东西了」＋（对我给的三个选项回）「查」—— 他这台机器的 logs/debug.log 是 09/15 的旧文件 ⇒ 逐格原因看不见、只能猜，本开关就是把这个口子重新打开",
-                "Captain's own words (2026-09-21): after updating add/core the modules stopped doing anything, and he answered \"investigate\" -- his logs/debug.log was stale, so the per-cell reasons were invisible; this switch reopens that hole",
-                "★ 只改「打不打、打多细」，一个判定都不动：唯一落点是 NanochipStructureLogGate.shouldEmitInfo 的返回值（只决定 LOGGER.info 还是 LOGGER.debug）",
-                "★ Log verbosity only, no decision changes: the single hook is the return value of NanochipStructureLogGate.shouldEmitInfo, which only picks LOGGER.info vs LOGGER.debug",
-                "★ 在界面里改完点「保存并关闭」立即生效（闸门每次判定都现读配置，无需重启）；只有手改 config/" + config.fileName() + " 才需要重启游戏",
-                "★ Saving the GUI applies it immediately (the gate re-reads the config on every check, no restart); only editing config/" + config.fileName() + " by hand requires a game restart");
+                "开（= true，默认）= 主机/模块每给一次结构结论，就把「尚未成形」的逐格原因打进日志（期望方块 vs 实际方块 + GTCEu 记录位置），一律 INFO、不折叠、不降 debug",
+                "ON (= true, default) = every structure conclusion logs its per-cell reasons at INFO (expected block vs actual block + the GTCEu-recorded position), never folded and never demoted to debug",
+                "      ⇒ 代价是日志量很大，一进游戏 NAC 就持续刷日志；查完请改回「关」",
+                "      => the cost is very noisy logs; switch it back OFF when the investigation is over",
+                "关（= false）= 降噪：同一台机器 + 同一结论 + 同一原因 10 秒内只留一条 INFO，窗口内的重复降 debug，跨机器再合并成一条「NAC 结构结论未变汇总」",
+                "OFF (= false) = quiet mode: one INFO per machine/conclusion/reason per 10 seconds, repeats demoted to debug, plus one folded cross-machine summary line",
+                "只改「打不打、打多细」，一个判定都不动：唯一落点是 NanochipStructureLogGate.shouldEmitInfo 的返回值（只决定 LOGGER.info 还是 LOGGER.debug）",
+                "Log verbosity only, no decision changes: the single hook is the return value of NanochipStructureLogGate.shouldEmitInfo, which only picks LOGGER.info vs LOGGER.debug",
+                "在界面里改完点「保存并关闭」立即生效（闸门每次判定都现读配置，无需重启）；只有手改 config/" + config.fileName() + " 才需要重启游戏",
+                "Saving the GUI applies it immediately (the gate re-reads the config on every check, no restart); only editing config/" + config.fileName() + " by hand requires a game restart");
 
     }
 }

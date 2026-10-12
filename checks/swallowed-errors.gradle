@@ -1,0 +1,128 @@
+// 字面量和注释必须整体跳过，否则其中的 catch、花括号或报告文本会伪造覆盖。
+def javaToken = ~/(?s)\s++|\/\/[^\r\n]*+|\/\*.*?\*\/|"""(?:\\.|"(?!"")|[^"\\])*+"""|"(?:\\.|[^"\\])*+"|'(?:\\.|[^'\\])*+'|\p{javaJavaIdentifierStart}\p{javaJavaIdentifierPart}*+|->|./
+def scanCatches = { String source, String path ->
+    def tokens = []
+    def probes = [] as Set
+    int line = 1
+    def matcher = javaToken.matcher(source)
+    while (matcher.find()) {
+        String token = matcher.group()
+        if (token.startsWith('//') || token.startsWith('/*')) {
+            String comment = token.replaceFirst(/^\/\/|^\/\*/, '').replaceFirst(/\*\/$/, '')
+            if (comment.replaceAll(/(?m)^\s*\*\s?/, '') =~ /(?m)^\s*探测[：:]\s*\S[^\r\n]*/) {
+                probes.add(tokens.size())
+            }
+        } else if (!Character.isWhitespace(token.charAt(0))) {
+            tokens << [text: token, line: line]
+        }
+        line += token.count('\n')
+    }
+
+    def pairs = [:]
+    def stack = []
+    def opening = [')': '(', ']': '[', '}': '{']
+    tokens.eachWithIndex { token, int i ->
+        if (token.text in ['(', '[', '{']) {
+            stack << i
+        } else if (opening.containsKey(token.text)) {
+            if (!stack || tokens[stack.last()].text != opening[token.text]) {
+                throw new GradleException("$path:${token.line}: Java 分隔符不配对，无法检查 Throwable catch。")
+            }
+            pairs[stack.remove(stack.size() - 1)] = i
+        }
+    }
+    if (stack) throw new GradleException("$path:${tokens[stack.last()].line}: Java 分隔符未闭合。")
+
+    int count = 0
+    def missing = []
+    tokens.eachWithIndex { token, int i ->
+        if (token.text != 'catch' || tokens[i + 1]?.text != '(') return
+        int headerEnd = pairs[i + 1]
+        String variable = tokens[headerEnd - 1].text
+        def typeParts = []
+        for (int p = i + 2; p < headerEnd - 1; p++) {
+            String part = tokens[p].text
+            if (part == '@') {
+                p++
+                while (tokens[p + 1].text == '.') p += 2
+                if (tokens[p + 1].text == '(') p = pairs[p + 1]
+            } else if (part != 'final') {
+                typeParts << part
+            }
+        }
+        String type = typeParts.join('')
+        if (!(type in ['Throwable', 'java.lang.Throwable'])) return
+        count++
+        int start = headerEnd + 1
+        if (tokens[start]?.text != '{') {
+            throw new GradleException("$path:${token.line}: Throwable catch 缺少代码块。")
+        }
+        int end = pairs[start]
+        int cursor = start + 1
+        boolean covered = false
+        // 只认可兜底分支和退出之前的直接报告，不能借用嵌套块、延迟回调或不可达语句。
+        while (cursor <= end) {
+            if (probes.contains(cursor)) {
+                covered = true
+                break
+            }
+            int statementEnd = cursor
+            while (statementEnd < end && tokens[statementEnd].text != ';') {
+                String text = tokens[statementEnd].text
+                if (text in ['{', 'if', 'for', 'while', 'do', 'switch', 'try', 'synchronized',
+                             'return', 'throw', 'break', 'continue', 'yield', '->']) break
+                if (text in ['(', '[']) statementEnd = pairs[statementEnd]
+                statementEnd++
+            }
+            if (statementEnd >= end || tokens[statementEnd].text != ';') break
+            def statement = tokens.subList(cursor, statementEnd)*.text
+            if (statement.size() >= 8) {
+                int method = statement.size() - 6
+                String receiver = statement.subList(0, method).join('')
+                if (receiver in ['SwallowedErrors.', 'com.gtlmodular.common.diag.SwallowedErrors.'] &&
+                        statement[method] in ['report', 'reportDebug', 'recordInternalFailure'] &&
+                        statement[method + 1] == '(' && statement[method + 2] ==~ /"(?:\\.|[^"\\])++"/ &&
+                        statement[method + 3] == ',' && statement[method + 4] == variable &&
+                        statement[method + 5] == ')') {
+                    covered = true
+                    break
+                }
+            }
+            cursor = statementEnd + 1
+        }
+        if (!covered) missing << "$path:${token.line}: Throwable catch ($variable) 缺少直接报告或有原因的探测注释。" +
+                '请在分支/退出之前调用 SwallowedErrors.report/reportDebug（固定字符串 site、当前捕获变量）。'
+    }
+    [count: count, missing: missing]
+}
+
+tasks.register('checkSwallowedErrors') {
+    group = 'verification'
+    description = 'Check Throwable catch count and diagnostic coverage in main/nac/nacmod Java sources.'
+    def sources = files(sourceSets.main.allJava, sourceSets.nac.allJava, sourceSets.nacmod.allJava)
+    def baselineFile = file('checks/throwable-catch-baseline.txt')
+    inputs.files(sources)
+    inputs.file(baselineFile)
+    doLast {
+        String baselineText = baselineFile.getText('UTF-8').trim()
+        if (!(baselineText ==~ /[0-9]+/)) throw new GradleException('Throwable catch 基线文件只能包含一个非负整数。')
+        int baseline = baselineText as int
+        int count = 0
+        def problems = []
+        sources.files.sort { it.path }.each { source ->
+            def result = scanCatches(source.getText('UTF-8'), project.relativePath(source))
+            count += result.count
+            problems.addAll(result.missing)
+        }
+        if (count > baseline) problems << "catch (Throwable) 从基线 $baseline 增加到了 $count。新代码不要 catch (Throwable)，改为捕获具体的异常类型；不要抬高基线。"
+        if (problems) throw new GradleException('Throwable catch 检查失败：\n  ' + problems.join('\n  '))
+        if (count < baseline) {
+            logger.lifecycle("Throwable catch 减少到 $count（基线 $baseline）。把 checks/throwable-catch-baseline.txt 改成 $count，锁住这次的减少。")
+        }
+        logger.lifecycle("Throwable catch 检查通过：$count 处，基线 $baseline，所有捕获块均有报告或探测原因。")
+    }
+}
+
+tasks.named('check') {
+    dependsOn 'checkSwallowedErrors'
+}

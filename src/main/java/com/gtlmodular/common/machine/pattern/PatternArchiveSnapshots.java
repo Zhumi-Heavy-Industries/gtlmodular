@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.pattern;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.LazyPatternArchiveCodec;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
@@ -27,6 +28,7 @@ public final class PatternArchiveSnapshots {
             try {
                 stack = patternAt.apply(i);
             } catch (Throwable ignored) {
+                SwallowedErrors.report("PatternArchiveSnapshots#buildPayload", ignored);
                 // 单槽读取失败不应丢掉其他槽的样板。
                 continue;
             }
@@ -67,6 +69,7 @@ public final class PatternArchiveSnapshots {
             try {
                 stack = patternAt.apply(i);
             } catch (Throwable ignored) {
+                SwallowedErrors.report("PatternArchiveSnapshots#summary", ignored);
                 continue;
             }
             if (stack == null || stack.isEmpty()) {
@@ -86,6 +89,7 @@ public final class PatternArchiveSnapshots {
             Level level = levelSource.get();
             return level == null ? "" : level.dimension().location().toString();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternArchiveSnapshots#dimensionId", ignored);
             return "";
         }
     }

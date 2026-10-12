@@ -1,11 +1,14 @@
 package com.gtlmodular.common.config;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraftforge.common.ForgeConfigSpec;
 
 import java.util.List;
 
 public final class NanochipConfig {
 
+    private final ForgeConfigSpec.BooleanValue FAN_OUT_SAME_RECIPE;
+    private final ForgeConfigSpec.BooleanValue PER_SLOT_PARALLEL_BOUND;
     private final String fileName;
     private final List<String> builtInCalibrationWhitelist;
     private final ForgeConfigSpec.BooleanValue NANOCHIP_ENABLED;
@@ -46,8 +49,27 @@ public final class NanochipConfig {
                             "直通档默认 1 条；全流程档（组装矩阵模块在线）不吃这个值，改为按电压等级给线程。")
                     .defineInRange("nanochipComplex.directCrossRecipeThreads", 1, 1, 16);
 
+        FAN_OUT_SAME_RECIPE = builder.comment(
+                        "默认关闭：同一配方已有批次时不再新增；开启后可用空闲线程继续开批，不取消在跑批次。",
+                        "Disabled by default: do not add a batch while the same recipe is running. Enable to use spare threads; running batches are retained.",
+                        "同料、同机、相同供电和出料条件下，关闭时单位时间产出低于开启时才应打开。",
+                        "Enable only if output per unit time is lower when disabled with the same inputs, machine, power and output conditions.",
+                        "专服以服务端配置为准；客户端配置屏不会修改远程服务器。改服务端文件后重启。",
+                        "Dedicated servers use server configuration. The client screen does not change a remote server. Restart after editing its file.")
+                .define("nanochipComplex.fanOutSameRecipe",
+                        com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FAN_OUT_SAME_RECIPE);
+        PER_SLOT_PARALLEL_BOUND = builder.comment(
+                        "默认关闭：只有首可用槽可得量远小于全槽汇总、最大单槽并行确实更大，且单条并行被首槽卡住时才应打开。",
+                        "Disabled by default: enable only when first-slot inputs are far below the aggregate, another single slot supports more parallel, and the first slot limits a batch.",
+                        "全槽总和不允许跨槽拼料；等量多槽只有总和更大不保证受益。实际准入和扣料仍须通过原有检查。",
+                        "The aggregate does not allow cross-slot consumption. Equal-sized slots alone do not guarantee a benefit. Admission and consumption still use the existing checks.",
+                        "专服以服务端配置为准；客户端配置屏不会修改远程服务器。改服务端文件后重启。",
+                        "Dedicated servers use server configuration. The client screen does not change a remote server. Restart after editing its file.")
+                .define("nanochipComplex.perSlotParallelBound",
+                        com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.PER_SLOT_PARALLEL_BOUND);
+
         NANOCHIP_CALIBRATION_USE_FULL_WINDOW =
-            builder.comment("NAC 纳米校准「判定分母」模式（2026-09-21 队长令「改」⇒ 默认 false = 已记录数）",
+            builder.comment("NAC 纳米校准「判定分母」模式（默认 false = 已记录数）",
                             "false（默认）：分母用「已记录数」⇒ 窗口没攒满时族条涨得看得见，攒满 10 万后与 true 完全一致",
                             "true ：分母固定为原版硬编码的 100000（= 整个历史窗口），第一档 20％ 要攒够 20000 个对应电路",
                             "只改分母；窗口容量/批次数/电路族/阈值与三档累积关系都不变")
@@ -55,10 +77,13 @@ public final class NanochipConfig {
 
         NANOCHIP_VACUUM_REQUIRES_PIPES =
             builder.comment("NAC 真空传送路由模式（默认 false = 颜色即线、不用铺管道）",
-                            "false：颜色相同即对接，不用铺任何管道（本移植版原有行为，现有存档不受影响）",
-                            "true ：照原版 —— 两个端口之间必须有【同色管道通路】才传输，不铺管道就不工作",
-                            "两种模式共用同一份通道内容；改这一项需要重启游戏（配置只在启动时读）",
-                            "切换回 false 时，管道模式下攒在分量里的虚拟件会自动并回主通道，不会丢件")
+                            "NAC vacuum routing mode (default false = color channels without pipes).",
+                            "旧真空物流的两种路由均已废弃，不保证可用；建议保持 simpleLogisticsMode=true。",
+                            "Both legacy vacuum routing modes are deprecated; functionality is not guaranteed. Keep simpleLogisticsMode=true (recommended).",
+                            "false：按颜色通道；true：按同色管网分量；此处的颜色路由不是简单物流模式。",
+                            "false: color channels; true: same-color pipe components. Color routing is not simple logistics mode.",
+                            "保留旧配置供存档兼容；建议修改后重启游戏，不保证旧网络迁移或传输可靠。",
+                            "Retained for existing saves. Restart after changes; legacy network migration and transfer are not guaranteed.")
                     .define("nanochipComplex.vacuumRequiresPipes", false);
 
         NANOCHIP_IMPURITY_PER_RECIPE =
@@ -76,25 +101,25 @@ public final class NanochipConfig {
                     .define("nanochipComplex.debugLogs", false);
 
         NANOCHIP_VERBOSE_STRUCTURE_LOGS =
-            builder.comment("NAC 结构日志「全打」开关（★ 排障用，默认 true = 一律 INFO、不折叠）",
+            builder.comment("NAC 结构日志「全打」开关（排障用，默认 true = 一律 INFO、不折叠）",
                             "NAC structure-log verbosity (troubleshooting, default true = always INFO)",
-                            "★ 2026-09-21 队长排障专用：队长原话「我更新了add，还有core现在我们的模块都不做东西了」",
-                            "★ 2026-09-21 captain's troubleshooting switch",
                             "true （默认）：结构结论 / 逐格原因（期望方块 vs 实际方块 / GTCEu 记录位置）一律 INFO、不折叠、不降 debug；",
                             "true  (default): every structure conclusion and per-cell reason goes to INFO, never folded, never demoted to debug;",
-                            "       代价 = 回到「一进游戏 NAC 一直刷日志」那种量级；",
-                            "       cost = back to the noisy level the captain complained about;",
-                            "false：恢复 0.1.40 降噪口径（同机同结论 10 秒一条 + 跨机器折叠成一条汇总，重复降 debug）；",
-                            "false: restore the 0.1.40 quiet behaviour (one line per clock + one cross-machine summary, repeats at debug);",
+                            "       代价 = 日志量很大，一进游戏 NAC 就持续刷日志；",
+                            "       cost = very noisy logs from the moment the world loads;",
+                            "false：降噪（同机同结论 10 秒一条 + 跨机器折叠成一条汇总，重复降 debug）；",
+                            "false: quiet mode (one line per clock + one cross-machine summary, repeats at debug);",
                             "       排障结束后请改回 false。改这一项【不用重启】：配置界面「NAC 校准与排障」里点一下「保存并关闭」当场生效、并立刻写回 toml；只有手改 config/" + fileName + " 才需要重启游戏。",
                             "       set it back to false when the investigation is over. No restart needed: toggle it in the in-game config screen and save - it applies at once and is written straight back to the toml; only editing the toml by hand requires a game restart.",
-                            "★ 只改日志级别，不改任何判定：落点仅是 NanochipStructureLogGate.shouldEmitInfo 的返回值",
-                            "★ Log level only, no decision changes: the only hook is the return value of NanochipStructureLogGate.shouldEmitInfo")
+                            "只改日志级别，不改任何判定：落点仅是 NanochipStructureLogGate.shouldEmitInfo 的返回值",
+                            "Log level only, no decision changes: the only hook is the return value of NanochipStructureLogGate.shouldEmitInfo")
                     .define("nanochipComplex.verboseStructureLogs", true);
 
         NANOCHIP_SIMPLE_LOGISTICS =
             builder.comment("NAC 物流模式开关（默认 true = 简单模式）",
                             "NAC logistics mode switch (default true = simple mode)",
+                            "关（原版 NH 真空物流）已废弃，不保证可用；建议保持简单模式。originalMode 是独立的结构开关，不在废弃范围内。",
+                            "OFF (vanilla NH vacuum logistics) is deprecated; functionality is not guaranteed. Keep simple mode enabled (recommended). originalMode is a separate structure option and is not deprecated.",
                             "开（默认，简单）：主机 H 位真空仓下限为 0，可用样板仓或普通输入/输出仓供料、取料。",
                             "ON (default, simple): the host H-slot vacuum-hatch minimum is 0; use pattern buffers or ordinary input/output buses and hatches.",
                             "关（原版 NH）：CC/PC 走真空传送带仓，主机 H 位要求至少 1 个真空仓；不追加简单模式的换算配方表。",
@@ -126,9 +151,9 @@ public final class NanochipConfig {
 
         NANOCHIP_HIDE_ORPHAN_ITEMS =
             builder.comment("NAC 孤儿封装件在 JEI 里隐藏（默认 true = 隐藏）",
-                            "Hide the 42 orphan NAC circuit components in JEI (default true = hidden)",
-                            "true （默认，队长要隐藏）：_census/残留物品清理_队员.md §8.1 那 42 件（cc_processed_* / cc_casing_* / cc_chip_*）在 JEI 里不显示",
-                            "true  (default): the 42 items listed in _census/残留物品清理_队员.md section 8.1 are hidden in JEI",
+                            "Hide the 41 orphan NAC circuit components in JEI (default true = hidden)",
+                            "true （默认）：有产出配方、但没有任何配方消费的 41 件 CC 封装件在 JEI 里不显示，清单见 assets/gtlmodular/jei/hidden_orphans.txt",
+                            "true  (default): the 41 items listed in assets/gtlmodular/jei/hidden_orphans.txt are hidden in JEI",
                             "false：主动撤销隐藏，恢复可见（将来想找它们就关掉这一项）",
                             "false: un-hide them so they show up again in JEI",
                             "只影响 JEI 显示层：不删注册、不注销 Entry、不动任何配方 ⇒ 隐藏后仍可用配方/指令/创造拿到",
@@ -138,8 +163,8 @@ public final class NanochipConfig {
                     .define("nanochipComplex.hideOrphanItems", true);
 
         NANOCHIP_ORIGINAL_MODE =
-            builder.comment("★ NAC「原初模式」总开关（默认 true = 开）：把我们所有自定义的「结构 / 成型 / 连接」层变透明，完全交回 gtceu/gtlcore 原本的方式",
-                            "★ NAC 'original mode' master switch (default true = ON): make ALL of our own structure / formation / connection layers transparent and hand everything back to stock gtceu / gtlcore",
+            builder.comment("NAC「原初模式」总开关（默认 true = 开）：把我们所有自定义的「结构 / 成型 / 连接」层变透明，完全交回 gtceu/gtlcore 原本的方式",
+                            "NAC 'original mode' master switch (default true = ON): make ALL of our own structure / formation / connection layers transparent and hand everything back to stock gtceu / gtlcore",
                             "true （默认=原初）：A+ 精确预检与便宜预检一律视为「可能成型」（不再有『必然不成形 ⇒ 裸 return』）；",
                             "                 结构检查节流与变化闸一律放行（只留统计读数）；结构位置缓存/索引/『方块移除⇒定点失效』整条链不接管；",
                             "                 onStructureFormed 不做『先清后扫』、不做 20 tick 补登记、不做周期重扫、不做同 tick 折叠。",
@@ -150,34 +175,59 @@ public final class NanochipConfig {
                             "                 re-registration, no periodic rescan and no same-tick folding. The 'bare return' counter should drop to 0.",
                             "false：逐字恢复本模组自己那几层（= 打开本开关之前的行为）。",
                             "false: restore our own layers verbatim (the behaviour from before this switch existed).",
-                            "★ 刻意不关：结构匹配锁加固（唯一一条『删了可能让整个存档停摆』的改动；正常路径与上游逐字节等价）、全部诊断日志、界面/Jade/预览/能量分配/扣电与配方。",
-                            "★ Deliberately NOT disabled: the pattern-lock hardening (the only change whose removal can stall the whole save; byte-identical on the normal path),",
+                            "刻意不关：结构匹配锁加固（唯一一条『删了可能让整个存档停摆』的改动；正常路径与上游逐字节等价）、全部诊断日志、界面/Jade/预览/能量分配/扣电与配方。",
+                            "Deliberately NOT disabled: the pattern-lock hardening (the only change whose removal can stall the whole save; byte-identical on the normal path),",
                             "                 all diagnostics, GUI / Jade / preview / energy distribution / power draw and recipe logic.",
                             "零存档影响：不改结构图案、不新增持久化字段、不改 NBT、不改方块 id。每次判定现读，不用重启。",
                             "Zero save impact: no pattern change, no new persisted field, no NBT change, no block id change. Read live, no restart needed.")
                     .define("nanochipComplex.originalMode", true);
 
         NANOCHIP_CALIBRATION_RECIPE_WHITELIST =
-            builder.comment("NAC 校准计数白名单（★ 2026-11-14 队长：「那就弄白名单，把他们的ID手动添加到校准的名册里，只有被允许的才能增加校准的数量」+「只有最终产出电路才算」）",
-                            "★ 每一项 = 一个配方 ID（namespace:path）；以 * 结尾 = 前缀匹配（例 abc* 命中 abcdef），否则 = 精确匹配（例 abc 只命中 abc）",
-                            "★ 命中即允许计数；不命中 ⇒ 这条配方不计入校准（换算表、只产中间件 cc_processed_* 的前道工序因此不再涨校准）",
-                            "★ 列表为空 = 回退到内置默认名单（= 那两张真正造电路的表的 30 条），刻意不是「一条都不计」：清空 = 恢复默认，不会让校准永远为 0",
-                            "★ 默认 = " + registryNamespace + ":nanochip/assembly_complex/* + " + registryNamespace + ":nanochip/assembly_matrix/*（全模组唯一带 circuit-calibration 元数据的 30 条 = 成品电路）",
-                            "★ 要放开某条新配方的记账：在下面这个列表里加一行，ID 从日志「校准白名单未命中 ⇒ 这条配方不计入校准：<id>」里整行复制即可；前缀匹配就写 `xxx*`",
-                            "★ 一行回退到「全部计入」：NanochipAssemblyComplexMachine.CALIBRATION_WHITELIST_ENABLED = false（本项随即被完全忽略）",
-                            "★ 本项列出的是最终产出电路的组装/装配配方；换算（真件 <-> CC 互换）与任何中间件工序都不属于「造电路」",
-                            "★ 生效时机：每次记账现读 ⇒ 配置屏改完即生效；只有手改 config/" + fileName + " 才需要重启游戏。",
-                            "★ Whichever recipe is listed here is allowed to increase the calibration counters; entries ending in '*' mean prefix match. Empty list falls back to the built-in default list.")
+            builder.comment("NAC 校准计数白名单：只有名单里的配方（最终产出电路的配方）才增加校准计数",
+                            "每一项 = 一个配方 ID（namespace:path）；以 * 结尾 = 前缀匹配（例 abc* 命中 abcdef），否则 = 精确匹配（例 abc 只命中 abc）",
+                            "命中即允许计数；不命中 ⇒ 这条配方不计入校准（换算表、只产中间件 cc_processed_* 的前道工序因此不再涨校准）",
+                            "列表为空 = 回退到内置默认名单（= 那两张真正造电路的表的 30 条），刻意不是「一条都不计」：清空 = 恢复默认，不会让校准永远为 0",
+                            "默认 = " + registryNamespace + ":nanochip/assembly_complex/* + " + registryNamespace + ":nanochip/assembly_matrix/*（全模组唯一带 circuit-calibration 元数据的 30 条 = 成品电路）",
+                            "要放开某条新配方的记账：在下面这个列表里加一行，ID 从日志「校准白名单未命中 ⇒ 这条配方不计入校准：<id>」里整行复制即可；前缀匹配就写 `xxx*`",
+                            "一行回退到「全部计入」：NanochipAssemblyComplexMachine.CALIBRATION_WHITELIST_ENABLED = false（本项随即被完全忽略）",
+                            "本项列出的是最终产出电路的组装/装配配方；换算（真件 <-> CC 互换）与任何中间件工序都不属于「造电路」",
+                            "生效时机：每次记账现读 ⇒ 配置屏改完即生效；只有手改 config/" + fileName + " 才需要重启游戏。",
+                            "Whichever recipe is listed here is allowed to increase the calibration counters; entries ending in '*' mean prefix match. Empty list falls back to the built-in default list.")
                     .defineList("nanochipComplex.calibrationRecipeWhitelist", builtInCalibrationWhitelist,
 
                             o -> o instanceof String);
 
     }
 
+    public boolean isFanOutSameRecipe() {
+        return readBoolean(FAN_OUT_SAME_RECIPE);
+    }
+
+    public boolean isPerSlotParallelBound() {
+        return readBoolean(PER_SLOT_PARALLEL_BOUND);
+    }
+
+    public void setFanOutSameRecipe(boolean value) {
+        FAN_OUT_SAME_RECIPE.set(value);
+    }
+
+    public void setPerSlotParallelBound(boolean value) {
+        PER_SLOT_PARALLEL_BOUND.set(value);
+    }
+
+    private static boolean readBoolean(ForgeConfigSpec.BooleanValue value) {
+        try {
+            return value.get();
+        } catch (IllegalStateException e) {
+            return value.getDefault();
+        }
+    }
+
     public boolean isVacuumRequiresPipes() {
         try {
             return NANOCHIP_VACUUM_REQUIRES_PIPES.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isVacuumRequiresPipes", ignored);
             return NANOCHIP_VACUUM_REQUIRES_PIPES.getDefault();
         }
     }
@@ -186,6 +236,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_ENABLED.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipComplexEnabled", ignored);
             return NANOCHIP_ENABLED.getDefault();
         }
     }
@@ -194,6 +245,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_ORIGINAL_MODE.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipOriginalMode", ignored);
             return NANOCHIP_ORIGINAL_MODE.getDefault();
         }
     }
@@ -202,6 +254,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_DIRECT_PARALLEL_CAP.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#getNanochipDirectParallelCap", ignored);
             return NANOCHIP_DIRECT_PARALLEL_CAP.getDefault();
         }
     }
@@ -210,6 +263,7 @@ public final class NanochipConfig {
         try {
             return Math.max(1, NANOCHIP_DIRECT_THREADS.get());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#getNanochipDirectCrossRecipeThreads", ignored);
             return NANOCHIP_DIRECT_THREADS.getDefault();
         }
     }
@@ -218,6 +272,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_CALIBRATION_USE_FULL_WINDOW.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipCalibrationUseFullWindow", ignored);
             return NANOCHIP_CALIBRATION_USE_FULL_WINDOW.getDefault();
         }
     }
@@ -234,6 +289,7 @@ public final class NanochipConfig {
         try {
             configured = NANOCHIP_CALIBRATION_RECIPE_WHITELIST.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#getNanochipCalibrationRecipeWhitelist", ignored);
             configured = NANOCHIP_CALIBRATION_RECIPE_WHITELIST.getDefault();
         }
         if (configured == null || configured.isEmpty()) {
@@ -251,6 +307,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_IMPURITY_PER_RECIPE.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#getNanochipImpurityPerRecipe", ignored);
             return NANOCHIP_IMPURITY_PER_RECIPE.getDefault();
         }
     }
@@ -259,6 +316,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_DEBUG_LOGS.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipDebugLogsEnabled", ignored);
             return NANOCHIP_DEBUG_LOGS.getDefault();
         }
     }
@@ -267,6 +325,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_VERBOSE_STRUCTURE_LOGS.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipVerboseStructureLogs", ignored);
             return NANOCHIP_VERBOSE_STRUCTURE_LOGS.getDefault();
         }
     }
@@ -282,6 +341,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_SIMPLE_LOGISTICS.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipSimpleLogistics", ignored);
             return NANOCHIP_SIMPLE_LOGISTICS.getDefault();
         }
     }
@@ -290,6 +350,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_GRID_POWER.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isNanochipGridPowerEnabled", ignored);
             return NANOCHIP_GRID_POWER.getDefault();
         }
     }
@@ -304,6 +365,7 @@ public final class NanochipConfig {
         try {
             return NANOCHIP_HIDE_ORPHAN_ITEMS.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipConfig#isHideOrphanItemsEnabled", ignored);
             return NANOCHIP_HIDE_ORPHAN_ITEMS.getDefault();
         }
     }

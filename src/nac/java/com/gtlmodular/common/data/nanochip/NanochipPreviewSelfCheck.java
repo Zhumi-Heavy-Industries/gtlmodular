@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent;
@@ -39,6 +40,7 @@ public final class NanochipPreviewSelfCheck {
             try {
                 render = def.isRenderXEIPreview();
             } catch (Throwable t) {
+                SwallowedErrors.report("NanochipPreviewSelfCheck#onLoadComplete-renderEligibility", t);
                 err = "isRenderXEIPreview 抛异常: " + t;
             }
             try {
@@ -46,6 +48,7 @@ public final class NanochipPreviewSelfCheck {
                 shapes = list == null ? -1 : list.size();
                 hasController = shapes > 0;
             } catch (Throwable t) {
+                SwallowedErrors.report("NanochipPreviewSelfCheck#onLoadComplete-matchingShapes", t);
                 err = (err == null ? "" : err + "；") + "getMatchingShapes 抛异常: " + t;
             }
             if (render) {

@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.GTCEuAPI;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.data.chemical.material.Material;
@@ -52,6 +53,7 @@ public final class NanochipSelfCheck {
             fluidChecks(out);
             configChecks(out);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipSelfCheck#collect", t);
             out.add("✗ 自检过程本身出错: " + t);
             NanochipModContext.logger().warn("[gtlmodular] NAC 自检失败", t);
         }
@@ -161,7 +163,7 @@ public final class NanochipSelfCheck {
             }
         }
         out.add((extra == 0 ? "✓" : "✗") + " 配方清单无遗漏: 额外未登记 " + extra + " 条");
-        out.add((circuits > 0 ? "✓" : "✗") + " 电路组装机配方总数（GTCEu 原生表；★ 2026-10-14 起 NAC 不再借用它，"
+        out.add((circuits > 0 ? "✓" : "✗") + " 电路组装机配方总数（GTCEu 原生表；NAC 不借用它，"
                 + "仅作上游表非空的哨兵）: " + circuits);
     }
 
@@ -255,6 +257,7 @@ public final class NanochipSelfCheck {
             try {
                 return firstItemId(ingredient.getItems());
             } catch (Throwable ignored) {
+                SwallowedErrors.report("NanochipSelfCheck#itemIdOf", ignored);
                 // 未解析标签可能无法提供样例物品，诊断按未读取处理，避免中断自检。
                 return null;
             }

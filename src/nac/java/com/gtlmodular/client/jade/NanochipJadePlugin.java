@@ -4,6 +4,7 @@ import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.blockentity.MetaMachineBlockEntity;
 import com.gtlmodular.common.machine.nanochip.NanochipColor;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
@@ -24,12 +25,22 @@ public class NanochipJadePlugin implements IWailaPlugin {
     @Override
     public void register(IWailaCommonRegistration registration) {
         registration.registerBlockDataProvider(NanochipThreadedJadeProvider.INSTANCE, net.minecraft.world.level.block.entity.BlockEntity.class);
+        registration.registerBlockDataProvider(NanochipModuleBonusJadeProvider.INSTANCE, MetaMachineBlockEntity.class);
+        registration.registerBlockDataProvider(NanochipInputJadeProvider.INSTANCE, MetaMachineBlockEntity.class);
     }
 
     @Override
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerBlockComponent(VacuumColorProvider.INSTANCE, Block.class);
         registration.registerBlockComponent(NanochipThreadedJadeProvider.INSTANCE, Block.class);
+        registration.registerBlockComponent(NanochipModuleBonusJadeProvider.INSTANCE, Block.class);
+        registration.registerBlockComponent(NanochipInputJadeProvider.INSTANCE, Block.class);
+        // 收集完成后按 provider UID 精确删除，不影响其他行的图标、对齐和合法倍率。
+        registration.addTooltipCollectedCallback((tooltip, accessor) -> {
+            if (accessor instanceof BlockAccessor block && NanochipJadeThreadData.isIndependentThreaded(block)) {
+                tooltip.remove(new ResourceLocation("gtlcore", "recipe_multiplier_provider"));
+            }
+        });
     }
 
     public enum VacuumColorProvider implements IBlockComponentProvider {
@@ -51,13 +62,14 @@ public class NanochipJadePlugin implements IWailaPlugin {
             if (!(blockEntity.getMetaMachine() instanceof NanochipVacuumHatchMachine hatch)) {
                 return;
             }
+            tooltip.add(NanochipLogisticsText.deprecated());
             NanochipColor color = hatch.color();
             if (color == null) {
                 tooltip.add(Component.translatable("gtlmodular.nanochip.vacuum.color.unpainted"));
                 return;
             }
             tooltip.add(Component.translatable("gtlmodular.nanochip.vacuum.color.line",
-                    Component.literal(color.nameZh()).withStyle(style -> style.withColor(color.textColor()))));
+                    NanochipLogisticsText.colorName(color)));
         }
     }
 }

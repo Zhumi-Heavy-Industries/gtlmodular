@@ -15,8 +15,10 @@ import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
+import org.gtlcore.gtlcore.integration.ae2.handler.MEBufferPatternHelper;
 
 import java.util.HashSet;
 import java.util.List;
@@ -26,6 +28,59 @@ import java.util.Set;
 public final class PatternRecipeMatching {
 
     private PatternRecipeMatching() {
+    }
+
+    /** 解码后的样板已剥离编程电路，电路编号需单独带上才能区分只差电路的配方。 */
+    public record DecodedPattern(IPatternDetails pattern, int circuit) {
+    }
+
+    /** 与上游样板仓相同地剥离电路，同时保留提取出的电路编号；样板没有电路时为 -1。 */
+    public static DecodedPattern decode(MEBufferPatternHelper helper, ItemStack stack, Level level,
+                                        boolean keepByProduct) {
+        int[] circuit = {-1};
+        IPatternDetails pattern = helper.processPatternWithCircuit(stack, value -> circuit[0] = value,
+                level, keepByProduct);
+        return pattern == null ? null : new DecodedPattern(pattern, circuit[0]);
+    }
+
+    /**
+     * 样板和配方都带编程电路时电路必须一致；任一方没有电路时沿用不看电路的判据，
+     * 因为玩家可能用共享电路仓供电路，或给不需要电路的样板统一嵌入了电路。
+     */
+    public static boolean patternIdentityMatches(GTRecipe recipe, DecodedPattern decoded) {
+        if (decoded == null) {
+            return true;
+        }
+        if (!patternIdentityMatches(recipe, decoded.pattern())) {
+            return false;
+        }
+        if (recipe == null || decoded.circuit() < 0) {
+            return true;
+        }
+        int recipeCircuit = recipeCircuit(recipe);
+        return recipeCircuit < 0 || recipeCircuit == decoded.circuit();
+    }
+
+    /** 配方要求的编程电路编号，没有电路时返回 -1。 */
+    public static int recipeCircuit(GTRecipe recipe) {
+        List<Content> contents = recipe.getInputContents(ItemRecipeCapability.CAP);
+        if (contents == null) {
+            return -1;
+        }
+        for (Content content : contents) {
+            if (content != null && content.getContent() instanceof Ingredient ingredient) {
+                ItemStack[] stacks = ingredient.getItems();
+                if (stacks == null) {
+                    continue;
+                }
+                for (ItemStack stack : stacks) {
+                    if (stack != null && !stack.isEmpty() && IntCircuitBehaviour.isIntegratedCircuit(stack)) {
+                        return IntCircuitBehaviour.getCircuitConfiguration(stack);
+                    }
+                }
+            }
+        }
+        return -1;
     }
 
     /** 样板可能裁掉副产物，因此用输入覆盖和主产物判断身份。 */

@@ -15,6 +15,7 @@ import com.gtlmodular.GTLModular;
 import com.gtlmodular.api.module.ModuleKind;
 import com.gtlmodular.common.data.host.ModulePreviewSlots;
 import com.gtlmodular.common.data.host.MoltenModuleHostPattern;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.ChatFormatting;
@@ -473,6 +474,7 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
         try {
             return ModulePreviewSlots.moltenHostModules(getPos(), moduleRenderCache);
         } catch (Throwable t) {
+            SwallowedErrors.report("MoltenModuleHostMachine#getModulesForRendering", t);
             GTLModular.LOGGER.debug("[gtlmodular] 模块预览: 地心枢纽 getModulesForRendering 异常，返回空表: {}",
                     t.toString());
             return List.of();

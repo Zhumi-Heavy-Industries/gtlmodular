@@ -73,6 +73,42 @@ class BatchArchiveTest {
     }
 
     @Test
+    void completedBlockedBatchSurvivesRepeatedReloadsAndOutputsExactlyOnceWithoutEnergy() {
+        var engine = newEngine();
+        var job = job("completed", 3);
+        var host = new TestHost(1, job);
+        engine.tick(host);
+        host.outputBlocked.add(job);
+        for (int tick = 0; tick < 3; tick++) engine.tick(host);
+        assertEquals(3, host.ticked.size());
+        assertTrue(host.finished.isEmpty());
+
+        for (int reload = 0; reload < 3; reload++) {
+            var restored = newEngine();
+            restored.load(engine.save(codec), codec);
+            var blocked = restored.get(0).payload();
+            host = new TestHost(1);
+            host.outputBlocked.add(blocked);
+            for (int tick = 0; tick < 50; tick++) assertFalse(restored.tick(host));
+            assertEquals(3, restored.get(0).progress());
+            assertTrue(host.ticked.isEmpty());
+            assertTrue(host.consumed.isEmpty());
+            assertTrue(host.finished.isEmpty());
+            engine = restored;
+        }
+
+        host.outputBlocked.clear();
+        for (int tick = 0; tick < 80; tick++) assertFalse(engine.tick(host));
+        assertTrue(engine.isEmpty());
+        assertEquals(List.of(job), host.finished);
+        assertTrue(host.ticked.isEmpty());
+        assertTrue(host.consumed.isEmpty());
+        var afterCompletion = newEngine();
+        afterCompletion.load(engine.save(codec), codec);
+        assertTrue(afterCompletion.isEmpty());
+    }
+
+    @Test
     void archiveCopiesTheEntryListAndExposesAnUnmodifiableSnapshot() {
         var entry = new BatchArchive.Entry<>("encoded", 4, 2);
         var entries = new ArrayList<>(List.of(entry));

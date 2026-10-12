@@ -35,5 +35,13 @@ public final class NanochipJadeKeys {
 
     public static final String KEY_MIRRORED_PARALLELS = "gtlmodular_jade_mirrored_parallels";
 
+    public static final String KEY_INDEPENDENT_THREADS = "gtlmodular_jade_independent_threads";
+
+    public static final String KEY_EU_PER_TICK = "euPerTick";
+
+    public static final String KEY_STATE = "state";
+
+    public static final String KEY_WAITING_REASON = "waitingReason";
+
     private NanochipJadeKeys() {}
 }

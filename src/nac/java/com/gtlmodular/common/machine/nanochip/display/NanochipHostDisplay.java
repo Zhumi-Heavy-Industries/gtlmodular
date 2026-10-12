@@ -249,6 +249,7 @@ public final class NanochipHostDisplay {
     }
 
     public void addDisplayText(List<Component> textList, boolean loadPartsRecoveryEnabled) {
+        NanochipLogisticsText.appendMode(textList, false);
         // 零件尚未恢复时电压快照不可靠，暂不展示等级与功率，避免误报降级。
         if (host.isFormed() && !hasRegisteredParts.getAsBoolean()) {
             replaceUnreadyTierDisplay(textList);
@@ -324,8 +325,7 @@ public final class NanochipHostDisplay {
                     .withStyle(ChatFormatting.GRAY));
         }
         if (SHOW_VERBOSE_HOST_LINES) {
-            textList.add(Component.literal("真空路由: ")
-                    .append(Component.literal(NanochipAssemblyComplexMachine.routingModeText()).withStyle(ChatFormatting.GRAY)));
+            textList.add(NanochipLogisticsText.vacuumRouting());
         }
         if (SHOW_VERBOSE_HOST_LINES) {
             textList.add(Component.literal("中央供电: ")
@@ -339,9 +339,15 @@ public final class NanochipHostDisplay {
                             .withStyle(ChatFormatting.DARK_GRAY))
                     .withStyle(ChatFormatting.GRAY));
         }
+        if (host.getLevel() instanceof ServerLevel) {
+            textList.addAll(NanochipModuleBonusText.lines(host.moduleBonusSnapshot()));
+        }
         // 频繁变化的线程进度放在面板末尾，便于持续查看。
         Object logicRef = host.getRecipeLogic();
         if (logicRef instanceof NanochipThreadedRecipeLogic threaded) {
+            if (host.getLevel() instanceof ServerLevel) {
+                textList.addAll(NanochipInputText.lines(threaded.inputDiagnosticSnapshot()));
+            }
             threaded.appendThreadDisplayText(textList);
         }
     }

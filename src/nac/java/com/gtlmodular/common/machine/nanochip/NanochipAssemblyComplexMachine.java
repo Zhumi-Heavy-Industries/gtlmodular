@@ -1,7 +1,9 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.nanochip.vacuum.NanochipHostVacuum;
 import com.gtlmodular.common.machine.nanochip.display.NanochipHostDisplay;
+import com.gtlmodular.common.machine.nanochip.display.NanochipModuleBonusSnapshot;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gtlmodular.common.machine.nanochip.structure.NanochipHostStructure;
 import com.gtlmodular.common.machine.nanochip.structure.NanochipHostStructureIndex;
@@ -700,6 +702,10 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         return n;
     }
 
+    public NanochipModuleBonusSnapshot moduleBonusSnapshot() {
+        return recipePolicy.moduleBonusSnapshot();
+    }
+
     public double moduleEuMultiplier(NanochipCalibration.Family family) {
         return recipePolicy.moduleEuMultiplier(family);
     }
@@ -919,9 +925,21 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         return moduleLinks.isModuleConnected(module);
     }
 
+    /**
+     * 区块重载或读档后，同一坐标会换成新的主机对象，而旧对象仍带着成形标记，
+     * 它的延迟成形回调还可能执行。只有世界里当前这台主机才能连接模块，否则模块会被旧对象抢走、有料也不开工。
+     */
+    public boolean isLiveHost() {
+        Level level = getLevel();
+        return level != null && !isInValid() && MetaMachine.getMachine(level, getPos()) == this;
+    }
+
     /** 先走框架扫描，再以 F 位快照收敛差集，兼顾无快照的载入阶段。 */
     @Override
     public void scanAndConnectModules() {
+        if (!isLiveHost()) {
+            return;
+        }
         IModularMachineHost.super.scanAndConnectModules();
         moduleLinks.refreshModulesFromStructure();
     }
@@ -1026,6 +1044,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         try {
             return NanochipModulePreview.nacModules(getPos());
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipAssemblyComplexMachine#getModulesForRendering", t);
             NanochipModContext.logger().debug("[gtlmodular] 模块预览: NAC getModulesForRendering 异常，返回空表: {}",
                     t.toString());
             return List.of();

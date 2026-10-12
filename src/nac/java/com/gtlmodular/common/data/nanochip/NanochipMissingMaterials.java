@@ -77,7 +77,7 @@ public final class NanochipMissingMaterials {
                 .fluid()
                 .buildAndRegister();
 
-        NanochipModContext.logger().info("[gtlmodular] P1 缺件·材料侧：新增 4 味材料（chromatic_glass / six_phased_copper / "
+        NanochipModContext.logger().info("[gtlmodular] 缺件材料：新增 4 味材料（chromatic_glass / six_phased_copper / "
                 + "universium / hexanite）⇒ GTCEu 会生成 bolt/screw/plate 形态 ×4；"
                 + "7 味自造超导粗胚已退役（换算配方改引用包内同级线材，见 IN_PACK_SUPERCONDUCTOR_WIRES）");
     }

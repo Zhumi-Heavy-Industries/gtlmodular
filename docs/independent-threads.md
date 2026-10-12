@@ -1,8 +1,12 @@
 # 其他机器如何接入独立批次引擎
 
-只有 NAC 主机沿用现有独立批次功能，其他机器继续使用原逻辑。目前没有全局推广 mixin，也没有注册 `independentThreadsForOtherMachines` 配置键；两份配置中都没有可启用其他机器独立线程的开关。
+完整版的配置 `independentThreadsForOtherMachines`（默认关闭）可以让 NAC 以外的多方块机器也用独立批次，带黑白名单、批次所有权和存档组件。**这是实验功能，不要用于正式存档。** 开关关闭且没有自有批次时，机器完全走原逻辑；独立版没有这些配置、适配器和恢复命令。
 
-这里的“线程”是服务器 tick 内按顺序推进的批次，各自保存配方和进度，不创建 Java 工作线程。接入其他机器必须逐机确定并行、时长、能源和退出规则，并由负责人确认会影响玩家手感的规则。
+这里的“线程”是服务器 tick 内按顺序推进的批次，各自保存配方和进度，不创建 Java 工作线程。接入其他机器必须逐机确定并行、时长、能源和退出规则，会影响玩家手感的规则要先确认再改。
+
+总开关和黑白名单的配置监听只提交重载通知，服务端在 tick 开头发布不可变设置并唤醒机器，同一 tick 内不会因文件监控线程而切换准入规则。普通/无线族的 `getGTRecipe()` 和 Mutable 的 `getRecipe()` 一旦放行并返回配方，对应的 `setupRecipe()` 沿用这次决定，因为合批已经扣料；该放行只认同一配方对象、仅使用一次，不适用于未经过合批的直接开工。新设置仍只影响后续准入，已有批次按原规则结清；读档保留原批次和排空状态，待首个 tick 发布配置后再决定是否追加排空请求。
+
+接管同时检查逻辑族、燃料模式及仓室处理器兼容性。不支持 ME 样板/输出处理器或特殊仓室时，没有自有批次的机器继续使用上游逻辑。兼容机器若找不到可准入候选，或候选在实际扣料前被拒绝，也交回上游并保留其配方缓存；同一 tick 的合批、缓存重试和 setup 沿用这次放行。已扣料、待出料或无法解码的自有记录仍保留所有权，暂不支持时等待，不能通过回退丢弃记录；最后一笔结清的 tick 仍由独立调度占有。
 
 ## 可复用接口与依赖方向
 
@@ -12,7 +16,7 @@
 | --- | --- |
 | [`ConcurrentBatchEngine<P, B>`](../src/nac/java/com/gtlmodular/common/thread/ConcurrentBatchEngine.java) | 有序批次表、推进、完成后补位、清空、存读档；`B extends BatchState<P>` |
 | [`BatchState<P>`](../src/nac/java/com/gtlmodular/common/thread/BatchState.java) | `payload()`、`duration()`、`progress()`、`setProgress(int)`；`Factory.create(payload, duration, progress)` 创建同一份运行状态 |
-| [`BatchPolicy<P>`](../src/nac/java/com/gtlmodular/common/thread/BatchPolicy.java) | `slots()`、`findBatch()`、`duration(P)`、`consumeInputs(P)`、`tickInputs(P)`、`finishOutputs(P)` |
+| [`BatchPolicy<P>`](../src/nac/java/com/gtlmodular/common/thread/BatchPolicy.java) | `slots()`、`findBatch()`、`duration(P)`、`consumeInputs(P)`、`tickInputs(P)`、`tryFinishOutputs(P)`，兼容入口 `finishOutputs(P)` |
 | [`BatchArchive<E>`](../src/nac/java/com/gtlmodular/common/thread/BatchArchive.java) / [`BatchCodec<P, E>`](../src/nac/java/com/gtlmodular/common/thread/BatchCodec.java) | 纯 Java 存档记录和 payload 编解码；记录中的 duration、progress 独立保存，payload 快照由 codec 负责 |
 | [`GtRecipeBatchPersistence`](../src/nac/java/com/gtlmodular/common/thread/gt/GtRecipeBatchPersistence.java) / [`BatchNbtKeys`](../src/nac/java/com/gtlmodular/common/thread/gt/BatchNbtKeys.java) | 使用普通 GTRecipe CODEC 的 NBT 适配器；调用方提供全部键、兜底 ID 和诊断回调 |
 
@@ -24,7 +28,7 @@
 
 以下名称以 `libs/[Custom-亚空间]gtladditions-3.3.1Custom_SubSpace.jar` 的实际实现为准。逻辑类位于 `com.gtladd.gtladditions.api.machine.logic`。更新依赖后先运行 `./gradlew decompileDeps --offline`，重新核对 `deps-src/`；任务会跳过已存在的目录，同名 jar 被替换时须先删除对应的旧反编译目录。反编译失败的方法用实际 jar 的 `javap -c -p` 查看。
 
-优先由机器作者在 `createRecipeLogic(...)` 返回类型兼容的子类，并在该子类内组合引擎。接管独立批次的 tick、开始和完成路径后，不能同时执行父类的合并开批或单配方推进；仍须保留原机器的可用性、暂停、唤醒、状态同步和后处理。
+机器作者可在类型兼容的逻辑子类中组合引擎；本仓库的通用族适配保留原逻辑对象，通过 main 访问器调用其 protected 方法。接管独立批次的 tick、开始和完成路径后，不能同时执行父类的合并开批或单配方推进；仍须保留原机器的可用性、暂停、唤醒、状态同步和后处理。
 
 | 逻辑族 | 未合并候选的入口 | 适配时保留的差异 |
 | --- | --- | --- |
@@ -61,13 +65,55 @@
 
 星阵数量已经进入追加线程数，不能再乘一次。NAC 主机自己的电压基线、满并行策略和 256 上限不适用于这些机器。通用引擎只把槽数下限夹到 1，没有 256 上限；槽数缩小时已有批次全部继续运行，数量低于新上限才补位。
 
-上游“线程数”还参与合并并行预算：普通族和 Mutable 族都用 `(long) maxParallel * getMultipleThreads()` 分配候选并行。直接改成每条批次各取整个预算会改变吞吐和总能源需求，不能作为默认接入策略。每机适配器必须另行提供并确认并行分配、修改器、输出容量和 tick IO 预留规则。
+已确认的跨 tick 规则：总并行预算沿用 `(long) maxParallel * getMultipleThreads()`。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
 
-`RecipeCalculationHelper.buildNormalRecipe()` 的合并时长为 `roundToInt(max(totalEu / maxEUt, limitedDuration))`；无线合并时长直接取传入的 `limitedDuration`，每 tick 的无线数值由 `totalEu.divide(BigInteger.valueOf(limitedDuration)).negate()` 得到。普通族传入机器的 `getLimitedDuration()`，Mutable 基础实现传入 20。这些是合并规则，不能据此声称各候选已经按自己的原时长独立运行。拆成独立时钟后的时长、EU/t、整数舍入和发电/耗电符号须逐机确定。
+例如 `maxParallel=100`、线程数 2，A/B 各占 100：A 完成但堵输出时仍无剩余额度，A 实际结清后才能使用释放的 100。此时降到 1 线程，B 的 100 占满新总额，继续等待它结清，不裁剪旧批次。
+
+同配方类型＋同配方 ID 允许同时存在多批，共用总预算。每批沿用原族单条配方的并行算法和上限；上游单候选允许使用整个可用预算，不能另加 `maxParallel` 单批硬上限，也不能每批重新领取完整总额。NAC 的 `FAN_OUT_SAME_RECIPE` 和每配方满并行规则不适用于本功能。
+
+已确认整机功率也必须共用：同时运行的批次每 tick 总耗电不超过上游一台机器按相同电压、电流合批时的耗电，总吞吐与上游一致，不能是批次数倍。无线和电网沿用上游的功率计算方式，批次之间同样共用。
+
+普通族先逐配方算 `getTotalEuOfRecipe(origin) * p * getEuMultiplier()`，再按上游顺序相加；Mutable 仍用自己的 `getRecipeEut(origin) * duration * p * getEuMultiplier()`。同轮实际接纳的新批次使用这个总能量计算公共时长：`roundToInt(max(totalEu / availablePower, limitedDuration))`；超过下限时整组 EU/t 取可用功率，否则取 `(long) (totalEu / limitedDuration)`。普通族下限虚调用 `getLimitedDuration()`，Mutable 为 20，维护及能耗/时长折扣仍来自原 getter。整组 EU/t 按各批总能耗比例分配，按候选顺序分配整数尾数，合计严格等于上游合批值；只运行一批时保持原公式。各批仍独立持有进度、概率结果和产物。
+
+新批次的可用功率为当前 `getOverclockVoltage()` 减去未完成运行批次已占用的 EU/t；待出料批次不占加工功率。候选查找阶段不扣料，最终时钟在本轮扣料结束、首次 tick IO 之前确定，只计真实接纳的候选，避免输入重叠或容量检查失败的候选拖慢其他批次。已经运行的批次、读档批次不重算配方或进度。每个服务端 tick 另外限制能源仓实际扣电合计不超过一台机器的 `getOverclockVoltage()`，缓存里有更多电也不能超额。旧存档多批各占满功率或降压后，按现有批次顺序付电；单批一 tick 的电量超过当前额度时分多次真实扣取，余量仍写入原有 `TICK_INPUT`，整 tick 的 IO 付清才推进进度。没有电量承诺记账，也没有新增存档键。
+
+无线账户和无线终端复用上游无线构建器：先按原乘法顺序用 BigDecimal/BigInteger 计算各批总能量，再将合计交给 `buildWirelessRecipe()`。当前支持的上游族固定使用最低时长，整机每 tick 的有符号电量为 `-totalEu / limitedDuration`，没有有线电压上限；不能因账户机器 `getOverclockVoltage()` 为零而停机，也不能把每批当作一台满功率机器。合批电量取整后再分配给各批，避免重复丢弃除法尾数，保留耗电/发电符号和多类型无线的配方类型。每 tick 共享开始时读取的实际账户/终端可用额度，仍逐笔调用原 handler 的 `consumeEnergy`，失败就等待；已支付标记沿用原存档契约，不预存整批。
+
+例如两份各需 10000 EU 的有线批次，机器功率 100 EU/t、最低 20 tick：两批均为 200 tick、各 50 EU/t，合计 100 EU/t、20000 EU，与上游合批相同。若本轮只有一份实际扣料成功，则它恢复为 100 tick、100 EU/t，不被落空的另一份占住功率。无线同样两份、最低 20 tick 时，合计 1000 EU/t，每批 500 EU/t，继续使用无线的上游时长。
+
+
+## 完整版候选组件的使用边界
+
+`IndependentRecipeAdapters.select()` 返回族适配器或具体不支持原因，调用方须先通过配置准入。它仅判断候选计算能力，不能替代 S5 的 handler/持久化准入或 S6 的调度器互斥。`candidates(availableSlots, availableBudget, availablePower)` 接受会话给出的剩余并行预算和有线功率，返回一轮预分配结果；每条成功开工前仍须重新校验真实输入，由 `IndependentBatchSession` 的 `BatchBudgetLedger` 预留预算。调用方不能把候选列表当成库存预留，也不能脱离会话另算一份总预算。下一轮可再次查到同配方，不按运行中的配方 ID 去重。
+
+候选的 `ingredients` 是独占的原类型缩放快照，保留 ID、条件和未抽取的概率内容；`execution` 保存独立时长、能耗及上游无线构建类型（多类型无线使用机器当前类型，其余标准无线使用上游默认类型）。两者不得在 S5 再叠加 `fullModifyRecipe()`。概率抽取须使用原类型语义，真实扣料前须完成 S3 payload 的无损 prepare 校验。原配方子类、不可编码条件和 ingredient actions 在扣料前拒绝，等待专用适配。
+
+| 族 | 继续虚调用的入口 | 不调用的合并入口 |
+| --- | --- | --- |
+| 普通、多类型、无线 | `lookupRecipeIterator`（内部虚调用 `checkRecipe`，包含条件、线圈等 `recipeCheck` 和锁配方）、`checkBeforeWorking`（包含宿主等 `beforeWorking`）、`getMultipleThreads`、`getMaxParallel`、能耗/倍率 getter；标准无线 `buildWirelessRecipe` | `getGTRecipe`、`calculateParallels`、`buildFinalNormalRecipe`、`buildFinalWirelessRecipe` |
+| Mutable | `lookupRecipeSet` / `checkRecipe`、`checkBeforeWorking`、`calculateParallel`、线程数和倍率 getter；新批次先检查 `isMultipleRecipeMode()` | `getRecipe`、`calculateParallels`、greedy helper、两种 `buildFinal` |
+
+白名单不会让专有合并覆写自动变成可拆分算法。标准类之外，适配器仅允许表内读/计算覆写；检测到额外生命周期、合并生成或其他未转发方法，先报告类名和方法名，再停止准入。`AddMutableRecipesLogic`、伪神之煅炉、终焉曲折量子波动矩阵等仍须专用单批策略，不能仅跳过其覆写。转发方法的无 IO 契约仍需对具体白名单子类核实；反射检查不能证明任意第三方方法没有副作用。
+
+访问器仅登记在完整版 mixin JSON。候选阶段不抽概率、不扣物料、不调用机器工作钩子或无线 `consumeEnergy`；无线只检查原 handler 是否在线，不按余额预存整批能量。真实逐 tick 扣电和出料由 `GtIndependentBatchHost` 执行，`IndependentMachineController` 与 `OtherMachineRecipeLogicMixin` 负责运行接管。
 
 无线 tick 必须走实际扣电路径。上游 `IWirelessRecipeLogic.handleWirelessTickInput(IWirelessGTRecipe)` 读取 `getWirelessEuTickInputs()`，有数值时要求 handler 存在、在线且 `consumeEnergy(value)` 成功；无数值时返回 true。接入耗电配方必须先正确建立并恢复该数值，不能把“没有无线字段”当作供电充足。余额查询或开批准入检查不能代替真实扣电；每 tick 按需从账户或终端扣取，扣不到就等待。能源仓供电的缓存和准入由对应机器适配器决定，不能统一搬用 NAC 模块整批预蓄电策略。
 
 ## 策略与生命周期的连接方式
+
+其他机器的批次所有权使用世界级 `data/gtlmodular_independent_ownership.dat` 账本，跨维度共用。沿用物品已有的 `gtlmodular_independent_transfer` UUID 键，并将它随方块批次保存；原批次根键、各记录字段及暂停键不变。旧机器首次序列化时补齐令牌，旧物品令牌首次接管时登记，完成接管后原令牌永久失效。批次存档内容改变时换发令牌，防止旧快照重新交付已产出的物品。备份和恢复应包含完整世界及这份账本。
+
+物品放置先保留记录，待 Forge 放置捕获/回滚结束后才确认所有权并清除创造模式手持物品的批次数据。快照捕获、回滚和方块移动时不生成额外的批次控制器；普通拆机继续保留已扣料批次。`/clone` 普通复制保留源机器的批次、拒绝目标副本，`move` 和重叠 `force` 只允许一处接管；覆盖不属于源快照的其他机器时仍保护被覆盖机器的批次。当前 BG 1.0.8 先保存方块实体 NBT、移除实体，再替换方块，因此沿用它的搬运路径，不另发掉落物；重复粘贴同一份快照不能再次兑现。检查搬运源时会读取源区块，不能把区块未加载误判成源机器已移除；源维度不可用时保留记录等待。
+
+输入准备、运行条件和 IO 支持性检查失败时显示原因并等待，条件恢复后自动继续；未真正扣料的候选不保留为 `INPUT_UNCERTAIN`。实际转移或工作钩子抛出结果不明的异常时，故障批次保留已知余量、进度和预算，停止自动重放；其他正常的已开工批次仍可继续，未处理的故障或原文记录会阻止补位。
+
+OP（权限等级 2）可在机器所在维度使用以下命令，跨维度可配合 `/execute in`：
+
+- `/gtlmodular_threads <x> <y> <z> status`：查看等待原因、故障阶段和恢复令牌。令牌只对应当前加载的记录，重载或已执行重试后需重新查询。
+- `/gtlmodular_threads <x> <y> <z> retry <token> confirm_remainders`：管理员先核实已保存余量与实际库存/扣电结果相符，再解除该批次的故障锁定；保留已付 tick、概率结果、输出余量和收尾阶段，不重新开批。输入扣料不明、收尾钩子未返回及无法解码的记录不能使用此命令。
+- `/gtlmodular_threads <x> <y> <z> settle <token> confirm_settled`：管理员完成外部核账及必要补偿后，确认移除对应故障批次或无法解码的原文记录并释放其占用。命令本身不返料、不补发产物、不重放钩子，不可用它自动“算作已足额扣料”。
+
+两类修改均记录操作者、维度、坐标、令牌及批次/保留记录，并标记机器需要保存。恢复令牌仅驻留内存，不改变现有 NBT 格式。真实 ME 仓更换、真实存档重载和命令权限仍须游戏验收；纯 Java 回归仅验证会话与策略契约。
 
 下面是连接形状的伪代码。`MachineBatch` 是机器作者提供的 `BatchState<GTRecipe>` 实现，构造器接收 `(payload, duration, progress)`；`adapter` 的方法名只表示每机需要实现的职责，并非仓库新增 API。`this` 表示保留上游逻辑类型的机器子类。
 
@@ -87,7 +133,10 @@ BatchPolicy<GTRecipe> policy = new BatchPolicy<>() {
         return adapter.checkConditionsAndExecuteTickIO(recipe);
     }
     public void finishOutputs(GTRecipe recipe) {
-        adapter.finishOnceAndReleaseRuntimeState(recipe);
+        tryFinishOutputs(recipe);
+    }
+    public boolean tryFinishOutputs(GTRecipe recipe) {
+        return adapter.tryOutputThenFinishOnceAndReleaseRuntimeState(recipe);
     }
 };
 
@@ -102,9 +151,9 @@ boolean working = engine.tick(policy);
 - **完成**：保留对应机器的 `afterWorking`、配方 `postWorking`、真实出料和专有后处理，最后只释放这一批的附注；具体钩子的有无、顺序按原实现核对。不要调用会使用共享 `lastRecipe` 并立即再次合并开批的父类完成入口。
 - **状态和唤醒**：维护 WORKING / WAITING / IDLE、暂停、输入唤醒、计时、Jade / UI 镜像、区块加载与卸载；单配方字段的展示镜像不能再被父类当作另一份待结算配方。
 
-内核按表序尝试 tick，成功才加进度；随后检查完成，先移除再调用 `finishOutputs()`。即使恢复的进度已达时长、这次 tick 返回 false，仍会进入完成处理。遍历完才补位；候选为空或扣料失败即停止本 tick 补位，新批次下一 tick 才推进。`tick()` 的返回值只代表已有批次本 tick 有推进，不能拿 false 判定整机没有在跑或没有待处理批次。
+内核按表序对未完成批次尝试 tick，成功才加进度；进度达到时长后调用 `tryFinishOutputs()`，仅返回 true 才移除批次。返回 false 时保留完成进度和线程槽，下一 tick 只重试输出，不再调用 `tickInputs()`；读档恢复的完成批次也遵守此规则。遍历完才补位；候选为空或扣料失败即停止本 tick 补位，新批次下一 tick 才推进。`tick()` 的返回值只代表已有批次本 tick 有推进，不能拿 false 判定整机没有在跑或没有待处理批次。
 
-`clear()` 只清表，不退款、不调用完成回调、不清理适配器的附注；暂停不能随手调用它。内核在完成回调之前已经移除批次，不提供输出重试队列。适配器必须在准入、容量预留和完成处理中落实对应机器的物品守恒与异常处理，不能把这些能力当作引擎自带。
+`clear()` 只清表，不退款、不调用完成回调、不清理适配器的附注；暂停不能随手调用它。兼容入口 `finishOutputs()` 由默认的 `tryFinishOutputs()` 调用并视为成功；需要等待出料的适配器必须覆盖 boolean 入口。内核保留批次，但不回滚 handler 的实际输出；适配器须自行保存概率结果与未交付余量，返回 false 后不能重放已交付部分，完成钩子与附注释放只能执行一次。NAC 主机和模块共用 `NanochipRecipeOutputs`，在原配方输出中保存确定的待交付内容，沿用配方 CODEC 和既有校准来源数据；没有额外的待输出 NBT 键。
 
 ## 存档适配的范围
 
@@ -133,12 +182,12 @@ persistence.load(tag, MachineBatch::new, engine::restoreBatch);
 
 其他机器应定义自己的存档契约，不能占用 NAC 的 `gtlmodular_nanochip_threads` 根键。NAC 保留旧格式、旧类全限定名、字段和键，不因通用化发生迁移；两产物使用的 NAC 旧根键也不会随注册空间改名。
 
-## 未来全局开关的前置条件
+## 还没解决的问题
 
-未来若另立全局接入任务，建议键名仍为 `independentThreadsForOtherMachines`，默认值必须为 `false`，只由 `main` 中的配置组件提供，在 `GTLModularConfig.SPEC` 的 `build()` 之前组合进 `gtlmodular-common.toml`。`NanochipConfig`、`nac`、`nacmod` 不读取这个键，`gtl_nac-common.toml` 不增加它。本期只记录建议，没有空实现或可用配置。
+- 太空电梯这类机器自己覆写的特殊逻辑（工作钩子）会被独立批次绕过。
+- 开关打开后，空闲机器也会占用调度时间，机器多时拖慢 TPS。
+- GameTest 只覆盖了批次所有权（复制、剪切、放置回滚不会复制出批次），没有覆盖加工和扣电。
 
-未来所有全局注入在关闭时都必须早返回，保留上游行为。但这还不能解决开过批次后的关态：上游只有一份合并 `lastRecipe` / progress，无法无损表示多个不同进度且已经扣料的批次。只镜像第 0 条会丢失其余条，还可能重复结算；关态继续恢复或排空自有批次又会改变上游关态行为。必须先解决运行中关闭、关服改配置再启动、存档再保存和回滚的规则，不能只加 `if (!enabled) return` 就宣称可逆。
-
-还要逐机核对无线扩展、具体类型硬转、Mutable 切模式与子类钩子，以及 gtladditions 已有的 `mixin/gtlcore/machine/trait/MultipleRecipesLogicMixin` 对合并和无线工作的覆写。一个基类注入不能覆盖所有逻辑族。以后确需新增 mixin 时，仅放在完整版并登记到 `gtlmodular.mixins.json`，保持对应 TOML 和 manifest 声明；不能混入独立版。
+接入新机器或改动以上行为时，还要逐机核对无线扩展、具体类型强转、Mutable 切模式与子类钩子，以及 gtladditions 的 `mixin/gtlcore/machine/trait/MultipleRecipesLogicMixin` 对合批和无线工作的覆写。一个基类注入覆盖不了所有逻辑族。新增 mixin 只放在完整版，登记到 `gtlmodular.mixins.json`，不能混进独立版。
 
 每机接入需验证独立等待/完成、槽数变化、真实扣料和扣电、输出及概率结算、暂停与卸载、存档和关态恢复。共享核心单元测试只覆盖状态机与纯 Java 存档契约，不能代替真实 MC handler、Mixin 变换或游戏存档验证。

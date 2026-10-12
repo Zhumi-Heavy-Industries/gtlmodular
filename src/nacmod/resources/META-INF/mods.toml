@@ -6,7 +6,7 @@ license="MIT"
 modId="${mod_id}"
 version="${mod_version}"
 displayName="GTL 纳米芯片组装复合体"
-authors="小爱与大肥鱼"
+authors="小爱与大肥鱼、amireux"
 description='''
 GTL 纳米芯片组装复合体（NAC）独立模组，包含主机、模块、真空物流及配套电路组件。
 gtlmodular 与 gtl_nac 二选一，请勿同时安装；已双装时请移除其中一个。

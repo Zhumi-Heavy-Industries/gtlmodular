@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.capability.IEnergyContainer;
 import com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler;
 import com.gregtechceu.gtceu.api.misc.EnergyContainerList;
@@ -101,6 +102,7 @@ final class NanochipGridPower {
             BigInteger balance = WirelessEnergyManager.getUserEU(uuid);
             return balance == null || balance.signum() <= 0;
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipGridPower#isOrphanGridAccount", t);
             return false;
         }
     }
@@ -133,6 +135,7 @@ final class NanochipGridPower {
             BigInteger balance = WirelessEnergyManager.getUserEU(uuid);
             return balance == null ? BigInteger.ZERO : balance;
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipGridPower#gridBalanceEU", t);
             return BigInteger.ZERO;
         }
     }
@@ -178,6 +181,7 @@ final class NanochipGridPower {
                 return out;
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipGridPower#innerContainers", ignored);
         }
         return List.of();
     }
@@ -189,6 +193,7 @@ final class NanochipGridPower {
             f.setAccessible(true);
             return f;
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipGridPower#resolveEnergyListField", ignored);
             return null;
         }
     }
@@ -240,6 +245,7 @@ final class NanochipGridPower {
                     + "{} 个（末位=电网容器，身份 {}）——这一步让配方 EU 结算真正吃得到电网",
                     machine.getPos(), writable.size(), readUser.get());
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipGridPower#registerGridPowerHandler", t);
             machine.warnGridDrawFailure("电网处理器注册失败：" + t.getClass().getSimpleName());
         }
     }
@@ -266,6 +272,7 @@ final class NanochipGridPower {
                 proxy.put(io, cap, writable);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipGridPower#unregisterGridPowerHandler", ignored);
         }
     }
 
@@ -308,6 +315,7 @@ final class NanochipGridPower {
                 try {
                     bal = WirelessEnergyManager.getUserEU(u);
                 } catch (Throwable t) {
+                    SwallowedErrors.report("NanochipGridPower#wireEu", t);
                     cachedEu = 0L;
                     bal = null;
                 }

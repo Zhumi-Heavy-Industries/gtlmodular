@@ -110,7 +110,7 @@ final class NanochipBuiltinModules {
 
                 builtin("nanochip_splitter", NanochipModuleKind.SPLITTER,
                         new NanochipModuleSpec.Display("SPLITTER", "纳米组件分流器", "Nanopart Splitter",
-                                "不加工，只调度：每 20 tick 按规则把虚拟件在颜色通道间搬运；每台提供 2 倍并行"),
+                                "旧真空物流路由已废弃，不保证可用；建议保持简单物流模式。分流器每台提供 2 倍并行的能力保留"),
                         () -> NanochipRecipeTypes.SPLITTER_SCHEDULE,
                         new NanochipModuleSpec.Bonuses(1.0D, 1.0D, 2.0D, false, List.of()),
                         new NanochipModuleSpec.Operation(100, true, null, null, 0)));

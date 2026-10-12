@@ -5,7 +5,9 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient;
-import com.gregtechceu.gtceu.utils.FormattingUtil;
+import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
+import com.gtlmodular.common.machine.display.ThreadDisplaySnapshot;
+import com.gtlmodular.common.machine.display.ThreadDisplayText;
 import com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.ThreadRec;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -21,10 +23,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.LANG_THREADS;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.LANG_THREADS_RUNS;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.LANG_THREADS_LINE;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.LANG_THREADS_MORE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.DISPLAY_LINES;
 
 final class NanochipThreadDisplay {
@@ -34,6 +32,9 @@ final class NanochipThreadDisplay {
     private final NanochipConcurrentBatches batches;
     private final NanochipBatchRuntime batchRuntime;
     private final Function<NanochipConcurrentBatches.Batch, ThreadRec> threadView;
+    // 单机 WORKING 不能代表每条批次都推进，显示只记录原有 tickInputs 的返回值。
+    private final Map<GTRecipe, Boolean> tickResults = new IdentityHashMap<>();
+    private String unadvancedReason = "gtlmodular.nanochip.thread_details.pending";
 
     NanochipThreadDisplay(NanochipThreadedRecipeLogic logic, IRecipeLogicMachine machine,
                           NanochipConcurrentBatches batches, NanochipBatchRuntime batchRuntime,
@@ -199,6 +200,42 @@ final class NanochipThreadDisplay {
         return total;
     }
 
+    void beginTick() {
+        tickResults.clear();
+        unadvancedReason = "gtlmodular.nanochip.thread_details.pending";
+    }
+
+    void machineBlocked() {
+        unadvancedReason = "gtlmodular.nanochip.thread_details.machine_blocked";
+    }
+
+    void recordTick(GTRecipe recipe, boolean advanced) {
+        tickResults.put(recipe, advanced);
+    }
+
+    ThreadDisplaySnapshot displaySnapshot() {
+        List<ThreadDisplaySnapshot.Thread> rows = new ArrayList<>();
+        boolean suspended = logic.isSuspend();
+        boolean available = machine.isRecipeLogicAvailable();
+        for (Map.Entry<Integer, ThreadRec> entry : snapshot()) {
+            ThreadRec rec = entry.getValue();
+            Boolean advanced = tickResults.get(rec.recipe());
+            String reason = suspended ? "gtlmodular.nanochip.thread_details.suspended"
+                    : !available ? "gtlmodular.nanochip.thread_details.unavailable"
+                    : rec.progress() >= rec.duration() ? NanochipRecipeOutputs.OUTPUT_FULL
+                    : advanced == null ? unadvancedReason
+                    : !advanced ? "gtlmodular.nanochip.thread_details.blocked" : null;
+            ThreadDisplaySnapshot.State state = reason == null
+                    ? ThreadDisplaySnapshot.State.WORKING : ThreadDisplaySnapshot.State.WAITING;
+            // 最终配方已经缩放过并行、模块与校准，读数不能再乘一次。
+            rows.add(new ThreadDisplaySnapshot.Thread(entry.getKey(), RecipeHelper.getInputEUt(rec.recipe()),
+                    rec.duration(), rec.progress(), rec.parallels(), state, reason,
+                    firstItemOutputId(rec.recipe()), firstItemOutputAmount(rec.recipe())));
+        }
+        return new ThreadDisplaySnapshot(logic.getThreadLimit(), batches.size(), totalRunsAtOnce(),
+                distinctRunningRecipeCount(), mirroredThreadLabel(), mirroredThreadParallels(), rows);
+    }
+
     /** 批次表由服务端维护，客户端不能从空的本地表推导运行数量。 */
     void appendThreadDisplayText(List<Component> textList) {
         if (textList == null
@@ -206,31 +243,9 @@ final class NanochipThreadDisplay {
                 || machine.self().getLevel().isClientSide) {
             return;
         }
-        int limit = logic.getThreadLimit();
-        if (limit <= 1) {
-            return;
-        }
-        int running = batches.size();
-        textList.add(Component.translatable(LANG_THREADS, limit, running));
-        if (running <= 0) {
-            return;
-        }
-        textList.add(Component.translatable(LANG_THREADS_RUNS,
-                FormattingUtil.formatNumbers(totalRunsAtOnce())));
-        int shown = 0;
-        for (Map.Entry<Integer, ThreadRec> entry : snapshot()) {
-            if (shown >= DISPLAY_LINES) {
-                break;
-            }
-            ThreadRec rec = entry.getValue();
-            textList.add(Component.translatable(LANG_THREADS_LINE,
-                    entry.getKey(), rec.progress(), rec.duration(),
-                    FormattingUtil.formatNumbers(rec.parallels())));
-            shown++;
-        }
-        if (shown < running) {
-            textList.add(Component.translatable(LANG_THREADS_MORE, running - shown, shown));
-        }
+        ThreadDisplaySnapshot snapshot = displaySnapshot();
+        textList.addAll(ThreadDisplayText.summary(snapshot));
+        ThreadDisplayText.appendThreads(textList, snapshot, DISPLAY_LINES);
     }
 
     static long realParallelsOf(GTRecipe recipe) {

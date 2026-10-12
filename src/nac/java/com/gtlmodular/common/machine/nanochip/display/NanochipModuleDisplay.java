@@ -37,6 +37,7 @@ public final class NanochipModuleDisplay {
     }
 
     public void addDisplayText(List<Component> textList, NanochipModuleSpec kind) {
+        NanochipLogisticsText.appendMode(textList, kind.isRouter());
         textList.add(Component.literal("NAC 模块: ")
                 .append(Component.literal(kind.nameZh()).withStyle(ChatFormatting.GOLD))
                 .append(Component.literal(" · " + kind.nameEn()).withStyle(ChatFormatting.DARK_GRAY))
@@ -85,11 +86,8 @@ public final class NanochipModuleDisplay {
                     .withStyle(ChatFormatting.GRAY));
         }
         if (kind.isRouter()) {
-            textList.add(Component.literal("分流规则: ")
-                    .append(Component.literal(machine.splitterRules().rules().size() + " / "
-                            + NanochipSplitterRules.MAX_RULES).withStyle(ChatFormatting.GOLD))
-                    .append(Component.literal(" · 打开本仓 GUI 左侧「分流规则」页编辑；红石阈值读本机四周信号")
-                            .withStyle(ChatFormatting.GRAY))
+            textList.add(Component.translatable("gtlmodular.nanochip.splitter.rules",
+                            machine.splitterRules().rules().size(), NanochipSplitterRules.MAX_RULES)
                     .withStyle(ChatFormatting.GRAY));
         }
         if (kind.features().board()) {

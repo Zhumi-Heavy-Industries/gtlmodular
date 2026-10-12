@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Set;
 
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FAN_OUT_MAX_PER_TICK;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FAN_OUT_SAME_RECIPE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FILL_RETRY_INTERVAL;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FILL_RETRY_THROTTLE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.IDLE_SEARCH_INTERVAL;
@@ -72,16 +71,22 @@ final class NanochipThreadCandidates {
             return null;
         }
         if (idleSearchThrottled()) {
+            logic.stallDiagnostics().scheduling("空闲搜索节流，保留最近真实搜索结果");
             return null;
         }
         if (fillRetryThrottled()) {
+            logic.stallDiagnostics().scheduling("补料重试节流，保留最近真实搜索结果");
             return null;
         }
         if (fanOutOpenedThisTick >= FAN_OUT_MAX_PER_TICK) {
+            logic.stallDiagnostics().scheduling("本 tick 新开数量已到上限");
             return null;
         }
         if (candidatePool == null) {
+            logic.stallDiagnostics().beginSearch();
             candidatePool = candidateRecipes();
+            logic.stallDiagnostics().searched(candidateRawCount, candidateUsableCount,
+                    candidatePool.size(), candidateSearchFailure);
             candidateCursor = 0;
             fanOutScannedSinceSuccess = 0;
             if (candidatePool.isEmpty() && admission.firstReject == null) {
@@ -91,7 +96,7 @@ final class NanochipThreadCandidates {
         }
         while (true) {
             if (candidateCursor >= candidatePool.size()) {
-                if (!FAN_OUT_SAME_RECIPE || candidatePool.isEmpty()
+                if (!logic.fanOutSameRecipe() || candidatePool.isEmpty()
                         || fanOutScannedSinceSuccess >= candidatePool.size()) {
                     return null;
                 }
@@ -99,11 +104,13 @@ final class NanochipThreadCandidates {
             }
             GTRecipe candidate = candidatePool.get(candidateCursor++);
             fanOutScannedSinceSuccess++;
-            if (!FAN_OUT_SAME_RECIPE && isRunningElsewhere(candidate)) {
+            if (!logic.fanOutSameRecipe() && isRunningElsewhere(candidate)) {
+                logic.stallDiagnostics().candidate(candidate, "已有同配方批次，等待完成");
                 continue;
             }
             GTRecipe prepared = admission.prepareBatch(candidate);
             if (prepared != null) {
+                logic.stallDiagnostics().candidate(candidate, "准入通过，等待真实扣料结果");
                 fanOutScannedSinceSuccess = 0;
                 fanOutOpenedThisTick++;
                 return prepared;
@@ -144,12 +151,18 @@ final class NanochipThreadCandidates {
         }
         try {
             if (host != null && !host.nanochipCandidateUsable(candidate)) {
+                logic.stallDiagnostics().candidate(candidate, "主机资格闸拒绝");
                 return false;
             }
         } catch (RuntimeException e) {
             NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：机器侧候选校验抛异常（不挡）：{}", e.toString());
         }
-        return recipeEuTier(candidate) <= hostTier();
+        int requiredTier = recipeEuTier(candidate);
+        int availableTier = hostTier();
+        boolean usable = requiredTier <= availableTier;
+        logic.stallDiagnostics().candidate(candidate, usable ? "资格通过，尚未轮到准入（公平轮转/数量限制）"
+                : "电压等级不足：需要=" + requiredTier + "，主机=" + availableTier);
+        return usable;
     }
 
     private static int recipeEuTier(GTRecipe recipe) {

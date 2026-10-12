@@ -1,6 +1,7 @@
 package com.gtlmodular.common.compat;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 
@@ -27,11 +28,13 @@ public final class EnhcoreIvBufferRegistration {
                 Object ids = registry.getMethod("registeredIds").invoke(null);
                 GTLModular.LOGGER.info("[gtlmodular] IV 样板仓注册表现有: {}", ids);
             } catch (Throwable ignored) {
+                SwallowedErrors.report("EnhcoreIvBufferRegistration#tryRegister-readRegisteredIds", ignored);
                 // 白名单读取仅用于诊断，失败不影响已完成的登记。
             }
         } catch (ClassNotFoundException e) {
             GTLModular.LOGGER.info("[gtlmodular] 未发现 GTL-Enhancedcore 的 IV 样板仓注册表（该模组未装或是旧版），跳过登记 ✓");
         } catch (Throwable t) {
+            SwallowedErrors.report("EnhcoreIvBufferRegistration#tryRegister", t);
             GTLModular.LOGGER.warn("[gtlmodular] IV 样板仓登记失败（已忽略，不影响启动）: {}", t.toString());
         }
     }

@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
@@ -128,6 +129,7 @@ public final class HatchPredicates {
             Block block = BuiltInRegistries.BLOCK.get(kind.id());
             return block == null || block == Blocks.AIR ? null : block;
         } catch (Throwable t) {
+            SwallowedErrors.report("HatchPredicates#moduleHostBlock", t);
             return null;
         }
     }
@@ -138,6 +140,7 @@ public final class HatchPredicates {
             Block mesh = NanochipBlocks.MESH_INTERFACE_CASING.get();
             return mesh == null ? null : BlockInfo.fromBlockState(mesh.defaultBlockState());
         } catch (Throwable t) {
+            SwallowedErrors.report("HatchPredicates#previewFallback", t);
             return null;
         }
     }

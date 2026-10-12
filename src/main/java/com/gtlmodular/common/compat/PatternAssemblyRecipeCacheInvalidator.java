@@ -3,6 +3,7 @@ package com.gtlmodular.common.compat;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.nanochip.NanochipRecipeCacheHooks;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MoltenPatternAssemblyPartMachine;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -54,6 +55,7 @@ public final class PatternAssemblyRecipeCacheInvalidator implements NanochipReci
                         + "⇒ 那些样板槽会按新环境重扫一次 @{}", cleared, machine.getPos());
             }
         } catch (Throwable t) {
+            SwallowedErrors.report("PatternAssemblyRecipeCacheInvalidator#invalidateStaleTypeCache", t);
             if (claimFailureLog.getAsBoolean()) {
                 GTLModular.LOGGER.warn("[gtlmodular] 主机表 byType 别名：清样板识别缓存时异常（已忽略）：{}", t.toString());
             }
@@ -78,6 +80,7 @@ public final class PatternAssemblyRecipeCacheInvalidator implements NanochipReci
             slotTypeCacheField = candidate;
             return candidate;
         } catch (Throwable t) {
+            SwallowedErrors.report("PatternAssemblyRecipeCacheInvalidator#resolveSlotTypeCacheField", t);
             slotTypeCacheFieldFailed = true;
             GTLModular.LOGGER.warn("[gtlmodular] 主机表 byType 别名：拿不到样板总成的识别缓存字段（slotRecipeType）：{}"
                     + " ⇒ 旧存档里被判过「识别不出」的样板槽不会自动重扫；"

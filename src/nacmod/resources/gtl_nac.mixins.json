@@ -2,9 +2,12 @@
   "required": false,
   "minVersion": "0.8.5",
   "package": "com.gtlmodular.mixin",
+  "plugin": "com.gtlmodular.integration.mixin.GTLModularMixinPlugin",
   "compatibilityLevel": "JAVA_17",
   "mixins": [
-    "gtlcore.NanochipCalibrationLookupMixin"
+    "gtlcore.NanochipCalibrationLookupMixin",
+    "gtlcore.NanochipCalibrationInputMixin",
+    "gtlcore.NanochipLocalBatchEnergyMixin"
   ],
   "client": [
     "gtceu.MixinWorkableProgressBar"

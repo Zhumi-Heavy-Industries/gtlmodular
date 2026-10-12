@@ -1,5 +1,6 @@
 package com.gtlmodular.mixin.enhancedcore;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -42,6 +43,7 @@ public class SuperBufferChineseNamesMixin {
                             com.gtlmodular.GTLModular.LOGGER.info(
                                     "[gtlmodular] 命名适配命中：{} ⇒ {}", keyOrName, e.getValue());
                         } catch (Throwable ignored) {
+                            SwallowedErrors.report("SuperBufferChineseNamesMixin#gtlmodular$resolveOwnTypeNames-diagLog", ignored);
                         }
                     }
                     cir.setReturnValue(e.getValue());
@@ -49,6 +51,7 @@ public class SuperBufferChineseNamesMixin {
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("SuperBufferChineseNamesMixin#gtlmodular$resolveOwnTypeNames", ignored);
         }
     }
 }

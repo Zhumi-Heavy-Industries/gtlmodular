@@ -63,6 +63,10 @@ final class NanochipModuleHostLink {
     }
 
     NanochipAssemblyComplexMachine getHost() {
+        // 主机所在区块重载后旧对象已失效；继续持有会让模块向不存在的主机报到，等新主机扫描时重新连接。
+        if (host != null && !host.isLiveHost()) {
+            host = null;
+        }
         return host;
     }
 

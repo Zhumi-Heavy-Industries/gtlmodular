@@ -17,6 +17,13 @@
             "item": "gtceu:naquadria_plate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 32
+        },
+        "chance": 0
       }
     ],
     "fluid": [

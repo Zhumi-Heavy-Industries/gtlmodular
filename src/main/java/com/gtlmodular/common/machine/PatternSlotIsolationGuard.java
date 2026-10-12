@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine;
 
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.resources.ResourceLocation;
 
 /** 样板原料能相互拼合时可能跨槽匹配，按已记录的归属槽判定可避免串配方。 */
@@ -48,6 +49,7 @@ public final class PatternSlotIsolationGuard {
             }
             return true;
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternSlotIsolationGuard#rejects", ignored);
             return false;   // 隔离诊断失败不能阻止原有加工。
         }
     }
@@ -57,6 +59,7 @@ public final class PatternSlotIsolationGuard {
             ResourceLocation id = recipe.getType() == null ? null : recipe.getType().registryName;
             return id != null && id.equals(DUMMY_TYPE);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternSlotIsolationGuard#isAuxiliaryIORecipe", ignored);
             return false;
         }
     }

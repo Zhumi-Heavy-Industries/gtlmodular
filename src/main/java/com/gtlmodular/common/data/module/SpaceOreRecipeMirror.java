@@ -10,6 +10,7 @@ import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -82,6 +83,7 @@ public final class SpaceOreRecipeMirror {
                 mirrorNow(event.getServer());
                 handled = true;
             } catch (Throwable t) {
+                SwallowedErrors.report("SpaceOreRecipeMirror#onServerStarted", t);
                 handleFailed = true;
                 GTLModular.LOGGER.warn("[gtlmodular] 天基矿石处理厂配方镜像执行失败（已忽略，不影响游戏）：{}", t.toString());
             }
@@ -143,6 +145,7 @@ public final class SpaceOreRecipeMirror {
             try {
                 copies.add(copyOne(target, src));
             } catch (Throwable t) {
+                SwallowedErrors.report("SpaceOreRecipeMirror#mirrorNow-copyRecipe", t);
                 failed++;
                 if (failed <= 5) {
                     GTLModular.LOGGER.warn("[gtlmodular] 天基矿石处理厂配方镜像失败（第 {} 条，已跳过该条）：{}",
@@ -244,6 +247,7 @@ public final class SpaceOreRecipeMirror {
             return value instanceof Map<?, ?> map
                     ? (Map<RecipeType<?>, Map<ResourceLocation, Recipe<?>>>) map : null;
         } catch (Throwable t) {
+            SwallowedErrors.report("SpaceOreRecipeMirror#readByType", t);
             GTLModular.LOGGER.warn("[gtlmodular] 天基矿石处理厂配方镜像：读 byType 失败（已忽略）：{}", t.toString());
             return null;
         }
@@ -258,6 +262,7 @@ public final class SpaceOreRecipeMirror {
         try {
             field.set(manager, next);
         } catch (Throwable t) {
+            SwallowedErrors.report("SpaceOreRecipeMirror#writeByType", t);
             GTLModular.LOGGER.warn("[gtlmodular] 天基矿石处理厂配方镜像：写 byType 失败（lookup 已登记，机器仍可跑；"
                     + "只是 JEI/计数看不到）：{}", t.toString());
         }
@@ -286,6 +291,7 @@ public final class SpaceOreRecipeMirror {
                 return candidate;
             } catch (NoSuchFieldException ignored) {
             } catch (Throwable ignored) {
+                SwallowedErrors.report("SpaceOreRecipeMirror#resolveByTypeField-namedField", ignored);
             }
         }
         for (Field candidate : RecipeManager.class.getDeclaredFields()) {
@@ -299,6 +305,7 @@ public final class SpaceOreRecipeMirror {
                     return candidate;
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("SpaceOreRecipeMirror#resolveByTypeField-structuralScan", ignored);
             }
         }
         byTypeResolutionFailed = true;

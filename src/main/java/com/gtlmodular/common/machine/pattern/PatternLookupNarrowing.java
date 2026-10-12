@@ -2,6 +2,7 @@ package com.gtlmodular.common.machine.pattern;
 
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MultiTypeLookupHost;
 
 import java.util.Arrays;
@@ -37,6 +38,7 @@ public final class PatternLookupNarrowing {
             }
             return -1;
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternLookupNarrowing#ownModeIndex", failure);
             // 无法确认总成自己的模式时，收窄可能挡住本该参与查找的槽。
             return -1;
         }
@@ -82,6 +84,7 @@ public final class PatternLookupNarrowing {
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternLookupNarrowing#narrowSlots", failure);
             // 调用方持有同一个数组，异常回退也必须保留已经发生的原地覆盖。
             return base;
         }
@@ -109,6 +112,7 @@ public final class PatternLookupNarrowing {
             }
             return cached == narrowingMode.getAsInt();
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternLookupNarrowing#slotParticipates", failure);
             // 缓存不足以确定类型时，不能在查找热路径触发识别或建槽。
             return true;
         }

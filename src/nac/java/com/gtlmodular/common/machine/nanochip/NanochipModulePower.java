@@ -154,6 +154,16 @@ final class NanochipModulePower {
         return module.consumeBufferEU(need) ? -need : 0L;
     }
 
+    boolean localBatchReady(GTRecipe recipe, int progress, Consumer<Component> waitForEnergy) {
+        var energy = NanochipLocalBatchEnergy.finiteLocalContainer(module);
+        if (progress == 0 && energy != null
+                && !NanochipLocalBatchEnergy.readyToStart(recipe, energy.getEnergyStored(), energy.getEnergyCapacity())) {
+            waitForEnergy.accept(org.gtlcore.gtlcore.api.recipe.RecipeResult.FAIL_NO_ENOUGH_EU_IN.reason());
+            return false;
+        }
+        return true;
+    }
+
     /** 缓存与逐 tick 扣电读取同一份合批结果，避免校准折扣后仍按原配方预蓄电。 */
     boolean drawRecipeEnergy(GTRecipe recipe, IntSupplier progress, Consumer<Component> waitForEnergy) {
         NanochipAssemblyComplexMachine host = module.getHost();
@@ -185,26 +195,5 @@ final class NanochipModulePower {
         }
         waitForEnergy.accept(org.gtlcore.gtlcore.api.recipe.RecipeResult.FAIL_NO_ENOUGH_EU_IN.reason());
         return false;
-    }
-
-    /** 本机能源仓本身保管预蓄电，避免转入未持久化的中央供电缓存而在读档时丢电。 */
-    boolean localRecipePrecharged(GTRecipe recipe, int progress, Consumer<Component> waitForEnergy) {
-        var own = module.getEnergyContainer();
-        boolean onDemand = own != null
-                && own.getEnergyCapacity() >= NanochipAssemblyComplexMachine.ON_DEMAND_POWER_FLOOR_EU;
-        if (onDemand) return true;
-        long perTick = Math.max(0L, RecipeHelper.getInputEUt(recipe));
-        long remainingTicks = Math.max(1L, (long) recipe.duration - progress);
-        long need = NanochipModulePowerDistribution.saturatingMul(perTick, remainingTicks);
-        long stored = own == null ? 0L : Math.max(0L, own.getEnergyStored());
-        // 饱和值只是显示上限，不能把超出 long 的整批需求当作已备足。
-        if (perTick > Long.MAX_VALUE / remainingTicks || stored < need) {
-            waitForEnergy.accept(Component.translatable(
-                    "gtlmodular.nanochip.module.buffer",
-                    com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(need),
-                    com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(stored)));
-            return false;
-        }
-        return true;
     }
 }

@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.nanochip.structure;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gtlmodular.common.data.nanochip.NanochipComplexPattern;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
@@ -121,6 +122,7 @@ public final class NanochipHostStructureIndex {
             logRemovalInvalidation(broken, level.getGameTime());
             state.onBlockStateChanged(broken, nowState);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipHostStructureIndex#invalidateOnCachedRemoval", t);
             dropPendingRemoval();
             NanochipModContext.logger().warn("[gtlmodular] NAC 方块移除定点失效：本次重判定抛出异常，已放弃 @{}", host.getPos(), t);
         } finally {

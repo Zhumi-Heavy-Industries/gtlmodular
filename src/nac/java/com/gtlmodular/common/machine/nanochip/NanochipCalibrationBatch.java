@@ -26,20 +26,30 @@ final class NanochipCalibrationBatch {
         for (Content output : recipe.getOutputContents(ItemRecipeCapability.CAP)) {
             ItemStack stack = NanochipCalibrationAccounting.firstItemStackOf(output.content);
             if (stack == null || stack.isEmpty()) continue;
-            long count = NanochipCalibrationAccounting.producedCountOf(output.content);
-            if (count > 0L) {
-                pending.add(new Production(recipe.getId(), family, (int) Math.min(Integer.MAX_VALUE, count)));
-            }
+            // 成功扣料入口传入已缩放并结算概率的产出，不能再乘 realParallels。
+            capture(recipe.getId(), family, NanochipCalibrationAccounting.producedCountOf(output.content));
+        }
+    }
+
+    void capture(ResourceLocation recipeId, NanochipCalibration.Family family, long producedCount) {
+        if (recipeId != null && family != null && producedCount > 0L) {
+            pending.add(new Production(recipeId, family, (int) Math.min(Integer.MAX_VALUE, producedCount)));
         }
     }
 
     void attach(GTRecipe batch) {
-        if (batch != null && !pending.isEmpty()) {
+        if (batch != null) batch.data = attach(batch.data);
+        else clear();
+    }
+
+    CompoundTag attach(CompoundTag data) {
+        if (!pending.isEmpty()) {
             // 不改共享的配方数据；新增来源随上游已有 lastRecipe CODEC 一起存取。
-            batch.data = batch.data.copy();
-            batch.data.put(SOURCES, encode(pending));
+            data = data.copy();
+            data.put(SOURCES, encode(pending));
         }
         clear();
+        return data;
     }
 
     void clear() {

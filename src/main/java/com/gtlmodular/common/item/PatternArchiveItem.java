@@ -2,6 +2,7 @@ package com.gtlmodular.common.item;
 
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.GTLModularMachines;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.LazyPatternArchiveApi;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -89,12 +90,14 @@ public final class PatternArchiveItem extends Item {
                         context.getClickedPos(), cutMode ? "剪切工具" : "复制工具", cutMode, sneaking,
                         LazyPatternArchiveApi.hasArchive(stack) || "粘贴".equals(action), action);
             } catch (Throwable ignored) {
+                SwallowedErrors.report("PatternArchiveItem#useOn.logAction", ignored);
                 // 诊断失败不能影响已完成的归档动作。
             }
             if (result != null) {
                 result.tell(player);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternArchiveItem#useOn", failure);
             // 归档异常只反馈给玩家，不能中断交互处理。
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：右键处理异常（已忽略）pos={} 原因={}",
                     context.getClickedPos(), failure.toString());
@@ -123,6 +126,7 @@ public final class PatternArchiveItem extends Item {
                         LazyPatternArchiveApi.archivePatternCount(stack));
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternArchiveItem#use", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：空手右键处理异常（已忽略）原因={}", failure.toString());
         }
         return net.minecraft.world.InteractionResultHolder.pass(stack);

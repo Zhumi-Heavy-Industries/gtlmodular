@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.gui.GuiTextures;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.item.PatternArchiveItem;
 import com.gtlmodular.common.machine.LazyPatternArchiveApi;
 import com.lowdragmc.lowdraglib.gui.texture.GuiTextureGroup;
@@ -214,6 +215,7 @@ public class PatternArchiveConfigurator implements IFancyConfigurator {
                 case PASTE -> LazyPatternArchiveApi.pasteInto(host, stack, player).tell(player);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternArchiveConfigurator#runArchiveAction", failure);
             GTLModular.LOGGER.warn(layout.logPrefix + name + "异常（已忽略）pos={} 原因={}",
                     host.getPos(), failure.toString());
         }
@@ -230,6 +232,7 @@ public class PatternArchiveConfigurator implements IFancyConfigurator {
             LazyPatternArchiveApi.clearArchive(stack);
             LazyPatternArchiveApi.tellKey(player, "gtlmodular.pattern_assembly.archive.cleared", before);
         } catch (Throwable failure) {
+            SwallowedErrors.report("PatternArchiveConfigurator#doClearTool", failure);
             GTLModular.LOGGER.warn(layout.logPrefix + "清空工具异常（已忽略）pos={} 原因={}",
                     host.getPos(), failure.toString());
         }
@@ -336,6 +339,7 @@ public class PatternArchiveConfigurator implements IFancyConfigurator {
                     ? Collections.emptyList() : level.getServer().getPlayerList().getPlayers();
             return players.isEmpty() ? null : players.get(0);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternArchiveConfigurator#findPlayer", ignored);
             return null;
         }
     }
@@ -368,6 +372,7 @@ public class PatternArchiveConfigurator implements IFancyConfigurator {
             }
             return null;
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternArchiveConfigurator#heldTool", ignored);
             return null;
         }
     }

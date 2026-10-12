@@ -7,6 +7,7 @@ import com.gtlmodular.common.machine.nanochip.NanochipConversionMap;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumNetwork;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeGraph;
 import com.gtlmodular.common.machine.nanochip.NanochipColor;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import static com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine.ROOM_ENCAPSULATE_INTERVAL;
 import static com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine.TRANSFER_INTERVAL;
 import static com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine.VACUUM_MOVE_TICK;
@@ -16,6 +17,8 @@ import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import java.util.List;
@@ -196,7 +199,7 @@ public final class NanochipVacuumPort {
                 this.lastNoWorkLogTick = now;
                 NanochipModContext.logger().info(
                         "[gtlmodular] 真空输入仓 @{}（控制室 VCI）一件都没还原，但通道[{}] 里现在有 = {} "
-                                + "（若为「N PC」= 那些是已处理件，按 NH 语义不可还原；若为「N CC」却提不出来 ⇒ 把这条日志发给队员）",
+                                + "（若为「N PC」= 那些是已处理件，按 NH 语义不可还原；若为「N CC」却提不出来 ⇒ 把这条日志发给开发者）",
                         machine.getPos(), color.nameZh(), net.summary(color));
             } else if (!first.isEmpty()) {
                 this.lastNoWorkLogTick = now;
@@ -343,16 +346,18 @@ public final class NanochipVacuumPort {
     }
 
     public String routingModeText() {
+        MutableComponent route;
         if (machine.color() == null) {
-            return "§7路由模式：§c未染色§7（未染色不连接、不搬运；先用螺丝刀右键或「真空传送」页染色）";
+            route = Component.translatable("gtlmodular.nanochip.vacuum.routing.unpainted");
+        } else if (!NanochipModContext.config().isVacuumRequiresPipes()) {
+            return NanochipLogisticsText.vacuumRouting().getString();
+        } else {
+            int comp = machine.routeComponent();
+            route = comp == NanochipPipeGraph.UNWIRED
+                    ? Component.translatable("gtlmodular.nanochip.vacuum.routing.unwired")
+                    : Component.translatable("gtlmodular.nanochip.vacuum.routing.component", comp);
         }
-        if (!NanochipModContext.config().isVacuumRequiresPipes()) {
-            return "§7路由模式：§a简单（颜色即线，不用铺管道）";
-        }
-        int comp = machine.routeComponent();
-        return comp == NanochipPipeGraph.UNWIRED
-                ? "§7路由模式：§e管道定向§7 · 本仓§c未接管道§7（只能与同样未接管道的同色仓互通）"
-                : "§7路由模式：§e管道定向§7 · 本仓已在同色管网分量 §f#" + comp;
+        return route.append(" · ").append(NanochipLogisticsText.deprecated()).getString();
     }
 
     public void clearChannel() {

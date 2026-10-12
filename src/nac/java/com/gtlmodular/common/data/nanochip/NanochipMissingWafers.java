@@ -17,8 +17,7 @@ public final class NanochipMissingWafers {
     }
 
     public static final String NH_NOTE =
-            "NH ItemList.Circuit_Wafer_{QPIC,APIC,ZPIC,YPIC,PlPIC}"
-                    + "（_census/_nh_avail/nh_ItemList_javap.txt:3635/3653/3657/3661/3665 逐字）";
+            "NH ItemList.Circuit_Wafer_{QPIC,APIC,ZPIC,YPIC,PlPIC}";
 
     public static final int TIER_COUNT = 5;
 
@@ -115,8 +114,7 @@ public final class NanochipMissingWafers {
         if (ALL.size() != TIER_COUNT || items != TIER_COUNT || !problems.isEmpty()) {
             throw new IllegalStateException("新造 PIC 晶圆表异常：应 " + TIER_COUNT + " 件，实为 "
                     + ALL.size() + " 行（" + items + " 物品）"
-                    + (problems.isEmpty() ? "" : "；问题：" + problems)
-                    + " —— 要改口径请同步 _census/check_missing_acquisition_chain.js 的 WAFER_SPEC");
+                    + (problems.isEmpty() ? "" : "；问题：" + problems));
         }
         NanochipModContext.logger().info("[gtlmodular] {}；全部 id 已登记进 NanochipMissingWafers 查询表（{}）",
                 summary(), NH_NOTE);

@@ -49,13 +49,12 @@ public final class ConcurrentBatchEngine<P, B extends BatchState<P>> implements 
         Iterator<B> iterator = batches.iterator();
         while (iterator.hasNext()) {
             B batch = iterator.next();
-            if (policy.tickInputs(batch.payload())) {
+            if (batch.progress() < batch.duration() && policy.tickInputs(batch.payload())) {
                 batch.setProgress(batch.progress() + 1);
                 working = true;
             }
-            if (batch.progress() >= batch.duration()) {
+            if (batch.progress() >= batch.duration() && policy.tryFinishOutputs(batch.payload())) {
                 iterator.remove();
-                policy.finishOutputs(batch.payload());
             }
         }
 

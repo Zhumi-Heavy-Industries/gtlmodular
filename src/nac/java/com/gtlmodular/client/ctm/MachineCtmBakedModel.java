@@ -1,6 +1,7 @@
 package com.gtlmodular.client.ctm;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -182,6 +183,7 @@ public final class MachineCtmBakedModel implements BakedModel {
         try {
             return retexture(state, side, data, quads);
         } catch (Throwable failure) {
+            SwallowedErrors.report("MachineCtmBakedModel#getQuads", failure);
             warnCtmFailed(state, side, failure);
             return quads;
         }
@@ -455,13 +457,14 @@ public final class MachineCtmBakedModel implements BakedModel {
         try {
             resolver.run();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MachineCtmBakedModel#maybeResolveLazily", ignored);
         }
     }
 
     private void warnEmptyQuads(BlockState state, Direction side) {
         if (this.emptyQuadsWarn.getAndDecrement() > 0 && allowEmptyQuadsWarn()) {
             NanochipModContext.logger().warn("[gtlmodular] CTM: 【delegate 空表】机器 {} 的 delegate 返回了 null/空 quads"
-                            + "（state={} face={}）—— 已**原样转发**。★ 2026-09-18 实机已证明：**本路径对机器无效**"
+                            + "（state={} face={}）—— 已**原样转发**。**本路径对机器无效**"
                             + "（机器由 LDLib 的 IRenderer 逐 tile 绘制，烘焙 quad 恒为空表，见本类类注释的字节码证据）"
                             + "⇒ 机器外壳改由 NacMachineShellRenderer（RenderLevelStageEvent.AFTER_SOLID_BLOCKS）"
                             + "自己叠一层壳；本类保留是给「未来某条真给 quad 的渲染路径」用的。"

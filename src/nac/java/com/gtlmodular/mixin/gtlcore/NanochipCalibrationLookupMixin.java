@@ -1,14 +1,11 @@
 package com.gtlmodular.mixin.gtlcore;
 
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
-import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder;
-import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtlmodular.common.machine.nanochip.NanochipCalibrationFluids;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import org.gtlcore.gtlcore.api.machine.trait.ILockRecipe;
-import org.gtlcore.gtlcore.api.recipe.RecipeCacheStrategy;
 import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
 import org.gtlcore.gtlcore.common.machine.trait.MultipleRecipesLogic;
 import org.spongepowered.asm.mixin.Mixin;
@@ -50,16 +47,5 @@ public abstract class NanochipCalibrationLookupMixin {
                     && RecipeRunnerHelper.matchRecipeOutput(holder, recipe);
         }
         return RecipeRunnerHelper.matchRecipe(holder, recipe);
-    }
-
-    @Redirect(method = "getRecipe", at = @At(value = "INVOKE", target =
-            "Lorg/gtlcore/gtlcore/api/recipe/RecipeRunnerHelper;handleRecipeInput(Lcom/gregtechceu/gtceu/api/machine/feature/IRecipeLogicMachine;Lcom/gregtechceu/gtceu/api/recipe/GTRecipe;)Z"), require = 1)
-    private boolean gtlmodular$consumeWithoutCachingExemption(IRecipeLogicMachine machine, GTRecipe recipe) {
-        if (machine instanceof NanochipModuleMachine module && NanochipCalibrationFluids.exemptionFor(module) != null) {
-            return RecipeRunnerHelper.handleRecipe(IO.IN, machine, recipe.inputs,
-                    machine.getRecipeLogic().getChanceCaches(), true, recipe, false,
-                    RecipeCacheStrategy.HANDLE_PART_CACHE_ONLY).isSuccess();
-        }
-        return RecipeRunnerHelper.handleRecipeInput(machine, recipe);
     }
 }

@@ -1,9 +1,9 @@
 package com.gtlmodular.common.machine.pattern;
 
-import appeng.api.crafting.IPatternDetails;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.PatternTypeGate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
@@ -25,7 +25,7 @@ public final class PatternIdentityGate {
     public static boolean allows(int slot, GTRecipe recipe, BooleanSupplier enabled,
                                  IntSupplier slotType, Supplier<List<GTRecipeType>> availableTypes,
                                  Supplier<ItemStack> patternStack, Supplier<Level> level,
-                                 BiFunction<ItemStack, Level, IPatternDetails> decodePattern) {
+                                 BiFunction<ItemStack, Level, PatternRecipeMatching.DecodedPattern> decodePattern) {
         if (recipe == null || slot < 0) {
             return true;
         }
@@ -55,12 +55,13 @@ public final class PatternIdentityGate {
             if (currentLevel == null) {
                 return true;
             }
-            IPatternDetails pattern = decodePattern.apply(stack, currentLevel);
+            PatternRecipeMatching.DecodedPattern pattern = decodePattern.apply(stack, currentLevel);
             if (pattern == null) {
                 return true;
             }
             return PatternRecipeMatching.patternIdentityMatches(recipe, pattern);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternIdentityGate#allows", ignored);
             // 额外身份闸缺少可靠信息时，仍交给上游原有判据。
             return true;
         }
@@ -115,6 +116,7 @@ public final class PatternIdentityGate {
                             + "本行只读、不改任何判定 @{}",
                     slot + 1, PatternModeNaming.tableNameOf(detectedType), PatternModeNaming.tableNameOf(recipe.recipeType), position.get());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternIdentityGate#noteIfHostTableMisidentified", ignored);
             // 诊断代码绝不允许影响游戏。
         }
     }

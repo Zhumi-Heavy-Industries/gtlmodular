@@ -4,6 +4,7 @@ import com.gtlmodular.common.machine.nanochip.NanochipAssemblyComplexMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumNetwork;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeGraph;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import net.minecraft.nbt.CompoundTag;
 
 public final class NanochipHostVacuum {
@@ -30,9 +31,7 @@ public final class NanochipHostVacuum {
     }
 
     public static String routingModeText() {
-        return NanochipModContext.config().isVacuumRequiresPipes()
-                ? "§e管道定向§7：必须有同色管道通路才传输，照原版"
-                : "§a简单§7：颜色即线，不用铺管道";
+        return NanochipLogisticsText.vacuumRouting().getString();
     }
 
     public void reconcileRoutingMode() {

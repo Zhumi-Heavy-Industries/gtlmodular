@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.block.IMachineBlock;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
@@ -1096,7 +1097,7 @@ public final class NanochipComplexPattern {
             if (chosen == subBlock) {
                 NanochipModContext.logger().warn(
                         "[gtlmodular] 塔身框架：原版材料 {} 在本包没有任何方块形态 ⇒ 使用**指定替代** {}"
-                                + "（依据：玩家 2026-09-16 确认原版为「富集钬框架」，本包无钬/富集钬方块）",
+                                + "（原版为「富集钬框架」，本包无钬/富集钬方块）",
                         material, sub);
             }
         }
@@ -1453,6 +1454,7 @@ public final class NanochipComplexPattern {
             }
             return lines;
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipComplexPattern#auditStructure", t);
             return lines;
         }
     }

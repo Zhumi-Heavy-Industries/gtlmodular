@@ -1,6 +1,7 @@
 package com.gtlmodular.client.ctm;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.renderer.RenderType;
@@ -258,6 +259,7 @@ public final class ConnectedCtmBakedModel implements BakedModel {
         try {
             resolver.accept(this);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("ConnectedCtmBakedModel#maybeResolveLazily", ignored);
             // CTM 解析失败不能中断正常渲染。
         }
     }

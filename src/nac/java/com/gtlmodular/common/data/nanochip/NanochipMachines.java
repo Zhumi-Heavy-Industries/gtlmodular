@@ -15,6 +15,7 @@ import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleUpkeep;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModules;
 import net.minecraft.ChatFormatting;
@@ -164,6 +165,7 @@ public final class NanochipMachines {
                         NanochipModContext.assetId("block/machine/part/vacuum_pipe")))
                 .langValue("真空传送管道")
                 .tooltips(
+                        NanochipLogisticsText.deprecated(),
                         Component.translatable("gtlmodular.nanochip.pipe.tip.1"),
                         Component.translatable("gtlmodular.nanochip.pipe.tip.2"),
                         Component.translatable("gtlmodular.nanochip.pipe.tip.3"),
@@ -190,6 +192,7 @@ public final class NanochipMachines {
 
     private static Component[] vacuumHatchTooltips(boolean input) {
         return new Component[]{
+                NanochipLogisticsText.deprecated(),
                 Component.translatable("gtlmodular.nanochip.hatch.tip.paint"),
                 Component.translatable("gtlmodular.nanochip.hatch.tip.what"),
                 Component.translatable("gtlmodular.nanochip.hatch.tip.channel"),
@@ -217,6 +220,7 @@ public final class NanochipMachines {
                 .tooltips(
                         Component.literal("NAC, 纳米芯片组装复合体").withStyle(ChatFormatting.GOLD),
                         Component.translatable("gtlmodular.nanochip.complex.desc"),
+                        Component.translatable("gtlmodular.nanochip.complex.mode"),
                         Component.translatable("gtlmodular.nanochip.complex.structure",
                                 NanochipComplexPattern.NAC_W,
                                 NanochipComplexPattern.NAC_H,

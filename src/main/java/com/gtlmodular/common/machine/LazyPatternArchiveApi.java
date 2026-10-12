@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -50,6 +51,7 @@ public final class LazyPatternArchiveApi {
             }
             player.displayClientMessage(Component.translatable(key, args == null ? new Object[0] : args), false);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveApi#tellKey", ignored);
             // 提示失败不影响已完成的动作。
         }
     }
@@ -61,6 +63,7 @@ public final class LazyPatternArchiveApi {
         try {
             return com.gregtechceu.gtceu.api.machine.MetaMachine.getMachine(level, pos);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveApi#machineAt", ignored);
             return null;
         }
     }
@@ -128,6 +131,7 @@ public final class LazyPatternArchiveApi {
             return new StampResult(true, "gtlmodular.pattern_assembly.archive.result.copied",
                     new Object[]{payload.patternCount, consumed});
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveApi#copyFrom", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：复制失败（源机未改动）pos={} 原因={}",
                     target.pos(), failure.toString());
             return new StampResult(false, "gtlmodular.pattern_assembly.archive.result.error", null);
@@ -148,6 +152,7 @@ public final class LazyPatternArchiveApi {
                 try {
                     target.afterBulkChange();
                 } catch (Throwable failure) {
+                    SwallowedErrors.report("LazyPatternArchiveApi#cutFrom.emptySourceAfterBulkChange", failure);
                     GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：空剪切的收尾通知失败（已忽略）pos={} 原因={}",
                             target.pos(), failure.toString());
                 }
@@ -160,6 +165,7 @@ public final class LazyPatternArchiveApi {
             try {
                 target.afterBulkChange();
             } catch (Throwable failure) {
+                SwallowedErrors.report("LazyPatternArchiveApi#cutFrom.afterBulkChange", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：剪切后的收尾失败"
                                 + "（样板已清空，缓存最迟由下一 tick 的签名轮询兜住）pos={} 原因={}",
                         target.pos(), failure.toString());
@@ -169,6 +175,7 @@ public final class LazyPatternArchiveApi {
             return new StampResult(true, "gtlmodular.pattern_assembly.archive.result.cut",
                     new Object[]{payload.patternCount});
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveApi#cutFrom", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：剪切异常（已中止）pos={} 原因={}",
                     target.pos(), failure.toString());
             return new StampResult(false, "gtlmodular.pattern_assembly.archive.result.error", null);
@@ -210,6 +217,7 @@ public final class LazyPatternArchiveApi {
         target.afterBulkChange();
             return new StampResult(true, result.messageKey, result.messageArgs);
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveApi#pasteInto", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：粘贴异常（已中止，目标机按操作前）pos={} 原因={}",
                     target.pos(), failure.toString());
             return new StampResult(false, "gtlmodular.pattern_assembly.archive.result.error", null);
@@ -223,6 +231,7 @@ public final class LazyPatternArchiveApi {
                 return stack;
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveApi#blankPatternStack.aeDefinition", ignored);
         }
         try {
             net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM
@@ -231,6 +240,7 @@ public final class LazyPatternArchiveApi {
                 return new ItemStack(item);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveApi#blankPatternStack.registry", ignored);
         }
         return ItemStack.EMPTY;
     }
@@ -254,6 +264,7 @@ public final class LazyPatternArchiveApi {
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("LazyPatternArchiveApi#countBlankPatterns", ignored);
             // 读不到背包时按不足处理，避免无依据地扣料。
         }
         return count;
@@ -289,6 +300,7 @@ public final class LazyPatternArchiveApi {
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("LazyPatternArchiveApi#extractBlankPatterns", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：扣空白样板时出错（已扣 {} 张，其余放弃）原因={}",
                     consumed, failure.toString());
         }

@@ -4,16 +4,11 @@
 #       在 JEI 里隐藏，让物品列表/搜索不再被它们淹没 —— 但它们**照旧注册、照旧能通过配方/指令/创意拿到**。
 #       注：这里的 CC = Circuit Component（NH/NAC 的电路组件封装件），与"圆形"无关。
 #
-# 纪律（2026-09-19 队长口径：「那 42 个孤儿的话，就先隐藏吧」，当时 42 件）：
-#   ★ 2026-09-21：42 → **41** —— 队长拍板退役「时空导线」链，`gtlmodular:cc_processed_wire_spacetime`
-#     连同它的产出配方 `nanochip/wire_tracer/006_cc_processed_wire_spacetime.json` 一并注销
-#     ⇒ 它不再「有产出配方」⇒ 自然掉出孤儿集合（详见 `_census/残留物品清理_队员.md` §8.1）。
-#   · 只影响 JEI 显示层：不删注册、不注销任何 Entry、不动任何配方、不动 retired。
+#   · 只影响 JEI 显示层：不删注册、不注销任何 Entry、不动任何配方。
 #   · 开关键 = config/gtlmodular-common.toml -> nanochipComplex.hideOrphanItems（默认 true = 隐藏）。
-#     关掉并重启游戏（或在配置屏里改完点保存）即恢复可见。
-#   · 本文件是**单一真源**：Java 插件（com.gtlmodular.client.jei.GTLModularJeiPlugin）读它，
-#     `_census/check_orphan_hidden.js` 也读它，并与 `_census/残留物品清理_队员.md` §8.1 现读对账。
-#   · 重新生成：node _census/_gen_hidden_orphans_list.js（数据来源就是 §8.1 的表格）
+#     在配置屏里改完点保存即恢复可见。
+#   · Java 插件 com.gtlmodular.client.jei.GTLModularJeiPlugin 读本文件；独立版打包时由 gradle/nac-resources.gradle 改写 id。
+#   · 某件 CC 新增了消费它的配方，或它的产出配方被删掉，就从这里删掉那一行。
 #
 # 每行一个物品 id；以 # 开头的行是注释；空行忽略。
 

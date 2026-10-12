@@ -108,7 +108,7 @@ class ConcurrentBatchEngineTest {
     }
 
     @Test
-    void completionRemovesBeforeCallbackAndRefillsAfterAllExistingBatches() {
+    void completionRemovesAfterSuccessfulCallbackAndRefillsAfterAllExistingBatches() {
         var engine = newEngine();
         var shortJob = job("short", 1);
         var longJob = job("long", 5);
@@ -118,8 +118,9 @@ class ConcurrentBatchEngineTest {
         TestBatch survivingBatch = engine.get(1);
         host.onFinish = finished -> {
             assertSame(shortJob, finished);
-            assertEquals(1, engine.size());
-            assertSame(survivingBatch, engine.get(0));
+            assertEquals(2, engine.size());
+            assertSame(shortJob, engine.get(0).payload());
+            assertSame(survivingBatch, engine.get(1));
             assertEquals(0, survivingBatch.progress());
         };
         host.events.clear();
@@ -153,6 +154,113 @@ class ConcurrentBatchEngineTest {
         assertEquals(List.of(completed), host.finished);
         assertEquals("replacement", engine.get(0).payload().id());
         assertEquals(0, engine.get(0).progress());
+        assertTrue(host.ticked.isEmpty());
+    }
+
+    @Test
+    void fullOutputRetainsCompletedBatchWithoutFurtherEnergyOrInputConsumption() {
+        var engine = newEngine();
+        var completed = job("completed", 20);
+        var replacement = job("replacement", 5);
+        var host = new TestHost(1, completed, replacement);
+        engine.tick(host);
+        host.outputBlocked.add(completed);
+        for (int tick = 0; tick < 20; tick++) {
+            assertTrue(engine.tick(host));
+        }
+
+        for (int tick = 0; tick < 1000; tick++) {
+            assertFalse(engine.tick(host));
+            assertEquals(1, engine.size());
+            assertEquals(20, engine.get(0).progress());
+        }
+        assertEquals(20, host.ticked.size());
+        assertEquals(List.of(completed), host.consumed);
+        assertTrue(host.finished.isEmpty());
+        assertEquals(1, host.findCalls);
+
+        host.outputBlocked.clear();
+        assertFalse(engine.tick(host));
+        assertEquals(List.of(completed), host.finished);
+        assertEquals(20, host.ticked.size());
+        assertEquals(List.of(completed, replacement), host.consumed);
+        assertSame(replacement, engine.get(0).payload());
+        assertEquals(0, engine.get(0).progress());
+    }
+
+    @Test
+    void blockedCompletionKeepsItsSlotWhileOtherBatchesAdvanceAndFinish() {
+        var engine = newEngine();
+        var blocked = job("blocked", 1);
+        var other = job("other", 3);
+        var replacement = job("replacement", 5);
+        var host = new TestHost(2, blocked, other, replacement);
+        engine.tick(host);
+        host.outputBlocked.add(blocked);
+
+        for (int tick = 0; tick < 3; tick++) assertTrue(engine.tick(host));
+
+        assertEquals(List.of(other), host.finished);
+        assertSame(blocked, engine.get(0).payload());
+        assertEquals(1, engine.get(0).progress());
+        assertSame(replacement, engine.get(1).payload());
+        assertEquals(0, engine.get(1).progress());
+        assertEquals(1L, host.ticked.stream().filter(job -> job == blocked).count());
+    }
+
+    @Test
+    void eachCompletedBatchChecksTheSpaceLeftByPreviousCompletions() {
+        var engine = newEngine();
+        var first = job("first", 1);
+        var second = job("second", 1);
+        var host = new TestHost(2, first, second);
+        engine.tick(host);
+        host.onFinish = job -> host.outputBlocked.add(second);
+
+        assertTrue(engine.tick(host));
+        assertEquals(List.of(first), host.finished);
+        assertEquals(1, engine.size());
+        assertSame(second, engine.get(0).payload());
+
+        host.outputBlocked.clear();
+        host.onFinish = ignored -> {};
+        assertFalse(engine.tick(host));
+        assertEquals(List.of(first, second), host.finished);
+        assertTrue(engine.isEmpty());
+        assertEquals(2, host.ticked.size());
+    }
+
+    @Test
+    void failedCompletionCallbackDoesNotRemoveTheBatch() {
+        var engine = newEngine();
+        var job = job("job", 1);
+        var host = new TestHost(1, job);
+        engine.tick(host);
+        host.onFinish = ignored -> { throw new IllegalStateException("output unavailable"); };
+
+        assertThrows(IllegalStateException.class, () -> engine.tick(host));
+        assertEquals(1, engine.size());
+        assertEquals(1, engine.get(0).progress());
+        assertTrue(host.finished.isEmpty());
+
+        host.onFinish = ignored -> {};
+        assertFalse(engine.tick(host));
+        assertEquals(List.of(job), host.finished);
+        assertEquals(1, host.ticked.size());
+    }
+
+    @Test
+    void restoredMaximumProgressCannotOverflowOrDrawEnergyWhileOutputIsBlocked() {
+        var engine = newEngine();
+        var job = job("job", Integer.MAX_VALUE);
+        engine.restoreBatch(new TestBatch(job, Integer.MAX_VALUE, Integer.MAX_VALUE));
+        var host = new TestHost(1);
+        host.outputBlocked.add(job);
+
+        assertFalse(engine.tick(host));
+        assertEquals(Integer.MAX_VALUE, engine.get(0).progress());
+        assertTrue(host.ticked.isEmpty());
+        assertTrue(host.consumed.isEmpty());
     }
 
     @Test
@@ -353,9 +461,11 @@ class ConcurrentBatchEngineTest {
         final Queue<Job> candidates = new ArrayDeque<>();
         final Set<Job> rejected = Collections.newSetFromMap(new IdentityHashMap<>());
         final Set<Job> waiting = Collections.newSetFromMap(new IdentityHashMap<>());
+        final Set<Job> outputBlocked = Collections.newSetFromMap(new IdentityHashMap<>());
         final List<Job> consumeAttempts = new ArrayList<>();
         final List<Job> consumed = new ArrayList<>();
         final List<Job> finished = new ArrayList<>();
+        final List<Job> ticked = new ArrayList<>();
         final List<String> events = new ArrayList<>();
         Consumer<Job> onFinish = ignored -> {};
 
@@ -397,7 +507,13 @@ class ConcurrentBatchEngineTest {
         @Override
         public boolean tickInputs(Job payload) {
             events.add("tick:" + payload.id());
+            ticked.add(payload);
             return !waiting.contains(payload);
+        }
+
+        @Override
+        public boolean tryFinishOutputs(Job payload) {
+            return !outputBlocked.contains(payload) && BatchPolicy.super.tryFinishOutputs(payload);
         }
 
         @Override

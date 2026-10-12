@@ -99,7 +99,7 @@ final class NanochipModuleLinks {
 
     void refreshModulesFromStructure() {
         Level level = host.getLevel();
-        if (!(level instanceof ServerLevel) || !host.isFormed()) {
+        if (!(level instanceof ServerLevel) || !host.isFormed() || !host.isLiveHost()) {
             return;
         }
         // 使用完成匹配后的快照，避免与异步结构检查争读上下文。

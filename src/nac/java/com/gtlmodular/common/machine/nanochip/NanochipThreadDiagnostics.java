@@ -1,13 +1,12 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 
 import static com.gtlmodular.common.machine.nanochip.NanochipBatchAdmission.NO_PROBE;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FAN_OUT_SAME_RECIPE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FAN_OUT_MAX_PER_TICK;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FILL_RETRY_THROTTLE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.FILL_RETRY_INTERVAL;
-import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.PER_SLOT_PARALLEL_BOUND;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.IDLE_SEARCH_THROTTLE;
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.IDLE_SEARCH_INTERVAL;
 
@@ -37,6 +36,9 @@ final class NanochipThreadDiagnostics {
 
     private int candidateDiagBudget = CANDIDATE_DIAG_BUDGET;
 
+    // 日志可因到料恢复，但不能因此增加旧细读对匹配器的调用次数。
+    private int candidateProbeBudget = CANDIDATE_DIAG_BUDGET;
+
     private String candidateDiagLast;
 
     /** 累计开批数用于区分从未开工与开工后被清空两类故障。 */
@@ -64,15 +66,26 @@ final class NanochipThreadDiagnostics {
     }
 
     boolean canProbeCandidates() {
-        return candidateDiagBudget > 0;
+        return candidateProbeBudget > 0;
     }
 
-    void batchOpened() {
+    void batchOpened(GTRecipe recipe) {
         batchesOpenedTotal++;
+        logic.stallDiagnostics().opened();
+        logic.stallDiagnostics().candidate(recipe, "已真实扣料开批");
+    }
+
+    void runningWait(GTRecipe recipe, String reason) {
+        logic.stallDiagnostics().runningWait(recipe, reason);
     }
 
     void resetRunningCount() {
         diagLastRunning = -1;
+    }
+
+    void inputChanged() {
+        candidateDiagBudget = CANDIDATE_DIAG_BUDGET;
+        candidateDiagLast = null;
     }
 
     void resetCandidates() {
@@ -156,7 +169,7 @@ final class NanochipThreadDiagnostics {
         if (!IDLE_SEARCH_THROTTLE) {
             return "关闭（每 tick 都全量搜）";
         }
-        String fanOut = FAN_OUT_SAME_RECIPE
+        String fanOut = logic.fanOutSameRecipe()
                 ? "fan-out 每 tick 最多新开 " + FAN_OUT_MAX_PER_TICK + " 条"
                 : "fan-out 已关：每种配方最多占 1 条批次";
         return (candidates.wokenByInputChange ? "本 tick 被唤醒⇒立即全量搜" : "生效")
@@ -190,8 +203,10 @@ final class NanochipThreadDiagnostics {
         candidateDiagLast = line;
         candidateDiagCooldown = CANDIDATE_DIAG_INTERVAL;
         candidateDiagBudget--;
-        NanochipModContext.logger().info("[gtlmodular] NAC 独立线程候选诊断：{}（候选类型 [{}]；本行限频 "
-                + CANDIDATE_DIAG_INTERVAL + " tick、整局至多 " + CANDIDATE_DIAG_BUDGET + " 行）",
+        if (candidateProbeBudget > 0) candidateProbeBudget--;
+        NanochipModContext.logger().info("[gtlmodular] NAC 独立线程候选诊断 @{} {}：{}（候选类型 [{}]；本行限频 "
+                + CANDIDATE_DIAG_INTERVAL + " tick、每次物料变化后至多 " + CANDIDATE_DIAG_BUDGET + " 行）",
+                logic.machine().self().getLevel().dimension().location(), logic.machine().self().getPos(),
                 line, typesText());
     }
 
@@ -201,7 +216,7 @@ final class NanochipThreadDiagnostics {
         sb.append("；输入侧上限=").append(admission.fitSampleInputMax);
         sb.append("；上游首槽上限=").append(admission.fitUpstreamInputMax)
                 .append("；按槽上限=").append(admission.fitSlotInputMax)
-                .append("（开关=").append(PER_SLOT_PARALLEL_BOUND ? "开" : "关").append("）");
+                .append("（开关=").append(logic.perSlotParallelBound() ? "开" : "关").append("）");
         sb.append("（越界=").append(admission.fitSampleInputMaxOverBound ? "是" : "否")
                 .append("，安全上界=").append(NanochipParallelFit.MAX_PARALLEL_SEARCH_BOUND).append("）");
         sb.append("；二分=").append(admission.fitSampleMatchable);

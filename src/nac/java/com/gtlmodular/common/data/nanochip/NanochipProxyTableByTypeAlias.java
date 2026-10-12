@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.lookup.Branch;
@@ -64,6 +65,7 @@ public final class NanochipProxyTableByTypeAlias {
         try {
             install(server.getRecipeManager());
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipProxyTableByTypeAlias#onServerTick", t);
             if (claimFailureLog()) {
                 NanochipModContext.logger().warn("[gtlmodular] 主机表 byType 别名：安装过程异常（已忽略，不影响启动）：{}", t.toString());
             }
@@ -153,6 +155,7 @@ public final class NanochipProxyTableByTypeAlias {
                 return candidate;
             } catch (NoSuchFieldException ignored) {
             } catch (Throwable t) {
+                SwallowedErrors.report("NanochipProxyTableByTypeAlias#resolve-namedField", t);
                 if (claimFailureLog()) {
                     NanochipModContext.logger().warn("[gtlmodular] 主机表 byType 别名：试探字段 {} 时报错（已忽略）：{}", name, t.toString());
                 }
@@ -169,6 +172,7 @@ public final class NanochipProxyTableByTypeAlias {
                     return candidate;
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("NanochipProxyTableByTypeAlias#resolve-structuralScan", ignored);
             }
         }
         resolutionFailed = true;

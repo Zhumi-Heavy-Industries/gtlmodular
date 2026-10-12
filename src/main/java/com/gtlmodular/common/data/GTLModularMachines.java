@@ -2,6 +2,7 @@ package com.gtlmodular.common.data;
 
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.nanochip.NanochipRegistration;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.api.module.ModuleKind;
 import com.gtlmodular.common.machine.LazyPatternAssemblyPartMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
@@ -188,6 +189,7 @@ public final class GTLModularMachines {
                     new ResourceLocation("gtladditions", "block/casings/infinity_input_dual_hatch_casing"),
                     overlay);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("GTLModularMachines#superPatternRenderer", ignored);
             return new com.gregtechceu.gtceu.client.renderer.machine.OverlayTieredMachineRenderer(
                     SUPER_PATTERN_ASSEMBLY_TIER, overlay);
         }

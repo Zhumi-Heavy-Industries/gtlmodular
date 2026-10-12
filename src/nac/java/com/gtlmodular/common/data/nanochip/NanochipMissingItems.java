@@ -108,7 +108,7 @@ public final class NanochipMissingItems {
                 "NH itemCasing × Materials.Creon（gtladditions 材料）；自注册物品；"
                         + "⚠️ Creon 本体是 gtladditions 的 gtceu:creon，本物品只是「同名 casing」的自造件");
         addItem("CasingBlackDwarfMatter", 1914, "black_dwarf_mtter_item_casing",
-                "NH itemCasing × Materials.BlackDwarfMatter；★ 本包该材料的真实 id 是 gtceu:black_dwarf_mtter"
+                "NH itemCasing × Materials.BlackDwarfMatter；本包该材料的真实 id 是 gtceu:black_dwarf_mtter"
                         + "（GTCEu 侧拼写如此，langindex.json 实测）⇒ 物品 id 跟材料 id 对齐，写成 *_mtter_*");
         addItem("CasingEternity", 1915, "eternity_item_casing",
                 "NH itemCasing × Materials.Eternity；贴图 = NH materialicons/CUSTOM/eternity/casingSmall.png（含动画 mcmeta）");
@@ -119,11 +119,9 @@ public final class NanochipMissingItems {
         addItem("ChipYoctoPIC", 609, "yocto_pic_chip", "NH ItemList.Circuit_Chip_YPIC；贴图 = NH processedchipyoctopic.png");
         addItem("ChipPlanckPIC", 610, "planck_pic_chip", "NH ItemList.Circuit_Chip_PlPIC；贴图 = NH processedchipplanckpic.png");
         addItem("ChipLivingCrystal", 802, "living_crystal_chip",
-                "NH 真身 = ItemList.Circuit_Parts_Crystal_Chip_Wetware（湿件线路的活体晶体芯片；"
-                        + "依据 _gtnh/javap_nac/notes_recipes.md:342 + _census/冗余审查_2026-09-18.md §2.1 第 7 条）；"
-                        + "贴图 = NH gt.circuitcomponent/processed/processedchiplivingcrystal.png（+动画 mcmeta）"
-                        + "；★ 2026-09-18 修正：原注释误记成 Circuit_Parts_Chip_Bioware（那是 metaId 406，"
-                        + "本包已映射 kubejs:bioware_chip），贴图也误取了 processedlivingbiochip.png ⇒ 已纠正");
+                "NH 真身 = ItemList.Circuit_Parts_Crystal_Chip_Wetware（湿件线路的活体晶体芯片，"
+                        + "不是 metaId 406 的 Circuit_Parts_Chip_Bioware，后者本包已映射 kubejs:bioware_chip）；"
+                        + "贴图 = NH gt.circuitcomponent/processed/processedchiplivingcrystal.png（+动画 mcmeta）");
 
     }
 
@@ -133,18 +131,16 @@ public final class NanochipMissingItems {
             if (e.kind == Kind.ITEM) {
                 items++;
                 if (e.path().startsWith(CC_PREFIX)) {
-                    throw new IllegalStateException("P1 缺件物品层 id 与 CC 层撞车：" + e.targetId);
+                    throw new IllegalStateException("缺件物品 id 与 CC 物品撞车：" + e.targetId);
                 }
                 if (e.itemEntry == null) {
-                    throw new IllegalStateException("P1 缺件物品未注册：" + e.targetId);
+                    throw new IllegalStateException("缺件物品未注册：" + e.targetId);
                 }
             }
         }
         if (ALL.size() != 14 || items != 10) {
-            throw new IllegalStateException("P1 缺件表异常：应 14 行（10 物品 + 4 材料形态），实为 "
-                    + ALL.size() + " 行（" + items + " 物品）—— "
-                    + "2026-09-18 玩家裁决把 11 条改成引用包内真件、另把「特殊系列」4 件整组退役（见 addRows() javadoc），"
-                    + "要改口径请同步 _census/check_p1_missing_stage.js 与 check_dup_audit.js");
+            throw new IllegalStateException("缺件表异常：应 14 行（10 物品 + 4 材料形态），实为 "
+                    + ALL.size() + " 行（" + items + " 物品）");
         }
         NanochipModContext.logger().info("[gtlmodular] {}；全部 id 已登记进 NanochipMissingItems 查询表"
                 + "（材料形态见 NanochipMissingMaterials）", summary());
@@ -201,6 +197,6 @@ public final class NanochipMissingItems {
                 forms++;
             }
         }
-        return "P1 缺件物品层 " + items + " 件自注册 + " + forms + " 件材料形态（共 " + ALL.size() + " 条 CC 映射）";
+        return "缺件物品 " + items + " 件自注册 + " + forms + " 件材料形态（共 " + ALL.size() + " 条 CC 映射）";
     }
 }

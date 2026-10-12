@@ -2,6 +2,7 @@ package com.gtlmodular.common.command;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gtlmodular.common.data.nanochip.NanochipSelfCheck;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -47,17 +48,21 @@ public final class GTLModularCommands {
                             ctx.getSource().sendSuccess(() -> Component.literal(line), false);
                         }
                     } catch (Throwable t) {
+                        SwallowedErrors.report("GTLModularCommands#selfCheckCommand", t);
                         NanochipModContext.logger().warn("[gtlmodular] NAC 自检命令执行失败", t);
                         ctx.getSource().sendFailure(Component.literal("NAC 自检执行失败: " + t));
                     }
                     return 1;
-                }));
+                })
+                .then(Commands.literal("errors")
+                        .executes(ctx -> SwallowedErrorsCommand.execute(ctx.getSource()))));
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
         try {
             NanochipSelfCheck.runAndLog(event.getServer());
         } catch (Throwable t) {
+            SwallowedErrors.report("GTLModularCommands#onServerStarted", t);
             NanochipModContext.logger().warn("[gtlmodular] NAC 自检自动执行失败（不影响游戏）", t);
         }
     }

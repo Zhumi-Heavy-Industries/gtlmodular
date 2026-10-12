@@ -59,13 +59,8 @@ def configureArtifactCheck = { task ->
 tasks.register('checkMixins') {
     configureArtifactCheck(delegate)
     description = 'Check loaded mixin configs and required classes in each reobfuscated jar; no game launch.'
-    def allowFile = file('checks/mixin-unregistered-allowlist.txt')
-    inputs.file(allowFile)
     doLast {
-        def legacyAllow = allowFile.readLines('UTF-8')*.trim().findAll { it && !it.startsWith('#') } as Set
         checkProducts { product, jar, entries, problem ->
-            // 独立产物没有旧版未启用的兼容 mixin，不能继承其豁免。
-            def allow = product.id == 'gtlmodular' ? legacyAllow : [] as Set
             def toml = readText(jar, 'META-INF/mods.toml')
             def loaded = (toml =~ /(?m)^\s*config\s*=\s*"([^"]+)"/).collect { it[1] } as Set
             def manifest = (jar.manifest?.mainAttributes?.getValue('MixinConfigs') ?: '')
@@ -86,17 +81,14 @@ tasks.register('checkMixins') {
                     (cfg[side] ?: []).each { registered << "${cfg.package}.${it}".toString() }
                 }
             }
-            (entries.findAll { it.endsWith('.mixins.json') } - loaded - allow).each {
+            (entries.findAll { it.endsWith('.mixins.json') } - loaded).each {
                 problem("$it 缺少 mods.toml 登记")
             }
             def classes = entries.findAll { it.endsWith('.class') }.findAll {
                 annotations(jar, it).containsKey('Lorg/spongepowered/asm/mixin/Mixin;')
             }.collect { it.replace('/', '.').replaceFirst(/\.class$/, '') } as Set
             (registered - classes).each { problem("登记的 @Mixin 类缺失：$it") }
-            (classes - registered - allow).each { problem("@Mixin 类缺少加载登记：$it") }
-            (allow.findAll { it.startsWith('com.') } - (classes - registered)).each {
-                problem("$it 已登记或删除，应从历史 allowlist 移除")
-            }
+            (classes - registered).each { problem("@Mixin 类缺少加载登记：$it（把它加进 ${product.id}.mixins.json）") }
         }
         logger.lifecycle('双产物 mixin 静态检查通过：按各自 TOML、manifest 和实际 @Mixin 类核对；未启动游戏。')
     }

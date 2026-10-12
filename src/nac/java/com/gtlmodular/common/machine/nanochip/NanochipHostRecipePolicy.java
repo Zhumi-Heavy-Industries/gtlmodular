@@ -1,6 +1,6 @@
 package com.gtlmodular.common.machine.nanochip;
 
-import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
+import com.gtlmodular.common.machine.nanochip.display.NanochipModuleBonusSnapshot;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
@@ -25,9 +25,6 @@ final class NanochipHostRecipePolicy {
     private final NanochipAssemblyComplexMachine host;
     private final NanochipCalibration calibration;
     private final Supplier<GTRecipeType[]> baseRecipeTypes;
-
-    /** 限制重复模块的加成，避免直通档靠堆叠达到全流程档上限。 */
-    private static final int PARALLEL_STACK_CAP = 2;
 
     /** 换算表追加在末尾，使组装表的模式下标保持稳定。 */
     private GTRecipeType[] simpleModeRecipeTypes;
@@ -125,71 +122,25 @@ final class NanochipHostRecipePolicy {
         if (host.fullMode()) {
             return NAC_SATURATING_PARALLEL ? FULL_PARALLEL_CAP : LEGACY_CROSS_RECIPE_PARALLEL_CAP;
         }
-        long parallel = host.directParallelCap();
-        for (NanochipModuleSpec kind : com.gtlmodular.common.machine.nanochip.registration.NanochipModules.all()) {
-            int count = Math.min(PARALLEL_STACK_CAP, host.countModulesById(kind.id()));
-            for (int i = 0; i < count; i++) {
-                parallel = NanochipModulePowerDistribution.saturatingMul(parallel, (long) kind.parallelFactor());
-            }
-        }
-        return Math.max(1, NanochipAssemblyComplexMachine.saturatingToInt(parallel));
+        return NanochipModuleBonuses.directParallelLimit(host.directParallelCap(),
+                spec -> host.countModulesById(spec.id()));
+    }
+
+    NanochipModuleBonusSnapshot moduleBonusSnapshot() {
+        return NanochipModuleBonuses.capture(host, calibration).displaySnapshot(host);
+    }
+
+    private NanochipModuleBonuses.Multipliers moduleMultipliers(NanochipCalibration.Family family) {
+        return NanochipModuleBonuses.capture(host, calibration).multipliers(family);
     }
 
     double moduleEuMultiplier(NanochipCalibration.Family family) {
-        double mul = 1.0D;
-        for (IModularMachineModule<NanochipAssemblyComplexMachine, ?> m : host.getModules()) {
-            if (!(m instanceof NanochipModuleMachine module) || !module.isFormed()) {
-                continue;
-            }
-            NanochipModuleSpec kind = module.getModuleSpec();
-            if (!kind.appliesTo(family) || kind.euFactor() >= 1.0D) {
-                continue;
-            }
-            double factor = kind.euFactor();
-            if (kind.isWaterScaledOrganizer()) {
-                double strength = module.waterStrength();
-                if (strength <= 0.0D) {
-                    continue;
-                }
-                NanochipCalibration.Family waterFamily = kind.organizerFamily();
-                if (waterFamily != null && calibration.specialActive(waterFamily)) {
-                    strength *= 2.0D;
-                }
-                factor = Math.pow(factor, Math.min(4.0D, strength));
-            } else if (kind.features().board()) {
-                factor = factor * module.impurityEuMultiplier();
-            }
-            mul *= factor;
-        }
-        return Math.max(0.10D, Math.min(10.0D, mul));
+        return moduleMultipliers(family).eu();
     }
 
     /** 激光加成作用于蚀刻模块自身加工，不能在主机倍率里再计算一次。 */
     double moduleDurationMultiplier(NanochipCalibration.Family family) {
-        double mul = 1.0D;
-        for (IModularMachineModule<NanochipAssemblyComplexMachine, ?> m : host.getModules()) {
-            if (!(m instanceof NanochipModuleMachine module) || !module.isFormed()) {
-                continue;
-            }
-            NanochipModuleSpec kind = module.getModuleSpec();
-            if (!kind.appliesTo(family) || kind.durationFactor() >= 1.0D) {
-                continue;
-            }
-            double factor = kind.durationFactor();
-            if (kind.isWaterScaledOrganizer()) {
-                double strength = module.waterStrength();
-                if (strength <= 0.0D) {
-                    continue;
-                }
-                NanochipCalibration.Family waterFamily = kind.organizerFamily();
-                if (waterFamily != null && calibration.specialActive(waterFamily)) {
-                    strength *= 2.0D;
-                }
-                factor = Math.pow(factor, Math.min(4.0D, strength));
-            }
-            mul *= factor;
-        }
-        return Math.max(0.05D, mul);
+        return moduleMultipliers(family).duration();
     }
 
     GTRecipe buildRecipe(GTRecipe recipe) {
@@ -213,8 +164,9 @@ final class NanochipHostRecipePolicy {
 
         NanochipCalibration.Family family = NanochipAssemblyComplexMachine.familyOf(recipe);
 
-        double euMul = calibration.euMultiplier() * host.moduleEuMultiplier(family);
-        double durMul = calibration.durationMultiplier(family) * host.moduleDurationMultiplier(family);
+        NanochipModuleBonuses.Multipliers modules = moduleMultipliers(family);
+        double euMul = calibration.euMultiplier() * modules.eu();
+        double durMul = calibration.durationMultiplier(family) * modules.duration();
 
         long newEut = (long) Math.max(1.0D, Math.min((double) Long.MAX_VALUE, eut * euMul));
         int newDuration = (int) Math.max(floorTicks, Math.min(Integer.MAX_VALUE, Math.round(duration * durMul)));
@@ -234,8 +186,8 @@ final class NanochipHostRecipePolicy {
                         active == null ? 0 : calibration.tierOf(active),
                         overclocks, eut, newEut,
                         Math.max(1, copy.duration == 0 ? 0 : duration), newDuration, floorTicks,
-                        calibration.euMultiplier(), host.moduleEuMultiplier(family), euMul,
-                        calibration.durationMultiplier(family), host.moduleDurationMultiplier(family), durMul,
+                        calibration.euMultiplier(), modules.eu(), euMul,
+                        calibration.durationMultiplier(family), modules.duration(), durMul,
                         newDuration, newDuration / 20, newDuration % 20);
             }
         }

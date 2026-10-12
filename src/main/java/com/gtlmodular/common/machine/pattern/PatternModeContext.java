@@ -3,6 +3,7 @@ package com.gtlmodular.common.machine.pattern;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.Arrays;
@@ -225,6 +226,7 @@ public final class PatternModeContext {
             host.manualSlotTypes().put(slot, typeId);
             host.refreshManualAssignDisplay();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternModeContext#writeArchivedManualType", ignored);
             // 手动指定写入失败不影响已落地的样板。
         }
     }

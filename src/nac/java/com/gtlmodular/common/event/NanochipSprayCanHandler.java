@@ -6,7 +6,7 @@ import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipColor;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine;
-import net.minecraft.network.chat.Component;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -56,13 +56,10 @@ public final class NanochipSprayCanHandler {
         // 未染色状态不参与真空连接，溶剂必须清除颜色，不能当作白色染料。
         final NanochipColor chosen = picked;
         NanochipColor target = solvent ? null : chosen;
-        String what;
         if (machine instanceof NanochipVacuumHatchMachine hatch) {
             hatch.setColor(target);
-            what = "端口";
         } else if (machine instanceof NanochipPipeMachine pipe) {
             pipe.setColor(target, true);
-            what = "管道";
         } else {
             return;
         }
@@ -72,13 +69,7 @@ public final class NanochipSprayCanHandler {
 
         Player player = event.getEntity();
         if (player != null) {
-            player.displayClientMessage(Component.literal("[真空传送" + what + "] 颜色 → ")
-                    .append(solvent
-                            ? Component.literal(NanochipColor.UNPAINTED_NAME_ZH)
-                            .withStyle(style -> style.withColor(0xFFFFFF))
-                            : Component.literal(chosen.nameZh())
-                            .withStyle(style -> style.withColor(chosen.textColor()))),
-                    true);
+            player.displayClientMessage(NanochipLogisticsText.colorChanged(target), true);
         }
     }
 

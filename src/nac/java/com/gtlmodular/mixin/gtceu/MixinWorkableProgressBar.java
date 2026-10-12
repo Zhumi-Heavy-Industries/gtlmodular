@@ -2,11 +2,10 @@ package com.gtlmodular.mixin.gtceu;
 
 import com.gtlmodular.client.jade.NanochipJadeKeys;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.client.jade.NanochipJadeThreadRows;
-import net.minecraft.core.BlockPos;
+import com.gtlmodular.client.jade.NanochipJadeThreadData;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -51,6 +50,7 @@ public class MixinWorkableProgressBar {
             diagLog("[gtlmodular] Jade 显示：自绘形态 —— 已取消 GTCEu 原生单配方进度条，"
                     + "多条进度条由 NanochipThreadedJadeProvider 逐条线程画出（原生条已取消={}）", true);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MixinWorkableProgressBar#gtlmodular$hideSingleRecipeBar", ignored);
         }
     }
 
@@ -59,7 +59,8 @@ public class MixinWorkableProgressBar {
                                                  net.minecraft.world.entity.player.Player player,
                                                  snownee.jade.api.BlockAccessor accessor,
                                                  BlockEntity blockEntity,
-                                                 snownee.jade.api.config.IPluginConfig config) {
+                                                 snownee.jade.api.config.IPluginConfig config,
+                                                 CallbackInfo ci) {
         try {
             if (NanochipJadeThreadRows.OUR_OWN_BARS
                     || !NanochipJadeThreadRows.NATIVE_BAR_FOR_FIRST_THREAD
@@ -78,6 +79,7 @@ public class MixinWorkableProgressBar {
             diagLog("[gtlmodular] Jade 显示：回退形态 —— 原生条保留，其余线程的条已逐行追加在其下方"
                     + "（原生条是否已画={}）", nativeBarDrawn);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MixinWorkableProgressBar#gtlmodular$appendOtherThreadBars", ignored);
         }
     }
 
@@ -94,6 +96,7 @@ public class MixinWorkableProgressBar {
         try {
             NanochipModContext.logger().info(message, nativeBarDrawn);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MixinWorkableProgressBar#diagLog", ignored);
             // 日志失败不能改变已完成的取消或追加行为。
         }
     }
@@ -102,31 +105,8 @@ public class MixinWorkableProgressBar {
         return tag != null && (tag.contains(KEY_PROGRESS) || tag.contains(KEY_MAX_PROGRESS));
     }
 
-    /** serverData 可能晚于首帧提示到达，先用机器方块及产物命名空间判定以免首帧漏拦。 */
+    /** 服务端明确发布独立批次后才替换原生条，未接入模块及首帧保留上游显示。 */
     private static boolean isOurThreadedMachine(snownee.jade.api.BlockAccessor accessor) {
-        try {
-            if (!(accessor.getBlockEntity()
-                    instanceof com.gregtechceu.gtceu.api.blockentity.MetaMachineBlockEntity)) {
-                return false;
-            }
-        } catch (Throwable ignored) {
-            return false;
-        }
-        return isOwnBlock(accessor);
-    }
-
-    private static boolean isOwnBlock(snownee.jade.api.BlockAccessor accessor) {
-        try {
-            BlockPos pos = accessor.getPosition();
-            Level level = accessor.getLevel();
-            if (pos == null || level == null) {
-                return false;
-            }
-            ResourceLocation id = net.minecraft.core.registries.BuiltInRegistries.BLOCK
-                    .getKey(level.getBlockState(pos).getBlock());
-            return id != null && NanochipModContext.modId().equals(id.getNamespace());
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return NanochipJadeThreadData.isIndependentThreaded(accessor);
     }
 }

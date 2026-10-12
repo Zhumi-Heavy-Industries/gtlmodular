@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -28,6 +29,7 @@ public final class NanochipModulePreview {
                     try {
                         built = buildNac();
                     } catch (Throwable t) {
+                        SwallowedErrors.report("NanochipModulePreview#nacModules", t);
                         NanochipModContext.logger().debug("[gtlmodular] 模块预览: NAC 模块表构建失败，返回空表: {}", t.toString());
                         built = List.of();
                     }

@@ -5,6 +5,7 @@ import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.GTLModularMachines;
 import com.gtlmodular.common.data.nanochip.NanochipModulePreview;
 import com.gtlmodular.common.data.nanochip.ModulePreviewSupport;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.gtlcore.gtlcore.utils.datastructure.ModuleRenderInfo;
@@ -30,6 +31,7 @@ public final class ModulePreviewSlots {
         try {
             built = buildMoltenHost();
         } catch (Throwable t) {
+            SwallowedErrors.report("ModulePreviewSlots#moltenHostModules", t);
             GTLModular.LOGGER.debug("[gtlmodular] 模块预览: 地心枢纽模块表构建失败，返回空表: {}", t.toString());
             built = List.of();
         }

@@ -6,6 +6,7 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import net.minecraft.network.chat.Component;
 import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
 
 import java.util.Map;
@@ -62,7 +63,7 @@ final class NanochipBatchLifecycle {
         }
         // 只有扣料成功才登记附注，避免失败尝试留下预留或概率状态。
         batchRuntime.opened(recipe);
-        diagnostics.batchOpened();
+        diagnostics.batchOpened(recipe);
         return true;
     }
 
@@ -71,12 +72,14 @@ final class NanochipBatchLifecycle {
             return false;
         }
         if (!admission.conditionsOk(recipe, true)) {
+            diagnostics.runningWait(recipe, "运行条件未满足/异常；全局首个等待原因=" + admission.waitReason);
             return false;
         }
         GTRecipe.ActionResult match;
         try {
             match = recipe.matchTickRecipe(machine);
         } catch (RuntimeException e) {
+            diagnostics.runningWait(recipe, "tick 匹配异常：" + e.getClass().getSimpleName());
             NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：tick 匹配抛异常，这条原地等：{}", e.toString());
             return false;
         }
@@ -84,6 +87,7 @@ final class NanochipBatchLifecycle {
             if (admission.waitReason == null) {
                 admission.waitReason = NanochipBatchAdmission.reasonOf(match);
             }
+            diagnostics.runningWait(recipe, "tick 输入/输出匹配失败；全局首个等待原因=" + admission.waitReason);
             return false;
         }
         Map<RecipeCapability<?>, Object2IntMap<?>> caches = batchRuntime.cachesOf(recipe);
@@ -92,10 +96,15 @@ final class NanochipBatchLifecycle {
         return true;
     }
 
-    /** 校准和日志先读取尚未交给输出 handler 的配方，避免 handler 改写产出后漏记。概率缓存与预留保留到收尾结束，避免完成一条批次时影响其他批次。 */
-    void finishOutputs(GTRecipe recipe) {
+    /** 收尾钩子与校准只能在实际交付后执行一次，等待期间保留本批次的附注。 */
+    boolean tryFinishOutputs(GTRecipe recipe) {
         if (recipe == null) {
-            return;
+            return false;
+        }
+        if (!NanochipRecipeOutputs.tryOutput(machine, recipe)) {
+            admission.waitReason = Component.translatable(NanochipRecipeOutputs.OUTPUT_FULL);
+            diagnostics.runningWait(recipe, "输出已满，保留完成批次等待出料");
+            return false;
         }
         if (machine instanceof NanochipAssemblyComplexMachine nac) {
             nac.recordExternalProduction(recipe);
@@ -113,15 +122,7 @@ final class NanochipBatchLifecycle {
             NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：postWorking 抛异常（已忽略，不影响出料）：{}",
                     e.toString());
         }
-        if (RecipeRunnerHelper.matchRecipeOutput(machine, recipe)) {
-            if (!RecipeRunnerHelper.handleRecipeOutput(machine, recipe)) {
-                NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：出料未全部成交（出料口容量不足），"
-                        + "溢出部分与 GTCEu 基类行为一致地丢弃");
-            }
-        } else {
-            NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：出料口放不下这一条的产出，产出丢弃"
-                    + "（与 GTCEu 基类 onRecipeFinish 的行为一致）");
-        }
         batchRuntime.remove(recipe);
+        return true;
     }
 }

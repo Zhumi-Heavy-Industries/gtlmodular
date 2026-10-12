@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.nanochip.structure;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.block.ActiveBlock;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
@@ -160,6 +161,7 @@ public final class NanochipLoadRecovery {
             }
             this.loadPartsRecoveryNextTry = now + LOAD_PARTS_RECOVERY_RETRY_TICKS;
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipLoadRecovery#recoverLoadPartsIfNeeded", t);
             this.loadPartsRecoveryNextTry = now + LOAD_PARTS_RECOVERY_RETRY_TICKS;
             this.loadPartsInvalidateThrown++;
             boolean firstEver = this.loadPartsRecoveryThrowLastLog < 0L;
@@ -205,9 +207,7 @@ public final class NanochipLoadRecovery {
             worldData.addAsyncLogic(host);               // 失效后必须重入异步队列，否则不会再检查结构。
             this.invalidateStructurePending = true;
             NanochipModContext.logger().info("[gtlmodular] NAC 读档部件恢复：已让结构失效并交回上游重判 @{} "
-                            + "（已成形但零件表为空；累计失效={}，gameTime={}；"
-                            + "依据 _census/_jtmp/gtl_MBStateMixin_c.txt:202-237 与 "
-                            + "WeatherAnchorMachine.java:63-76）",
+                            + "（已成形但零件表为空；累计失效={}，gameTime={}）",
                     host.getPos(), this.loadPartsInvalidateCount, now);
             return true;
         }
@@ -231,8 +231,7 @@ public final class NanochipLoadRecovery {
                 continue;
             }
             NanochipModContext.logger().info("[gtlmodular] NAC 读档部件恢复：已补一次结构重判定 @{} "
-                            + "（已成形但零件表为空；触发格={}，gameTime={}，累计尝试={}；"
-                            + "依据 _census/NAC读档部件未连接_定位.md §⑥ A）",
+                            + "（已成形但零件表为空；触发格={}，gameTime={}，累计尝试={}）",
                     host.getPos(), pos, now, this.loadPartsRecoveryAttempts);
             state.onBlockStateChanged(pos, bs);
             return true;
@@ -277,8 +276,7 @@ public final class NanochipLoadRecovery {
                         + "窗口截止={}，上次尝试={}，已尝试={}，已失效={}，上次失效={}，连续无效={}，"
                         + "连续抛异常={}，"
                         + "本 tick 未能交出重判={}，gameTime={} —— 面板「结构部件尚未就绪」的判据是上游 "
-                        + "isRecipeLogicAvailable()（= isFormed && !hasError，不看零件表；"
-                        + "字节码见 _census/_javap_simple_workablemb.txt:475-487）；"
+                        + "isRecipeLogicAvailable()（= isFormed && !hasError，不看零件表）；"
                         + "显示等级只由 onStructureFormed 时按能源仓写下一次 ⇒ 部件没回来时那一行不可信",
                 host.getPos(), parts == null ? -1 : parts.size(), host.isFormed(), tier.getAsInt(),
                 hasError, errorName, cache, chunksLoaded,

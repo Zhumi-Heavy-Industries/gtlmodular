@@ -1,14 +1,14 @@
 package com.gtlmodular.client.jade;
 
 import com.gregtechceu.gtceu.utils.FormattingUtil;
+import com.gtlmodular.common.machine.display.ThreadDisplaySnapshot;
+import com.gtlmodular.common.machine.display.ThreadDisplayText;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.ui.BoxStyle;
 
-import java.util.Locale;
+import java.util.Objects;
 
 public final class NanochipJadeThreadRows {
 
@@ -60,59 +60,57 @@ public final class NanochipJadeThreadRows {
         if (tooltip == null || data == null) {
             return;
         }
-        int running = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-        if (running <= 0) {
-            return;
+        ThreadDisplaySnapshot snapshot = NanochipJadeThreadData.read(data);
+        int shown = 0;
+        if (nativeBarDrawn) {
+            for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
+                if (thread.label() != null && Objects.equals(thread.label(), snapshot.mirroredLabel())) {
+                    if (NATIVE_BAR_CAPTION) {
+                        ThreadDisplayText.lines(thread).forEach(tooltip::add);
+                    }
+                    shown++;
+                    break;
+                }
+            }
         }
-        ListTag list = data.getList(NanochipJadeKeys.KEY_THREAD_LIST, Tag.TAG_COMPOUND);
-        int mirrored = data.getInt(NanochipJadeKeys.KEY_MIRRORED_SLOT);
-        int cap = Math.max(1, NanochipJadeKeys.DISPLAY_LINES - (nativeBarDrawn ? 1 : 0));
-        if (nativeBarDrawn && NATIVE_BAR_CAPTION) {
-            tooltip.add(Component.translatable(LANG_NATIVE_HEAD, mirrored,
-                    FormattingUtil.formatNumbers(data.getLong(NanochipJadeKeys.KEY_MIRRORED_PARALLELS))));
-        }
-        int appended = 0;
-        int labelIndex = nativeBarDrawn ? 1 : 0;
-        for (int i = 0; i < list.size() && appended < cap; i++) {
-            CompoundTag entry = list.getCompound(i);
-            if (nativeBarDrawn && entry.getInt(NanochipJadeKeys.KEY_SLOT) == mirrored) {
+        for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
+            if (shown >= NanochipJadeKeys.DISPLAY_LINES) {
+                break;
+            }
+            if (nativeBarDrawn && thread.label() != null
+                    && Objects.equals(thread.label(), snapshot.mirroredLabel())) {
                 continue;
             }
-            appendThreadLabel(tooltip, labelIndex);
-            appendThreadBar(tooltip, entry);
-            appended++;
-            labelIndex++;
+            appendThreadBar(tooltip, thread);
+            shown++;
         }
-        int shown = appended + (nativeBarDrawn ? 1 : 0);
-        // 汇总取全部批次，不能把截断后的显示行数当作整机总量。
-        appendEquivalenceLine(tooltip, running,
-                data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS));
-        if (shown < running) {
-            tooltip.add(Component.translatable(LANG_MORE_UNLISTED, running - shown));
-        }
+        appendTail(tooltip, snapshot, shown);
     }
 
     public static void appendAllRows(ITooltip tooltip, CompoundTag data) {
-        if (tooltip == null || data == null) {
-            return;
+        if (tooltip != null && data != null) {
+            appendAllRows(tooltip, NanochipJadeThreadData.read(data));
         }
-        int running = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-        if (running <= 0) {
-            return;
-        }
-        ListTag list = data.getList(NanochipJadeKeys.KEY_THREAD_LIST, Tag.TAG_COMPOUND);
+    }
+
+    static void appendAllRows(ITooltip tooltip, ThreadDisplaySnapshot snapshot) {
         int shown = 0;
-        for (int i = 0; i < list.size() && shown < NanochipJadeKeys.DISPLAY_LINES; i++) {
-            CompoundTag entry = list.getCompound(i);
-            // 标签使用列表下标以保持连续，稳定编号仍供原生条归属判定使用。
-            appendThreadLabel(tooltip, i);
-            appendThreadBar(tooltip, entry);
+        for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
+            if (shown >= NanochipJadeKeys.DISPLAY_LINES) {
+                break;
+            }
+            appendThreadBar(tooltip, thread);
             shown++;
         }
-        appendEquivalenceLine(tooltip, running,
-                data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS));
-        if (shown < running) {
-            tooltip.add(Component.translatable(LANG_MORE_UNLISTED, running - shown));
+        appendTail(tooltip, snapshot, shown);
+    }
+
+    private static void appendTail(ITooltip tooltip, ThreadDisplaySnapshot snapshot, int shown) {
+        if (snapshot.running() != null && snapshot.totalRuns() != null) {
+            appendEquivalenceLine(tooltip, snapshot.running(), snapshot.totalRuns());
+        }
+        if (snapshot.running() != null && shown < snapshot.running()) {
+            tooltip.add(ThreadDisplayText.more(snapshot.running() - shown));
         }
     }
 
@@ -135,47 +133,24 @@ public final class NanochipJadeThreadRows {
                 FormattingUtil.formatNumbers(totalRuns)));
     }
 
-    /** 条内只放时间以控制提示框宽度；不足一秒时保留小数，避免整条显示为零秒。 */
     public static void appendThreadBar(ITooltip tooltip, CompoundTag entry) {
-        if (tooltip == null || entry == null) {
+        if (tooltip != null && entry != null) {
+            appendThreadBar(tooltip, NanochipJadeThreadData.readThread(entry));
+        }
+    }
+
+    private static void appendThreadBar(ITooltip tooltip, ThreadDisplaySnapshot.Thread thread) {
+        ThreadDisplayText.lines(thread).forEach(tooltip::add);
+        if (thread.duration() == null || thread.progress() == null || thread.duration() <= 0) {
             return;
         }
-        int slot = entry.getInt(NanochipJadeKeys.KEY_SLOT);
-        int progress = entry.getInt(NanochipJadeKeys.KEY_PROGRESS);
-        int duration = entry.getInt(NanochipJadeKeys.KEY_DURATION);
-        long parallels = entry.getLong(NanochipJadeKeys.KEY_PARALLELS);
-        float ratio = duration <= 0 ? 0.0F : (float) progress / (float) duration;
-        if (ratio < 0.0F) {
-            ratio = 0.0F;
-        } else if (ratio > 1.0F) {
-            ratio = 1.0F;
-        }
-        String progressText;
-        String durationText;
-        if (duration > TICKS_PER_SECOND) {
-            progressText = Integer.toString(progress / TICKS_PER_SECOND);
-            durationText = Integer.toString(duration / TICKS_PER_SECOND);
-        } else {
-            int divisor = duration > 0 ? duration : 1;
-            progressText = String.format(Locale.ROOT, "%.1f", progress / (double) TICKS_PER_SECOND);
-            durationText = String.format(Locale.ROOT, "%.1f", divisor / (double) TICKS_PER_SECOND);
-        }
-        Component barText = OVERLAY_TEXT
-                ? Component.translatable(LANG_BAR, progressText, durationText)
-                : Component.translatable(LANG_BAR_SHORT, slot);
-        tooltip.add(tooltip.getElementHelper().progress(
-                ratio,
-                barText,
-                tooltip.getElementHelper().progressStyle()
-                        .color(BAR_ARGB)
-                        .textColor(TEXT_ARGB),
-                BoxStyle.DEFAULT,
-                true));
-        appendThreadParallel(tooltip, parallels);
-        if (!OVERLAY_TEXT) {
-            tooltip.append(Component.translatable("gtlmodular.nanochip.threads.line",
-                    slot, progress, duration, FormattingUtil.formatNumbers(parallels)));
-        }
+        float ratio = Math.max(0.0F, Math.min(1.0F, (float) thread.progress() / thread.duration()));
+        Component barText = OVERLAY_TEXT ? ThreadDisplayText.progressTime(thread)
+                : Component.translatable(LANG_BAR_SHORT, ThreadDisplayText.number(thread.label()));
+        int color = thread.state() == ThreadDisplaySnapshot.State.WORKING ? BAR_ARGB : 0xFFD9A441;
+        tooltip.add(tooltip.getElementHelper().progress(ratio, barText,
+                tooltip.getElementHelper().progressStyle().color(color).textColor(TEXT_ARGB),
+                BoxStyle.DEFAULT, true));
     }
 
     /** 缺失或无效并行数据时省略该行，避免显示虚构的并行数。 */
@@ -187,4 +162,3 @@ public final class NanochipJadeThreadRows {
                 FormattingUtil.formatNumbers(parallels)));
     }
 }
-

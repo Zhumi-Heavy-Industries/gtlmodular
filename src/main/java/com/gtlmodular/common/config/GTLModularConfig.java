@@ -1,5 +1,6 @@
 package com.gtlmodular.common.config;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraftforge.common.ForgeConfigSpec;
 
 import java.util.List;
@@ -84,10 +85,11 @@ public final class GTLModularConfig {
                             "gtlcore 的样板仓是「库存驱动」：只要仓里某个槽位的物料能凑出某配方的输入，",
                             "该配方就可能绑到这个槽上执行 —— 同一配方类型下存在重复输入时就会串",
                             "（例：A 橡木→白桦木、B 橡木+白桦木→钻石，单独一单 A 也可能被拿去跑 B）。",
-                            "开：扣料时校验「候选配方是否属于该槽自己的样板」（类型一致 + 输入覆盖 + 主产物命中，跳过编程电路），",
+                            "开：扣料时校验「候选配方是否属于该槽自己的样板」（类型一致 + 输入覆盖 + 主产物命中；样板与配方都带编程电路时电路也须一致），",
                             "不匹配的槽直接拒绝参与该配方，把匹配从「库存驱动」纠正成「样板槽身份驱动」。",
                             "关：退回原生行为（只剩配方模式锁挡跨模式串）。",
-                            "闸门一律 fail-open：样板解析不出来 / 出任何异常都放行，绝不会让机器卡死。")
+                            "槽类型与候选配方类型不同、又核实不到代理关系时一律拒绝（宁可等料也不串表）；",
+                            "样板解析不出来 / 出异常时仍放行，交给上游原有判据。")
                     .define("patternAssembly.identityGate", true);
 
     private static final ForgeConfigSpec.BooleanValue AUTO_RECIPE_MODE_SWITCH =
@@ -112,6 +114,7 @@ public final class GTLModularConfig {
                     .define("patternAssembly.debugPatternLogs", false);
 
     public static final NanochipConfig NANOCHIP = new NanochipConfig(BUILDER, "gtlmodular");
+    public static final OtherMachineThreadsConfig OTHER_MACHINE_THREADS = new OtherMachineThreadsConfig(BUILDER);
 
     // 保留直接访问电网配置的旧入口，并与共享组件使用同一个 ConfigValue。
     public static final ForgeConfigSpec.BooleanValue NANOCHIP_GRID_POWER = NANOCHIP.gridPowerValue();
@@ -139,6 +142,7 @@ public final class GTLModularConfig {
         try {
             return SPACE_ORE_RECIPE_MIRROR.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("GTLModularConfig#isSpaceOreRecipeMirrorEnabled", ignored);
             return SPACE_ORE_RECIPE_MIRROR.getDefault();
         }
     }
@@ -219,6 +223,7 @@ public final class GTLModularConfig {
         try {
             return PATTERN_DEBUG_LOGS.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("GTLModularConfig#isPatternDebugLogsEnabled", ignored);
             return PATTERN_DEBUG_LOGS.getDefault();
         }
     }
@@ -227,6 +232,7 @@ public final class GTLModularConfig {
         try {
             return PATTERN_IDENTITY_GATE.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("GTLModularConfig#isPatternIdentityGateEnabled", ignored);
             return PATTERN_IDENTITY_GATE.getDefault();
         }
     }
@@ -235,6 +241,7 @@ public final class GTLModularConfig {
         try {
             return AUTO_RECIPE_MODE_SWITCH.get();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("GTLModularConfig#isAutoRecipeModeSwitchEnabled", ignored);
             return AUTO_RECIPE_MODE_SWITCH.getDefault();
         }
     }

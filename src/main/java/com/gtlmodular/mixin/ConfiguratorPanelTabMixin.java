@@ -2,9 +2,7 @@ package com.gtlmodular.mixin;
 
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.lowdragmc.lowdraglib.gui.animation.Animation;
-import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.utils.Position;
-import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -15,24 +13,23 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 public abstract class ConfiguratorPanelTabMixin {
 
     @Shadow
-    private WidgetGroup view;
+    protected int dragOffsetY;
 
-    @Redirect(method = "expand",
+    @Redirect(method = "expand()V",
             at = @At(value = "INVOKE",
                     target = "Lcom/lowdragmc/lowdraglib/gui/animation/Animation;position(Lcom/lowdragmc/lowdraglib/utils/Position;)"
                             + "Lcom/lowdragmc/lowdraglib/gui/animation/Animation;"),
-            remap = false)
+            require = 1, remap = false)
     private Animation gtlmodular$clampExpandedPageIntoView(Animation animation, Position target) {
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            if (view != null && mc != null && mc.getWindow() != null) {
-                int screenHeight = mc.getWindow().getGuiScaledHeight();
-                int top = view.getParentPosition().y + target.y;
-                if (top < 0) {
-                    return animation.position(new Position(target.x, target.y - top));
-                }
+        ConfiguratorPanel.Tab tab = (ConfiguratorPanel.Tab) (Object) this;
+        if (tab.isRemote()) {
+            // 动画移动的是 Tab；view 的父坐标还带着展开前的页签偏移。
+            int top = tab.getParentPosition().y + target.y;
+            if (top < 0) {
+                // 尺寸更新会按拖动偏移重新定位，必须保留同一修正量以免回跳。
+                dragOffsetY -= top;
+                return animation.position(new Position(target.x, target.y - top));
             }
-        } catch (Throwable ignored) {
         }
         return animation.position(target);
     }

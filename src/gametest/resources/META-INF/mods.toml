@@ -1,0 +1,8 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+[[mods]]
+modId="gtl_gametest"
+version="1"
+displayName="GTL GameTest"
+description='''Isolated server tests for either NAC product.'''

@@ -1,0 +1,16 @@
+ServerEvents.recipes(event => {
+    const product = Java.loadClass('com.gtlmodular.common.data.nanochip.NanochipModContext').modId()
+    // 独特原料避免精简环境中的其他配方抢走测试输入。
+    event.recipes[product].nanochip_assembly_matrix('gtl_gametest:nac_processing')
+        .itemInputs('kubejs:nac_processing_input')
+        .inputFluids(Fluid.of('minecraft:water', 1000))
+        .itemOutputs('kubejs:nac_processing_output')
+        .outputFluids(Fluid.of('minecraft:lava', 1000))
+        .EUt(32).duration(20)
+    event.recipes[product].nanochip_assembly_matrix('gtl_gametest:nac_processing_oversized')
+        .itemInputs('kubejs:nac_processing_oversized_input')
+        .inputFluids(Fluid.of('minecraft:water', 1000))
+        .itemOutputs('kubejs:nac_processing_output')
+        .outputFluids(Fluid.of('minecraft:lava', 1000))
+        .EUt(32).duration(40)
+})

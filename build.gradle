@@ -141,11 +141,21 @@ repositories {
     mavenCentral()
 }
 
+// 可选调度器的兼容只属于完整版，不能沿 compileOnly 的继承链进入 NAC。
+configurations { independentCompat }
+sourceSets.main.compileClasspath += configurations.independentCompat
+
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.20.1-47.3.7'
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.16'
 
     // 使用整合包实际的本地依赖，避免远程版本与社区魔改实现不一致。
     implementation fg.deobf(fileTree(dir: 'libs', include: ['*.jar']))
+    independentCompat files('libs/runtime/GTL-Enhancedcore-3.3.3.jar')
+    // 使用整包已随 gtlcore 提供的 MixinExtras，仅供完整版搬运钩子编译。
+    def mixinExtrasForge = zipTree('libs/gtlcore-1.2.3.2-fix4.jar').matching {
+        include 'META-INF/jars/mixinextras-forge-*.jar'
+    }.singleFile
+    independentCompat files(zipTree(mixinExtrasForge).matching { include 'META-INF/jars/MixinExtras-*.jar' })
 
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -156,25 +166,25 @@ tasks.named('test', Test) {
     useJUnitPlatform()
 }
 
-// 防止历史流水账注释回流；计数也包含既有运行字符串中的日期，不能为降低基线而改动字符串。
+// 日期、版本和修改经过属于提交信息，写进代码会变成没人维护的流水账。
 tasks.register('checkDatedComments') {
     group = 'verification'
-    description = 'Lines containing dates in main/nac/nacmod Java sources may only decrease (see checks/dated-comment-baseline.txt).'
+    description = 'Fails if any main/nac/nacmod Java line contains a date.'
     def sources = files(sourceSets.main.allJava, sourceSets.nac.allJava, sourceSets.nacmod.allJava)
-    def baselineFile = file('checks/dated-comment-baseline.txt')
     inputs.files(sources)
-    inputs.file(baselineFile)
     doLast {
         def date = ~/20\d\d-\d\d-\d\d/
-        int count = 0
-        sources.each { f -> f.eachLine('UTF-8') { if (it =~ date) count++ } }
-        int baseline = baselineFile.text.trim() as int
-        if (count > baseline) {
-            throw new GradleException("代码里带日期的行从 $baseline 增加到了 $count。" +
-                    '日期、版本、修改经过写进 git 提交信息；玩家可见的变化写进 CHANGELOG.md。')
+        def hits = []
+        sources.each { f ->
+            int n = 0
+            f.eachLine('UTF-8') { line ->
+                n++
+                if (line =~ date) hits << "${project.relativePath(f)}:$n"
+            }
         }
-        if (count < baseline) {
-            logger.lifecycle("带日期的行减少到 $count（基线 $baseline）。把 checks/dated-comment-baseline.txt 改成 $count，锁住这次的减少。")
+        if (hits) {
+            throw new GradleException('代码里不能写日期，以下行要改：\n  ' + hits.join('\n  ') +
+                    '\n日期、版本、修改经过写进 git 提交信息；玩家能感知的变化写进 CHANGELOG.md；代码注释只写"为什么"。')
         }
     }
 }
@@ -220,7 +230,7 @@ tasks.named('processResources') {
             // 元数据使用 Unicode 转义，避免构建脚本读取编码影响显示名和作者名。
             mod_name: 'GTL\u66f4\u591a\u5b9e\u7528\u8bbe\u5907',
             mod_license: 'MIT', mod_version: project.version,
-            mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c', forge_version: '47.3.7',
+            mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c\u3001amireux', forge_version: '47.3.7',
     ]
     inputs.properties replaceProperties
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
@@ -284,3 +294,6 @@ tasks.named('build') {
 }
 
 apply from: 'checks/product-invariants.gradle'
+apply from: 'checks/swallowed-errors.gradle'
+
+apply from: 'gradle/gametest.gradle'

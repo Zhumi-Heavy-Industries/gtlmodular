@@ -391,6 +391,14 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         return Integer.MAX_VALUE;
     }
 
+    /** 只收集成功扣料的原配方；setup 时的合批已有来源，不能再按整批重复捕获。 */
+    public void captureCalibrationProduction(GTRecipe recipe) {
+        if (spec.features().assembly() && recipe != null && !NanochipCalibrationBatch.hasSources(recipe)
+                && getRecipeLogic() instanceof ModuleRecipeLogic logic) {
+            logic.calibrationBatch.capture(recipe);
+        }
+    }
+
     /** 组装矩阵的产出也需计入主机校准，因此完成回调统一交主机记账。 */
     private static final class ModuleRecipeLogic extends MultipleRecipesLogic {
         private final NanochipModuleMachine module;
@@ -409,10 +417,6 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
 
         @Override
         protected double getTotalEuOfRecipe(GTRecipe recipe) {
-            // 上游只在扣料成功后调用此钩子，候选探测不能提前增加校准。
-            if (module.spec.features().assembly()) {
-                calibrationBatch.capture(recipe);
-            }
             return module.processing.calibratedTotalEu(recipe, super.getTotalEuOfRecipe(recipe));
         }
 
@@ -425,6 +429,11 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
 
         @Override
         public void onRecipeFinish() {
+            GTRecipe completed = getLastRecipe();
+            if (completed != null && !NanochipRecipeOutputs.tryOutput(machine, completed)) {
+                setWaiting(Component.translatable(NanochipRecipeOutputs.OUTPUT_FULL));
+                return;
+            }
             NanochipAssemblyComplexMachine host = module.getHost();
             if (host != null && module.hostConnected()
                     && module.spec.features().assembly()) {
@@ -432,21 +441,23 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             }
             module.onRecipeProduced();
             calibrationBatch.clear();
+            // 父类仍负责暂停和下一批调度，但本批已交付，不能再次输出。
+            GTRecipe settled = completed == null ? null : completed.copy();
+            if (settled != null) settled.outputs.clear();
+            lastRecipe = settled;
             super.onRecipeFinish();
+            if (lastRecipe == settled) lastRecipe = completed;
         }
 
-        /** 有限能源仓须先备足整批，中央供电还必须在此完成真实扣电后才允许推进。 */
+        /** 中央供电绕过本机能源仓，必须在此真实扣电后才允许推进。 */
         @Override
         public void handleRecipeWorking() {
             GTRecipe recipe = getLastRecipe();
-            if (recipe == null) {
-                super.handleRecipeWorking();
+            if (recipe != null && !module.modulePower.localBatchReady(recipe, getProgress(), this::waitForEnergy)) {
                 return;
             }
-            if (!module.drawingFromHost()) {
-                if (module.modulePower.localRecipePrecharged(recipe, getProgress(), this::waitForEnergy)) {
-                    super.handleRecipeWorking();
-                }
+            if (recipe == null || !module.drawingFromHost()) {
+                super.handleRecipeWorking();
                 return;
             }
             if (!module.modulePower.drawRecipeEnergy(recipe, this::getProgress, this::waitForEnergy)) {

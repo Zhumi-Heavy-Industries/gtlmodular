@@ -1,5 +1,6 @@
 package com.gtlmodular.common.data.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
@@ -27,6 +28,7 @@ public final class ModulePreviewSupport {
             MachineDefinition def = GTRegistries.MACHINES.get(new ResourceLocation(namespace, path));
             return def instanceof MultiblockMachineDefinition multi ? multi : null;
         } catch (Throwable t) {
+            SwallowedErrors.report("ModulePreviewSupport#lookupDefinition", t);
             
             return null;
         }

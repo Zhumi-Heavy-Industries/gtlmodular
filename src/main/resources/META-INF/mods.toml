@@ -77,7 +77,7 @@ config="gtlmodular.mixins.json"
     ordering="AFTER"
     side="BOTH"
 
-# JEI（客户端）：只用一个插件把「NAC 孤儿封装件」在 JEI 里隐藏（2026-09-19 队长口径）。
+# JEI（客户端）：只用一个插件把「NAC 孤儿封装件」在 JEI 里隐藏。
 # 可选依赖：没装 JEI 时插件不会被加载，模组功能完全不受影响（side=CLIENT ⇒ 只影响客户端）。
 [[dependencies.${mod_id}]]
     modId="jei"

@@ -4,6 +4,7 @@ import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipAssemblyComplexMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipSplitterRules;
 import com.gtlmodular.common.machine.nanochip.NanochipColor;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.gui.GuiTextures;
 import com.gregtechceu.gtceu.api.gui.widget.IntInputWidget;
@@ -40,7 +41,8 @@ public final class NanochipSplitterPanel implements IFancyConfigurator {
 
     @Override
     public List<Component> getTooltips() {
-        return List.of(Component.translatable("gtlmodular.nanochip.splitter.title"));
+        return List.of(Component.translatable("gtlmodular.nanochip.splitter.title"),
+                NanochipLogisticsText.deprecated());
     }
 
     private static IGuiTexture swatch(NanochipColor color, boolean selected) {
@@ -56,7 +58,8 @@ public final class NanochipSplitterPanel implements IFancyConfigurator {
         WidgetGroup group = new WidgetGroup(0, 0, w, 18 + NanochipSplitterRules.MAX_RULES * rowH + 24);
         group.addWidget(new LabelWidget(4, 2,
                 Component.translatable("gtlmodular.nanochip.splitter.header",
-                        NanochipSplitterRules.MAX_RULES).getString()));
+                        NanochipSplitterRules.MAX_RULES).getString())
+                .setHoverTooltips(NanochipLogisticsText.deprecated()));
 
         List<NanochipSplitterRules.Rule> rules = machine.splitterRules().rules();
         for (int i = 0; i < rules.size(); i++) {

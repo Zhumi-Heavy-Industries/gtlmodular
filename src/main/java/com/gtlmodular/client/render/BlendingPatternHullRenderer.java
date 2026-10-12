@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gtladd.gtladditions.client.render.machine.OverlayHullMachineRenderer;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MoltenPatternAssemblyPartMachine;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.block.model.BakedQuad;
@@ -46,6 +47,7 @@ public class BlendingPatternHullRenderer extends OverlayHullMachineRenderer {
                                     quads.addAll(own.getQuads(null, side, rand));
                                 }
                             } catch (Throwable ignored) {
+                                SwallowedErrors.report("BlendingPatternHullRenderer#renderMachine-frontOverlay", ignored);
                                 // 覆盖层失败时仍保留已取得的机壳模型。
                             }
                         }
@@ -54,6 +56,7 @@ public class BlendingPatternHullRenderer extends OverlayHullMachineRenderer {
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("BlendingPatternHullRenderer#renderMachine-casing", ignored);
         }
         super.renderMachine(quads, definition, machine, frontFacing, side, rand, facing, modelState);
     }
@@ -68,9 +71,11 @@ public class BlendingPatternHullRenderer extends OverlayHullMachineRenderer {
                         return st;
                     }
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("BlendingPatternHullRenderer#resolveCasingState-partAppearance", ignored);
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("BlendingPatternHullRenderer#resolveCasingState-controllers", ignored);
         }
         return null;
     }

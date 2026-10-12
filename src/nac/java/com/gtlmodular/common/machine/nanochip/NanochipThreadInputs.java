@@ -1,26 +1,13 @@
 package com.gtlmodular.common.machine.nanochip;
 
-import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
-import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
-import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
-import com.gregtechceu.gtceu.api.recipe.content.Content;
-import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
-import com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.InputNeed;
-import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
-import it.unimi.dsi.fastutil.objects.Object2LongMap;
-import it.unimi.dsi.fastutil.objects.Object2LongMaps;
+import com.gtlmodular.common.machine.nanochip.display.NanochipInputSnapshot;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
-import org.gtlcore.gtlcore.api.capability.IMERecipeHandler;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.MEPatternRecipeHandlePart;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic.INPUT_WIRING_REBUILD_GATED;
@@ -29,6 +16,7 @@ final class NanochipThreadInputs {
 
     private final IRecipeLogicMachine machine;
     private final NanochipConcurrentBatches batches;
+    private final NanochipInputDiagnostics inputDiagnostics;
 
     int diagHasProxies = -1;
 
@@ -60,12 +48,7 @@ final class NanochipThreadInputs {
 
     private String inputWiringStopReason;
 
-    /** 诊断只读有限槽位，避免样板仓的大量槽位把观测本身变成性能负担。 */
-    private static final int INPUT_FACE_SCAN_LIMIT = 64;
-
     static final long NO_SLOT_BOUND = -1L;
-
-    private static final int PER_SLOT_SCAN_LIMIT = 256;
 
     private static final int INPUT_WIRING_REFRESH_INTERVAL = 100;
 
@@ -77,233 +60,28 @@ final class NanochipThreadInputs {
     NanochipThreadInputs(IRecipeLogicMachine machine, NanochipConcurrentBatches batches) {
         this.machine = machine;
         this.batches = batches;
+        this.inputDiagnostics = new NanochipInputDiagnostics(machine);
     }
 
     String inputFaceText() {
-        StringBuilder sb = new StringBuilder(96);
-        try {
-            if (!(machine instanceof IRecipeCapabilityMachine capabilityMachine)) {
-                return "（不是 gtlcore 能力机器）";
-            }
-            List<MEPatternRecipeHandlePart> parts = capabilityMachine.getMEPatternRecipeHandleParts();
-            if (parts == null || parts.isEmpty()) {
-                return "（没有样板仓接线）";
-            }
-            int scannedSlots = 0;
-            int stockSlots = 0;
-            long firstSlotAmount = 0L;
-            long allSlotsAmount = 0L;
-            for (int p = 0; p < parts.size(); p++) {
-                IMERecipeHandler<?, ?>[] handlers = parts.get(p).getMERecipeHandlers();
-                if (handlers == null) {
-                    continue;
-                }
-                for (IMERecipeHandler<?, ?> handler : handlers) {
-                    int[] active = handler.getActiveSlots();
-                    if (active == null) {
-                        continue;
-                    }
-                    for (int s = 0; s < active.length && scannedSlots < INPUT_FACE_SCAN_LIMIT; s++, scannedSlots++) {
-                        long amount = stackMapAmount(handler.getSingleSlotStackMap(active[s]));
-                        if (amount <= 0L) {
-                            continue;
-                        }
-                        stockSlots++;
-                        allSlotsAmount = allSlotsAmount > Long.MAX_VALUE - amount
-                                ? Long.MAX_VALUE : allSlotsAmount + amount;
-                        if (firstSlotAmount <= 0L) {
-                            firstSlotAmount = amount;
-                        }
-                    }
-                }
-            }
-            sb.append("参与槽=").append(scannedSlots)
-                    .append(scannedSlots >= INPUT_FACE_SCAN_LIMIT ? "+（扫到上限，未扫完）" : "")
-                    .append("；有货槽=").append(stockSlots)
-                    .append("；首可用槽可得量=").append(firstSlotAmount)
-                    .append("；全槽汇总可得量=").append(allSlotsAmount);
-        } catch (Throwable e) {
-            sb.append("（读取失败：").append(e.getClass().getSimpleName()).append("）");
-        }
-        return sb.toString();
+        // 日志只读已有样本，不能为每次线程变化再扫一轮库存。
+        return inputDiagnostics.cachedDescription();
     }
 
-    private static long stackMapAmount(it.unimi.dsi.fastutil.objects.Object2LongMap<?> map) {
-        if (map == null || map.isEmpty()) {
-            return 0L;
-        }
-        long total = 0L;
-        for (long amount : map.values()) {
-            if (amount > 0L) {
-                total = total > Long.MAX_VALUE - amount ? Long.MAX_VALUE : total + amount;
-            }
-        }
-        return total;
-    }
-
-    /** MEPatternRecipeHandlePart#handleRecipe 使用单个槽完成输入，容量上界只能取单槽最大值，不能跨槽求和。 */
     long perSlotInputBound(GTRecipe recipe) {
-        try {
-            if (recipe == null || !(machine instanceof IRecipeCapabilityMachine capabilityMachine)) {
-                return NO_SLOT_BOUND;
-            }
-            List<InputNeed<ItemStack>> itemNeeds = itemNeedsOf(recipe);
-            List<InputNeed<FluidStack>> fluidNeeds = fluidNeedsOf(recipe);
-            if (itemNeeds == null || fluidNeeds == null) {
-                return NO_SLOT_BOUND;
-            }
-            if (itemNeeds.isEmpty() && fluidNeeds.isEmpty()) {
-                return NO_SLOT_BOUND;
-            }
-            List<MEPatternRecipeHandlePart> parts = capabilityMachine.getMEPatternRecipeHandleParts();
-            if (parts == null || parts.isEmpty()) {
-                return NO_SLOT_BOUND;
-            }
-            long best = 0L;
-            int scanned = 0;
-            for (MEPatternRecipeHandlePart part : parts) {
-                IMERecipeHandler<?, ?>[] handlers = part.getMERecipeHandlers();
-                if (handlers == null) {
-                    continue;
-                }
-                int[] active = activeSlotsOf(handlers);
-                if (active == null) {
-                    continue;
-                }
-                for (int slot : active) {
-                    if (scanned >= PER_SLOT_SCAN_LIMIT) {
-                        // 达到扫描上限时只采用已扫描的容量，避免未读库存虚增并行。
-                        return best;
-                    }
-                    scanned++;
-                    long capacity = slotCraftCapacityAcrossSides(itemNeeds, fluidNeeds, handlers, slot);
-                    if (capacity > best) {
-                        best = capacity;
-                    }
-                }
-            }
-            return best;
-        } catch (Throwable e) {
-            return NO_SLOT_BOUND;
-        }
+        return inputDiagnostics.probeBound(recipe);
     }
 
-    /** 物品与流体由同一槽完成，必须按相同下标取两侧容量的较小值。 */
-    private long slotCraftCapacityAcrossSides(List<InputNeed<ItemStack>> itemNeeds,
-                                              List<InputNeed<FluidStack>> fluidNeeds,
-                                              IMERecipeHandler<?, ?>[] handlers, int slot) {
-        long best = Long.MAX_VALUE;
-        boolean measured = false;
-        for (IMERecipeHandler<?, ?> handler : handlers) {
-            if (handler == null) {
-                continue;
-            }
-            RecipeCapability<?> cap = handler.getCapability();
-            if (cap == ItemRecipeCapability.CAP) {
-                if (itemNeeds.isEmpty()) {
-                    continue;
-                }
-                best = Math.min(best, slotCraftCapacity(itemNeeds, handler.getSingleSlotStackMap(slot)));
-                measured = true;
-            } else if (cap == FluidRecipeCapability.CAP) {
-                if (fluidNeeds.isEmpty()) {
-                    continue;
-                }
-                best = Math.min(best, slotCraftCapacity(fluidNeeds, handler.getSingleSlotStackMap(slot)));
-                measured = true;
-            }
-        }
-        return measured && best != Long.MAX_VALUE ? Math.max(0L, best) : 0L;
+    void observeDiagnosticRecipe(GTRecipe recipe) {
+        inputDiagnostics.observe(recipe);
     }
 
-    @SuppressWarnings("unchecked")
-    private static <T> long slotCraftCapacity(List<InputNeed<T>> needs, Object2LongMap<?> stock) {
-        if (needs == null || needs.isEmpty() || stock == null || stock.isEmpty()) {
-            return 0L;
-        }
-        long capacity = Long.MAX_VALUE;
-        for (InputNeed<T> need : needs) {
-            long available = 0L;
-            for (Object2LongMap.Entry<?> entry : Object2LongMaps.fastIterable(stock)) {
-                long amount = entry.getLongValue();
-                if (amount > available && need.test.test((T) entry.getKey())) {
-                    available = amount;   // 同一需求只取一个匹配库存条目的最大量，不能把替代物品合并当成一份可消费库存。
-                }
-            }
-            if (available < need.perCraft) {
-                return 0L;
-            }
-            capacity = Math.min(capacity, available / need.perCraft);
-        }
-        return capacity == Long.MAX_VALUE ? 0L : capacity;
+    NanochipInputSnapshot.Sample diagnosticSample() {
+        return inputDiagnostics.sample();
     }
 
-    /** 同一 ME 样板仓各 handler 的活跃槽集合一致，取一份即可避免重复遍历。 */
-    private static int[] activeSlotsOf(IMERecipeHandler<?, ?>[] handlers) {
-        for (IMERecipeHandler<?, ?> handler : handlers) {
-            if (handler == null) {
-                continue;
-            }
-            int[] active = handler.getActiveSlots();
-            if (active != null) {
-                return active;
-            }
-        }
-        return null;
-    }
-
-    private static List<InputNeed<ItemStack>> itemNeedsOf(GTRecipe recipe) {
-        List<InputNeed<ItemStack>> needs = new ArrayList<>(2);
-        List<Content> contents = recipe.getInputContents(ItemRecipeCapability.CAP);
-        if (contents == null || contents.isEmpty()) {
-            return needs;
-        }
-        for (Content content : contents) {
-            if (content == null || content.chance <= 0) {
-                continue;
-            }
-            Ingredient ingredient = ItemRecipeCapability.CAP.of(content.content);
-            if (ingredient == null) {
-                return null;
-            }
-            long perCraft;
-            if (ingredient instanceof org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient longIngredient) {
-                perCraft = longIngredient.getActualAmount();
-            } else if (ingredient instanceof SizedIngredient sized) {
-                perCraft = sized.getAmount();
-            } else {
-                perCraft = 1L;
-            }
-            if (perCraft <= 0L) {
-                return null;
-            }
-            needs.add(new InputNeed<>(ingredient, perCraft));
-        }
-        return needs;
-    }
-
-    /** 流体谓词使用 LDLib FluidStack，库存键必须采用相同类型才能匹配。 */
-    private static List<InputNeed<FluidStack>> fluidNeedsOf(GTRecipe recipe) {
-        List<InputNeed<FluidStack>> needs = new ArrayList<>(2);
-        List<Content> contents = recipe.getInputContents(FluidRecipeCapability.CAP);
-        if (contents == null || contents.isEmpty()) {
-            return needs;
-        }
-        for (Content content : contents) {
-            if (content == null || content.chance <= 0) {
-                continue;
-            }
-            FluidIngredient fluid = FluidRecipeCapability.CAP.of(content.content);
-            if (fluid == null) {
-                return null;
-            }
-            long perCraft = fluid.getAmount();
-            if (perCraft <= 0L) {
-                return null;
-            }
-            needs.add(new InputNeed<>(fluid, perCraft));
-        }
-        return needs;
+    void clearDiagnostic() {
+        inputDiagnostics.clear();
     }
 
     void refreshInputWiringIfStale() {

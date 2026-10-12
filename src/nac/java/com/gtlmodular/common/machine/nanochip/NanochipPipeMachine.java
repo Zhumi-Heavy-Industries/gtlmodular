@@ -1,12 +1,13 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.nanochip.vacuum.NanochipPipeConnections;
+import com.gtlmodular.common.machine.nanochip.display.NanochipLogisticsText;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.core.Direction;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -95,6 +96,7 @@ public class NanochipPipeMachine extends MetaMachine {
             NanochipColor c = color();
             super.setPaintingColor(c == null ? 0xFFFFFFFF : c.paintArgb());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("NanochipPipeMachine#syncPaintingColor", ignored);
         }
     }
 
@@ -114,11 +116,7 @@ public class NanochipPipeMachine extends MetaMachine {
             NanochipColor next = current == null ? NanochipColor.WHITE : current.next();
             setColor(next, true);
             if (player != null) {
-                player.displayClientMessage(
-                        Component.literal("[真空传送管道] 颜色 → ")
-                                .append(Component.literal(next.nameZh())
-                                        .withStyle(style -> style.withColor(next.textColor()))),
-                        true);
+                player.displayClientMessage(NanochipLogisticsText.colorChanged(next), true);
             }
         }
         return InteractionResult.sidedSuccess(level != null && level.isClientSide);

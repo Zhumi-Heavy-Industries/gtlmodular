@@ -2,6 +2,7 @@ package com.gtlmodular.common.machine;
 
 import appeng.api.inventories.InternalInventory;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.lowdragmc.lowdraglib.misc.ItemStackTransfer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -26,6 +27,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
         try {
             return machine.getPatternInventory();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("VanillaPatternArchiveTarget#inventory", ignored);
             return null;
         }
     }
@@ -34,6 +36,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
         try {
             return machine.getTerminalPatternInventory();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("VanillaPatternArchiveTarget#terminalInventory", ignored);
             return null;
         }
     }
@@ -70,6 +73,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
         try {
             slots = inventory.getSlots();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("VanillaPatternArchiveTarget#highestUsedSlot.slotCount", ignored);
             return -1;
         }
         for (int i = slots - 1; i >= 0; i--) {
@@ -79,6 +83,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
                     return i;
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("VanillaPatternArchiveTarget#highestUsedSlot.readSlot", ignored);
             }
         }
         return -1;
@@ -130,6 +135,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
             BlockPos pos = machine.getPos();
             payload.pos = pos == null ? 0L : pos.asLong();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("VanillaPatternArchiveTarget#buildArchive.position", ignored);
         }
 
         ItemStackTransfer inventory = inventory();
@@ -144,6 +150,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
             try {
                 stack = inventory.getStackInSlot(i);
             } catch (Throwable failure) {
+                SwallowedErrors.report("VanillaPatternArchiveTarget#buildArchive.readSlot", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：读原版样板总成第 {} 槽失败（跳过该槽）pos={} 原因={}",
                         i + 1, pos(), failure.toString());
                 continue;
@@ -164,6 +171,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
             net.minecraft.world.level.Level level = machine.getLevel();
             return level == null ? "" : level.dimension().location().toString();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("VanillaPatternArchiveTarget#dimensionId", ignored);
             return "";
         }
     }
@@ -233,6 +241,7 @@ public final class VanillaPatternArchiveTarget implements PatternArchiveTarget {
                 }
                 terminal.setItemDirect(i, ItemStack.EMPTY);
             } catch (Throwable failure) {
+                SwallowedErrors.report("VanillaPatternArchiveTarget#clearAll", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 样板仓归档：清空原版样板总成第 {} 槽失败（该槽保持原样）pos={} 原因={}",
                         i + 1, pos(), failure.toString());
             }

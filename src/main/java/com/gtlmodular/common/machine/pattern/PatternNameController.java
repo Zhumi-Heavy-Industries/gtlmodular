@@ -2,6 +2,7 @@ package com.gtlmodular.common.machine.pattern;
 
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
+import com.gtlmodular.common.diag.SwallowedErrors;
 
 import java.util.List;
 import java.util.Map;
@@ -40,9 +41,10 @@ public final class PatternNameController {
     public void syncCustomNameToMode(int modeIndexHint) {
         List<GTRecipeType> types = host.availableRecipeTypes();
         String current = host.customName();
+        boolean upstreamPlaceholder = PatternModeNaming.isUpstreamPlaceholderName(current);
         // 空名和上游占位名不代表玩家选择，不能因此锁住自动命名。
         if (observedName != null && current != null && !current.isEmpty()
-                && !current.equals(observedName) && !PatternModeNaming.isUpstreamPlaceholderName(current)) {
+                && !current.equals(observedName) && !upstreamPlaceholder) {
             host.setLockedName(current);
             if (appliedModeKey != null) {
                 host.modeNames().put(appliedModeKey, current);
@@ -79,7 +81,9 @@ public final class PatternNameController {
             return;
         }
         if (!host.lockedName().isEmpty()) {
-            if (current == null || current.isEmpty()) {
+            // 上游占位名也不能遮住已保存的玩家名；同值不重写，保留玩家主动使用占位串的选择。
+            if ((current == null || current.isEmpty() || upstreamPlaceholder)
+                    && !host.lockedName().equals(current)) {
                 host.setCustomName(host.lockedName());
                 observedName = host.lockedName();
             } else {
@@ -90,7 +94,9 @@ public final class PatternNameController {
         }
         String target = host.modeNames().get(key);
         if (target == null || target.isEmpty()) {
-            if (!bound && current != null && !current.isEmpty() && !movedToAnotherController) {
+            // 上游可能先于总成 tick 写入占位名，它不能阻止首次生成模式名。
+            if (!bound && current != null && !current.isEmpty() && !upstreamPlaceholder
+                    && !movedToAnotherController) {
                 observedName = current;
                 appliedModeKey = key;
                 return;
@@ -194,6 +200,7 @@ public final class PatternNameController {
             }
             host.setCustomName(name);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("PatternNameController#writeArchivedName", ignored);
             // 改名失败不影响样板。
         }
     }

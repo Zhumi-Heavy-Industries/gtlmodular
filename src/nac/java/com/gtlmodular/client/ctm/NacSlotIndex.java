@@ -1,6 +1,7 @@
 package com.gtlmodular.client.ctm;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.block.IMachineBlock;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
@@ -61,6 +62,7 @@ public final class NacSlotIndex {
             }
             return false;
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacSlotIndex#isNacSlot", failure);
             // 缺少数据时保持原外观，不能猜成 NAC 仓位或让异常中断区块渲染。
             warnFailure(failure);
             return false;
@@ -91,6 +93,7 @@ public final class NacSlotIndex {
             }
             return out;
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacSlotIndex#publishedCache", failure);
             warnFailure(failure);
             return List.of();
         }
@@ -131,6 +134,7 @@ public final class NacSlotIndex {
             }
             return hits;
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacSlotIndex#seedNearby", failure);
             warnFailure(failure);
             return 0;
         }

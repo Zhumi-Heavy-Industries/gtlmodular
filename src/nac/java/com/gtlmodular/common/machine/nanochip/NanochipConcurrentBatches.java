@@ -78,6 +78,11 @@ public final class NanochipConcurrentBatches {
         boolean tickInputs(GTRecipe recipe);
 
         void finishOutputs(GTRecipe recipe);
+
+        default boolean tryFinishOutputs(GTRecipe recipe) {
+            finishOutputs(recipe);
+            return true;
+        }
     }
 
     /** 保留原键以读取已有批次存档；旧档缺键时按空表恢复，不补扣物料。 */
@@ -174,6 +179,11 @@ public final class NanochipConcurrentBatches {
         @Override
         public void finishOutputs(GTRecipe recipe) {
             host.finishOutputs(recipe);
+        }
+
+        @Override
+        public boolean tryFinishOutputs(GTRecipe recipe) {
+            return host.tryFinishOutputs(recipe);
         }
     }
 

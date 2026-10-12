@@ -1,6 +1,7 @@
 package com.gtlmodular.client.jei;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.client.config.NanochipConfigRefresh;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
@@ -87,6 +88,7 @@ public final class GTLModularJeiPlugin implements IModPlugin {
             NanochipModContext.logger().info("[gtlmodular] JEI：已把 {} 条配方登记进主机分类（{}）",
                     recipes.size(), NanochipRecipeTypes.ASSEMBLY_COMPLEX.registryName);
         } catch (Throwable t) {
+            SwallowedErrors.report("GTLModularJeiPlugin#registerAssemblyComplexRecipes", t);
             // 单个兼容插件的失败不能中断其他 JEI 分类注册。
             NanochipModContext.logger().warn("[gtlmodular] JEI：登记主机分类配方失败（忽略）：{}", t.toString());
         }
@@ -150,6 +152,7 @@ public final class GTLModularJeiPlugin implements IModPlugin {
                 }
                 changed++;
             } catch (Throwable t) {
+                SwallowedErrors.report("GTLModularJeiPlugin#apply", t);
                 NanochipModContext.logger().warn("[gtlmodular] JEI 隐藏清单处理失败：{}（{}）", id, t.toString());
             }
         }
@@ -189,6 +192,7 @@ public final class GTLModularJeiPlugin implements IModPlugin {
                 }
             }
         } catch (Throwable t) {
+            SwallowedErrors.report("GTLModularJeiPlugin#readList", t);
             NanochipModContext.logger().warn("[gtlmodular] 读取 JEI 隐藏清单失败（跳过隐藏）：{}", t.toString());
             return new ArrayList<>();
         }

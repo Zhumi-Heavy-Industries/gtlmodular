@@ -2,6 +2,7 @@ package com.gtlmodular.common.data.nanochip;
 
 import com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate;
 import com.gtlmodular.common.config.NanochipConfig;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
 
@@ -52,6 +53,7 @@ public final class NanochipModContext {
             throw new IllegalStateException("NAC context does not match owning mod file " + earlyModId);
         }
         current = context;
+        SwallowedErrors.bind(context.modId, context.logger);
     }
 
     private static NanochipModContext current() {

@@ -1,13 +1,12 @@
 package com.gtlmodular.client.jade;
 
-import com.gregtechceu.gtceu.utils.FormattingUtil;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic;
+import com.gtlmodular.common.diag.SwallowedErrors;
+import com.gtlmodular.common.machine.display.ThreadDisplaySnapshot;
+import com.gtlmodular.common.machine.display.ThreadDisplayText;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -20,9 +19,6 @@ import snownee.jade.api.ui.IElementHelper;
 
 import static com.gtlmodular.client.jade.NanochipThreadedJadeProvider.KEY_CALIB_DUR_MUL;
 import static com.gtlmodular.client.jade.NanochipThreadedJadeProvider.KEY_CALIB_EU_MUL;
-import static com.gtlmodular.client.jade.NanochipThreadedJadeProvider.KEY_DISTINCT_RECIPES;
-import static com.gtlmodular.client.jade.NanochipThreadedJadeProvider.KEY_OUTPUT_COUNT;
-import static com.gtlmodular.client.jade.NanochipThreadedJadeProvider.KEY_OUTPUT_ID;
 
 final class NanochipJadeDisplay {
 
@@ -38,61 +34,6 @@ final class NanochipJadeDisplay {
 
     private static final String GTCEU_DIVIDER_TEXT = "=========================";
 
-    private static void filterUpstreamLines(ITooltip tooltip) {
-        int size = tooltip.size();
-        if (size <= 0) {
-            return;
-        }
-        java.util.List<snownee.jade.api.ui.IElement> kept = new java.util.ArrayList<>(size);
-        boolean dropped = false;
-        for (int i = 0; i < size; i++) {
-
-            java.util.List<snownee.jade.api.ui.IElement> row =
-                    tooltip.get(i, snownee.jade.api.ui.IElement.Align.LEFT);
-            if (row == null || row.isEmpty()) {
-                continue;
-            }
-            StringBuilder joined = new StringBuilder();
-            for (snownee.jade.api.ui.IElement part : row) {
-                try {
-                    String m = part == null ? null : part.getMessage();
-                    if (m != null) {
-                        joined.append(m);
-                    }
-                } catch (RuntimeException ignored) {
-
-                }
-            }
-            if (isUpstreamParallelLine(joined.toString())) {
-                dropped = true;
-                continue;
-            }
-            kept.addAll(row);
-        }
-        if (!dropped) {
-            return;
-        }
-        tooltip.clear();
-
-        tooltip.add(kept);
-    }
-
-    private static boolean isUpstreamParallelLine(String message) {
-        if (message.isEmpty()) {
-            return false;
-        }
-
-        if ((message.startsWith("同时处理至多") && message.endsWith("个配方"))
-                || (message.startsWith("Simultaneously processes up to") && message.endsWith("recipes"))) {
-            return true;
-        }
-
-        if (message.startsWith("拥有") && message.endsWith("个跨配方线程")) {
-            return true;
-        }
-        return message.contains("cross-recipe thread") || message.contains("cross recipe thread");
-    }
-
     // 仅追加自己的行，重建 tooltip 会破坏其他 provider 的图标与布局。
     static void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
         try {
@@ -100,34 +41,30 @@ final class NanochipJadeDisplay {
                 return;
             }
             CompoundTag data = accessor.getServerData();
-            if (data == null || !data.contains(NanochipJadeKeys.KEY_THREAD_LIMIT)) {
+            if (!NanochipJadeThreadData.isIndependentThreaded(accessor)) {
                 return;
             }
 
-            int limit = data.getInt(NanochipJadeKeys.KEY_THREAD_LIMIT);
-            int running = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-            tooltip.add(Component.translatable(NanochipThreadedRecipeLogic.LANG_THREADS, limit, running));
-
-            appendDistinctRecipes(tooltip, data);
-            if (running <= 0) {
-
+            ThreadDisplaySnapshot snapshot = NanochipJadeThreadData.read(data);
+            ThreadDisplayText.summary(snapshot).forEach(tooltip::add);
+            appendDistinctRecipes(tooltip, snapshot);
+            if (snapshot.running() != null && snapshot.running() <= 0) {
                 appendCalibrationReduction(tooltip, data);
                 return;
             }
-            tooltip.add(Component.translatable(NanochipThreadedRecipeLogic.LANG_THREADS_RUNS,
-                    FormattingUtil.formatNumbers(data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS))));
 
             if (NanochipJadeThreadRows.OUR_OWN_BARS
                     || !NanochipJadeThreadRows.NATIVE_BAR_FOR_FIRST_THREAD) {
 
                 appendGtceuDivider(tooltip);
-                NanochipJadeThreadRows.appendAllRows(tooltip, data);
+                NanochipJadeThreadRows.appendAllRows(tooltip, snapshot);
             }
 
-            appendThreadOutputs(tooltip, data);
+            appendThreadOutputs(tooltip, snapshot);
 
             appendCalibrationReduction(tooltip, data);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipJadeDisplay#appendTooltip", t);
 
             NanochipModContext.logger().debug("[gtlmodular] NAC Jade 线程状态显示失败（本次跳过）：{}", t.toString());
         }
@@ -145,68 +82,51 @@ final class NanochipJadeDisplay {
                 percentOfReduction(euMul), percentOfReduction(durMul)));
     }
 
-    private static void appendDistinctRecipes(ITooltip tooltip, CompoundTag data) {
-
-        if (!data.contains(KEY_DISTINCT_RECIPES)) {
+    private static void appendDistinctRecipes(ITooltip tooltip, ThreadDisplaySnapshot snapshot) {
+        if (snapshot.distinctRecipes() == null) {
             return;
         }
-        int threads = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-        int distinct = data.getInt(KEY_DISTINCT_RECIPES);
-        tooltip.add(Component.translatable(LANG_DISTINCT_RECIPES, threads, distinct));
+        tooltip.add(Component.translatable(LANG_DISTINCT_RECIPES,
+                ThreadDisplayText.number(snapshot.running()), ThreadDisplayText.number(snapshot.distinctRecipes())));
     }
 
     private static void appendGtceuDivider(ITooltip tooltip) {
         tooltip.add(Component.literal(GTCEU_DIVIDER_TEXT));
     }
 
-    private static void appendThreadOutputs(ITooltip tooltip, CompoundTag data) {
-
-        if (!data.contains(NanochipJadeKeys.KEY_THREAD_LIST)) {
+    private static void appendThreadOutputs(ITooltip tooltip, ThreadDisplaySnapshot snapshot) {
+        if (snapshot.threads().isEmpty()) {
             return;
         }
-        int running = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-        if (running <= 0) {
-            return;
-        }
-        ListTag list = data.getList(NanochipJadeKeys.KEY_THREAD_LIST, Tag.TAG_COMPOUND);
-
-        if (list.size() <= 0) {
-            return;
-        }
-
         appendGtceuDivider(tooltip);
         tooltip.add(Component.translatable(LANG_OUTPUTS_HEADER));
         int listed = 0;
-        for (int i = 0; i < list.size() && listed < NanochipJadeKeys.OUTPUT_LINES; i++) {
-            CompoundTag entry = list.getCompound(i);
-
-            String outputId = entry.getString(KEY_OUTPUT_ID);
-            long count = entry.getLong(KEY_OUTPUT_COUNT);
-            if (outputId.isEmpty() || count <= 0L) {
-                tooltip.add(Component.translatable(LANG_OUTPUTS_NONE, i));
+        for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
+            if (listed >= NanochipJadeKeys.OUTPUT_LINES) {
+                break;
+            }
+            String outputId = thread.outputId();
+            Long count = thread.outputCount();
+            Component label = ThreadDisplayText.number(thread.label());
+            if (outputId == null) {
+                tooltip.add(Component.translatable(LANG_OUTPUTS_NONE, label));
             } else {
-
                 IElement icon = itemIconOf(tooltip, outputId);
                 if (icon != null) {
                     tooltip.add(icon);
                 }
-
-                Component line = Component.translatable(LANG_OUTPUTS_LINE, i,
-                        FormattingUtil.formatNumbers(count),
-                        displayNameOf(outputId));
+                Component line = Component.translatable(LANG_OUTPUTS_LINE, label,
+                        ThreadDisplayText.number(count), displayNameOf(outputId));
                 if (icon != null) {
-
                     tooltip.append(line);
                 } else {
-
                     tooltip.add(line);
                 }
             }
             listed++;
         }
-
-        if (listed < running) {
-            tooltip.add(Component.translatable(NanochipJadeThreadRows.LANG_MORE_UNLISTED, running - listed));
+        if (snapshot.running() != null && listed < snapshot.running()) {
+            tooltip.add(ThreadDisplayText.more(snapshot.running() - listed));
         }
     }
 
@@ -234,6 +154,7 @@ final class NanochipJadeDisplay {
             IElementHelper helper = tooltip.getElementHelper();
             return helper == null ? null : helper.item(stack);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipJadeDisplay#itemIconOf", t);
 
             return null;
         }
@@ -268,6 +189,7 @@ final class NanochipJadeDisplay {
             ItemStack stack = new ItemStack(item);
             return stack.isEmpty() ? null : stack.getDescriptionId();
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipJadeDisplay#descriptionIdOfRegistryName", t);
             return null;
         }
     }

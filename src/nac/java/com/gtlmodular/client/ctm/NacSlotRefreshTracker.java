@@ -1,6 +1,7 @@
 package com.gtlmodular.client.ctm;
 
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -77,6 +78,7 @@ public final class NacSlotRefreshTracker {
                 report(published, dirtied, now);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("NacSlotRefreshTracker#onClientTick", failure);
             warnFailure(failure);
         }
     }

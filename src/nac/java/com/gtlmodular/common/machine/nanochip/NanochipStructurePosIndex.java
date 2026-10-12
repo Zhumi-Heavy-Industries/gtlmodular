@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gtlmodular.common.data.nanochip.NanochipComplexPattern;
@@ -94,11 +95,11 @@ public final class NanochipStructurePosIndex {
                 long[] built = Arrays.copyOf(all, uniq);
                 relativeCells = built;
                 NanochipModContext.logger().info("[gtlmodular] NAC 结构位置缓存已建立：CHECK 格 {} × {} 朝向元素 "
-                                + "⇒ 去重后 {} 项（约 {} KB，全模组一份；查表 = 每台主机一次二分）。"
-                                + "依据：_census/结构位置缓存与移除失效_实施记录.md",
+                                + "⇒ 去重后 {} 项（约 {} KB，全模组一份；查表 = 每台主机一次二分）。",
                         count, NanochipExactPrecheck.ELEMENTS, uniq, built.length * 8L / 1024L);
                 return built;
             } catch (Throwable t) {
+                SwallowedErrors.report("NanochipStructurePosIndex#cells", t);
                 buildFailed = true;
                 NanochipModContext.logger().warn("[gtlmodular] NAC 结构位置缓存建表失败 ⇒ 本功能放弃"
                         + "（结构移除通知回到上游原有行为，不影响任何成形/失效判定）", t);
@@ -130,6 +131,7 @@ public final class NanochipStructurePosIndex {
             hosts.put(packed, new HostEntry(packed, pos.getX(), pos.getY(), pos.getZ(), host));
             purgeDead(hosts);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipStructurePosIndex#register", t);
             NanochipModContext.logger().debug("[gtlmodular] NAC 结构位置登记失败（本功能对该台不可用，"
                     + "结构判定不受任何影响）：{}", t.toString());
         }
@@ -160,6 +162,7 @@ public final class NanochipStructurePosIndex {
             }
             hosts.remove(packed, entry);                 // 按键和值一起删除，避免并发情况下误删同坐标的新条目。
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipStructurePosIndex#unregister", t);
             NanochipModContext.logger().debug("[gtlmodular] NAC 结构位置注销失败（最坏只留一个空壳，"
                     + "使用前还有三道存活校验兜底）：{}", t.toString());
         }
@@ -173,6 +176,7 @@ public final class NanochipStructurePosIndex {
         try {
             HOSTS.remove(dim);
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipStructurePosIndex#forgetDimension", t);
             NanochipModContext.logger().debug("[gtlmodular] NAC 结构位置维度清理失败（弱引用兜底，无对象泄漏）：{}",
                     t.toString());
         }
@@ -257,6 +261,7 @@ public final class NanochipStructurePosIndex {
                 host.noteCachedBlockRemoved(brokenPos);
             }
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipStructurePosIndex#noteBlockRemoved", t);
             NanochipModContext.logger().debug("[gtlmodular] NAC 结构位置查表异常（已忽略，结构判定不受影响）：{}",
                     t.toString());
         }
@@ -277,6 +282,7 @@ public final class NanochipStructurePosIndex {
             }
             return true;
         } catch (Throwable t) {
+            SwallowedErrors.report("NanochipStructurePosIndex#structureChunksLoaded", t);
             return false;
         }
     }

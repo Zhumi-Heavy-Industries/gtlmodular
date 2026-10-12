@@ -20,6 +20,7 @@ import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.integration.ae2.gui.widget.AETextInputButtonWidget;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.pattern.PatternArchiveSnapshots;
 import com.gtlmodular.common.machine.pattern.PatternAutoSwitch;
 import com.gtlmodular.common.machine.pattern.PatternClientSyncRefresh;
@@ -31,6 +32,7 @@ import com.gtlmodular.common.machine.pattern.PatternNameController;
 import com.gtlmodular.common.machine.pattern.PatternRecipeMatching;
 import com.gtlmodular.common.machine.pattern.PatternRecipeTypeSearch;
 import com.gtlmodular.common.machine.pattern.PatternRewriteCache;
+import com.gtlmodular.common.machine.pattern.PatternStaleSlotCache;
 import com.gtlmodular.common.machine.pattern.PatternProviderRefresh;
 import com.gtlmodular.common.machine.pattern.PatternStacks;
 import com.gtlmodular.common.machine.pattern.ui.PatternConfiguratorWidgets;
@@ -352,20 +354,26 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             net.minecraft.world.item.ItemStack[] saved = new net.minecraft.world.item.ItemStack[cap];
             for (int i = 0; i < cap; i++) {
                 try { saved[i] = inventory.getStackInSlot(i).copy(); }
-                catch (Throwable ignored) { saved[i] = net.minecraft.world.item.ItemStack.EMPTY; }
+                catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#restoreFullCapacity.backupSlot", ignored);
+                    saved[i] = net.minecraft.world.item.ItemStack.EMPTY;
+                }
             }
             inventory.setSize(maxPatternCount);
             int restored = 0;
             for (int i = 0; i < saved.length; i++) {
                 if (saved[i] != null && !saved[i].isEmpty()) {
                     try { inventory.setStackInSlot(i, saved[i]); restored++; }
-                    catch (Throwable ignored) { }
+                    catch (Throwable ignored) {
+                        SwallowedErrors.report("MoltenPatternAssemblyPartMachine#restoreFullCapacity.restoreSlot", ignored);
+                    }
                 }
             }
             GTLModular.LOGGER.info("[gtlmodular] 容量修复时保住样板 {} 张（槽位 0..{}）", restored, cap - 1);
             GTLModular.LOGGER.info("[gtlmodular] 样板仓容量修复（{}）：{} → {}（硬上限；修复惰性落盘残留，恢复高槽样板对 AE 可见）",
                     phase, cap, maxPatternCount);
         } catch (Throwable t) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#restoreFullCapacity", t);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓容量修复失败（已忽略，按存档容量走）: {}", t.toString());
         }
     }
@@ -391,6 +399,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         before, start, maxPatternCount);
             }
         } catch (Throwable t) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#initLazyCapacity", t);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓惰性起步失败（已忽略，按父类容量走）: {}", t.toString());
         }
     }
@@ -422,6 +431,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             GTLModular.LOGGER.info("[gtlmodular] 样板仓容量回填：读档 容量 {} → {}（最高已用槽 {}，硬上限 {}）",
                     capBefore, patternCapacity(), highestUsed, maxPatternCount);
         } catch (Throwable t) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#backfillCapacityAfterLoad", t);
             GTLModular.LOGGER.warn("[gtlmodular] 样板仓容量回填失败（已忽略，不影响读档）: {}", t.toString());
         }
     }
@@ -770,6 +780,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         this.patternSyncMarkLogLeft);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#markPatternTableStale", ignored);
         }
     }
 
@@ -802,6 +813,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 slotPatternMirror.put(index, decoded);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#refreshSlotPatternMirror", ignored);
         }
     }
 
@@ -815,6 +827,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     return e.getKey();
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("MoltenPatternAssemblyPartMachine#slotOwning.matchIdentity", ignored);
             }
         }
         return -1;
@@ -824,6 +837,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             return slotPatternMirror.keySet().stream().mapToInt(Integer::intValue).toArray();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#activePatternSlotsForIsolation", ignored);
             return new int[0];
         }
     }
@@ -896,6 +910,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             removeSlotFromGTRecipeCache(slot);
             return hadCached;
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearSlotRecipeCache", failure);
             GTLModular.LOGGER.debug("[gtlmodular] 清槽 {} 的 GT 配方缓存失败（已忽略）：{}", slot, failure.toString());
             return false;
         }
@@ -929,6 +944,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         modeIndex, cleared, getPos());
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearRecipeCacheForMode", failure);
             GTLModular.LOGGER.debug("[gtlmodular] 清模式 {} 的 GT 配方缓存失败（已忽略）：{}", modeIndex, failure.toString());
         }
     }
@@ -1049,6 +1065,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 return candidate;
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#findInsertedMachine", ignored);
         }
         return null;
     }
@@ -1066,6 +1083,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#insertedSupportsType", ignored);
             // 不能确定塞入机器支持该模式时不参与命名，避免写入错误名称。
         }
         return false;
@@ -1078,6 +1096,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 return definition.asStack().getHoverName().getString();
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#insertedName", ignored);
         }
         return "";
     }
@@ -1122,11 +1141,11 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         if (stack.isEmpty()) {
             return -1;
         }
-        IPatternDetails pattern;
+        PatternRecipeMatching.DecodedPattern pattern;
         try {
-            pattern = getRealPatternHelper().processPatternWithCircuit(stack, count -> {
-            }, level, keepByProduct);
+            pattern = PatternRecipeMatching.decode(getRealPatternHelper(), stack, level, keepByProduct);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#detectRecipeType.decodePattern", ignored);
             return -1;
         }
         if (pattern == null) {
@@ -1148,7 +1167,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     private static final int MATCH_NONE = -2;
 
     /** 先清空中转，避免扫描失败时沿用上一次扫描的配方。 */
-    private int scanTypesForMatch(List<GTRecipeType> types, IPatternDetails pattern, Level level, boolean skipHostTable) {
+    private int scanTypesForMatch(List<GTRecipeType> types, PatternRecipeMatching.DecodedPattern pattern, Level level,
+                                  boolean skipHostTable) {
         this.lastMatchedSlotRecipe = null;
         return PatternRecipeTypeSearch.scan(types, pattern, level, skipHostTable,
                 type -> type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX,
@@ -1163,7 +1183,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     private final java.util.Set<Integer> ambiguousSlotNotes = new java.util.HashSet<>();
 
     private int resolveAmbiguousTypeFromSlotCache(int slot, List<GTRecipeType> types, int detected,
-                                                  IPatternDetails pattern) {
+                                                  PatternRecipeMatching.DecodedPattern pattern) {
         if (detected != -1) {
             return detected;
         }
@@ -1200,6 +1220,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                             + "本行只读、不改任何判定 @{}",
                     slot + 1, getPos());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#noteAmbiguousSlotType", ignored);
         }
     }
 
@@ -1228,7 +1249,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     public static final boolean LOCK_TYPE_FROM_SLOT_RECIPE_CACHE = true;
 
     /** 只使用同槽且身份仍匹配的缓存配方，避免样板更换后的陈旧记录参与模式判断。 */
-    private GTRecipe slotCachedRecipe(int slot, IPatternDetails patternOrNull) {
+    private GTRecipe slotCachedRecipe(int slot, PatternRecipeMatching.DecodedPattern patternOrNull) {
         try {
             if (slot < 0) {
                 return null;
@@ -1258,6 +1279,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
             return unique;
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#slotCachedRecipe", ignored);
             return null;
         }
     }
@@ -1382,7 +1404,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                                     + "（AE追踪本件={}，AE全局有任务={}，本次需要={}）@{} —— 这是「料已交付、还没被消费/产出」的"
                                     + "**空窗期**：请等下一轮 `AE 推送样板`（对照 `累计推来` 看是不是刚被吃光），"
                                     + "**不要**「全部取消」（那对空窗期没有帮助，只会把已排好的任务丢掉）。"
-                                    + "（本条 30 秒最多一条。0.3.132【C1】修正：旧文案「被占用且没有任何任务在合成它」经实机取证是误报）",
+                                    + "（本条 30 秒最多一条）",
                             shortName, aeRequesting, aeRequestingAny, shortNeed, getPos());
                 } else {
                     GTLModular.LOGGER.warn("[gtlmodular] 提示：{} **被占用，且整个 AE 当前没有任何手工合成任务**"
@@ -1399,9 +1421,9 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         final boolean machineSideScaled = false;
         if (scalingApplies && !this.machineScaleDisabledWarned) {
             this.machineScaleDisabledWarned = true;
-            GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成 @{}：AE 推送的是【原样板】而机器侧二次放大已按 0.3.132 撤销 "
+            GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成 @{}：AE 推送的是【原样板】而机器侧不再二次放大 "
                             + "⇒ 本次按 AE 声明量执行，倍率/神锻未在机器侧生效（有效缩放[{}]）。"
-                            + "这是与 AE 一致的回落，不是故障；根治见 _census/NAC合成链路_原初对照与重构方案.md §⑤-A2。",
+                            + "这是与 AE 一致的回落，不是故障。",
                     getPos(), describeEffectiveScale());
         }
         boolean logThisPush = false;
@@ -1518,6 +1540,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             autoSwitchTickInner();
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#autoSwitchTick", failure);
             // 维护异常不能中断 tick，同类日志限频以免刷屏。
             long nowMs = System.currentTimeMillis();
             if (nowMs - lastAutoSwitchWarnTick >= 30_000L) {
@@ -1546,10 +1569,12 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 afterArchiveBulkChange();
                 GTLModular.LOGGER.info("[gtlmodular] 读档后补一次样板表重扫 + AE 通知（容量修复收尾）pos={}", getPos());
             } catch (Throwable failure) {
+                SwallowedErrors.report("MoltenPatternAssemblyPartMachine#autoSwitchTickInner.archiveRescanAfterLoad", failure);
                 GTLModular.LOGGER.warn("[gtlmodular] 读档后样板表重扫失败（已忽略，下一 tick 由既有通道兜住）pos={} 原因={}",
                         getPos(), failure.toString());
             }
         }
+        staleSlotCache.drain(this::clearSlotRecipeCache, this::getPos);
         syncCustomNameToMode(activeRecipeTypeIndex);
         patternAutoSwitch().tick();
     }
@@ -1648,8 +1673,18 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 hostTableMisidentifyNotes, MISIDENTIFY_NOTE_LIMIT, this::getPos);
     }
 
+    private final PatternStaleSlotCache staleSlotCache = new PatternStaleSlotCache();
+
     /** 槽读取延后到类型判断之后，避免未知类型也触发样板解码。 */
     boolean slotAllowsRecipe(int slot, GTRecipe recipe) {
+        boolean allowed = slotIdentityAllows(slot, recipe);
+        if (!allowed) {
+            staleSlotCache.noteRejected(slot, recipe, getMETrait().getSlot2RecipesCache());
+        }
+        return allowed;
+    }
+
+    private boolean slotIdentityAllows(int slot, GTRecipe recipe) {
         return PatternIdentityGate.allows(slot, recipe, GTLModularConfig::isPatternIdentityGateEnabled,
                 () -> recipeTypeOfSlot(slot), this::getAvailableRecipeTypes, () -> {
                     ItemStackTransfer inventory = getPatternInventory();
@@ -1657,9 +1692,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         return ItemStack.EMPTY;
                     }
                     return inventory.getStackInSlot(slot);
-                }, this::getLevel, (stack, level) -> getRealPatternHelper().processPatternWithCircuit(
-                        stack, count -> {
-                        }, level, keepByProduct));
+                }, this::getLevel, (stack, level) -> PatternRecipeMatching.decode(getRealPatternHelper(),
+                        stack, level, keepByProduct));
     }
 
     private String lastQuerySignature;
@@ -1903,6 +1937,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     return i;
                 }
             } catch (Throwable ignored) {
+                SwallowedErrors.report("MoltenPatternAssemblyPartMachine#archiveHighestUsedSlot", ignored);
             }
         }
         return -1;
@@ -2006,6 +2041,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     ? Math.max(1, (int) cacheRecipeCount[slot]) : DEFAULT_CACHE_RECIPE_COUNT,
                     DEFAULT_CACHE_RECIPE_COUNT);
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#buildArchivedCatalyst", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：第 {} 槽催化剂打包失败（该槽只搬样板）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
             return null;
@@ -2031,6 +2067,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 terminal.setItemDirect(slot, stack);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#archiveWritePattern.terminal", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：第 {} 槽 AE/终端面写入失败"
                             + "（该槽 AE 里可能看不到，存档面仍会写入）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
@@ -2046,6 +2083,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 slotRecipeType[slot] = recipeType;
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#writeArchivedRecipeType", ignored);
         }
     }
 
@@ -2067,6 +2105,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 try {
                     items.onContentsChanged();
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#writeArchivedCatalyst.itemsContentsChanged", ignored);
                 }
                 wrote = true;
             }
@@ -2077,6 +2116,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 try {
                     fluids.onContentsChanged();
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#writeArchivedCatalyst.fluidsContentsChanged", ignored);
                 }
                 wrote = true;
             }
@@ -2093,6 +2133,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 wrote = true;
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#writeArchivedCatalyst", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：第 {} 槽催化剂写入失败（该槽催化剂保持原样）pos={} 原因={}",
                     slot + 1, getPos(), failure.toString());
         }
@@ -2127,6 +2168,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
             rewriteCache.invalidate();
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#writeArchivedSettings", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：设置类写入失败（已忽略，按原设置）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2169,6 +2211,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         inventory.setStackInSlot(i, ItemStack.EMPTY);
                     }
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.patternInventorySlot", ignored);
                 }
                 try {
                     appeng.api.inventories.InternalInventory terminal = getTerminalPatternInventory();
@@ -2176,15 +2219,18 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                         terminal.setItemDirect(i, ItemStack.EMPTY);
                     }
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.terminalSlot", ignored);
                 }
                 try {
                     if (slotRecipeType != null && i < slotRecipeType.length) {
                         slotRecipeType[i] = TYPE_NOT_TRIED;
                     }
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.recipeTypeSlot", ignored);
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.patterns", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：清空样板失败（已尽力而为）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2192,6 +2238,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             manualSlotTypes.clear();
             refreshManualAssignDisplay();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.manualTypes", ignored);
         }
         try {
             for (int i = 0; i < capacity; i++) {
@@ -2204,6 +2251,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     try {
                         items.onContentsChanged();
                     } catch (Throwable ignored) {
+                        SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.itemsContentsChanged", ignored);
                     }
                 }
                 FluidTransferList fluids = i < catalystFluids.length ? catalystFluids[i] : null;
@@ -2214,6 +2262,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     try {
                         fluids.onContentsChanged();
                     } catch (Throwable ignored) {
+                        SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.fluidsContentsChanged", ignored);
                     }
                 }
                 if (i < cacheRecipeCount.length) {
@@ -2221,6 +2270,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.catalysts", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：清空催化剂失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2228,6 +2278,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             archiveLandedSlots.clear();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#clearArchiveContent.landedSlots", ignored);
         }
     }
 
@@ -2241,6 +2292,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             refreshAllByProduct();
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#afterArchiveBulkChange.refreshPatterns", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：收尾重扫样板表失败"
                             + "（样板已写好，缓存最迟由下一 tick 的既有通道兜住）pos={} 原因={}",
                     getPos(), failure.toString());
@@ -2249,6 +2301,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             rewriteCache.invalidate();
             markPatternTableStale("归档批量收尾(片C)");
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#afterArchiveBulkChange.markStale", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成归档：收尾置位失败（已忽略）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2276,8 +2329,11 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             GTLModular.LOGGER.info("[gtlmodular] 归档批量收尾：AE 可见样板={} LDLib 面非空={} AE 面非空={} 容量={} pos={}",
                     getAvailablePatterns().size(), ldlNonEmpty, aeNonEmpty, patternCapacity(), getPos());
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#afterArchiveBulkChange.inventorySummary", ignored);
         }
-        try { scheduleRenderUpdate(); } catch (Throwable ignored) { }   // 批量修改后让客户端重读，避免界面残留已移走的样板。
+        try { scheduleRenderUpdate(); } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#afterArchiveBulkChange.renderUpdate", ignored);
+        }   // 批量修改后让客户端重读，避免界面残留已移走的样板。
     }
 
     /** 归档写入可能只落到底层仓而未更新上游激活缓存；默认保留落地槽兜底，避免已有样板不参与匹配。 */
@@ -2299,10 +2355,12 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
             return super.hasPatternInSlot(slot) || archiveLandedSlots.contains(slot);
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#hasPatternInSlot", ignored);
             // 只读判据失败时回到父类判断，避免诊断路径中断 AE 推送或配方匹配。
             try {
                 return super.hasPatternInSlot(slot);
             } catch (Throwable ignoredAgain) {
+                SwallowedErrors.report("MoltenPatternAssemblyPartMachine#hasPatternInSlot.parentFallback", ignoredAgain);
                 return false;
             }
         }
@@ -2331,6 +2389,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             lookupNarrowingModeIndex = own;
             return own;
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#lookupNarrowingModeIndex", failure);
             lookupNarrowingModeIndex = -1;
             return -1;
         }
@@ -2477,6 +2536,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#loadCustomPersistedData.boundMode", failure);
             this.boundModeType = null;
             this.boundModePendingResolve = false;
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成：绑定模式读档失败（已忽略，按未绑定处理）pos={} 原因={}",
@@ -2510,6 +2570,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#loadCustomPersistedData.modeNames", failure);
             modeNames.clear();
             this.lockedName = "";
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成：名字表读档失败（已忽略，按「该模式还没有名字」处理）pos={} 原因={}",
@@ -2537,6 +2598,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             rewriteCache.invalidate();
             markPatternTableStale("读档设置落盘(片E)");
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#loadCustomPersistedData.rewriteSettings", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成：视图改写设置读档失败（已忽略，按默认值）pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2613,6 +2675,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#shiftConfiguratorPanelDown", failure);
             GTLModular.LOGGER.debug("[gtlmodular] 猪咪样板总成：配置器面板下移失败（已忽略）面板={} 原因={}",
                     panel, failure.toString());
         }
@@ -2622,6 +2685,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             return panel.getGui() == null ? -1 : panel.getGui().getScreenHeight();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#screenHeightOf", ignored);
             return -1;
         }
     }
@@ -2630,6 +2694,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             return paginationUIManager == null ? -1 : paginationUIManager.getUiHeight();
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#pageHeight", ignored);
             return -1;
         }
     }
@@ -2658,6 +2723,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             GTLModular.LOGGER.debug("[gtlmodular] 猪咪样板总成：归档页已挂载 pos={} 下标={}（挂之前 {} 个 tab）",
                     getPos(), afterTabs.size() > archiveTabBefore ? archiveTabBefore : -1, archiveTabBefore);
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#attachConfigurators.archivePage", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成：归档页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2669,6 +2735,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 org.gtlcore.gtlcore.client.gui.MEStorageConfiguratorTabLayout.arrange(panel);
             }
         } catch (Throwable failure) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#attachConfigurators.tabLayout", failure);
             GTLModular.LOGGER.warn("[gtlmodular] 猪咪样板总成：页签多列排布未生效 pos={} 原因={}",
                     getPos(), failure.toString());
         }
@@ -2695,6 +2762,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 GTLModular.LOGGER.info("[gtlmodular] 展开页几何 {}", line);
             }
         } catch (Throwable ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#logPageGeometry", ignored);
         }
     }
 
@@ -2765,6 +2833,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     chipWidgets.get(i).setButtonTexture(
                             new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(lb)));
                 } catch (Throwable ignored) {
+                    SwallowedErrors.report("MoltenPatternAssemblyPartMachine.ModeScaleConfigurator#refreshChipLabels", ignored);
                 }
             }
         }

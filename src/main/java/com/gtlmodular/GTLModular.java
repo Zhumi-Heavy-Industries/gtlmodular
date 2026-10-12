@@ -32,8 +32,9 @@ public final class GTLModular {
         NanochipRecipeCacheHooks.register(new PatternAssemblyRecipeCacheInvalidator());
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, GTLModularConfig.SPEC);
+        com.gtlmodular.common.machine.independent.control.IndependentMachineRegistry.register(modBus);
 
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () -> ModLoadingContext.get().registerExtensionPoint(
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ModLoadingContext.get().registerExtensionPoint(
                 ConfigScreenHandler.ConfigScreenFactory.class,
                 () -> new ConfigScreenHandler.ConfigScreenFactory(GTLModularConfigScreen::create)));
 
@@ -53,43 +54,9 @@ public final class GTLModular {
 
         GTLModularNacSelfCheck.register();
         com.gtlmodular.common.command.GTLModularCommands.register();
+        com.gtlmodular.common.command.IndependentBatchCommands.register();
 
         LOGGER.info("[gtlmodular] 加载中：机器注册委托给 GTM 机器注册事件窗口。");
         NanochipEventWiring.register(modBus);
-    }
-
-    private static final String ENHANCEDCORE_MIXIN_CONFIG = "gtlmodular.enhancedcore.mixins.json";
-
-    /** 反射隔离可选兼容类，避免缺少依赖时影响本体加载。 */
-    private static void registerEnhancedcoreMixins() {
-        try {
-            if (!net.minecraftforge.fml.ModList.get().isLoaded("gtl_enhancedcore")) {
-                LOGGER.info("[gtlmodular] 未检测到 gtl_enhancedcore ⇒ 不加载 enhancedcore 兼容 mixin。");
-                return;
-            }
-            String m = System.getProperty("mixin.env.ignoreRequired");
-            String c = System.getProperty("mixin.checks");
-            boolean tolerant = "true".equalsIgnoreCase(m) || "false".equalsIgnoreCase(c);
-            if (!tolerant) {
-                LOGGER.warn("[gtlmodular] 检测到 gtl_enhancedcore，但 {} 未启用「忽略缺失 mixin 目标」开关"
-                                + "（需要 -Dmixin.env.ignoreRequired=true 或 -Dmixin.checks=false）"
-                                + " ⇒ 本次不注入 enhancedcore 兼容 mixin（闸门①/②的放行不会生效）。",
-                        ENHANCEDCORE_MIXIN_CONFIG);
-                return;
-            }
-            Class<?> mixinConfigs = Class.forName("org.spongepowered.asm.mixin.MixinConfigs");
-            for (java.lang.reflect.Method method : mixinConfigs.getMethods()) {
-                if (!"register".equals(method.getName()) || method.getParameterCount() != 1) continue;
-                if (method.getParameterTypes()[0] != String.class) continue;
-                method.invoke(null, ENHANCEDCORE_MIXIN_CONFIG);
-                LOGGER.info("[gtlmodular] 已注册 {}（闸门①/②放行 + 闸门③护栏）。", ENHANCEDCORE_MIXIN_CONFIG);
-                return;
-            }
-            LOGGER.warn("[gtlmodular] 未找到 MixinConfigs.register(String) ⇒ {} 未加载。",
-                    ENHANCEDCORE_MIXIN_CONFIG);
-        } catch (Throwable t) {
-            // 可选兼容失败不能阻止本体加载。
-            LOGGER.warn("[gtlmodular] enhancedcore 兼容 mixin 注册失败（已忽略）：{}", t.toString());
-        }
     }
 }
