@@ -18,7 +18,7 @@ public abstract class IndependentClonePlacementMixin {
     @Inject(method = {
             "updateCustomBlockEntityTag(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/item/ItemStack;)Z",
             "m_40582_(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/item/ItemStack;)Z"},
-            at = @At("HEAD"), require = 0)
+            at = @At("HEAD"), require = 1)
     private static void gtlmodular$stripNestedCopy(Level level, Player player, BlockPos pos, ItemStack stack,
                                                   CallbackInfoReturnable<Boolean> cir) {
         var tag = stack.getTag();
