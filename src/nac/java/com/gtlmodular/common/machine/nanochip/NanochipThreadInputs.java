@@ -99,7 +99,8 @@ final class NanochipThreadInputs {
         }
         if (INPUT_WIRING_REBUILD_GATED) {
             int partsNow = mePatternPartCount(capabilityMachine);
-            if (partsNow > 0) {
+            // 接线数只说明样板仓还在结构里；缓存仍为空说明接线不可用，必须照旧重建，否则读档后没人填缓存。
+            if (partsNow > 0 && mePatternCachedRecipeCount(capabilityMachine) > 0) {
                 inputWiringCooldown = INPUT_WIRING_REFRESH_INTERVAL;
                 return;
             }
