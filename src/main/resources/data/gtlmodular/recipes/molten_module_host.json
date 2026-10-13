@@ -63,7 +63,7 @@
           "type": "gtceu:sized",
           "count": 64,
           "ingredient": {
-            "item": "gtceu:uhv_field_generator"
+            "item": "gtceu:large_fragment_world_collection_machine"
           }
         }
       },

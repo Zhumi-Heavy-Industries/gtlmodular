@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:uhv_field_generator"
+            "item": "gtceu:large_fragment_world_collection_machine"
           }
         }
       },
