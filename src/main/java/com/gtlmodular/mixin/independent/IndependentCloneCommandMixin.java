@@ -23,9 +23,11 @@ import java.util.UUID;
 
 @Mixin(value = CloneCommands.class, remap = false)
 public abstract class IndependentCloneCommandMixin {
+    // 两个名字分别是开发环境和整合包的运行时方法名；这条钩子只是额外保护，
+    // 名字对不上时必须退回原版复制行为，不能让整包启动失败。
     @WrapOperation(method = {"clone", "m_264087_"}, at = {
             @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/BlockEntity;saveWithoutMetadata()Lnet/minecraft/nbt/CompoundTag;"),
-            @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/BlockEntity;m_187480_()Lnet/minecraft/nbt/CompoundTag;")}, require = 1)
+            @At(value = "INVOKE", target = "Lnet/minecraft/world/level/block/entity/BlockEntity;m_187482_()Lnet/minecraft/nbt/CompoundTag;")}, require = 0)
     private static CompoundTag gtlmodular$rememberSources(BlockEntity entity, Operation<CompoundTag> original,
                                                           @Share("batchSources") LocalRef<Set<UUID>> sources) {
         CompoundTag tag = original.call(entity);
@@ -36,9 +38,10 @@ public abstract class IndependentCloneCommandMixin {
         return tag;
     }
 
+    // 与快照钩子成对的可选保护：源所有者没被记下时它本来就等价于原版 setBlock，缺目标同样不能拿 require 卡死启动。
     @WrapOperation(method = {"clone", "m_264087_"}, at = {
             @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z"),
-            @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;m_7731_(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z")}, require = 5)
+            @At(value = "INVOKE", target = "Lnet/minecraft/server/level/ServerLevel;m_7731_(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;I)Z")}, require = 0)
     private static boolean gtlmodular$moveSource(ServerLevel level, BlockPos pos, BlockState state, int flags,
                                                Operation<Boolean> original,
                                                @Share("batchSources") LocalRef<Set<UUID>> sources) {
