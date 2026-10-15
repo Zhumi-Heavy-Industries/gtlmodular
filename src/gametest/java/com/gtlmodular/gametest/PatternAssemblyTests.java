@@ -13,6 +13,9 @@ import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gregtechceu.gtceu.common.data.GTItems;
 import com.gregtechceu.gtceu.common.item.IntCircuitBehaviour;
+import com.gregtechceu.gtceu.api.block.BlockProperties;
+import com.gregtechceu.gtceu.api.machine.TickableSubscription;
+import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gtlmodular.gametest.fixture.NacStructureLayout;
 import com.gtlmodular.gametest.fixture.PatternAssemblyFixture;
@@ -29,6 +32,7 @@ import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeStatus;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -45,7 +49,7 @@ public final class PatternAssemblyTests {
         if (!NanochipModContext.modId().equals("gtlmodular")) return List.of();
         List<TestFunction> tests = new ArrayList<>();
         for (String variant : variants) {
-            for (String scenario : List.of("identity", "circuit", "type")) {
+            for (String scenario : List.of("identity", "circuit", "type", "wake")) {
                 String name = "gtlmodular.pattern_" + variant + "_" + scenario;
                 tests.add(new TestFunction("pattern_assembly", name, NacStructureLayout.templateId().toString(),
                         6000, 0, true, helper -> exercise(helper, variant, scenario)));
@@ -61,7 +65,7 @@ public final class PatternAssemblyTests {
     }
 
     private static void exercise(GameTestHelper helper, String variant, String scenario) {
-        Run run = new Run(helper, variant, scenario.equals("type"));
+        Run run = new Run(helper, variant, scenario.equals("type"), scenario.equals("wake"));
         var sequence = helper.startSequence().thenWaitUntil(run.fixture::assertReady).thenExecute(run::prepare);
         // 来回切换让上一次的真实 lastRecipe 留在控制器里，覆盖热缓存而非只测空机起跑。
         for (String target : switch (scenario) {
@@ -69,6 +73,12 @@ public final class PatternAssemblyTests {
             case "circuit" -> List.of("c1", "c2", "c1", "c2");
             default -> List.of("x");
         }) {
+            if (run.wake) {
+                // 故障态不靠“摆”：先退订，再让服务器自己的 serverTick 把 server_tick 落到 false。
+                sequence.thenExecute(run::breakHostTickSubscription)
+                        .thenIdle(2)
+                        .thenExecute(run::assertHostAsleep);
+            }
             sequence.thenExecute(() -> run.push(target))
                     .thenWaitUntil(run::assertFinished)
                     .thenExecuteFor(40, run::assertFinished)
@@ -81,6 +91,7 @@ public final class PatternAssemblyTests {
         private final GameTestHelper helper;
         private final PatternAssemblyFixture fixture;
         private final boolean checkType;
+        private final boolean wake;
         private final Map<String, GTRecipe> loaded = new LinkedHashMap<>();
         private final Map<String, IPatternDetails> patterns = new LinkedHashMap<>();
         private final Map<Item, Long> expectedOutputs = new LinkedHashMap<>();
@@ -91,9 +102,10 @@ public final class PatternAssemblyTests {
         private boolean observing;
         private long circuitsPushed;
 
-        private Run(GameTestHelper helper, String variant, boolean checkType) {
+        private Run(GameTestHelper helper, String variant, boolean checkType, boolean wake) {
             this.helper = helper;
             this.checkType = checkType;
+            this.wake = wake;
             fixture = new PatternAssemblyFixture(helper, variant + "_me_pattern_assembly");
             fixtures.add(fixture);
             fixture.build();
@@ -133,7 +145,8 @@ public final class PatternAssemblyTests {
 
         private void push(String name) {
             fixture.assertReady();
-            fixture.controller().getRecipeLogic().setWorkingEnabled(false);
+            // wake 场景模拟真实故障：宿主不暂停，只是 tick 订阅被丢掉了。
+            fixture.controller().getRecipeLogic().setWorkingEnabled(wake);
             assertEmptyInputs();
             fixture.fillEnergy();
             target = name;
@@ -152,6 +165,9 @@ public final class PatternAssemblyTests {
                 counters[i].add(stack.what(), stack.amount() * input.getMultiplier());
             }
             helper.assertTrue(fixture.assembly().pushPattern(pattern, counters), "真实 AE 推料入口拒收 " + name);
+            if (wake) {
+                helper.assertTrue(hostTickable(), "推料后宿主仍在休眠（server_tick=false）：唤醒链失效");
+            }
             var inventory = fixture.assembly().getMergedInternalSlot();
             helper.assertTrue(inventory.left().getLong(item("common")) == 1
                             && inventory.left().getLong(item("extra")) == (name.equals("x") ? 0 : 1)
@@ -190,7 +206,10 @@ public final class PatternAssemblyTests {
             expectedOutputs.merge(output(name), amount(name), Long::sum);
             observing = true;
             observe();
-            fixture.controller().getRecipeLogic().setWorkingEnabled(true);
+            if (!wake) {
+                // wake 场景不做这一步：宿主只允许靠推料自己的唤醒链恢复。
+                fixture.controller().getRecipeLogic().setWorkingEnabled(true);
+            }
         }
 
         private boolean simulate(GTRecipe recipe, int slot, boolean items) {
@@ -220,6 +239,32 @@ public final class PatternAssemblyTests {
                 expectedEu = RecipeHelper.getInputEUt(recipe) * recipe.duration;
             }
             helper.runAfterDelay(1, this::observe);
+        }
+
+        /** 复现真实故障态：宿主未暂停，但 tick 订阅已被丢掉、方块状态落到 server_tick=false。 */
+        private void breakHostTickSubscription() {
+            var logic = fixture.controller().getRecipeLogic();
+            try {
+                Field field = RecipeLogic.class.getDeclaredField("subscription");
+                field.setAccessible(true);
+                if (field.get(logic) instanceof TickableSubscription subscription) {
+                    subscription.unsubscribe();
+                }
+                field.set(logic, null);
+            } catch (ReflectiveOperationException failure) {
+                throw new AssertionError("无法复现宿主退订：RecipeLogic.subscription 读取失败", failure);
+            }
+        }
+
+        /** 退订后必须真的睡着，否则这个用例什么也没考验到。 */
+        private void assertHostAsleep() {
+            // 此处 target 尚未赋值，diagnostics() 会取 recipes.indexOf(null) 而抛 NPE。
+            helper.assertTrue(!hostTickable(), "宿主退订后仍未休眠，本用例失去意义");
+        }
+
+        private boolean hostTickable() {
+            return Boolean.TRUE.equals(
+                    fixture.controller().getBlockState().getValue(BlockProperties.SERVER_TICK));
         }
 
         private void assertEmptyInputs() {
