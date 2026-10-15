@@ -468,7 +468,7 @@ public final class NanochipComplexPattern {
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1));
     }
 
-    /** 模块能源仓可选，以便无本地仓时从主机取电；计数谓词与主机独立。 */
+    /** 模块能源仓可选，以便无本地仓时从主机取电；计数谓词与主机独立；激光仓只由蚀刻阵列的 H 位单独开放。 */
     public static TraceabilityPredicate moduleHatches() {
         return com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
                         com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS)
@@ -485,9 +485,6 @@ public final class NanochipComplexPattern {
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
                                 com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(2))
-                .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_LASER)
-                        .setMinGlobalLimited(0).setMaxGlobalLimited(1))
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
                                 com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.MAINTENANCE)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1));
@@ -997,6 +994,22 @@ public final class NanochipComplexPattern {
         return new TowerDef(template.offsetY(), template.rows(), template.slices(), mapped);
     }
 
+    /** 激光仓只属于自身声明了激光能力的模块（内置只有蚀刻阵列），其余模块的 H 位一律不收激光仓。 */
+    private static boolean acceptsLaserHatch(MultiblockMachineDefinition def) {
+        if (def == null || def.getId() == null) {
+            return false;
+        }
+        var spec = com.gtlmodular.common.machine.nanochip.registration.NanochipModules.byId(def.getId());
+        return spec != null && spec.features().laser();
+    }
+
+    /** 独立谓词：限量只落在本模块自己的 H 格上，不写进多格共用的 hatches 谓词对象。 */
+    private static TraceabilityPredicate laserHatch() {
+        return com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_LASER)
+                .setMinGlobalLimited(0).setMaxGlobalLimited(1);
+    }
+
     private static TraceabilityPredicate predicateFor(TowerCell cell, TraceabilityPredicate hatches,
                                                       MultiblockMachineDefinition def) {
         return switch (cell.role()) {
@@ -1007,7 +1020,9 @@ public final class NanochipComplexPattern {
             case FRAME -> blocks(frameBlockOf(cell.material()));
             case SHEET -> blocks(blockByCandidates(sheetIdOf(cell.material()), blockIdOf(cell.material()),
                     TWR_SHEET_BLOCK, TWR_FRAME_FALLBACK));
-            case HATCH -> hatchOrCasing(hatches);
+            case HATCH -> acceptsLaserHatch(def)
+                    ? hatchOrCasing(hatches).or(laserHatch())
+                    : hatchOrCasing(hatches);
             case UEV_CASING -> blocks(blockByCandidates(TWR_UEV_CASING_BLOCK, TWR_ASSEMBLY_BLOCK,
                     NanochipModContext.registryId("nanochip_reinforcement_casing").toString()));
             case MATRIX_CASING -> blocks(blockByCandidates(NanochipModContext.registryId("nanochip_computational_matrix_casing").toString(),
@@ -1541,6 +1556,16 @@ public final class NanochipComplexPattern {
         return id == null ? null : MODULE_IDENTITY_CELLS.get(id.toString());
     }
 
+    /** 部装外壳格另存一份：档位由方块身份决定，不能混进只认唯一方块的身份表。 */
+    private static final Map<String, int[]> MODULE_ASSEMBLY_CELLS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static int[] moduleAssemblyCells(String moduleId) {
+        if (moduleId == null) return null;
+        ResourceLocation id = ResourceLocation.tryParse(moduleId.indexOf(':') < 0
+                ? NanochipModContext.modId() + ":" + moduleId : moduleId);
+        return id == null ? null : MODULE_ASSEMBLY_CELLS.get(id.toString());
+    }
+
     /** 塔身字符含义优先于共享底座默认值，避免同一字母在不同模块被误解释。 */
     private static int moduleRoleOf(char ch, TowerDef tower) {
         TowerCell cell = tower == null ? null : tower.cells().get(ch);
@@ -1569,6 +1594,7 @@ public final class NanochipComplexPattern {
             return;
         }
         List<int[]> cells = new ArrayList<>();
+        List<int[]> assembly = new ArrayList<>();
         for (int z = 0; z < aisles.length; z++) {
             String[] slice = aisles[z];
             if (slice == null) {
@@ -1580,9 +1606,14 @@ public final class NanochipComplexPattern {
                     continue;
                 }
                 for (int x = 0; x < line.length(); x++) {
-                    int role = moduleRoleOf(line.charAt(x), tower);
+                    char ch = line.charAt(x);
+                    int role = moduleRoleOf(ch, tower);
                     if (role >= 0) {
                         cells.add(new int[]{x, row, z, role});
+                    }
+                    TowerCell towerCell = tower == null ? null : tower.cells().get(ch);
+                    if (towerCell != null && towerCell.role() == TowerRole.ASSEMBLY) {
+                        assembly.add(new int[]{x, row, z});
                     }
                 }
             }
@@ -1592,6 +1623,13 @@ public final class NanochipComplexPattern {
             System.arraycopy(cells.get(i), 0, flat, i * 4, 4);
         }
         MODULE_IDENTITY_CELLS.put(def.getId().toString(), flat);
+        if (!assembly.isEmpty()) {
+            int[] assemblyFlat = new int[assembly.size() * 3];
+            for (int i = 0; i < assembly.size(); i++) {
+                System.arraycopy(assembly.get(i), 0, assemblyFlat, i * 3, 3);
+            }
+            MODULE_ASSEMBLY_CELLS.put(def.getId().toString(), assemblyFlat);
+        }
         NanochipModContext.logger().debug(
                 "[gtlmodular] A+ 精确预检：登记模块 {} 的身份格 {} 个（唯一方块 + 严格空气；"
                         + "多解/带追加候选的角色一律不列）", def.getId().getPath(), cells.size());

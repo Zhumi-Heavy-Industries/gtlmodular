@@ -63,8 +63,10 @@ final class NanochipModuleProcessing {
         if (step <= 0.0D) {
             return;
         }
-        writeImpurity.accept(Math.min(100.0D, readImpurity.getAsDouble() + step));
-        if (readImpurity.getAsDouble() >= readFlushThreshold.getAsInt()) {
+        writeImpurity.accept(Math.min(NanochipModuleImpurity.CEILING, readImpurity.getAsDouble() + step));
+        // 到阈值只表示「该排了」；没有流体输出仓就排不掉，含杂度停在 100％ 并拦住下一批。
+        if (readImpurity.getAsDouble() >= readFlushThreshold.getAsInt()
+                && NanochipModuleImpurity.canFlush(module)) {
             writeImpurity.accept(0.0D);
             if (module.getLevel() != null && !module.getLevel().isClientSide
                     && NanochipModContext.config().isNanochipDebugLogsEnabled()) {
@@ -123,8 +125,9 @@ final class NanochipModuleProcessing {
         NanochipCalibration calibration = host.getCalibration();
         NanochipCalibration.Family family = NanochipAssemblyComplexMachine.familyOf(recipe);
         double total = NanochipCalibrationEnergy.totalEu(originalEu, calibration, family);
-        if (kind.features().laser() && calibration.specialActive(NanochipCalibration.Family.CRYSTAL)) {
-            total *= NanochipCalibrationEnergy.laserMultiplier(module.laserAmperage(), module.laserHatchTier());
+        if (kind.features().laser()) {
+            total *= NanochipCalibrationEnergy.laserMultiplier(module.laserAmperage(), module.laserHatchTier(),
+                    calibration.specialActive(NanochipCalibration.Family.CRYSTAL));
         }
         return total;
     }
@@ -138,7 +141,10 @@ final class NanochipModuleProcessing {
         long eut = Math.max(1L, RecipeHelper.getInputEUt(copy));
         int duration = Math.max(1, copy.duration);
         int hatchTier = GTUtil.getTierByVoltage(maxVoltage);
-        int recipeTier = GTUtil.getTierByVoltage(eut);
+        // 组装矩阵覆写 getRecipeTier：基类用配方电压档，矩阵改用部装外壳档。
+        int recipeTier = kind.features().assembly()
+                ? NanochipAssemblyMatrixTier.recipeTier(copy)
+                : GTUtil.getTierByVoltage(eut);
         int maxOc = Math.max(0, hatchTier - recipeTier);
         long powerCap = power.availableInputPower(maxVoltage);
         int oc = 0;
@@ -165,16 +171,24 @@ final class NanochipModuleProcessing {
         }
         if (kind.features().laser()) {
             NanochipAssemblyComplexMachine host = module.getHost();
-            if (host != null && module.hostConnected()
-                    && host.getCalibration().specialActive(NanochipCalibration.Family.CRYSTAL)) {
-                long amperage = module.laserAmperage();
-                if (amperage >= 512L) {
-                    eut = Math.max(1L, eut / (amperage / 256L));
+            if (host != null && module.hostConnected()) {
+                boolean crystalTierThree = host.getCalibration()
+                        .specialActive(NanochipCalibration.Family.CRYSTAL);
+                long euDivisor = NanochipCalibrationEnergy.laserEuDivisor(module.laserAmperage(), crystalTierThree);
+                if (euDivisor > 1L) {
+                    eut = Math.max(1L, eut / euDivisor);
                 }
-                int laserTier = module.laserHatchTier();
-                if (laserTier > 9) {
-                    duration = Math.max(floorTicks, duration / (laserTier - 9));
+                long durationDivisor = NanochipCalibrationEnergy.laserDurationDivisor(module.laserHatchTier(),
+                        crystalTierThree);
+                if (durationDivisor > 1L) {
+                    duration = Math.max(floorTicks, (int) (duration / durationDivisor));
                 }
+            }
+        }
+        if (kind.features().assembly()) {
+            double discount = NanochipAssemblyMatrixTier.euDiscountFor(module, copy);
+            if (discount < 1.0D) {
+                eut = (long) Math.max(1.0D, Math.min((double) Long.MAX_VALUE, eut * discount));
             }
         }
         RecipeHelper.setInputEUt(copy, eut);
@@ -183,8 +197,22 @@ final class NanochipModuleProcessing {
         return copy;
     }
 
+    /** 组装矩阵把「配方等级」重定义为部装外壳档；其它模块沿用配方电压档。 */
+    int getRecipeTier(GTRecipe recipe) {
+        if (!kind.features().assembly()) {
+            return GTUtil.getTierByVoltage(Math.max(1L, RecipeHelper.getInputEUt(recipe)));
+        }
+        return NanochipAssemblyMatrixTier.gatedRecipeTier(module, recipe);
+    }
+
     static GTRecipe moduleFlexibleOverclock(MetaMachine machine, GTRecipe recipe,
                                             OCParams params, OCResult result) {
+        if (machine instanceof NanochipModuleMachine module
+                && module.getModuleSpec().features().assembly()
+                && NanochipAssemblyMatrixTier.gatedRecipeTier(module, recipe) < 0) {
+            // NH 的 insufficientMachineTier：这台矩阵不给这条配方，不能靠通用超频蒙混过关。
+            return null;
+        }
         GTRecipe direct = NanochipModuleMachine.moduleOverclock(machine, recipe, params, result);
         GTRecipe modified;
         if (direct != null) {

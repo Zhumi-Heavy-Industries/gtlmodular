@@ -120,7 +120,7 @@ public final class NanochipModuleDisplay {
                     .append(Component.literal(laserTier <= 0 ? "未安装" : "等级 " + laserTier
                             + " · " + machine.laserAmperage() + " A")
                             .withStyle(laserTier <= 0 ? ChatFormatting.DARK_GRAY : ChatFormatting.AQUA))
-                    .append(Component.literal(" · 晶体满校准后：EU ÷ 每 256A 一档，时长 ÷ 等级−9")
+                    .append(Component.literal(" · 全程生效：EU ÷ (log₄A − 3 + c)，时长 ÷ max(1, 等级−9 + c)；c = 晶体满校准")
                             .withStyle(ChatFormatting.GRAY))
                     .withStyle(ChatFormatting.GRAY));
         }

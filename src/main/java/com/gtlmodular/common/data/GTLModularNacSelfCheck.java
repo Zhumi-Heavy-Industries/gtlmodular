@@ -19,6 +19,8 @@ public final class GTLModularNacSelfCheck {
                 "molten_space_ore_module",
                 "molten_stripper_module",
                 "mv_me_pattern_assembly",
+                "pattern_archive",
+                "pattern_archive_cut",
                 "super_me_pattern_assembly",
                 "uev_me_pattern_assembly",
                 "uhv_me_pattern_assembly",

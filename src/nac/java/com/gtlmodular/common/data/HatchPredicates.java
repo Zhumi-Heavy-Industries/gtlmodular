@@ -207,13 +207,16 @@ public final class HatchPredicates {
                 () -> previewOf(abilityList)).setPreviewCount(1);
     }
 
+    /**
+     * H 位能力表：这张表构造的谓词既是预览候选又是真实准入兜底，所以表里没有激光仓就等于
+     * 主机与全部模块的 H 位都不接受激光仓；蚀刻阵列由它自己塔身的 HATCH 格单独开一个限量谓词。
+     */
     public static final PartAbility[] NAC_HATCH_ABILITIES = {
             PartAbility.IMPORT_ITEMS,
             PartAbility.EXPORT_ITEMS,
             PartAbility.IMPORT_FLUIDS,
             PartAbility.EXPORT_FLUIDS,
             PartAbility.INPUT_ENERGY,
-            PartAbility.INPUT_LASER,
             PartAbility.MAINTENANCE
     };
 
