@@ -8,8 +8,11 @@ public final class NanochipStructureCheckThrottle {
     /** 未成形侧已有预检和变化闸，这层不再增加等待。 */
     public static final int UNFORMED_SKIP = 1;
 
-    /** 已成形的方块变更走事件入口，此处只限制周期兜底扫描。 */
-    public static final int FORMED_SKIP = 6;
+    /**
+     * 已成形的方块变更走事件入口，此处只限制周期兜底扫描。
+     * 必须与上游 asyncCheckPattern 的 4 相位过滤互质，否则一部分机器的周期检查永远落不到相位上。
+     */
+    public static final int FORMED_SKIP = 5;
 
     private int seen;
 

@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -60,12 +61,12 @@ public final class NanochipCircuitComponents {
         private Component realName() {
             if (realRef.startsWith("item:")) {
                 Item it = ForgeRegistries.ITEMS.getValue(new ResourceLocation("gtceu", realRef.substring(5)));
-                return it == null ? null : new ItemStack(it).getHoverName();
+                return it == null || it == Items.AIR ? null : new ItemStack(it).getHoverName();
             }
             if (realRef.startsWith("itemns:")) {
                 String[] p2 = realRef.substring(7).split(":", 2);
                 Item it2 = ForgeRegistries.ITEMS.getValue(new ResourceLocation(p2[0], p2[1]));
-                return it2 == null ? null : new ItemStack(it2).getHoverName();
+                return it2 == null || it2 == Items.AIR ? null : new ItemStack(it2).getHoverName();
             }
             String[] parts = realRef.substring(4).split(":", 2);
             return Component.translatable("tagprefix." + parts[1], Component.translatable("material.gtceu." + parts[0]));

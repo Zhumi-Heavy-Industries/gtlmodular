@@ -292,6 +292,9 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     private static final int STUCK_LOG_INTERVAL_TICKS = 600;
     private static final int STUCK_WARNED_LIMIT = 64;
 
+    /** 宿主休眠属异常，限频以免每次推料都刷屏。 */
+    private static final int SLEPT_HOST_WARN_INTERVAL_TICKS = 600;
+
     private static final int LAZY_INITIAL_CAPACITY = 32;
     private static final int LAZY_MIN_GROW_STEP = 16;
     private static final int LAZY_RESERVE = 2;
@@ -1481,13 +1484,16 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     ? Long.MAX_VALUE : pushedToMachineFluidTotal + pushedFluid;
             GTLModular.LOGGER.info("[gtlmodular] AE 推送样板 @{}: 是否缩放样板={} 机器侧放大={} 输入总量={} 有效缩放[{}] 累计推来[物品={}；流体={}] 明细:{}",
                     getPos(), !aePushedOriginal, machineSideScaled, pushed, describeEffectiveScale(),
-                    pushedToMachineTotal, pushedToMachineFluidTotal, detail);
+                    pushedToMachineTotal - pushedToMachineFluidTotal, pushedToMachineFluidTotal, detail);
         }
         Integer slot = getSlotIndexForPattern(original);
         if (slot != null && slot >= 0) {
             lockRecipeTypeForSlot(slot);
         }
         boolean pushedOk = super.pushPattern(original, inputHolder);
+        if (pushedOk) {
+            wakeHostRecipeLogic();
+        }
         if (logThisPush && slot != null && slot >= 0) {
             try {
                 var internal = getInternalSlot(slot);
@@ -1534,6 +1540,47 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
         }
         return pushedOk;
+    }
+
+    /**
+     * 宿主控制器休眠（方块状态 server_tick=false）时不会自己醒来。料推进内部缓冲后若无人唤醒，
+     * 宿主就永远不来取料、产物也交不出去，只能靠拆放或重载（onMachineLoad 里才会重建 tick 订阅）救回。
+     * 惰性猪咪早已这么做，这里补齐同样的唤醒，一次覆盖 MV~UIV 与超级共十一台。
+     */
+    private void wakeHostRecipeLogic() {
+        try {
+            boolean sleptHost = false;
+            for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController controller : getControllers()) {
+                if (!(controller instanceof IRecipeLogicMachine logicMachine)) {
+                    continue;
+                }
+                com.gregtechceu.gtceu.api.machine.MetaMachine meta = controller.self();
+                if (meta != null && Boolean.FALSE.equals(meta.getBlockState()
+                        .getValue(com.gregtechceu.gtceu.api.block.BlockProperties.SERVER_TICK))) {
+                    sleptHost = true;
+                }
+                RecipeLogic logic = logicMachine.getRecipeLogic();
+                if (logic != null) {
+                    logic.updateTickSubscription();
+                }
+            }
+            if (sleptHost && hostSleepWarnAllowed()) {
+                GTLModular.LOGGER.info("[gtlmodular] 推料时宿主控制器正处于休眠（server_tick=false），已主动唤醒 @{}；"
+                        + "出现本行说明唤醒链被绕过，请留档。", getPos());
+            }
+        } catch (RuntimeException ignored) {
+            SwallowedErrors.report("MoltenPatternAssemblyPartMachine#wakeHostRecipeLogic", ignored);
+            // 唤醒失败时保留机器状态，交由主机自行轮询。
+        }
+    }
+
+    private boolean hostSleepWarnAllowed() {
+        long now = getLevel() == null ? 0L : getLevel().getGameTime();
+        if (now - lastSleptHostWarnTick < SLEPT_HOST_WARN_INTERVAL_TICKS) {
+            return false;
+        }
+        lastSleptHostWarnTick = now;
+        return true;
     }
 
     private void autoSwitchTick() {
@@ -1711,6 +1758,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     private boolean machineScaleDisabledWarned;
 
     private long lastGateRejectLogTick = -1000;
+
+    private long lastSleptHostWarnTick = -1000;
 
     private final java.util.Set<String> hostTableMisidentifyNotes = new java.util.HashSet<>();
 
