@@ -461,9 +461,6 @@ public final class NanochipComplexPattern {
                                 com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(2))
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_LASER)
-                        .setMinGlobalLimited(0).setMaxGlobalLimited(1))
-                .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
                                 com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.MAINTENANCE)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1));
     }

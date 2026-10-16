@@ -135,9 +135,11 @@ final class NanochipModuleProcessing {
         long eut = Math.max(1L, RecipeHelper.getInputEUt(copy));
         int duration = Math.max(1, copy.duration);
         int hatchTier = GTUtil.getTierByVoltage(maxVoltage);
-        // 组装矩阵覆写 getRecipeTier：基类用配方电压档，矩阵改用部装外壳档。
-        int recipeTier = kind.features().assembly()
-                ? NanochipAssemblyMatrixTier.recipeTier(copy)
+        // 组装矩阵的超频基准是机器上装的外壳档（CHANGELOG 与 NH 的虚方法形状），不是配方要求的档；
+        // 外壳档还未知（结构未成形/还没扫过）时退回配方电压档，避免把 maxOc 算大。
+        int housingTier = NanochipAssemblyMatrixTier.machineTier(module);
+        int recipeTier = kind.features().assembly() && housingTier >= 0
+                ? housingTier
                 : GTUtil.getTierByVoltage(eut);
         int maxOc = Math.max(0, hatchTier - recipeTier);
         long powerCap = power.availableInputPower(maxVoltage);
@@ -189,14 +191,6 @@ final class NanochipModuleProcessing {
         copy.duration = Math.max(floorTicks, duration);
         copy.ocTier = oc;
         return copy;
-    }
-
-    /** 组装矩阵把「配方等级」重定义为部装外壳档；其它模块沿用配方电压档。 */
-    int getRecipeTier(GTRecipe recipe) {
-        if (!kind.features().assembly()) {
-            return GTUtil.getTierByVoltage(Math.max(1L, RecipeHelper.getInputEUt(recipe)));
-        }
-        return NanochipAssemblyMatrixTier.gatedRecipeTier(module, recipe);
     }
 
     static GTRecipe moduleFlexibleOverclock(MetaMachine machine, GTRecipe recipe,
