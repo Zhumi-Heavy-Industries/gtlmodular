@@ -25,15 +25,6 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtlmodular:nanochip_module_core"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
             "item": "gtceu:epoxy_circuit_board"
