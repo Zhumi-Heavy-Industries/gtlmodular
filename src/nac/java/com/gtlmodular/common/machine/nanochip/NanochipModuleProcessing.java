@@ -64,15 +64,9 @@ final class NanochipModuleProcessing {
             return;
         }
         writeImpurity.accept(Math.min(NanochipModuleImpurity.CEILING, readImpurity.getAsDouble() + step));
-        // 到阈值只表示「该排了」；没有流体输出仓就排不掉，含杂度停在 100％ 并拦住下一批。
-        if (readImpurity.getAsDouble() >= readFlushThreshold.getAsInt()
-                && NanochipModuleImpurity.canFlush(module)) {
-            writeImpurity.accept(0.0D);
-            if (module.getLevel() != null && !module.getLevel().isClientSide
-                    && NanochipModContext.config().isNanochipDebugLogsEnabled()) {
-                NanochipModContext.logger().info("[gtlmodular] 全板浸没装置自动排液 @{}（阈值 {}%）",
-                        module.getPos(), readFlushThreshold.getAsInt());
-            }
+        // 到阈值只表示「该排了」。这里必须走与定时复核同一条入口：各写各的清零就等于绕过焊料消耗白拿排空。
+        if (readImpurity.getAsDouble() >= readFlushThreshold.getAsInt()) {
+            module.flushImpurity();
         }
     }
 

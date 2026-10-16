@@ -26,6 +26,15 @@
             "item": "gtceu:advanced_smd_capacitor"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_arc_furnace"
+          }
+        }
       }
     ],
     "fluid": [
@@ -33,7 +42,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:polybenzimidazole"
           }
         }
       }

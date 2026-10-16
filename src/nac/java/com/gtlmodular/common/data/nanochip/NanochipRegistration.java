@@ -25,6 +25,7 @@ public final class NanochipRegistration {
         NanochipBlocks.init();
         NanochipCircuitComponents.init();
         NanochipMissingItems.init();
+        NanochipItems.init();
         NanochipMissingWafers.init();
     }
 

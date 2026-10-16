@@ -52,6 +52,13 @@
             "item": "gtceu:normal_optical_pipe"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 30
+        },
+        "chance": 0
       }
     ],
     "fluid": [

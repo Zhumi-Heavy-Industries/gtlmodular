@@ -23,7 +23,7 @@
           "type": "gtceu:sized",
           "count": 48,
           "ingredient": {
-            "item": "gtceu:naquadah_foil"
+            "item": "gtceu:naquadria_foil"
           }
         }
       },
@@ -33,6 +33,15 @@
           "count": 4,
           "ingredient": {
             "item": "gtceu:double_naquadria_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_compressor"
           }
         }
       }

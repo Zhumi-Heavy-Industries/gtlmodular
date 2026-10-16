@@ -21,7 +21,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtceu:tungsten_steel_plate"
+            "item": "gtceu:dense_tungsten_steel_plate"
           }
         }
       },
@@ -31,6 +31,15 @@
           "count": 1,
           "ingredient": {
             "item": "gtceu:advanced_smd_capacitor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_electromagnetic_separator"
           }
         }
       }

@@ -26,6 +26,15 @@
             "item": "kubejs:nm_chip"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_electric_furnace"
+          }
+        }
       }
     ],
     "fluid": [
@@ -33,7 +42,7 @@
         "content": {
           "amount": 1512,
           "value": {
-            "fluid": "gtceu:polyetheretherketone"
+            "fluid": "gtceu:polybenzimidazole"
           }
         }
       }

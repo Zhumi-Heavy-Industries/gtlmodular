@@ -232,14 +232,22 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         processing.onRecipeProduced();
     }
 
-    /** 排空的唯一写回点：NH 在后处理里每 20 tick 复核一次，补上输出仓的存档最多 1 秒就能恢复。 */
-    private void flushImpurity() {
+    /**
+     * 排空的唯一写回点：NH 在后处理里每 20 tick 复核一次，补上输出仓的存档最多 1 秒就能恢复。
+     * 抽料或排料不成就不清零：宁可停在 100％ 卡住，也不能白拿一次含杂度归零。
+     */
+    void flushImpurity() {
         double flushed = impurity;
+        if (!NanochipModuleImpurity.flushSolder(this)) {
+            return;
+        }
         impurity = 0.0D;
         if (getLevel() != null && !getLevel().isClientSide
                 && NanochipModContext.config().isNanochipDebugLogsEnabled()) {
-            NanochipModContext.logger().info("[gtlmodular] 全板浸没装置定时排液 @{}（阈值 {}%，排前 {}%）",
-                    getPos(), autoFlushThreshold, flushed);
+            NanochipModContext.logger().info(
+                    "[gtlmodular] 全板浸没装置排空 @{}（阈值 {}%，排前 {}%）：抽超突变 {} mB → 排突变 {} mB",
+                    getPos(), autoFlushThreshold, flushed,
+                    NanochipModuleImpurity.SOLDER_PER_FLUSH, NanochipModuleImpurity.MUTATED_PER_FLUSH);
         }
     }
 

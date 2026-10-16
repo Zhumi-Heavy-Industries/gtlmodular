@@ -52,6 +52,15 @@
       {
         "content": {
           "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_core_smd_processor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
             "item": "gtceu:advanced_smd_capacitor"

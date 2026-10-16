@@ -42,6 +42,15 @@
             "item": "gtceu:epoxy_circuit_board"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_polarizer"
+          }
+        }
       }
     ],
     "fluid": [

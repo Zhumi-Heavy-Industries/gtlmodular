@@ -99,7 +99,7 @@ public final class NanochipModuleDisplay {
                     .append(Component.literal(" · " + level + " · EU ×"
                             + String.format(java.util.Locale.ROOT, "%.3f", machine.impurityEuMultiplier()))
                             .withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(" 杂质重置阈值 " + machine.autoFlushThreshold() + "%")
+                    .append(Component.literal(" 杂质排空阈值 " + machine.autoFlushThreshold() + "%（需超突变焊料 + 流体输出仓）")
                             .withStyle(ChatFormatting.DARK_GRAY))
                     .withStyle(ChatFormatting.GRAY));
         }

@@ -352,8 +352,17 @@ public final class NacProcessingTests {
                             && inventory.outputs() == 4 && inventory.outputLava() == 4000,
                     "单份放不下的批次应逐 tick 完成并只交付一次：" + status());
             helper.assertTrue(structure.module().getRecipeLogic().isIdle(), "单份超容量批次完成后未空闲：" + status());
-            // 1920（前三批）+ 1280（64 EU/t × 20 tick）+ 128：仓内电量耗尽时按 GTCEu 原版 RecipeLogic 回退 2 tick 进度，补电后重付这 2 tick。
-            energy.assertSpent(3328);
+            // 必须付清的是 1920（前三批）+ 1280（64 EU/t × 20 tick）＝ 3200；余量只可能是「断电回退重付」：
+            // GTCEu 原版 RecipeLogic 在仓内电量耗尽时把进度回退 2 tick，补电后重付，一次 = 2 tick × 64 EU/t = 128。
+            // 回退几次取决于「电量耗尽点与批次进度的交错」，而它会随服务器每 tick 的工作量漂移——实测：批次 2 基线
+            // 3328（余量 1 次）、独立版 3200（余量 0，这一轮压根没断电）、加了 16 个物品与 43 条配方后 3584（3 次）。
+            // 所以这里判不变量：付清基础量、余量必须是整次回退、且不超过观测上限，不钉死某一次的具体次数。
+            long base = 3200L;
+            long rollbackUnit = 128L;
+            long extra = energy.spent() - base;
+            helper.assertTrue(extra >= 0L && extra <= 6L * rollbackUnit && extra % rollbackUnit == 0,
+                    "超容量批次的扣电不是「基础 + 整次断电回退」：" + energy.spent()
+                            + "（基础 " + base + "，余量 " + extra + "）" + status());
         }
 
         private void assertFinished() {

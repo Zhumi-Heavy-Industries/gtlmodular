@@ -35,6 +35,15 @@
             "item": "gtceu:advanced_smd_transistor"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_fluid_heater"
+          }
+        }
       }
     ],
     "fluid": [
@@ -42,7 +51,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:polybenzimidazole"
           }
         }
       }

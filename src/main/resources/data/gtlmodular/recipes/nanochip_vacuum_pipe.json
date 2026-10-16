@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtceu:tungsten_steel_plate"
+            "item": "gtceu:naquadah_alloy_plate"
           }
         }
       },
@@ -24,6 +24,15 @@
           "count": 1,
           "ingredient": {
             "item": "gtceu:advanced_smd_capacitor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_electrolyzer"
           }
         }
       }
