@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtceu:tungsten_steel_plate"
+            "item": "gtceu:naquadah_alloy_plate"
           }
         }
       },
@@ -35,6 +35,15 @@
             "item": "gtceu:advanced_smd_transistor"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_fluid_solidifier"
+          }
+        }
       }
     ],
     "fluid": [
@@ -42,7 +51,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       }

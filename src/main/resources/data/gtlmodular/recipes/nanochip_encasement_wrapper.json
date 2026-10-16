@@ -52,6 +52,15 @@
       {
         "content": {
           "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_core_encasement_wrapper"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
             "item": "gtceu:assembly_line_casing"
@@ -64,7 +73,7 @@
         "content": {
           "amount": 1440,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       },

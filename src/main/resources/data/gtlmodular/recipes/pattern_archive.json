@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtceu:tungsten_steel_plate"
+            "item": "gtceu:epoxy_circuit_board"
           }
         }
       },
@@ -48,6 +48,15 @@
             "tag": "gtceu:circuits/hv"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:iv_scanner"
+          }
+        }
       }
     ],
     "fluid": [
@@ -55,7 +64,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       }

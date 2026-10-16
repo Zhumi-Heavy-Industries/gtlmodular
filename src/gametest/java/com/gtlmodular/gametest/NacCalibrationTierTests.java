@@ -42,27 +42,29 @@ public final class NacCalibrationTierTests {
 
     @GameTestGenerator
     public static Collection<TestFunction> tests() {
-        return List.of(test(Family.CRYSTAL, false), test(Family.WETWARE, false), test(Family.BIOWARE, false),
-                test(Family.OPTICAL, false), test(Family.EXOTIC, true), test(Family.COSMIC, true), test(Family.TEMPORAL, true));
+        return List.of(test(Family.CRYSTAL), test(Family.WETWARE), test(Family.BIOWARE), test(Family.OPTICAL),
+                test(Family.EXOTIC), test(Family.COSMIC), test(Family.TEMPORAL));
     }
 
-    private static TestFunction test(Family family, boolean special) {
+    private static TestFunction test(Family family) {
         String name = "calibration_tiers_" + family.name().toLowerCase(Locale.ROOT);
         return new TestFunction(name, NanochipModContext.modId() + ".nac_" + name,
-                NacStructureLayout.templateId().toString(), 30000, 0, true, helper -> run(helper, family, special));
+                NacStructureLayout.templateId().toString(), 30000, 0, true, helper -> run(helper, family));
     }
 
-    private static void run(GameTestHelper helper, Family family, boolean special) {
-        // 激光仓容量为 64 个满功率 tick，能预存长批次；普通能源仓的 16 tick 容量无法覆盖时长分支。
-        NacStructureFixture structure = new NacStructureFixture(helper, GTMachines.LASER_INPUT_HATCH_256[5]);
+    private static void run(GameTestHelper helper, Family family) {
+        // 模块只收普通能源仓，所以这里用 UHV 2A 能源仓：经仓室合并后输入电压仍是 2,097,152，
+        // 容量 V[9]×16×2＝67,108,864（32 个满功率 tick），覆盖最长的 31 tick 批次。
+        NacStructureFixture structure = new NacStructureFixture(helper, GTMachines.ENERGY_INPUT_HATCH[9]);
         fixtures.add(structure);
         structure.build();
-        NacCalibrationFixture calibration = new NacCalibrationFixture(helper, structure, family, special);
+        NacCalibrationFixture calibration = new NacCalibrationFixture(helper, structure, family);
         var sequence = helper.startSequence().thenWaitUntil(structure::assertConnected).thenExecute(calibration::prepare);
         // 基础族只贡献分母；这些真实产量让每个阈值都有相邻一件的严格下界和精确达标点。
-        int[] primitives = special ? new int[]{99, 114, 116} : new int[]{12, 12, 12};
-        int[] atThreshold = special ? new int[]{1, 6, 29} : new int[]{3, 8, 18};
-        double[] thresholds = special ? new double[]{0.01, 0.05, 0.20} : new double[]{0.20, 0.40, 0.60};
+        // 晶体/湿件是 30/60/90％，其余五族是 25/50/75％，两组各用同一个分母递进。
+        boolean high = family == Family.CRYSTAL || family == Family.WETWARE;
+        int[] primitives = high ? new int[]{14, 14, 14} : new int[]{12, 12, 12};
+        int[] atThreshold = high ? new int[]{6, 21, 126} : new int[]{4, 12, 36};
         int previousPrimitive = 0;
         int previousFamily = 0;
         Family other = family == Family.CRYSTAL ? Family.OPTICAL : Family.CRYSTAL;
@@ -74,7 +76,7 @@ public final class NacCalibrationTierTests {
                 int primitive = primitives[index];
                 int produced = atThreshold[index] - 1 + side;
                 int tier = index + side;
-                double threshold = thresholds[index];
+                double threshold = family.threshold(index + 1);
                 boolean reached = side == 1;
                 sequence.thenExecute(() -> calibration.checkpoint(primitive, produced, tier, threshold, reached));
                 for (int ticks : new int[]{21, 61}) {

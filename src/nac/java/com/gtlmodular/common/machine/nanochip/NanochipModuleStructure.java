@@ -85,6 +85,9 @@ final class NanochipModuleStructure {
     }
 
     boolean checkPatternWithTryLock() {
+        if (kind.features().assembly() && !NanochipAssemblyMatrixTier.checkPattern(module)) {
+            return false;
+        }
         if (!NAC_MODULE_FORMATION_BY_UPSTREAM) {
             Level level = module.getLevel();
             if (level != null && !level.isClientSide) {
@@ -216,6 +219,7 @@ final class NanochipModuleStructure {
     }
 
     void requestStructureRefresh(ServerPlayer requester) {
+        NanochipAssemblyMatrixTier.forget(module);
         this.pendingRefreshRequester = requester;
         this.structureCheckGate.reset();
         this.structureCheckThrottle.reset();
@@ -313,6 +317,7 @@ final class NanochipModuleStructure {
     }
 
     void onStructureInvalid() {
+        NanochipAssemblyMatrixTier.forget(module);
         if (loggedFormed) {
             loggedFormed = false;
             String detail = NanochipAssemblyComplexMachine.describeStructureFailure(module.getMultiblockState());

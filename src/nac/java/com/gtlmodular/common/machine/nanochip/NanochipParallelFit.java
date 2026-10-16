@@ -23,6 +23,10 @@ public final class NanochipParallelFit {
     public static final long MAX_PARALLEL_SEARCH_BOUND =
             NAC_PARALLEL_CEILING_TO_LONG ? Long.MAX_VALUE : Integer.MAX_VALUE;
 
+    // Single-batch ceiling: an infinite ME cell (Long.MAX_VALUE stock) or the vacuum network
+    // per-entry 1e9 limit turns a stock reading into a batch size; clamp it so one batch stays sane.
+    public static final long MAX_SINGLE_BATCH_PARALLEL = 1_000_000L;
+
     /** 保持关闭且不参与数量计算，产出必须由每份数量与实际并行决定。 */
     public static final boolean NAC_OUTPUT_AMOUNT_TO_CEILING = false;
 
@@ -155,6 +159,9 @@ public final class NanochipParallelFit {
     public static long findHighestMatchable(long requestedParallel, LongPredicate canMatch) {
         if (requestedParallel <= 0L || canMatch == null) {
             return 0L;
+        }
+        if (requestedParallel > MAX_SINGLE_BATCH_PARALLEL) {
+            requestedParallel = MAX_SINGLE_BATCH_PARALLEL;
         }
         if (canMatch.test(requestedParallel)) {
             return requestedParallel;

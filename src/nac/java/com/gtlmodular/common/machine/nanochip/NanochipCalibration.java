@@ -24,21 +24,22 @@ public final class NanochipCalibration {
 
         PRIMITIVE("primitives", "基础电路", 0.0D, 0.0D, 0.0D),
 
-        CRYSTAL("crystals", "晶体电路", 0.20D, 0.40D, 0.60D),
+        CRYSTAL("crystals", "晶体电路", 0.30D, 0.60D, 0.90D),
 
-        WETWARE("wetwares", "湿件电路", 0.20D, 0.40D, 0.60D),
+        WETWARE("wetwares", "湿件电路", 0.30D, 0.60D, 0.90D),
 
-        BIOWARE("bios", "生物活性电路", 0.20D, 0.40D, 0.60D),
+        BIOWARE("bios", "生物活性电路", 0.25D, 0.50D, 0.75D),
 
-        OPTICAL("opticals", "光学电路", 0.20D, 0.40D, 0.60D),
+        OPTICAL("opticals", "光学电路", 0.25D, 0.50D, 0.75D),
 
-        EXOTIC("exotics", "奇异电路", 0.01D, 0.05D, 0.20D),
+        /** 奇异/寰宇/超因果照光学口径取值，各自只对自己那一族生效。 */
+        EXOTIC("exotics", "奇异电路", 0.25D, 0.50D, 0.75D),
 
-        COSMIC("cosmics", "寰宇电路", 0.01D, 0.05D, 0.20D),
+        COSMIC("cosmics", "寰宇电路", 0.25D, 0.50D, 0.75D),
 
-        TEMPORAL("temporals", "超因果电路", 0.01D, 0.05D, 0.20D),
+        TEMPORAL("temporals", "超因果电路", 0.25D, 0.50D, 0.75D),
 
-        /** 保留 SPECIAL 的枚举位置以兼容 ordinal 存档；显示与生效判定通过 mergedAway 排除它。 */
+        /** 皮米/量子/普朗克电路各自成族；枚举位置必须留在末尾以兼容 ordinal 存档。 */
         SPECIAL("specials", "特殊电路", 0.01D, 0.05D, 0.20D);
 
         private final String key;
@@ -76,30 +77,13 @@ public final class NanochipCalibration {
             };
         }
 
-        public boolean mergedAway() {
+        /** 只有特殊族走累计时长曲线；奇异/寰宇/超因果与普通族一致。 */
+        public boolean specialStyleEffects() {
             return this == SPECIAL;
         }
 
-        public boolean specialStyleEffects() {
-            return this == SPECIAL || this == EXOTIC || this == COSMIC || this == TEMPORAL;
-        }
-
         public static Family[] barFamilies() {
-            Family[] all = values();
-            int n = 0;
-            for (Family f : all) {
-                if (!f.mergedAway()) {
-                    n++;
-                }
-            }
-            Family[] out = new Family[n];
-            int i = 0;
-            for (Family f : all) {
-                if (!f.mergedAway()) {
-                    out[i++] = f;
-                }
-            }
-            return out;
+            return values();
         }
 
         public static Family of(ResourceLocation id) {
@@ -107,8 +91,8 @@ public final class NanochipCalibration {
                 return PRIMITIVE;
             }
             String p = id.getPath().toLowerCase(Locale.ROOT);
-            if (p.contains("pico") || p.contains("quantum")) {
-                return TEMPORAL;
+            if (p.contains("pico") || p.contains("quantum") || p.contains("planck")) {
+                return SPECIAL;
             }
             if (p.contains("wetware")) {
                 return WETWARE;
@@ -367,9 +351,6 @@ public final class NanochipCalibration {
         int bestTier = 0;
         int bestCount = -1;
         for (Family f : Family.values()) {
-            if (f.mergedAway()) {
-                continue;
-            }
             int t = tierOf(f);
             if (t <= 0) {
                 continue;
@@ -430,9 +411,6 @@ public final class NanochipCalibration {
     public String breakdown() {
         StringBuilder sb = new StringBuilder();
         for (Family f : Family.values()) {
-            if (f.mergedAway()) {
-                continue;
-            }
             int c = countOf(f);
             if (c <= 0) {
                 continue;

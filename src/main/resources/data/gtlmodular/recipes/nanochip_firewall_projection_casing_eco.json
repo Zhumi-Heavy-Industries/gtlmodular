@@ -88,6 +88,13 @@
             "item": "gtceu:uhv_field_generator"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 31
+        },
+        "chance": 0
       }
     ],
     "fluid": [

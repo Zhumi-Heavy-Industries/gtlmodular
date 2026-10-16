@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = BlockItem.class, remap = false)
 public abstract class IndependentClonePlacementMixin {
     // Ctrl 复制在 getCloneItemStack 返回后才追加 BlockEntityTag，必须在它进入方块实体之前去掉批次副本。
+    // 该清理只是可选保护：目标方法在不同运行环境下可能对不上，缺失时保留原版放置行为，不能让整包启动失败。
     @Inject(method = {
             "updateCustomBlockEntityTag(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/item/ItemStack;)Z",
             "m_40582_(Lnet/minecraft/world/level/Level;Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/item/ItemStack;)Z"},

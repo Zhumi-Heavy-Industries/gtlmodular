@@ -80,7 +80,9 @@ def generateNacResources = tasks.register('generateNacResources') {
                 /\baddItem\(\s*"[^"]+"\s*,\s*\d+\s*,\s*"([a-z0-9_]+)"/)
         def wafers = matches('common/data/nanochip/NanochipMissingWafers.java',
                 /\baddWafer\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([a-z0-9_]+)"/)
-        def items = components + missingItems + wafers
+        def coreItems = matches('common/data/nanochip/NanochipItems.java',
+                /\badd\(\s*"([a-z0-9_]+)"/)
+        def items = components + missingItems + wafers + coreItems
         def registeredItems = items + blocks + machines
         def recipeTypes = matches('common/data/nanochip/NanochipRecipeTypes.java',
                 /\b(?:type|hiddenType)\(\s*"([a-z0-9_]+)"/)

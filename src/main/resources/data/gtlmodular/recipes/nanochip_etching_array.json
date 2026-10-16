@@ -52,6 +52,15 @@
       {
         "content": {
           "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_core_etching_array"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
             "item": "gtceu:advanced_smd_capacitor"
@@ -73,7 +82,7 @@
         "content": {
           "amount": 2880,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       },

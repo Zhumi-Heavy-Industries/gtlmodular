@@ -33,40 +33,62 @@ class NanochipCalibrationTest {
     void defaultWindowReachesTiersAndAppliesOnlyTheActiveFamilyDuration() {
         var calibration = new NanochipCalibration();
         assertEquals(0, calibration.activeTier());
-        calibration.record(PRIMITIVE, 80);
-        calibration.record(CRYSTAL, 20);
-        assertEquals(0.2D, calibration.percentage(CRYSTAL));
+        calibration.record(PRIMITIVE, 14);
+        calibration.record(CRYSTAL, 6);
+        assertEquals(0.3D, calibration.percentage(CRYSTAL), 1e-8);
         assertEquals(1, calibration.tierOf(CRYSTAL));
         assertEquals(0.8D, calibration.euMultiplier());
         assertEquals(1D, calibration.durationMultiplier(CRYSTAL));
-        calibration.record(CRYSTAL, 60);
+        calibration.record(CRYSTAL, 15);
         assertEquals(2, calibration.tierOf(CRYSTAL));
         assertEquals(0.8D, calibration.durationMultiplier(CRYSTAL));
         assertEquals(1D, calibration.durationMultiplier(OPTICAL));
-        calibration.record(CRYSTAL, 40);
+        calibration.record(CRYSTAL, 105);
         assertEquals(3, calibration.tierOf(CRYSTAL));
         assertTrue(calibration.specialActive(CRYSTAL));
     }
 
     @Test
-    void specialFamiliesUseDurationWithoutEnergyDiscount() {
+    void exoticCosmicAndTemporalFollowTheOpticalCurve() {
         var calibration = new NanochipCalibration();
-        calibration.record(PRIMITIVE, 9900);
-        calibration.record(COSMIC, 100);
+        calibration.record(PRIMITIVE, 12);
+        calibration.record(COSMIC, 4);
         assertEquals(1, calibration.tierOf(COSMIC));
-        assertEquals(1D, calibration.euMultiplier());
-        assertEquals(0.8D, calibration.durationMultiplier(COSMIC));
-        calibration.record(COSMIC, 500);
+        assertEquals(0.8D, calibration.euMultiplier());
+        assertEquals(1D, calibration.durationMultiplier(COSMIC));
+        calibration.record(COSMIC, 8);
         assertEquals(2, calibration.tierOf(COSMIC));
-        assertEquals(0.6D, calibration.durationMultiplier(COSMIC));
-        calibration.record(COSMIC, 2000);
+        assertEquals(0.8D, calibration.durationMultiplier(COSMIC));
+        calibration.record(COSMIC, 24);
         assertEquals(3, calibration.tierOf(COSMIC));
-        assertEquals(0.5D, calibration.durationMultiplier(COSMIC));
+        assertEquals(0.8D, calibration.durationMultiplier(COSMIC));
+    }
+
+    @Test
+    void specialFamilyIsItsOwnBarWithTheCumulativeDurationCurve() {
+        var calibration = new NanochipCalibration();
+        calibration.record(PRIMITIVE, 99);
+        calibration.record(SPECIAL, 1);
+        assertEquals(1, calibration.tierOf(SPECIAL));
+        assertEquals(1D, calibration.euMultiplier());
+        assertEquals(0.8D, calibration.durationMultiplier(SPECIAL));
+        calibration.record(SPECIAL, 4);
+        assertEquals(1, calibration.tierOf(SPECIAL));
+        calibration.record(SPECIAL, 1);
+        assertEquals(2, calibration.tierOf(SPECIAL));
+        assertEquals(0.6D, calibration.durationMultiplier(SPECIAL));
+        calibration.record(SPECIAL, 4);
+        assertEquals(2, calibration.tierOf(SPECIAL));
+        calibration.record(SPECIAL, 15);
+        assertEquals(3, calibration.tierOf(SPECIAL));
+        assertEquals(0.5D, calibration.durationMultiplier(SPECIAL));
+        assertEquals(SPECIAL, calibration.activeFamily());
+        assertTrue(calibration.specialActive(SPECIAL));
     }
 
     @Test
     void mergedEnergyKeepsEveryTierAndEveryRecipeFamily() {
-        for (var active : List.of(CRYSTAL, WETWARE, BIOWARE, OPTICAL, EXOTIC, COSMIC, TEMPORAL)) {
+        for (var active : List.of(CRYSTAL, WETWARE, BIOWARE, OPTICAL, EXOTIC, COSMIC, TEMPORAL, SPECIAL)) {
             for (int tier = 1; tier <= 3; tier++) {
                 var calibration = new NanochipCalibration();
                 int count = (int) Math.round(active.threshold(tier) * 100000);
@@ -89,8 +111,8 @@ class NanochipCalibrationTest {
     @Test
     void mergedEnergyWeightsEachRecipeBeforeSummingUnequalParallels() {
         var calibration = new NanochipCalibration();
-        calibration.record(PRIMITIVE, 60);
-        calibration.record(CRYSTAL, 40);
+        calibration.record(PRIMITIVE, 40);
+        calibration.record(CRYSTAL, 60);
         double crystal = NanochipCalibrationEnergy.totalEu(10000D * 3, calibration, CRYSTAL);
         double optical = NanochipCalibrationEnergy.totalEu(1000D * 7, calibration, OPTICAL);
         assertEquals(19200D, crystal, 1e-8);
@@ -100,11 +122,15 @@ class NanochipCalibrationTest {
     }
 
     @Test
-    void laserEnergyCombinesExistingAmperageAndTierDivisors() {
-        assertEquals(1D, NanochipCalibrationEnergy.laserMultiplier(0, 0));
-        assertEquals(1D, NanochipCalibrationEnergy.laserMultiplier(256, 6));
-        assertEquals(0.5D, NanochipCalibrationEnergy.laserMultiplier(512, 9));
-        assertEquals(1D / 1024D, NanochipCalibrationEnergy.laserMultiplier(65536, 13));
+    void laserEnergyFollowsNhDivisorsAndCrystalTierThreeOnlyLowersThem() {
+        assertEquals(1D, NanochipCalibrationEnergy.laserMultiplier(0, 0, false));
+        assertEquals(1D, NanochipCalibrationEnergy.laserMultiplier(256, 6, false));
+        assertEquals(0.5D, NanochipCalibrationEnergy.laserMultiplier(1024, 10, false));
+        assertEquals(1D / 3D, NanochipCalibrationEnergy.laserMultiplier(4096, 10, false), 1e-8);
+        assertEquals(1D / 20D, NanochipCalibrationEnergy.laserMultiplier(65536, 13, false), 1e-8);
+        assertEquals(0.5D, NanochipCalibrationEnergy.laserMultiplier(256, 6, true));
+        assertEquals(1D / 6D, NanochipCalibrationEnergy.laserMultiplier(1024, 10, true), 1e-8);
+        assertEquals(1D / 30D, NanochipCalibrationEnergy.laserMultiplier(65536, 13, true), 1e-8);
     }
 
     @Test
@@ -133,13 +159,13 @@ class NanochipCalibrationTest {
         config.setNanochipCalibrationUseFullWindow(true);
         try {
             var calibration = new NanochipCalibration();
-            calibration.record(CRYSTAL, 19999);
+            calibration.record(CRYSTAL, 29999);
             assertEquals(0, calibration.tierOf(CRYSTAL));
             calibration.record(CRYSTAL);
             assertEquals(1, calibration.tierOf(CRYSTAL));
-            calibration.record(CRYSTAL, 20000);
+            calibration.record(CRYSTAL, 30000);
             assertEquals(2, calibration.tierOf(CRYSTAL));
-            calibration.record(CRYSTAL, 20000);
+            calibration.record(CRYSTAL, 30000);
             assertEquals(3, calibration.tierOf(CRYSTAL));
         } finally {
             config.setNanochipCalibrationUseFullWindow(false);
@@ -159,13 +185,13 @@ class NanochipCalibrationTest {
     }
 
     @Test
-    void activeFamilyUsesTierThenCountAndExcludesMergedAwayFamily() {
+    void activeFamilyUsesTierThenCountAcrossEveryFamily() {
         var calibration = new NanochipCalibration();
         calibration.record(CRYSTAL, 3000);
-        calibration.record(COSMIC, 2000);
-        calibration.record(PRIMITIVE, 5000);
+        calibration.record(COSMIC, 5000);
+        calibration.record(PRIMITIVE, 2000);
         assertEquals(1, calibration.tierOf(CRYSTAL));
-        assertEquals(3, calibration.tierOf(COSMIC));
+        assertEquals(2, calibration.tierOf(COSMIC));
         assertEquals(COSMIC, calibration.activeFamily());
         calibration.clear();
         calibration.record(CRYSTAL, 4000);
@@ -174,8 +200,8 @@ class NanochipCalibrationTest {
         assertEquals(OPTICAL, calibration.activeFamily());
         calibration.clear();
         calibration.record(SPECIAL, 100000);
-        assertNull(calibration.activeFamily());
-        assertEquals(0, calibration.activeTier());
+        assertEquals(SPECIAL, calibration.activeFamily());
+        assertEquals(3, calibration.activeTier());
     }
 
     @Test

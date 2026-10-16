@@ -5,6 +5,7 @@ import com.gtlmodular.common.machine.nanochip.display.NanochipModuleDisplay;
 import com.gtlmodular.common.machine.nanochip.vacuum.NanochipSplitterPanel;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModules;
+import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
@@ -28,6 +29,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
+import org.gtlcore.gtlcore.api.recipe.RecipeResult;
 import org.gtlcore.gtlcore.common.machine.multiblock.electric.WorkableElectricMultipleRecipesMachine;
 import org.gtlcore.gtlcore.common.machine.trait.MultipleRecipesLogic;
 
@@ -230,6 +232,25 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         processing.onRecipeProduced();
     }
 
+    /**
+     * 排空的唯一写回点：NH 在后处理里每 20 tick 复核一次，补上输出仓的存档最多 1 秒就能恢复。
+     * 抽料或排料不成就不清零：宁可停在 100％ 卡住，也不能白拿一次含杂度归零。
+     */
+    void flushImpurity() {
+        double flushed = impurity;
+        if (!NanochipModuleImpurity.flushSolder(this)) {
+            return;
+        }
+        impurity = 0.0D;
+        if (getLevel() != null && !getLevel().isClientSide
+                && NanochipModContext.config().isNanochipDebugLogsEnabled()) {
+            NanochipModContext.logger().info(
+                    "[gtlmodular] 全板浸没装置排空 @{}（阈值 {}%，排前 {}%）：抽超突变 {} mB → 排突变 {} mB",
+                    getPos(), autoFlushThreshold, flushed,
+                    NanochipModuleImpurity.SOLDER_PER_FLUSH, NanochipModuleImpurity.MUTATED_PER_FLUSH);
+        }
+    }
+
     public int highestPurifiedWaterGrade() {
         return processing.highestPurifiedWaterGrade();
     }
@@ -357,6 +378,10 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             return;
         }
         long now = level.getGameTime();
+        // NH 的排空判断在后处理里每 20 tick 一次；只挂在配方结束上，满含杂度的设备补上输出仓也永远排不掉。
+        if (now % 20L == 0L && spec.features().board() && NanochipModuleImpurity.shouldFlush(this)) {
+            flushImpurity();
+        }
         structure.confirmFoldedPattern();
         slotPublisher.tickNacSlotHeartbeat();
         hostLink.tickHostSync(now);
@@ -412,6 +437,14 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         @Override
         public void findAndHandleRecipe() {
             calibrationBatch.clear();
+            if (NanochipModuleImpurity.blocksStart(module)) {
+                // 必须搜之前拦住：MultipleRecipesLogic 的搜索会真的扣输入，先搜再拒会吃掉材料。
+                lastFailedMatches = null;
+                Component reason = NanochipModuleImpurity.ceilingReason();
+                RecipeResult.of(module, RecipeResult.fail(reason));
+                setWaiting(reason);
+                return;
+            }
             super.findAndHandleRecipe();
         }
 
@@ -616,6 +649,10 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     public void attachConfigurators(ConfiguratorPanel panel) {
         super.attachConfigurators(panel);
         display.attachConfigurators(panel);
+        // 自动排空阈值页原本只挂在真空传送仓上，简单物流模式没有该仓就打不开。
+        if (spec.features().board()) {
+            panel.attachConfigurators(new NanochipVacuumHatchMachine.BoardProcessorConfigurator(this));
+        }
     }
 
     @Override

@@ -1,5 +1,10 @@
 ServerEvents.highPriorityData(event => {
     const product = Java.loadClass('com.gtlmodular.common.data.nanochip.NanochipModContext').modId()
+    // 件数表由 startup_scripts/nac_calibration.js 单点定义；两份清单手工同步的做法崩过一次测试服。
+    const amounts = global.NAC_TIER_AMOUNTS
+    if (!amounts) {
+        throw new Error('nac_calibration_tiers: global.NAC_TIER_AMOUNTS 缺失（startup 脚本未加载或未共享）')
+    }
     const sized = (item, count) => ({content: {type: 'gtceu:sized', count: count, ingredient: {item: item}}})
     const recipe = (name, family, amount, ticks, history) => {
         const path = history ? 'nanochip/assembly_matrix/test_tier_' : 'calibration/test_tier_'
@@ -13,8 +18,8 @@ ServerEvents.highPriorityData(event => {
         })
     }
     ;['primitive', 'crystal', 'wetware', 'bioware', 'optical', 'exotic', 'cosmic', 'temporal'].forEach(family => {
-        const amounts = family === 'primitive' ? [12, 99, 15, 2] : [1, 2, 4, 9, 22]
-        amounts.forEach(amount => recipe('history_' + family + '_' + amount, family, amount, 20, true))
-        ;[21, 61].forEach(ticks => recipe('probe_' + family + '_' + ticks, family, 1, ticks, false))
+        const list = family === 'primitive' ? amounts.primitive : amounts.family
+        list.forEach(amount => recipe('history_' + family + '_' + amount, family, amount, 20, true))
+        amounts.probes.forEach(ticks => recipe('probe_' + family + '_' + ticks, family, 1, ticks, false))
     })
 })

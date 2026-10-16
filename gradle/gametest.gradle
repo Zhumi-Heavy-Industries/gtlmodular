@@ -139,7 +139,9 @@ productGroups.each { product ->
             dependsOn prepare, 'createSrgToMcp', product.outputs.collect { it.classesTaskName }
             finalizedBy logAudit
             if (product.id == 'gtl_nac') mustRunAfter 'runFullGameTest'
-            timeout = Duration.ofMinutes(10)
+            // 合并 dev 的周期结构复检（放行间隔与上游相位互质，检查更频繁）后，完整版实测 10m6s 触顶，
+            // 而单套正常只需 8~9 分钟：上限抬到 15 分钟，避免把「跑得久」误判成失败。
+            timeout = Duration.ofMinutes(15)
             doFirst {
                 delete report, logReport, logFile
                 delete layout.buildDirectory.file("reports/gameTest/${product.id}-resources.json")

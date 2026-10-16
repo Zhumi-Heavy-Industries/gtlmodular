@@ -1,29 +1,42 @@
 {
-  "type": "gtceu:assembler",
+  "type": "gtceu:precision_assembler",
   "conditions": [
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtlcore"
     }
   ],
-  "duration": 200,
+  "duration": 150,
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 4,
+          "count": 8,
           "ingredient": {
-            "item": "gtceu:tungsten_steel_plate"
+            "item": "gtceu:iridium_frame"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 48,
           "ingredient": {
-            "item": "gtceu:advanced_smd_capacitor"
+            "item": "gtceu:rhodium_plated_palladium_foil"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_vacuum_pipe"
           }
         }
       }
@@ -31,9 +44,17 @@
     "fluid": [
       {
         "content": {
-          "amount": 144,
+          "amount": 1152,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:tairitsu"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1152,
+          "value": {
+            "fluid": "gtceu:mutated_living_solder"
           }
         }
       }
@@ -55,7 +76,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 480
+        "content": 1966080
       }
     ]
   }

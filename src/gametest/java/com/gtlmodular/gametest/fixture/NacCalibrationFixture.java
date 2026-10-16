@@ -25,7 +25,6 @@ public final class NacCalibrationFixture {
     private final GameTestHelper helper;
     private final NacStructureFixture structure;
     private final Family family;
-    private final boolean special;
     private final Map<Family, Integer> counts = new EnumMap<>(Family.class);
     private NacEnergyFixture energy;
     private ItemBusPartMachine input;
@@ -35,6 +34,7 @@ public final class NacCalibrationFixture {
     private long cumulativeEU;
     private long previousSpent;
     private long eut;
+    private long moduleVoltage;
     private int duration;
     private int paidTicks;
     private long firstPaidTick;
@@ -42,11 +42,10 @@ public final class NacCalibrationFixture {
     private boolean observing;
     private GTRecipe batch;
 
-    public NacCalibrationFixture(GameTestHelper helper, NacStructureFixture structure, Family family, boolean special) {
+    public NacCalibrationFixture(GameTestHelper helper, NacStructureFixture structure, Family family) {
         this.helper = helper;
         this.structure = structure;
         this.family = family;
-        this.special = special;
         helper.onEachTick(() -> {
             if (observing) observeTick();
         });
@@ -58,9 +57,18 @@ public final class NacCalibrationFixture {
         output = NacInventoryFixture.part(structure.module(), GTMachines.ITEM_EXPORT_BUS[1].getId(), ItemBusPartMachine.class);
         helper.assertTrue(!NanochipModContext.config().isNanochipCalibrationUseFullWindow(), "必须使用默认已记录数量分母");
         helper.assertTrue(NanochipModContext.config().isNanochipSimpleLogistics(), "必须使用默认简单物流");
-        helper.assertTrue(structure.module().getOverclockVoltage() == 2_097_152
-                && structure.module().getEnergyContainer().getEnergyCapacity() == 134_217_728,
-                "IV 256A 激光仓功率或容量不符");
+        moduleVoltage = structure.module().getOverclockVoltage();
+        long capacity = structure.module().getEnergyContainer().getEnergyCapacity();
+        // 夹具靠模块自己预存最长的探测批次；仓不够会触发上游「缩小并行」而改变账面数值。
+        long needed = 0L;
+        if (moduleVoltage > 0L) {
+            long probeTotal = 1_048_576L * 61L;
+            long probeDuration = Math.max(20L, Math.round(probeTotal / (double) moduleVoltage));
+            long probeEut = probeTotal > moduleVoltage * 20L ? moduleVoltage : probeTotal / 20L;
+            needed = probeEut * probeDuration;
+        }
+        helper.assertTrue(moduleVoltage > 0L && capacity >= needed,
+                "能源仓不足以预存最长探测批次：电压=" + moduleVoltage + " 容量=" + capacity + " 需要=" + needed);
         helper.assertTrue(!structure.module().getModuleSpec().hasUpkeep(), "矩阵维护耗材改变，需扩展流体断言");
         helper.assertTrue(structure.host().moduleEuMultiplier(family) == 1
                 && structure.host().moduleDurationMultiplier(family) == 1, "存在额外主机模块倍率");
@@ -105,13 +113,14 @@ public final class NacCalibrationFixture {
                 NanochipModContext.config().getNanochipCalibrationRecipeWhitelist()) == job.history,
                 "历史/测量配方白名单前提错误：" + recipeId);
         int tier = expectedTier();
-        double euFactor = !special && tier > 0 ? 0.8 : 1;
+        boolean specialStyle = family.specialStyleEffects();
+        double euFactor = !specialStyle && tier > 0 ? 0.8 : 1;
         double durationFactor = job.produced != family || tier == 0 ? 1
-                : special ? new double[]{1, 0.8, 0.6, 0.5}[tier] : tier >= 2 ? 0.8 : 1;
+                : specialStyle ? new double[]{1, 0.8, 0.6, 0.5}[tier] : tier >= 2 ? 0.8 : 1;
         // 上游将总能量重新分配到仓室功率，并分别取整时长和最低 20 tick 下的功率。
         double total = (job.history ? 32.0 : 1_048_576.0) * job.ticks * euFactor * durationFactor;
-        duration = (int) Math.round(Math.max(20, total / 2_097_152));
-        eut = total > 2_097_152 * 20 ? 2_097_152 : (long) (total / 20);
+        duration = (int) Math.round(Math.max(20, total / moduleVoltage));
+        eut = total > moduleVoltage * 20 ? moduleVoltage : (long) (total / 20);
         helper.assertTrue(input.getInventory().insertItem(0, stack("nac_tier_" + job.name + "_input"), false).isEmpty(),
                 "测试原料未进入真实仓室");
     }
@@ -193,8 +202,13 @@ public final class NacCalibrationFixture {
         int total = counts.values().stream().mapToInt(Integer::intValue).sum();
         if (total == 0) return 0;
         double share = produced / (double) total;
-        double[] thresholds = special ? new double[]{0.01, 0.05, 0.20} : new double[]{0.20, 0.40, 0.60};
-        return share >= thresholds[2] ? 3 : share >= thresholds[1] ? 2 : share >= thresholds[0] ? 1 : 0;
+        int tier = 0;
+        for (int t = 1; t <= 3; t++) {
+            if (share >= family.threshold(t)) {
+                tier = t;
+            }
+        }
+        return tier;
     }
 
     private void assertHistory() {
