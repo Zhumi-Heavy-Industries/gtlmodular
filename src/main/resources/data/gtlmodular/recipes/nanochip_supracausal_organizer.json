@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "tag": "gtceu:circuits/uhv"
+            "tag": "gtceu:circuits/uxv"
           }
         }
       },
@@ -73,7 +73,7 @@
         "content": {
           "amount": 1440,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       },
@@ -103,7 +103,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 524288
+        "content": 134217728
       }
     ]
   }

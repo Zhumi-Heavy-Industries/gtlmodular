@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtlmodular:cc_exotic_processing_core"
+            "item": "kubejs:exotic_processing_core"
           }
         }
       },
@@ -36,7 +36,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:uv_robot_arm"
+            "item": "gtceu:uev_robot_arm"
           }
         }
       },
@@ -45,7 +45,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtlmodular:cc_exotic_processor"
+            "item": "kubejs:exotic_processor"
           }
         }
       },
@@ -54,7 +54,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "tag": "gtceu:circuits/uv"
+            "tag": "gtceu:circuits/uev"
           }
         }
       }
@@ -64,7 +64,7 @@
         "content": {
           "amount": 288,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       }
@@ -86,7 +86,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 524288
+        "content": 8388608
       }
     ]
   }

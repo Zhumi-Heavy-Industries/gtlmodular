@@ -54,7 +54,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtlmodular:cc_exotic_processor"
+            "item": "kubejs:exotic_processor"
           }
         }
       },
@@ -63,7 +63,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtlmodular:cc_cosmic_processor"
+            "item": "kubejs:cosmic_processor"
           }
         }
       },
@@ -82,7 +82,7 @@
         "content": {
           "amount": 5760,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       }

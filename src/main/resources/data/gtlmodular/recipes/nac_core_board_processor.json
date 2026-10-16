@@ -45,7 +45,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtlmodular:cc_wetware_processor"
+            "item": "gtceu:wetware_processor"
           }
         }
       },
@@ -54,7 +54,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtlmodular:cc_bioware_processor"
+            "item": "kubejs:bioware_processor"
           }
         }
       },
@@ -73,7 +73,7 @@
         "content": {
           "amount": 2880,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:indalloy_140"
           }
         }
       }

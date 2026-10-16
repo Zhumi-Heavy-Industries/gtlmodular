@@ -35,15 +35,6 @@
             "item": "gtceu:double_naquadria_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:iv_compressor"
-          }
-        }
       }
     ],
     "fluid": [
