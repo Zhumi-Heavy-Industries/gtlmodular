@@ -65,7 +65,14 @@
 
 星阵数量已经进入追加线程数，不能再乘一次。NAC 主机自己的电压基线、满并行策略和 256 上限不适用于这些机器。通用引擎只把槽数下限夹到 1，没有 256 上限；槽数缩小时已有批次全部继续运行，数量低于新上限才补位。
 
-已确认的跨 tick 规则：总并行预算沿用 `(long) maxParallel * getMultipleThreads()`。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
+### 巨构级并行与单批安全阀
+
+- 机器实现 `LongParallelMachine` 时，适配器优先读 `getMaxParallelLong()`，否则退回 `getMaxParallel()`；总预算 `totalBudget = longLimit × threads` 用 long 饱和，不截到 int、不回绕。
+- 每轮候选的 `p` 还要过单批安全阀：`p ≤ min(输入可容纳, 输出可容纳, maxBatchRuns, Long.MAX / 单份最大物料量, power × maxBatchTicks / 单份总 EU)`。前两项仍由真实匹配决定，后三项只防"一批跑几年 / 内容乘爆 / 固定份数过大"。
+- `independentThreadsMaxBatchTicks` 默认 10000（约 8 分钟），0 表示不限制；`independentThreadsMaxBatchRuns` 默认 0（不限制）。它们是安全阀，不是吞吐上限：长期配方会自动缩批，短配方仍可开很大。
+- 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
+
+已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
 
 例如 `maxParallel=100`、线程数 2，A/B 各占 100：A 完成但堵输出时仍无剩余额度，A 实际结清后才能使用释放的 100。此时降到 1 线程，B 的 100 占满新总额，继续等待它结清，不裁剪旧批次。
 

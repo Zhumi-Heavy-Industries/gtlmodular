@@ -20,7 +20,32 @@ class OtherMachineThreadsConfigTest {
     private static final String ENABLED = "independentThreadsForOtherMachines";
     private static final String WHITELIST = "independentThreadsMachineWhitelist";
     private static final String BLACKLIST = "independentThreadsMachineBlacklist";
+    private static final String MAX_TICKS = "independentThreadsMaxBatchTicks";
+    private static final String MAX_RUNS = "independentThreadsMaxBatchRuns";
     private static final String MACHINE = "gtladditions:arcane_cache_vault";
+
+    @Test
+    void megastructureBatchLimitsHaveExplicitDefaultsAndCanBeOverridden() {
+        var spec = GTLModularConfig.SPEC;
+        ForgeConfigSpec.ConfigValue<?> ticks = spec.getValues().get(List.of(MAX_TICKS));
+        ForgeConfigSpec.ConfigValue<?> runs = spec.getValues().get(List.of(MAX_RUNS));
+        assertNotNull(ticks);
+        assertNotNull(runs);
+        assertEquals(10_000, ticks.getDefault());
+        assertEquals(0L, runs.getDefault());
+
+        var data = CommentedConfig.inMemory();
+        spec.correct(data);
+        data.set(MAX_TICKS, 20_000);
+        data.set(MAX_RUNS, 1_000_000_000L);
+        try {
+            spec.setConfig(data);
+            assertEquals(20_000, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks());
+            assertEquals(1_000_000_000L, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns());
+        } finally {
+            spec.setConfig(null);
+        }
+    }
 
     @Test
     void fullProductDefinesTopLevelDefaultsAndBindsTheComponentToItsSpec() {
@@ -149,7 +174,7 @@ class OtherMachineThreadsConfigTest {
         new NanochipConfig(builder, "gtl_nac");
         var spec = builder.build();
 
-        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST)) {
+        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST, MAX_TICKS, MAX_RUNS)) {
             assertFalse(spec.getValues().contains(key));
         }
     }

@@ -3,6 +3,7 @@ package com.gtlmodular.common.machine.independent.adapter;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleRecipesLogic;
 import com.gtladd.gtladditions.api.machine.wireless.GTLAddWirelessWorkableElectricMultipleRecipesMachine;
+import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.persistence.BatchRecipeExtensions.Power;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import com.gtlmodular.mixin.independent.MultipleRecipeEnergyInvoker;
@@ -25,7 +26,13 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
     }
 
     @Override public int threads() { return logic.getMultipleThreads(); }
-    @Override public long totalBudget() { return ParallelAllocation.totalBudget(logic.getMachine().getMaxParallel(), threads()); }
+
+    @Override
+    public long totalBudget() {
+        long maxParallel = logic.getMachine() instanceof LongParallelMachine longLimit
+                ? longLimit.getMaxParallelLong() : logic.getMachine().getMaxParallel();
+        return ParallelAllocation.totalBudget(maxParallel, threads());
+    }
     @Override public boolean allowsNewBatches() { return access.gtlmodular$checkBeforeWorking(); }
     @Override public boolean allowsRunningBatches() { return access.gtlmodular$checkBeforeWorking(); }
 
@@ -39,10 +46,19 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         List<GTRecipe> origins = new ArrayList<>();
         for (GTRecipe recipe : access.gtlmodular$lookupCandidates()) origins.add(RecipeCandidateSnapshots.copy(recipe));
         long[] demands = new long[origins.size()];
+        int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
+        long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
+        long powerCap = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
         for (int i = 0; i < origins.size(); i++) {
             // lookup 已通过原检查；这里只虚调用并行试算，避免将构造器谓词重复执行。
-            demands[i] = access.gtlmodular$maxParallel(origins.get(i), budget);
-            if (demands[i] < 0 || demands[i] > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
+            GTRecipe origin = origins.get(i);
+            long demand = access.gtlmodular$maxParallel(origin, budget);
+            if (demand < 0 || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
+            long maxAmount = BatchRunLimits.maxContentAmount(origin);
+            demands[i] = handler == null
+                    ? BatchRunLimits.cap(demand, energy.gtlmodular$totalRecipeEu(origin) * energy.gtlmodular$euMultiplier(),
+                            powerCap, maxBatchTicks, maxBatchRuns, maxAmount)
+                    : BatchRunLimits.cap(demand, 0.0D, 0L, 0, maxBatchRuns, maxAmount);
         }
         long[] allocated = FairParallelAllocation.allocate(budget, demands);
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
@@ -63,9 +79,9 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         }
         if (handler == null) return RecipeCandidateGroup.normal(inputs, normalEnergy,
                 Math.min(availablePower, logic.getMachine().getOverclockVoltage()), access.gtlmodular$limited().getLimitedDuration());
-        Power power = logic.getMachine() instanceof GTLAddWirelessWorkableElectricMultipleRecipesMachine
+        Power wirelessKind = logic.getMachine() instanceof GTLAddWirelessWorkableElectricMultipleRecipesMachine
                 ? Power.WIRELESS_ACCOUNT : Power.WIRELESS_TERMINAL;
-        return RecipeCandidateGroup.wireless(inputs, wirelessEnergy, power,
+        return RecipeCandidateGroup.wireless(inputs, wirelessEnergy, wirelessKind,
                 total -> access.gtlmodular$buildWirelessRecipe(new ObjectArrayList<>(), new ObjectArrayList<>(), total));
     }
 }

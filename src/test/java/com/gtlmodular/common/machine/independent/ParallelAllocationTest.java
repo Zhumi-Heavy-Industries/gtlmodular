@@ -22,6 +22,14 @@ class ParallelAllocationTest {
     }
 
     @Test
+    void longLimitKeepsMegastructureParallelsAndSaturatesInsteadOfWrapping() {
+        assertEquals(6_000_000_000L, ParallelAllocation.totalBudget(3_000_000_000L, 2));
+        assertEquals(Long.MAX_VALUE, ParallelAllocation.totalBudget(Long.MAX_VALUE, 2));
+        assertEquals(0L, ParallelAllocation.totalBudget(0L, 128));
+        assertThrows(IllegalArgumentException.class, () -> ParallelAllocation.totalBudget(-1L, 128));
+    }
+
+    @Test
     void ordinaryDistributionRedistributesSmallDemandsAndKeepsIndivisibleRemainder() {
         assertArrayEquals(new long[]{2, 4, 4}, FairParallelAllocation.allocate(10, new long[]{2, 10, 10}));
         assertArrayEquals(new long[]{0, 50, 50}, FairParallelAllocation.allocate(100, new long[]{0, 100, 100}));

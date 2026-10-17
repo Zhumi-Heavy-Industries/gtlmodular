@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gtladd.gtladditions.api.machine.logic.MutableRecipesLogic;
 import com.gtladd.gtladditions.utils.RecipeCalculationHelper;
+import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.persistence.BatchRecipeExtensions.Power;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import com.gtlmodular.mixin.independent.MutableRecipeLogicInvoker;
@@ -22,7 +23,13 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
     }
 
     @Override public int threads() { return logic.getMultipleThreads(); }
-    @Override public long totalBudget() { return ParallelAllocation.totalBudget(logic.getMachine().getMaxParallel(), threads()); }
+
+    @Override
+    public long totalBudget() {
+        long maxParallel = logic.getMachine() instanceof LongParallelMachine longLimit
+                ? longLimit.getMaxParallelLong() : logic.getMachine().getMaxParallel();
+        return ParallelAllocation.totalBudget(maxParallel, threads());
+    }
     @Override public boolean allowsNewBatches() { return logic.isMultipleRecipeMode() && access.gtlmodular$checkBeforeWorking(); }
     @Override public boolean allowsRunningBatches() { return access.gtlmodular$checkBeforeWorking(); }
 
@@ -36,21 +43,31 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
         List<Double> normalEnergy = new ArrayList<>();
         List<BigInteger> wirelessEnergy = new ArrayList<>();
+        int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
+        long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
+        long power = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
         for (GTRecipe found : access.gtlmodular$lookupCandidates()) {
             if (remaining == 0 || inputs.size() >= availableSlots) break;
             GTRecipe origin = RecipeCandidateSnapshots.copy(found);
             var pair = access.gtlmodular$calculateParallel(logic.getMachine(), origin, remaining);
-            var allocation = ParallelAllocation.mutable(pair.firstLong(), pair.secondLong(), remaining);
-            if (allocation.parallels() == 0) continue;
             long eut = access.gtlmodular$recipeEut(origin);
             double multiplier = access.gtlmodular$euMultiplier();
-            GTRecipe ingredients = RecipeCandidateSnapshots.scale(origin, allocation.parallels());
+            long capped = handler == null
+                    ? BatchRunLimits.cap(pair.firstLong(), (double) eut * origin.duration * multiplier, power,
+                            maxBatchTicks, maxBatchRuns, BatchRunLimits.maxContentAmount(origin))
+                    : BatchRunLimits.cap(pair.firstLong(), 0.0D, 0L, 0, maxBatchRuns,
+                            BatchRunLimits.maxContentAmount(origin));
+            if (capped <= 0L) continue;
+            var allocation = ParallelAllocation.mutable(capped, Math.min(pair.secondLong(), capped), remaining);
+            long actual = allocation.parallels();
+            if (actual == 0L) continue;
+            GTRecipe ingredients = RecipeCandidateSnapshots.scale(origin, actual);
             inputs.add(new RecipeCandidateGroup.Input(ingredients, allocation,
                     access.gtlmodular$energyReduction(), access.gtlmodular$durationReduction()));
             if (handler == null) {
-                normalEnergy.add(SingleBatchEnergy.total((double) eut * origin.duration, allocation.parallels(), multiplier));
+                normalEnergy.add(SingleBatchEnergy.total((double) eut * origin.duration, actual, multiplier));
             } else {
-                wirelessEnergy.add(MutableBatchEnergy.wirelessTotal(eut, origin.duration, allocation.parallels(), multiplier));
+                wirelessEnergy.add(MutableBatchEnergy.wirelessTotal(eut, origin.duration, actual, multiplier));
             }
             remaining -= allocation.budget();
         }

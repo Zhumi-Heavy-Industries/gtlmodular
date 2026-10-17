@@ -10,6 +10,8 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.BooleanValue enabled;
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> whitelist;
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> blacklist;
+    private final ForgeConfigSpec.IntValue maxBatchTicks;
+    private final ForgeConfigSpec.LongValue maxBatchRuns;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
         enabled = builder.comment(
@@ -32,6 +34,34 @@ public final class OtherMachineThreadsConfig {
                         "加入黑名单仅停止新批准入，不能丢弃已扣料的工作。")
                 .defineListAllowEmpty("independentThreadsMachineBlacklist", List.<String>of(),
                         ThreadEligibilitySettings::isValidMachineId);
+        maxBatchTicks = builder.comment(
+                        "单条独立批次的最长时长（tick），默认 10000（约 8 分钟）。",
+                        "准入时按机器功率把并行数压到这么长以内；0 表示不限制。",
+                        "这是安全阀，不是吞吐上限：长配方会自动缩批，避免一批跑几小时甚至几年。",
+                        "Maximum ticks per independent batch. Admission reduces the parallel count to fit this clock; 0 disables the cap.",
+                        "This is a safety valve, not a throughput rule: long recipes shrink instead of running for hours.")
+                .defineInRange("independentThreadsMaxBatchTicks", 10_000, 0, 2_000_000_000);
+        maxBatchRuns = builder.comment(
+                        "单条独立批次的最多运行份数（realParallels），默认 0 = 不限制。",
+                        "用于给极端库存一个绝对安全阀；0 表示只受输入、输出和单批时长的约束。",
+                        "Maximum runs per independent batch. 0 means no fixed run cap; inputs, outputs and the batch clock still apply.")
+                .defineInRange("independentThreadsMaxBatchRuns", 0L, 0L, Long.MAX_VALUE);
+    }
+
+    public int maxBatchTicks() {
+        try {
+            return maxBatchTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchTicks.getDefault();
+        }
+    }
+
+    public long maxBatchRuns() {
+        try {
+            return maxBatchRuns.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchRuns.getDefault();
+        }
     }
 
     public ThreadEligibilitySettings snapshot() {
