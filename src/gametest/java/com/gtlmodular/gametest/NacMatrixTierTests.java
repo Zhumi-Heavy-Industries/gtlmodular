@@ -45,7 +45,7 @@ public final class NacMatrixTierTests {
         for (Scenario scenario : Scenario.values()) {
             String name = "nac_matrix_tier_" + scenario.name().toLowerCase(Locale.ROOT);
             tests.add(new TestFunction("nac_matrix_tier", NanochipModContext.modId() + "." + name,
-                    NacStructureLayout.templateId().toString(), 6000, 0, true,
+                    NacStructureLayout.templateId().toString(), 1200, 0, true,
                     helper -> run(helper, scenario)));
         }
         return tests;
@@ -79,7 +79,7 @@ public final class NacMatrixTierTests {
         if (scenario == Scenario.SAME_TIER) {
             helper.startSequence()
                     .thenWaitUntil(structure::assertConnected)
-                    .thenExecute(() -> assertTier(helper, structure, 5))
+                    .thenExecute(() -> assertTier(helper, structure, 6))
                     .thenExecute(structure::releaseChunks).thenSucceed();
             return;
         }

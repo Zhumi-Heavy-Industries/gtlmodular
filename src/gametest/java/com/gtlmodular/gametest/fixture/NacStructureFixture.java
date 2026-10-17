@@ -306,6 +306,17 @@ public final class NacStructureFixture {
         installLaser(moduleHatches.get(index));
     }
 
+    /** 激光仓只开给塔身 H 格；挑一个普通 V 格放第 2 个激光仓，验证它不被接纳。 */
+    public void installLaserInModuleOrdinaryHatchSlot() {
+        for (BlockPos pos : moduleHatches) {
+            if (!moduleLaserSlots.contains(pos)) {
+                installLaser(pos);
+                return;
+            }
+        }
+        helper.fail("模块没有可对照的普通仓格：" + moduleHatches.size());
+    }
+
     public void installLaserInHostHatchSlot(int index) {
         helper.assertTrue(index >= 0 && index < hostHatches.size(),
                 "主机没有第 " + index + " 个仓格（实有 " + hostHatches.size() + " 个）");

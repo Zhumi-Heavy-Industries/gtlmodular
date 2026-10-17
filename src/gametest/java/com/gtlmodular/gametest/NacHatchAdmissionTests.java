@@ -42,7 +42,7 @@ public final class NacHatchAdmissionTests {
         for (Scenario scenario : Scenario.values()) {
             String name = "nac_hatch_admission_" + scenario.name().toLowerCase(Locale.ROOT);
             tests.add(new TestFunction("nac_hatch_admission", NanochipModContext.modId() + "." + name,
-                    NacStructureLayout.templateId().toString(), 6000, 0, true,
+                    NacStructureLayout.templateId().toString(), 1200, 0, true,
                     helper -> run(helper, scenario)));
         }
         return tests;
@@ -64,10 +64,11 @@ public final class NacHatchAdmissionTests {
                 structure.installLaserInModuleLaserSlot(0);
             }
             case ETCHER_TWO_LASERS -> {
-                helper.assertTrue(structure.moduleLaserSlots().size() >= 2,
-                        "蚀刻阵列的激光仓格少于 2 个（实有 " + structure.moduleLaserSlots().size() + " 个）");
+                // 塔身只开 1 个激光仓格；第 2 个放进普通 V 格，验证它不因「模块收激光」而被接纳。
+                helper.assertTrue(structure.moduleLaserSlots().size() >= 1,
+                        "蚀刻阵列没有激光仓格（实有 " + structure.moduleLaserSlots().size() + " 个）");
                 structure.installLaserInModuleLaserSlot(0);
-                structure.installLaserInModuleLaserSlot(1);
+                structure.installLaserInModuleOrdinaryHatchSlot();
             }
             case OTHER_MODULE_ONE_LASER -> structure.installLaserInModuleHatchSlot(0);
             case HOST_ONE_LASER -> structure.installLaserInHostHatchSlot(0);

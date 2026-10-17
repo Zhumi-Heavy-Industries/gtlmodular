@@ -16,7 +16,6 @@ import net.minecraft.gametest.framework.TestFunction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.lang.reflect.Field;
@@ -50,7 +49,7 @@ public final class NacImpurityTests {
         for (Scenario scenario : Scenario.values()) {
             String name = "nac_impurity_" + scenario.name().toLowerCase(Locale.ROOT);
             tests.add(new TestFunction("nac_impurity", NanochipModContext.modId() + "." + name,
-                    NacStructureLayout.templateId().toString(), 6000, 0, true,
+                    NacStructureLayout.templateId().toString(), 1200, 0, true,
                     helper -> run(helper, scenario)));
         }
         return tests;
@@ -81,12 +80,17 @@ public final class NacImpurityTests {
         helper.assertTrue(solder != null, "测试流体未注册：" + SUPER_SOLDER);
         long filled = input.tank.fill(FluidStack.create(solder, 1000L), false);
         helper.assertTrue(filled == 1000L, "输入仓未接收 1000 mB 超突变活性焊料：实际 " + filled + " mB");
+        // 排空用例只看「仓里有没有空间」，必须关掉仓自身的自动进出口，否则满仓会被它倒给邻格。
+        input.setWorkingEnabled(false);
         if (scenario == Scenario.OUTPUT_FULL) {
             FluidHatchPartMachine output = hatch(structure, GTMachines.FLUID_EXPORT_HATCH[1].getId());
+            Fluid mutated = fluid(MUTATED_SOLDER);
+            helper.assertTrue(mutated != null, "测试流体未注册：" + MUTATED_SOLDER);
             long capacity = output.tank.getStorages()[0].getCapacity();
-            long blocked = output.tank.fill(FluidStack.create(Fluids.LAVA, capacity), false);
+            long blocked = output.tank.getStorages()[0].fill(FluidStack.create(mutated, capacity), false);
             helper.assertTrue(blocked == capacity,
                     "输出仓未填满：期望 " + capacity + " mB，实际 " + blocked + " mB");
+            output.setWorkingEnabled(false);
         }
         setImpurity(helper, structure.module(), 100.0D);
     }
@@ -118,8 +122,8 @@ public final class NacImpurityTests {
         FluidStack blocker = output.tank.getFluidInTank(0);
         long capacity = output.tank.getStorages()[0].getCapacity();
         helper.assertTrue(remaining == 1000L && blocker.getAmount() == capacity
-                        && blocker.getFluid() == Fluids.LAVA && impurity == 100.0D,
-                "输出仓满时仍排空了焊料：期望输入仍 1000 mB、输出仍 " + capacity + " mB 岩浆、"
+                        && blocker.getFluid() == fluid(MUTATED_SOLDER) && impurity == 100.0D,
+                "输出仓满时仍排空了焊料：期望输入仍 1000 mB、输出仍 " + capacity + " mB 突变活性焊料、"
                         + "含杂度停留 100%，实际输入 " + remaining + " mB、输出 " + blocker.getAmount() + " mB "
                         + fluidName(blocker.getFluid()) + "、含杂度 " + impurity + "%");
     }
