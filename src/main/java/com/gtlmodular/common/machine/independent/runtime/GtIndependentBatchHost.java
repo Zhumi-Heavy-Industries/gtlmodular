@@ -139,7 +139,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     public boolean prepareInputs(IndependentRecipePayload payload) {
         var prepared = runtime.prepared(payload);
         io.requireSupported(payload.recipe());
-        prepared.inputs = io.selectInput(prepared.source.ingredients().inputs);
+        prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
         if (prepared.inputs == null) return waitFor(payload, "开工输入不足");
         var beforeHook = codec.encode(payload);
         if (!machine.beforeWorking(payload.recipe())) return waitFor(payload, "beforeWorking 否决");
@@ -147,7 +147,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         if (!canWork(payload)) return false;
         // 钩子可能触发库存监听或结构变化，不能把前一次模拟当成扣料承诺。
         io.requireSupported(payload.recipe());
-        prepared.inputs = io.selectInput(prepared.source.ingredients().inputs);
+        prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
         if (prepared.inputs == null) return waitFor(payload, "开工钩子后输入不足");
         if (payload.stage().output() == Output.UNROLLED) {
             var output = BatchChanceResolver.resolve(prepared.source.ingredients(), payload, machine, IO.OUT, false);
@@ -159,7 +159,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         // 概率结果和实际余量也必须能保存，不能只验证未抽签的配方本体。
         codec.decode(codec.encode(payload));
         prepared.beforeInputs = BatchContents.copy(payload.remainders().get(INPUT));
-        return io.outputRoute().fits(payload.resolvedOutputs(), IO.OUT) && prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN)
+        return io.outputFits(payload.resolvedOutputs()) && prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN)
                 || waitFor(payload, "开工输入或输出容量不足");
     }
 
@@ -246,15 +246,13 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         if (payload.resolvedOutputs() == null) throw new IllegalStateException("Missing determined batch outputs");
         var remaining = payload.remainders().get(OUTPUT);
         if (remaining == null) throw new IllegalStateException("Missing output remainder");
-        IndependentRecipeIo.Route route;
+        boolean complete;
         try {
             io.requireSupported(payload.recipe());
-            route = io.outputRoute();
-            route.validate(remaining);
+            complete = io.transferOutput(remaining, false);
         } catch (RuntimeException exception) {
             return waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
         }
-        boolean complete = route.transfer(remaining, IO.OUT, false);
         if (complete) payload.remainders().remove(OUTPUT);
         payload.setStage(new BatchExecutionStage(Input.CONSUMED, complete ? Output.COMPLETE : Output.PARTIAL, payload.stage().afterWorking()));
         return complete || runtime.waitFor(payload, "输出未结清，等待剩余容量");

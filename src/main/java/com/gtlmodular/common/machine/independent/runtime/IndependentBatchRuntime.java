@@ -30,7 +30,7 @@ public final class IndependentBatchRuntime {
 
     static final class Prepared {
         final SingleRecipeCandidate source;
-        IndependentRecipeIo.Route inputs;
+        IndependentRecipeIo.InputRoute inputs;
         Map<RecipeCapability<?>, List<Content>> beforeInputs;
         Prepared(SingleRecipeCandidate source) { this.source = source; }
     }

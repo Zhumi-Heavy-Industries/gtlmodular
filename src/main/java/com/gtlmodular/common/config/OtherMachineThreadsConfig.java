@@ -12,6 +12,7 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> blacklist;
     private final ForgeConfigSpec.IntValue maxBatchTicks;
     private final ForgeConfigSpec.LongValue maxBatchRuns;
+    private final ForgeConfigSpec.BooleanValue allowMeIo;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
         enabled = builder.comment(
@@ -46,6 +47,12 @@ public final class OtherMachineThreadsConfig {
                         "用于给极端库存一个绝对安全阀；0 表示只受输入、输出和单批时长的约束。",
                         "Maximum runs per independent batch. 0 means no fixed run cap; inputs, outputs and the batch clock still apply.")
                 .defineInRange("independentThreadsMaxBatchRuns", 0L, 0L, Long.MAX_VALUE);
+        allowMeIo = builder.comment(
+                        "允许 ME 样板/输出处理器参与独立批次（默认关闭）。",
+                        "开启后，装了 ME 长数量仓储的机器走 ME 的 long 计数 IO；未装 ME 的机器仍走普通总线。",
+                        "ME tick 物品/流体尚未适配：配方带 tick 物料时仍会拒绝，等后续批次。",
+                        "Allow ME pattern/output handlers in independent batches. ME tick item/fluid IO is not implemented yet.")
+                .define("independentThreadsAllowMeIo", false);
     }
 
     public int maxBatchTicks() {
@@ -61,6 +68,14 @@ public final class OtherMachineThreadsConfig {
             return maxBatchRuns.get();
         } catch (IllegalStateException unloaded) {
             return maxBatchRuns.getDefault();
+        }
+    }
+
+    public boolean allowMeIo() {
+        try {
+            return allowMeIo.get();
+        } catch (IllegalStateException unloaded) {
+            return allowMeIo.getDefault();
         }
     }
 
