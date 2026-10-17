@@ -36,6 +36,10 @@ public final class PatternSlotRightClickOverlay extends WidgetGroup {
             return false;
         }
         boolean assign = net.minecraft.client.gui.screens.Screen.hasShiftDown();
+        if (!assign) {
+            // 本侧先跑一遍再发包：页签展开、页面控件都要在本帧建好，等服务端回包再建会让首包内容对不上。
+            openCatalystSlot.accept(slot);
+        }
         writeClientAction(assign ? ACTION_ASSIGN_MODE_SLOT : ACTION_OPEN_CATALYST_SLOT,
                 buffer -> buffer.writeVarInt(slot));
         return true;
