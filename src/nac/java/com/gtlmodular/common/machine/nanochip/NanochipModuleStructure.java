@@ -103,7 +103,14 @@ final class NanochipModuleStructure {
 
     boolean checkPatternWithLock() {
         if (NAC_MODULE_FORMATION_BY_UPSTREAM) {
-            return upstreamLock.getAsBoolean();
+            final boolean upstream = upstreamLock.getAsBoolean();
+            // 上游对 20 个装配格只要求「是某档外壳」，原地换档（/setblock、/fill replace、WorldEdit、
+            // 直接 setBlockState）不会让它重新判档；档位缓存与「不同级不成形」只能在这里补一次，
+            // 否则换成高层外壳的矩阵会一直按旧档拒绝配方，只有手动刷新结构或重进世界才恢复。
+            if (!upstream || !kind.features().assembly()) {
+                return upstream;
+            }
+            return NanochipAssemblyMatrixTier.checkPattern(module);
         }
         Level level = module.getLevel();
         if (level == null || level.isClientSide) {

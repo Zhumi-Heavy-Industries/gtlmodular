@@ -30,7 +30,8 @@ public final class NacMatrixTierTests {
     private enum Scenario {
         SAME_TIER,
         MIXED_TIER,
-        BELOW_RECIPE
+        BELOW_RECIPE,
+        IN_PLACE_UPGRADE
     }
 
     @AfterBatch(batch = "nac_matrix_tier")
@@ -65,7 +66,7 @@ public final class NacMatrixTierTests {
                 structure.replaceAssemblyCasing(mv, 0);
                 yield count;
             }
-            case BELOW_RECIPE -> structure.replaceAssemblyCasings(lv);
+            case BELOW_RECIPE, IN_PLACE_UPGRADE -> structure.replaceAssemblyCasings(lv);
         };
         helper.assertTrue(cells == 20, "部装外壳格应为 20 个，实际 " + cells + " 个");
         if (scenario == Scenario.MIXED_TIER) {
@@ -80,6 +81,18 @@ public final class NacMatrixTierTests {
             helper.startSequence()
                     .thenWaitUntil(structure::assertConnected)
                     .thenExecute(() -> assertTier(helper, structure, 6))
+                    .thenExecute(structure::releaseChunks).thenSucceed();
+            return;
+        }
+        if (scenario == Scenario.IN_PLACE_UPGRADE) {
+            // 成形后原地换外壳档（/setblock、/fill replace、WorldEdit 都是这条路）：档位缓存必须跟着刷新，
+            // 否则换成高层外壳的矩阵会一直按旧档拒绝配方，只有手动刷新结构或重进世界才恢复。
+            // 换档会先让上游重判结构（中途可能短暂失形、档位读回 -1），所以要等它稳定成新档，别钉死 tick 数。
+            helper.startSequence()
+                    .thenWaitUntil(structure::assertConnected)
+                    .thenExecute(() -> assertTier(helper, structure, 1))
+                    .thenExecute(() -> structure.replaceAssemblyCasings(luv))
+                    .thenWaitUntil(() -> assertTier(helper, structure, 6))
                     .thenExecute(structure::releaseChunks).thenSucceed();
             return;
         }
