@@ -4,9 +4,11 @@ import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModules;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gtlmodular.common.machine.nanochip.NanochipAssemblyComplexMachine;
+import com.gtlmodular.common.machine.nanochip.NanochipCalibrationFluids;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleKind;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleUpkeep;
+import com.gtlmodular.common.machine.nanochip.NanochipPurifiedWater;
 import com.gtlmodular.common.machine.nanochip.NanochipSplitterRules;
 import com.gtlmodular.common.machine.nanochip.NanochipStructureRefresh;
 
@@ -72,16 +74,22 @@ public final class NanochipModuleDisplay {
                     .withStyle(ChatFormatting.GRAY));
         }
         if (kind.hasUpkeep()) {
-            // 净化水支持多个等级，耗材说明不能只显示种类参数中的一级水。
+            // 净化水支持多个等级，耗材说明不能只显示种类参数中的一级水；组织器的基础值由水质档位决定。
             boolean waterFamily = NanochipModuleUpkeep.isPurifiedWaterFamily(kind.upkeepFluidId());
             textList.add(Component.literal("运行耗材: ")
-                    .append(Component.literal(kind.upkeepMbPerSecond() + " mB/s ").withStyle(ChatFormatting.GOLD))
+                    .append(Component.literal(kind.isWaterScaledOrganizer()
+                                    ? "基础 400~1000 mB/s（按水质档位）"
+                                    : kind.upkeepMbPerSecond() + " mB/s ")
+                            .withStyle(ChatFormatting.GOLD))
                     .append((waterFamily
                             ? Component.translatable("gtlmodular.nanochip.module.upkeep.water_any_tier")
                             : NanochipModuleUpkeep.fluidDisplayName(kind.upkeepFluidId(), kind.upkeepFluidId()))
                             .copy().withStyle(ChatFormatting.AQUA))
                     .append(Component.literal(kind.features().biologicalExemption()
-                            ? " · 湿件/生物满校准可豁免" : " · 从本机流体输入仓扣，检测到哪一级用哪一级")
+                            ? " · 湿件/生物满校准可豁免"
+                            : kind.isWaterScaledOrganizer()
+                                    ? " · 需两类不同效果的净化水，缺一即停"
+                                    : " · 从本机流体输入仓扣，检测到哪一级用哪一级")
                             .withStyle(ChatFormatting.DARK_GRAY))
                     .withStyle(ChatFormatting.GRAY));
         }
@@ -104,13 +112,15 @@ public final class NanochipModuleDisplay {
                     .withStyle(ChatFormatting.GRAY));
         }
         if (kind.isWaterScaledOrganizer()) {
-            int grade = machine.highestPurifiedWaterGrade();
-            textList.add(Component.literal("净化水等级: ")
-                    .append(Component.literal(grade <= 0 ? "未供水" : grade + " 级")
-                            .withStyle(grade <= 0 ? ChatFormatting.RED : ChatFormatting.AQUA))
-                    .append(Component.literal(grade <= 0
-                            ? " · 本模块不给加成，需供 1~16 级净化水"
-                            : " · 加成强度 ×" + String.format(java.util.Locale.ROOT, "%.2f", machine.waterStrength()))
+            NanochipPurifiedWater.Selection selection = machine.purifiedWaterSelection();
+            boolean complete = selection.complete();
+            textList.add(Component.literal("净化水档位: ")
+                    .append(Component.literal(waterSummary(selection))
+                            .withStyle(complete ? ChatFormatting.AQUA : ChatFormatting.RED))
+                    .append(Component.literal(complete
+                            ? " · 水耗 ×" + String.format(java.util.Locale.ROOT, "%.2f",
+                                    selection.drainMultiplier(NanochipCalibrationFluids.fullCalibration(machine)))
+                            : " · 需两类不同效果的净化水，缺一即停机")
                             .withStyle(ChatFormatting.GRAY))
                     .withStyle(ChatFormatting.GRAY));
         }
@@ -129,6 +139,25 @@ public final class NanochipModuleDisplay {
     /** 附加配置页保留父类机器界面，避免覆盖模式和进度控件。 */
     public void attachConfigurators(ConfiguratorPanel panel) {
         panel.attachConfigurators(new NanochipStructureRefresh.RefreshConfigurator(machine));
+    }
+
+    private static String waterSummary(NanochipPurifiedWater.Selection selection) {
+        if (selection.stocks().isEmpty()) {
+            return "未供水";
+        }
+        StringBuilder summary = new StringBuilder();
+        for (NanochipPurifiedWater.Stock stock : selection.stocks()) {
+            if (summary.length() > 0) {
+                summary.append(" + ");
+            }
+            String label = switch (stock.grade().category()) {
+                case CONSUMPTION -> "水耗";
+                case DURATION -> "耗时";
+                case EU -> "耗电";
+            };
+            summary.append(label).append(stock.grade().level()).append("级(").append(stock.highestTier()).append(')');
+        }
+        return summary.toString();
     }
 
     public static String hostInfo(NanochipAssemblyComplexMachine h, boolean connected) {

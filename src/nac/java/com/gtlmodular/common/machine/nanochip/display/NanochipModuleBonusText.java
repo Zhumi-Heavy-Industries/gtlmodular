@@ -45,9 +45,9 @@ public final class NanochipModuleBonusText {
                 lines.add(text("families", families));
             }
             if (module.organizerFamily() != null && module.formed()) {
-                lines.add(text("water", number(module.waterStrength()), number(module.effectiveWaterStrength()),
+                lines.add(text("water", number(module.waterDurationFactor()), number(module.waterPowerFactor()),
                         family(module.organizerFamily()), text(module.fullCalibration() ? "enabled" : "disabled")));
-                if (module.waterStrength() <= 0.0D) lines.add(text("inactive", text("no_water")));
+                if (!module.waterSupplied()) lines.add(text("inactive", text("no_water")));
             }
             if (module.board() && module.formed()) {
                 lines.add(text("impurity", number(module.impurity()), number(module.impurityMultiplier())));

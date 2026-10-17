@@ -251,12 +251,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         }
     }
 
-    public int highestPurifiedWaterGrade() {
-        return processing.highestPurifiedWaterGrade();
-    }
-
-    public double waterStrength() {
-        return processing.waterStrength();
+    /** 组织器当前选中的两份水：界面显示与主机加成读同一份结果。 */
+    public NanochipPurifiedWater.Selection purifiedWaterSelection() {
+        return processing.purifiedWaterSelection();
     }
 
     public int laserHatchTier() {

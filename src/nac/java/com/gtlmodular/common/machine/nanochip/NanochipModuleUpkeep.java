@@ -33,7 +33,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
-/** 耗材检测与扣除共用流体来源，避免加成接受某等级净化水而运行扣料拒绝它。 */
+/**
+ * 耗材检测与扣除共用流体来源，避免加成接受某等级净化水而运行扣料拒绝它。
+ * 组织器的两份净化水也读同一份选择结果，避免「加成认一份、扣料认另一份」。
+ */
 public final class NanochipModuleUpkeep {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("GTL-Modular");
@@ -76,6 +79,9 @@ public final class NanochipModuleUpkeep {
                 return true;
             }
         }
+        if (kind.isWaterScaledOrganizer()) {
+            return checkPurifiedWaterPair(module, consume);
+        }
         boolean family = isPurifiedWaterFamily(kind.upkeepFluidId());
         Fluid drain = pickAvailable(module, fluid, amount, family);
         if (drain == null) {
@@ -86,6 +92,95 @@ public final class NanochipModuleUpkeep {
             MachineIO.inputFluid(module, FluidStack.create(drain, amount));
         }
         return true;
+    }
+
+    /**
+     * 组织器必须同时拿到两个不同效果类别的净化水：每类先取自己最高一级，再取等级最高的两类。
+     * 缺任一类、或任一类不够自己的基础单次消耗量，都按缺料停机（与缺电同级），不做静默忽略。
+     */
+    private static boolean checkPurifiedWaterPair(NanochipModuleMachine module, boolean consume) {
+        long[] perTier = perTierOf(module);
+        NanochipPurifiedWater.Selection selection =
+                NanochipPurifiedWater.select(NanochipPurifiedWater.stocksOf(perTier));
+        detectedTier = highestStockedTier(perTier);
+        detectedAmount = totalStocked(perTier);
+        long missing = missingBaseMb(selection);
+        if (missing > 0L) {
+            notifyMissingWater(module, missing);
+            return false;
+        }
+        boolean fullCalibration = NanochipCalibrationFluids.fullCalibration(module);
+        java.util.List<FluidStack> plan = new java.util.ArrayList<>();
+        for (NanochipPurifiedWater.Stock stock : selection.stocks()) {
+            long required = selection.drainMb(stock, fullCalibration);
+            long planned = 0L;
+            for (NanochipPurifiedWater.TierAmount take
+                    : NanochipPurifiedWater.drainPlan(selection, stock, perTier, fullCalibration)) {
+                Fluid tierFluid = fluidOf(PURIFIED_WATER_TIERS.get(take.tier() - 1));
+                if (tierFluid == null) {
+                    continue;
+                }
+                plan.add(FluidStack.create(tierFluid, take.amountMb()));
+                planned = NanochipPurifiedWater.saturatingAdd(planned, take.amountMb());
+            }
+            // 守恒：扣不满就不扣，宁可停在缺料，也不能扣一半还放行。
+            if (planned < required) {
+                notifyMissingWater(module, required);
+                return false;
+            }
+        }
+        if (consume) {
+            for (FluidStack stack : plan) {
+                MachineIO.inputFluid(module, stack);
+            }
+        }
+        return true;
+    }
+
+    /** 一次扫描给出两份水的选择结果：加成取样与耗材扣除读同一份结果，不能各扫一遍。 */
+    public static NanochipPurifiedWater.Selection purifiedWaterSelection(WorkableMultiblockMachine machine) {
+        return NanochipPurifiedWater.select(NanochipPurifiedWater.stocksOf(perTierOf(machine)));
+    }
+
+    /** 等级表到每级库存（下标即等级）：组织器的两种水只从这张表里选。 */
+    private static long[] perTierOf(WorkableMultiblockMachine machine) {
+        long[] perTier = new long[PURIFIED_WATER_TIERS.size() + 1];
+        for (FluidStack fs : scanInputFluids(machine)) {
+            int tier = purifiedWaterTierOfFluid(fs.getFluid());
+            long amount = fs.getAmount();
+            if (tier <= 0 || amount <= 0L) {
+                continue;
+            }
+            perTier[tier] = NanochipPurifiedWater.saturatingAdd(perTier[tier], amount);
+        }
+        return perTier;
+    }
+
+    private static long totalStocked(long[] perTier) {
+        long total = 0L;
+        for (int tier = 1; tier < perTier.length; tier++) {
+            total = NanochipPurifiedWater.saturatingAdd(total, perTier[tier]);
+        }
+        return total;
+    }
+
+    /** 缺哪一类就报哪一类的量；两类都够时返回 0。 */
+    private static long missingBaseMb(NanochipPurifiedWater.Selection selection) {
+        if (selection.stocks().size() < NanochipPurifiedWater.REQUIRED_WATERS) {
+            return NanochipPurifiedWater.minimumBaseMbPerSecond();
+        }
+        long missing = 0L;
+        for (NanochipPurifiedWater.Stock stock : selection.stocks()) {
+            if (!stock.covers()) {
+                missing = Math.max(missing, stock.grade().baseMbPerSecond());
+            }
+        }
+        return missing;
+    }
+
+    /** 净化水提示沿用同一组语言键；选中了哪两级、各类多少看耗材检测日志。 */
+    private static void notifyMissingWater(NanochipModuleMachine module, long amountMb) {
+        notifyMissing(module, fluidOf(module.getModuleSpec().upkeepFluidId()), amountMb);
     }
 
     public static final List<String> PURIFIED_WATER_TIERS = List.of(
@@ -119,21 +214,10 @@ public final class NanochipModuleUpkeep {
         return idx < 0 ? 0 : idx + 1;
     }
 
-    private static int purifiedWaterTier(Fluid fluid) {
+    /** 流体到等级：等级表只有一处定义，耗材扫描与显示不能各写一份判定。 */
+    public static int purifiedWaterTierOfFluid(Fluid fluid) {
         ResourceLocation rid = ForgeRegistries.FLUIDS.getKey(fluid);
-        if (rid == null) {
-            return 0;
-        }
-        for (int i = 0; i < PURIFIED_WATER_TIERS.size(); i++) {
-            if (PURIFIED_WATER_TIERS.get(i).equals(rid.toString())) {
-                return i + 1;
-            }
-        }
-        return 0;
-    }
-
-    private static boolean isPurifiedWater(Fluid fluid) {
-        return purifiedWaterTier(fluid) > 0;
+        return rid == null ? 0 : purifiedWaterTierOf(rid.toString());
     }
 
     private static volatile int detectedTier;
@@ -165,7 +249,7 @@ public final class NanochipModuleUpkeep {
                 if (fs.getFluid() == fluid) {
                     long add = fs.getAmount();
                     if (add > 0L) {
-                        exact = saturatingAdd(exact, add);
+                        exact = NanochipPurifiedWater.saturatingAdd(exact, add);
                     }
                 }
             }
@@ -179,10 +263,10 @@ public final class NanochipModuleUpkeep {
             if (add <= 0L) {
                 continue;
             }
-            int tier = purifiedWaterTier(fs.getFluid());
+            int tier = purifiedWaterTierOfFluid(fs.getFluid());
             if (tier > 0) {
-                perTier[tier] = saturatingAdd(perTier[tier], add);
-                total = saturatingAdd(total, add);
+                perTier[tier] = NanochipPurifiedWater.saturatingAdd(perTier[tier], add);
+                total = NanochipPurifiedWater.saturatingAdd(total, add);
             }
         }
         int tier = highestStockedTier(perTier);
@@ -196,27 +280,6 @@ public final class NanochipModuleUpkeep {
 
     private static boolean isExempt(NanochipModuleMachine module) {
         return NanochipCalibrationFluids.exemptionFor(module) != null;
-    }
-
-    /** 多个网络库存来源相加可能溢出，饱和到 long 上限以免误判无料。 */
-    private static long saturatingAdd(long a, long b) {
-        if (b <= 0L) {
-            return a;
-        }
-        return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b;
-    }
-
-    private static boolean hasFluid(WorkableMultiblockMachine machine, Fluid fluid, long amount) {
-        long total = 0L;
-        for (FluidStack fs : scanInputFluids(machine)) {
-            if (fs.getFluid() == fluid) {
-                long add = fs.getAmount();
-                if (add > 0L) {
-                    total = saturatingAdd(total, add);
-                }
-            }
-        }
-        return total >= amount;
     }
 
     public static java.util.List<FluidStack> scanInputFluids(WorkableMultiblockMachine machine) {

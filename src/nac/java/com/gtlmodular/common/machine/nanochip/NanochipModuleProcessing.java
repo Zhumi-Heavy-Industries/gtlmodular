@@ -30,9 +30,6 @@ final class NanochipModuleProcessing {
     private final DoubleConsumer writeImpurity;
     private final IntSupplier readFlushThreshold;
 
-    private static final java.util.regex.Pattern PURIFIED_WATER =
-            java.util.regex.Pattern.compile("grade_(\\d+)_purified_water");
-
     NanochipModuleProcessing(NanochipModuleMachine module, NanochipModuleSpec kind,
                              NanochipModulePower power, DoubleSupplier readImpurity,
                              DoubleConsumer writeImpurity, IntSupplier readFlushThreshold) {
@@ -70,28 +67,9 @@ final class NanochipModuleProcessing {
         }
     }
 
-    int highestPurifiedWaterGrade() {
-        int best = 0;
-        for (com.lowdragmc.lowdraglib.side.fluid.FluidStack fs
-                : NanochipModuleUpkeep.scanInputFluids(module)) {
-            var id = net.minecraftforge.registries.ForgeRegistries.FLUIDS.getKey(fs.getFluid());
-            if (id == null) {
-                continue;
-            }
-            java.util.regex.Matcher m = PURIFIED_WATER.matcher(id.getPath());
-            if (m.matches()) {
-                best = Math.max(best, Integer.parseInt(m.group(1)));
-            }
-        }
-        return best;
-    }
-
-    double waterStrength() {
-        int grade = module.highestPurifiedWaterGrade();
-        if (grade <= 0) {
-            return 0.0D;
-        }
-        return Math.min(2.0D, 1.0D + (grade - 1) * (1.0D / 15.0D));
+    /** 组织器取样一次：档位选择同时供加成与扣水，两处不能各扫一遍流体。 */
+    NanochipPurifiedWater.Selection purifiedWaterSelection() {
+        return NanochipModuleUpkeep.purifiedWaterSelection(module);
     }
 
     int laserHatchTier() {

@@ -15,7 +15,8 @@ public record NanochipModuleBonusSnapshot(List<Module> modules, List<Total> tota
 
     public record Module(String id, String nameKey, String fallbackName, String position, boolean formed,
                          List<Family> families, double eu, double duration, Family organizerFamily,
-                         double waterStrength, double effectiveWaterStrength, boolean fullCalibration, boolean board, double impurity,
+                         double waterDurationFactor, double waterPowerFactor, boolean waterSupplied, boolean fullCalibration,
+                         boolean board, double impurity,
                          double impurityMultiplier, boolean unlocksFullMode, double parallelFactor, int parallelCount) {
         public Module { families = List.copyOf(families); }
     }
