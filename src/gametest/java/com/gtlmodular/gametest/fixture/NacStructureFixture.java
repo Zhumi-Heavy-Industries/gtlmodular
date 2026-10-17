@@ -54,6 +54,7 @@ public final class NacStructureFixture {
     private final boolean installFluidOutput;
     private final NacStructureLayout layout = NacStructureLayout.current();
     private List<BlockPos> moduleLaserSlots = List.of();
+    private List<BlockPos> moduleTowerHatchSlots = List.of();
     private final List<Long> forcedChunks = new ArrayList<>();
     private final List<BlockPos> hostHatches = new ArrayList<>();
     private final List<BlockPos> moduleHatches = new ArrayList<>();
@@ -91,6 +92,7 @@ public final class NacStructureFixture {
 
     public void build() {
         moduleLaserSlots = List.of();
+        moduleTowerHatchSlots = List.of();
         BlockPos min = helper.absolutePos(BlockPos.ZERO);
         BlockPos max = helper.absolutePos(layout.size().offset(-1, -1, -1));
         for (int x = min.getX() >> 4; x <= max.getX() >> 4; x++) {
@@ -162,6 +164,9 @@ public final class NacStructureFixture {
                 if (!installFluidOutput) definitions.remove(GTMachines.FLUID_EXPORT_HATCH[1]);
                 moduleLaserSlots = positions.stream()
                         .filter(pos -> acceptsLaser(predicates.get(pos))).toList();
+                // 底座 V 位是 hatchOrCasing(...).or(air())，塔身 HATCH 格没有 air()：用这个差别分开两者。
+                moduleTowerHatchSlots = positions.stream()
+                        .filter(pos -> !acceptsAir(predicates.get(pos))).toList();
             }
             if (positions.size() < definitions.size()) {
                 helper.fail("缺少合法仓位：" + machine.getDefinition().getId() + "@" + machine.getPos()
@@ -208,6 +213,15 @@ public final class NacStructureFixture {
                 .filter(part -> part.candidates != null)
                 .flatMap(part -> Arrays.stream(part.candidates.get()))
                 .anyMatch(info -> PartAbility.INPUT_LASER.isApplicable(info.getBlockState().getBlock()));
+    }
+
+    /** 底座 V 位带 air() 子句（AIR 是上游共用单例），塔身 HATCH 格没有；这正是两者的分界。 */
+    private boolean acceptsAir(TraceabilityPredicate predicate) {
+        if (predicate == null) {
+            return false;
+        }
+        return Stream.concat(predicate.common.stream(), predicate.limited.stream())
+                .anyMatch(part -> part == SimplePredicate.AIR);
     }
 
     private BlockPos keyBlock(Map<BlockPos, TraceabilityPredicate> pattern, boolean tower) {
@@ -315,6 +329,18 @@ public final class NacStructureFixture {
             }
         }
         helper.fail("模块没有可对照的普通仓格：" + moduleHatches.size());
+    }
+
+    /** 塔身 HATCH 格（按 air() 子句区分出来）；没声明激光能力的模块也有这种格子。 */
+    public List<BlockPos> moduleTowerHatchSlots() {
+        return moduleTowerHatchSlots;
+    }
+
+    /** 往塔身 HATCH 格直接装激光仓：模块没声明激光能力时，这一格本该只收普通仓与机壳。 */
+    public void installLaserInModuleTowerHatchSlot(int index) {
+        helper.assertTrue(index >= 0 && index < moduleTowerHatchSlots.size(),
+                "模块没有第 " + index + " 个塔身 HATCH 格（实有 " + moduleTowerHatchSlots.size() + " 个）");
+        installLaser(moduleTowerHatchSlots.get(index));
     }
 
     public void installLaserInHostHatchSlot(int index) {

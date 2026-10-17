@@ -18,7 +18,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 
-/** 激光仓只属于蚀刻阵列塔身的 H 格：1 个可成形，2 个超限量；其它模块与主机都不收。 */
+/** 激光仓只属于蚀刻阵列塔身的 H 格：1 个可成形，2 个超限量；其它模块（含塔身同样有 HATCH 格的分流器）
+ * 与主机都不收。 */
 public final class NacHatchAdmissionTests {
 
     private static final List<NacStructureFixture> fixtures = new ArrayList<>();
@@ -27,7 +28,8 @@ public final class NacHatchAdmissionTests {
         ETCHER_ONE_LASER,
         ETCHER_TWO_LASERS,
         OTHER_MODULE_ONE_LASER,
-        HOST_ONE_LASER
+        HOST_ONE_LASER,
+        SPLITTER_ONE_LASER
     }
 
     @AfterBatch(batch = "nac_hatch_admission")
@@ -52,6 +54,8 @@ public final class NacHatchAdmissionTests {
         ResourceLocation moduleId = switch (scenario) {
             case ETCHER_ONE_LASER, ETCHER_TWO_LASERS -> NanochipModContext.registryId("nanochip_etching_array");
             case OTHER_MODULE_ONE_LASER -> NanochipModContext.registryId("nanochip_cutting_chamber");
+            // 分流器没有激光能力，但塔身模板自带 HATCH 格：这是「模块不收激光仓」唯一的真实负例。
+            case SPLITTER_ONE_LASER -> NanochipModContext.registryId("nanochip_splitter");
             case HOST_ONE_LASER -> null;
         };
         NacStructureFixture structure = new NacStructureFixture(helper, null, moduleId, true);
@@ -71,6 +75,13 @@ public final class NacHatchAdmissionTests {
                 structure.installLaserInModuleOrdinaryHatchSlot();
             }
             case OTHER_MODULE_ONE_LASER -> structure.installLaserInModuleHatchSlot(0);
+            case SPLITTER_ONE_LASER -> {
+                // 塔身 HATCH 格既不在 moduleLaserSlots（那张表按激光候选筛，分流器为空），
+                // 也不在 moduleHatches（那里只装前几个通用仓），只能走塔身格专用入口。
+                helper.assertTrue(structure.moduleTowerHatchSlots().size() >= 1,
+                        "分流器没有塔身 HATCH 格（实有 " + structure.moduleTowerHatchSlots().size() + " 个）");
+                structure.installLaserInModuleTowerHatchSlot(0);
+            }
             case HOST_ONE_LASER -> structure.installLaserInHostHatchSlot(0);
         }
         if (scenario == Scenario.ETCHER_ONE_LASER) {
@@ -88,6 +99,7 @@ public final class NacHatchAdmissionTests {
         String expectation = switch (scenario) {
             case ETCHER_TWO_LASERS -> "蚀刻阵列装 2 个激光仓仍成形（期望不成形）";
             case OTHER_MODULE_ONE_LASER -> "其它模块装 1 个激光仓仍成形（期望不成形）";
+            case SPLITTER_ONE_LASER -> "分流器（未声明激光能力）装 1 个激光仓仍成形（期望不成形）";
             case HOST_ONE_LASER -> "主机装 1 个激光仓仍成形（期望不成形）";
             default -> "非预期场景";
         };
