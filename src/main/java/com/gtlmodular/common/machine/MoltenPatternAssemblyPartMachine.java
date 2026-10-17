@@ -35,6 +35,8 @@ import com.gtlmodular.common.machine.pattern.PatternRewriteCache;
 import com.gtlmodular.common.machine.pattern.PatternStaleSlotCache;
 import com.gtlmodular.common.machine.pattern.PatternProviderRefresh;
 import com.gtlmodular.common.machine.pattern.PatternStacks;
+import com.gtlmodular.common.machine.pattern.ui.CatalystPageSync;
+import com.gtlmodular.common.machine.pattern.ui.CatalystSlotAccess;
 import com.gtlmodular.common.machine.pattern.ui.PatternConfiguratorWidgets;
 import com.gtlmodular.common.machine.pattern.ui.PatternArchiveConfigurator;
 import com.gtlmodular.common.machine.pattern.ui.PatternCatalystWidgets;
@@ -52,7 +54,9 @@ import com.lowdragmc.lowdraglib.gui.widget.Widget;
 import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import com.lowdragmc.lowdraglib.misc.FluidTransferList;
 import com.lowdragmc.lowdraglib.misc.ItemStackTransfer;
+import com.lowdragmc.lowdraglib.side.fluid.FluidHelper;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
+import com.lowdragmc.lowdraglib.side.item.IItemTransfer;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import com.lowdragmc.lowdraglib.syncdata.managed.IRef;
@@ -81,7 +85,7 @@ import java.util.Set;
 import java.util.WeakHashMap;
 
 public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
-        implements PatternArchiveConfigurator.Host {
+        implements PatternArchiveConfigurator.Host, CatalystSlotAccess {
 
     public static final int PATTERNS_PER_ROW = 16;
     public static final int ROWS_PER_PAGE = 10;
@@ -518,6 +522,14 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
 
     @DescSynced
     private boolean catalystPageOpen = false;
+
+    /** 页面槽控件展开时才建，原版首包会被吞掉；用机器字段把当前查看槽的内容点到点补一次。 */
+    @DescSynced
+    private String catalystViewPayload = "";
+
+    public String getCatalystViewPayload() {
+        return catalystViewPayload;
+    }
 
     transient CatalystAccessConfigurator activeCatalystPage;
 
@@ -1955,6 +1967,54 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         return Math.max(1, slotCount());
     }
 
+    // ---- CatalystSlotAccess：催化剂页只认槽号，真仓就是逐槽数组 ----
+
+    @Override
+    public IItemTransfer catalystItemTransfer(int slot) {
+        return slot >= 0 && slot < catalystItems.length ? catalystItems[slot] : null;
+    }
+
+    @Override
+    public FluidTransferList catalystFluidTransfer(int slot) {
+        return slot >= 0 && slot < catalystFluids.length ? catalystFluids[slot] : null;
+    }
+
+    @Override
+    public void onCatalystItemChanged(int slot) {
+        if (slot < 0 || slot >= catalystItems.length) {
+            return;
+        }
+        // 代理直接写仓不会触发上游注册的内容监听；补一次，让催化剂表和配方缓存跟着重算。
+        catalystItems[slot].onContentsChanged();
+        removeSlotFromGTRecipeCache(slot);
+    }
+
+    @Override
+    public void onCatalystFluidChanged(int slot) {
+        if (slot < 0 || slot >= catalystFluids.length) {
+            return;
+        }
+        catalystFluids[slot].onContentsChanged();
+        removeSlotFromGTRecipeCache(slot);
+    }
+
+    @Override
+    public int catalystCacheCount(int slot) {
+        if (slot < 0 || slot >= cacheRecipeCount.length) {
+            return DEFAULT_CACHE_RECIPE_COUNT;
+        }
+        return Math.max(1, (int) cacheRecipeCount[slot]);
+    }
+
+    @Override
+    public void onCatalystCacheCountChanged(int slot, int value) {
+        if (slot < 0 || slot >= cacheRecipeCount.length) {
+            return;
+        }
+        cacheRecipeCount[slot] = (byte) Math.max(1, value);
+        removeSlotFromGTRecipeCache(slot);
+    }
+
     public int archiveCapacity() {
         ItemStackTransfer inventory = getPatternInventory();
         // 基类构造期间可能调用此入口，字段尚未赋值时必须容错。
@@ -3113,15 +3173,21 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     }
 
     static final class CatalystAccessConfigurator implements IFancyConfigurator {
+
         private final MoltenPatternAssemblyPartMachine machine;
 
-        private int shownSlot = -1;
+        private int shownIndex = -1;
 
         private WidgetGroup root;
         private MEPatternCatalystUIManager catalystUI;
+        private CatalystPageSync pageSync;
 
         private ConfiguratorPanel panel;
         private ConfiguratorPanel.Tab tab;
+
+        private static final int ITEM_SLOTS = 9;
+        private static final int FLUID_TANKS = 9;
+        private static final long TANK_CAPACITY = 16L * FluidHelper.getBucket();
 
         /** 固定面板尺寸，避免展开后顶出屏幕或触发重复定位。 */
         private static final int PAGE_WIDTH = 202;
@@ -3139,6 +3205,10 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
 
         private int slotCount() {
             return machine.getCatalystSlotCount();
+        }
+
+        private int currentViewIndex() {
+            return Math.max(0, machine.getCatalystViewSlot() - 1);
         }
 
         @Override
@@ -3159,8 +3229,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         @Override
         public Widget createConfigurator() {
             int slots = slotCount();
-            shownSlot = -1;
-            root = new WidgetGroup(0, 0, PAGE_WIDTH, PAGE_OPEN_HEIGHT) {
+            shownIndex = -1;
+            root = new WidgetGroup(0, 0, PAGE_WIDTH, PAGE_CLOSED_HEIGHT) {
 
                 @Override
                 public void updateScreen() {
@@ -3182,14 +3252,22 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, false), data -> toggle())
                     .setHoverTexture(PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, true)));
 
+            // 页面控件只建一次：切槽只换代理指向，控件结构永不变化，菜单槽号也就不会错位。
+            this.pageSync = new CatalystPageSync(machine, ITEM_SLOTS, FLUID_TANKS, TANK_CAPACITY,
+                    DEFAULT_CACHE_RECIPE_COUNT, "超级猪咪催化剂页");
+            pageSync.setTarget(currentViewIndex());
             catalystUI = new MEPatternCatalystUIManager(0,
-                    machine.catalystItems, machine.catalystFluids, machine.cacheRecipeCount,
-                    machine::removeSlotFromGTRecipeCache);
+                    pageSync.itemTransfers(),
+                    pageSync.fluidTransfers(),
+                    pageSync.cacheCountBuffer(),
+                    pageSync.cacheCountListener());
             catalystUI.setSelfPosition(2, 42);
             catalystUI.setSize(PAGE_WIDTH - 8, PAGE_OPEN_HEIGHT - 48);
             catalystUI.setVisible(false);
             catalystUI.setActive(false);
             root.waitToAdded(catalystUI);
+            catalystUI.toggleFor(0);
+            layoutSideBySide();
             followMachineState();
             return root;
         }
@@ -3213,14 +3291,15 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     catalystUI.setVisible(false);
                     catalystUI.setActive(false);
                 }
-                // 收起时保持尺寸，避免重启定位动画并挤掉其他页签。
+                if (root != null && root.getSizeHeight() != PAGE_CLOSED_HEIGHT) {
+                    root.setSize(PAGE_WIDTH, PAGE_CLOSED_HEIGHT);
+                }
                 return;
             }
-            int want = machine.getCatalystViewSlot();
-            if (want != shownSlot) {
-                shownSlot = want;
-                catalystUI.toggleFor(Math.max(0, want - 1));
-                layoutSideBySide();
+            int index = currentViewIndex();
+            if (index != shownIndex) {
+                shownIndex = index;
+                pageSync.setTarget(index);
             }
             if (!catalystUI.isVisible()) {
                 catalystUI.setVisible(true);
@@ -3229,13 +3308,21 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             if (root != null && root.getSizeHeight() != PAGE_OPEN_HEIGHT) {
                 root.setSize(PAGE_WIDTH, PAGE_OPEN_HEIGHT);
             }
-            if (root != null) {
-                logPageGeometry("催化剂页@" + machine.getPos().toShortString(), root, panel, tab);
+            if (machine.isRemote()) {
+                pageSync.apply(machine.getCatalystViewPayload());
+            } else {
+                String payload = pageSync.publishIfChanged();
+                if (payload != null) {
+                    machine.catalystViewPayload = payload;
+                }
             }
         }
 
         private void layoutSideBySide() {
-            PatternCatalystWidgets.layoutSideBySide(catalystUI, root, PAGE_WIDTH, PAGE_OPEN_HEIGHT, true);
+            if (catalystUI == null) {
+                return;
+            }
+            PatternCatalystWidgets.layoutSideBySide(catalystUI, root, PAGE_WIDTH, PAGE_OPEN_HEIGHT, false);
         }
     }
 

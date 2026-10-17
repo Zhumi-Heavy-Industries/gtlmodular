@@ -34,6 +34,8 @@ import com.gtlmodular.common.machine.pattern.PatternRewriteCache;
 import com.gtlmodular.common.machine.pattern.PatternStaleSlotCache;
 import com.gtlmodular.common.machine.pattern.PatternProviderRefresh;
 import com.gtlmodular.common.machine.pattern.PatternStacks;
+import com.gtlmodular.common.machine.pattern.ui.CatalystPageSync;
+import com.gtlmodular.common.machine.pattern.ui.CatalystSlotAccess;
 import com.gtlmodular.common.machine.pattern.ui.PatternCatalystWidgets;
 import com.gtlmodular.common.machine.pattern.ui.PatternArchiveConfigurator;
 import com.gtlmodular.common.machine.pattern.ui.PatternConfiguratorWidgets;
@@ -131,7 +133,7 @@ import java.util.Set;
 
 /** 按需实体化槽和催化剂仓，避免空仓预建全部对象；动态容量仍须覆盖所有存档样板和槽状态。 */
 public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBase
-        implements PatternArchiveConfigurator.Host {
+        implements PatternArchiveConfigurator.Host, CatalystSlotAccess {
 
     public static final int RESERVE = 2;
 
@@ -3094,326 +3096,39 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         }
     }
 
-    /** 控件槽号属于菜单协议，切页只换代理目标，不能动态增删控件造成两侧槽号错位。 */
-    final class CatalystItemView implements IItemTransfer {
+    // ---- CatalystSlotAccess：催化剂页只认槽号，真仓按需建 ----
 
-        private int target;
-
-        /** 客户端真仓不是服务端库存，渲染和点击预测必须读取同步下来的本地缓存。 */
-        private final ItemStack[] clientCache = new ItemStack[CATALYST_ITEM_SLOTS];
-
-        CatalystItemView() {
-            for (int i = 0; i < clientCache.length; i++) {
-                clientCache[i] = ItemStack.EMPTY;
-            }
-        }
-
-        void setTarget(int index) {
-            this.target = index;
-        }
-
-        private ItemStackTransfer serverTransfer() {
-            if (isRemote()) {
-                return null;
-            }
-            ensureCatalystTables(target);
-            return catalystItemTransferAt(target);
-        }
-
-        @Override
-        public int getSlots() {
-            // 代理槽数必须两侧固定一致，不能随尚未同步的本侧容量变化。
-            return CATALYST_ITEM_SLOTS;
-        }
-
-        @Override
-        public ItemStack getStackInSlot(int slot) {
-            if (isRemote()) {
-                return slot >= 0 && slot < clientCache.length ? clientCache[slot] : ItemStack.EMPTY;
-            }
-            ItemStackTransfer transfer = serverTransfer();
-            return transfer != null ? transfer.getStackInSlot(slot) : ItemStack.EMPTY;
-        }
-
-        @Override
-        public void setStackInSlot(int slot, ItemStack stack) {
-            ItemStack value = stack == null ? ItemStack.EMPTY : stack;
-            if (isRemote()) {
-                if (slot >= 0 && slot < clientCache.length) {
-                    clientCache[slot] = value;
-                }
-                return;
-            }
-            if (slot < 0 || slot >= CATALYST_ITEM_SLOTS) {
-                return;
-            }
-            ItemStackTransfer transfer = serverTransfer();
-            if (transfer == null) {
-                return;
-            }
-            // ItemStackTransfer.setStackInSlot 不触发内容回调，代理写入后必须补通知。
-            transfer.setStackInSlot(slot, value);
-            onCatalystItemContentsChanged(target);
-        }
-
-        @Override
-        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate, boolean notify) {
-            if (isRemote()) {
-                // 客户端模拟插入供槽位预测查询，不能因没有服务端真仓就一律拒绝点击。
-                return simulatedInsert(slot, stack, simulate);
-            }
-            if (slot < 0 || slot >= CATALYST_ITEM_SLOTS) {
-                return stack;
-            }
-            ItemStackTransfer transfer = serverTransfer();
-            if (transfer == null) {
-                return stack;
-            }
-            ItemStack remainder = transfer.insertItem(slot, stack, simulate, notify);
-            if (!simulate) {
-                onCatalystItemContentsChanged(target);
-            }
-            return remainder;
-        }
-
-        private ItemStack simulatedInsert(int slot, ItemStack stack, boolean simulate) {
-            if (stack == null || stack.isEmpty()) {
-                return ItemStack.EMPTY;
-            }
-            if (slot < 0 || slot >= clientCache.length || !isItemValid(slot, stack)) {
-                return stack;
-            }
-            ItemStack cached = clientCache[slot];
-            int limit = Math.min(getSlotLimit(slot), stack.getMaxStackSize());
-            if (!cached.isEmpty()) {
-                if (!ItemTransferHelper.canItemStacksStack(stack, cached)) {
-                    return stack;
-                }
-                limit -= cached.getCount();
-            }
-            if (limit <= 0) {
-                return stack;
-            }
-            int moved = Math.min(limit, stack.getCount());
-            if (!simulate) {
-                ItemStack grown = cached.isEmpty() ? stack.copy() : cached.copy();
-                grown.setCount(cached.isEmpty() ? moved : cached.getCount() + moved);
-                clientCache[slot] = grown;
-            }
-            if (moved >= stack.getCount()) {
-                return ItemStack.EMPTY;
-            }
-            ItemStack remainder = stack.copy();
-            remainder.setCount(stack.getCount() - moved);
-            return remainder;
-        }
-
-        @Override
-        public ItemStack extractItem(int slot, int amount, boolean simulate, boolean notify) {
-            if (isRemote()) {
-                // 客户端提取预测须根据同步缓存回答，否则服务端有物品时仍会拒绝点击。
-                if (slot < 0 || slot >= clientCache.length || amount <= 0) {
-                    return ItemStack.EMPTY;
-                }
-                ItemStack cached = clientCache[slot];
-                if (cached.isEmpty()) {
-                    return ItemStack.EMPTY;
-                }
-                ItemStack taken = cached.copy();
-                taken.setCount(Math.min(amount, cached.getCount()));
-                return taken;
-            }
-            if (slot < 0 || slot >= CATALYST_ITEM_SLOTS) {
-                return ItemStack.EMPTY;
-            }
-            ItemStackTransfer transfer = serverTransfer();
-            if (transfer == null) {
-                return ItemStack.EMPTY;
-            }
-            ItemStack extracted = transfer.extractItem(slot, amount, simulate, notify);
-            if (!simulate) {
-                onCatalystItemContentsChanged(target);
-            }
-            return extracted;
-        }
-
-        @Override
-        public int getSlotLimit(int slot) {
-            return 64;
-        }
-
-        @Override
-        public boolean isItemValid(int slot, ItemStack stack) {
-            return stack == null || !(stack.getItem() instanceof ProcessingPatternItem);
-        }
-
-        @Override
-        public void onContentsChanged() {
-            if (!isRemote()) {
-                onCatalystItemContentsChanged(target);
-            }
-        }
-
-        @Override
-        public Object createSnapshot() {
-            ItemStack[] copy = new ItemStack[CATALYST_ITEM_SLOTS];
-            for (int i = 0; i < copy.length; i++) {
-                copy[i] = getStackInSlot(i).copy();
-            }
-            return copy;
-        }
-
-        @Override
-        public void restoreFromSnapshot(Object snapshot) {
-            if (!(snapshot instanceof ItemStack[] stacks) || stacks.length != CATALYST_ITEM_SLOTS) {
-                return;
-            }
-            for (int i = 0; i < stacks.length; i++) {
-                setStackInSlot(i, stacks[i] == null ? ItemStack.EMPTY : stacks[i].copy());
-            }
-        }
+    @Override
+    public IItemTransfer catalystItemTransfer(int slot) {
+        ensureCatalystTables(slot);
+        return catalystItemTransferAt(slot);
     }
 
-    /** 上游 UI 为 FluidTransferList 的每个元素建一个罐控件，因此需一罐一个代理。 */
-    final class CatalystFluidView implements IFluidTransfer {
-
-        private final int tankIndex;
-
-        private int target;
-
-        /** FluidStack.empty 是共享单例，返回副本并整体替换缓存，避免原地修改污染其他空罐。 */
-        private FluidStack clientFluid = FluidStack.empty();
-
-        CatalystFluidView(int tankIndex) {
-            this.tankIndex = tankIndex;
-        }
-
-        void setTarget(int index) {
-            this.target = index;
-        }
-
-        private FluidTransferList serverFluids() {
-            if (isRemote()) {
-                return null;
-            }
-            ensureCatalystTables(target);
-            return catalystFluidTransferAt(target);
-        }
-
-        @Override
-        public int getTanks() {
-            return 1;
-        }
-
-        @Override
-        public FluidStack getFluidInTank(int tank) {
-            if (isRemote()) {
-                return clientFluid.copy();
-            }
-            FluidTransferList fluids = serverFluids();
-            return fluids != null ? fluids.getFluidInTank(tankIndex) : FluidStack.empty();
-        }
-
-        @Override
-        public void setFluidInTank(int tank, FluidStack stack) {
-            FluidStack value = stack == null ? FluidStack.empty() : stack.copy();
-            if (isRemote()) {
-                clientFluid = value;
-                return;
-            }
-            FluidTransferList fluids = serverFluids();
-            if (fluids == null) {
-                return;
-            }
-            fluids.setFluidInTank(tankIndex, value);
-            onCatalystFluidContentsChanged(target);
-        }
-
-        @Override
-        public long getTankCapacity(int tank) {
-            return CATALYST_TANK_CAPACITY;
-        }
-
-        @Override
-        public boolean isFluidValid(int tank, FluidStack stack) {
-            return true;
-        }
-
-        @Override
-        public long fill(int tank, FluidStack resource, boolean simulate, boolean notify) {
-            if (isRemote()) {
-                return 0L;
-            }
-            FluidTransferList fluids = serverFluids();
-            if (fluids == null) {
-                return 0L;
-            }
-            long filled = fluids.fill(tankIndex, resource, simulate, notify);
-            if (!simulate) {
-                onCatalystFluidContentsChanged(target);
-            }
-            return filled;
-        }
-
-        @Override
-        public boolean supportsFill(int tank) {
-            return true;
-        }
-
-        @Override
-        public FluidStack drain(int tank, FluidStack resource, boolean simulate, boolean notify) {
-            if (isRemote()) {
-                return FluidStack.empty();
-            }
-            FluidTransferList fluids = serverFluids();
-            if (fluids == null) {
-                return FluidStack.empty();
-            }
-            FluidStack drained = fluids.drain(tankIndex, resource, simulate, notify);
-            if (!simulate) {
-                onCatalystFluidContentsChanged(target);
-            }
-            return drained;
-        }
-
-        @Override
-        public boolean supportsDrain(int tank) {
-            return true;
-        }
-
-        @Override
-        public void onContentsChanged() {
-            if (!isRemote()) {
-                onCatalystFluidContentsChanged(target);
-            }
-        }
-
-        @Override
-        public Object createSnapshot() {
-            return new FluidStack[]{ getFluidInTank(0).copy() };
-        }
-
-        @Override
-        public void restoreFromSnapshot(Object snapshot) {
-            if (!(snapshot instanceof FluidStack[] stacks) || stacks.length != 1) {
-                return;
-            }
-            setFluidInTank(0, stacks[0] == null ? FluidStack.empty() : stacks[0].copy());
-        }
+    @Override
+    public FluidTransferList catalystFluidTransfer(int slot) {
+        ensureCatalystTables(slot);
+        return catalystFluidTransferAt(slot);
     }
 
-    /** UI 管理器直接写阈值缓冲，必须回填正规表并失效配方缓存，设置才会用于加工。 */
-    private void onCacheCountChangedFromUi(int slot, byte[] buffer) {
-        try {
-            if (buffer != null && buffer.length > 0 && slot >= 0) {
-                setCacheRecipeCount(slot, buffer[0]);
-            }
-            invalidateSlotRecipeCache(slot);
-        } catch (Throwable failure) {
-            SwallowedErrors.report("LazyPatternAssemblyPartMachine#onCacheCountChangedFromUi", failure);
-            GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：缓存阈值同步失败（已忽略）pos={} 槽={} 原因={}",
-                    getPos(), slot + 1, failure.toString());
-        }
+    @Override
+    public void onCatalystItemChanged(int slot) {
+        onCatalystItemContentsChanged(slot);
+    }
+
+    @Override
+    public void onCatalystFluidChanged(int slot) {
+        onCatalystFluidContentsChanged(slot);
+    }
+
+    @Override
+    public int catalystCacheCount(int slot) {
+        return cacheRecipeCountAt(slot);
+    }
+
+    @Override
+    public void onCatalystCacheCountChanged(int slot, int value) {
+        setCacheRecipeCount(slot, value);
+        invalidateSlotRecipeCache(slot);
     }
 
     public int getCatalystViewSlot() {
@@ -4291,27 +4006,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         private int shownIndex = -1;
 
-        private boolean wasPageOpen;
-
-        private String lastAppliedPayload = "";
-
-        private boolean loggedPayloadApply;
-
         private WidgetGroup root;
         private MEPatternCatalystUIManager catalystUI;
-
-        private CatalystItemView itemView;
-        private CatalystFluidView[] fluidViews;
-
-        private byte[] countBuffer;
+        private CatalystPageSync pageSync;
 
         private ConfiguratorPanel panel;
         private ConfiguratorPanel.Tab tab;
-
-        private final ItemStack[] lastSentItems = new ItemStack[CATALYST_ITEM_SLOTS];
-        private final FluidStack[] lastSentFluids = new FluidStack[CATALYST_FLUID_TANKS];
-
-        private int lastSentIndex = Integer.MIN_VALUE;
 
         /** 固定面板尺寸，避免展开后顶出屏幕或触发重复定位。 */
         private static final int PAGE_WIDTH = 202;
@@ -4320,12 +4020,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         CatalystAccessConfigurator(LazyPatternAssemblyPartMachine machine) {
             this.machine = machine;
-            for (int i = 0; i < lastSentItems.length; i++) {
-                lastSentItems[i] = ItemStack.EMPTY;
-            }
-            for (int i = 0; i < lastSentFluids.length; i++) {
-                lastSentFluids[i] = FluidStack.empty();
-            }
         }
 
         void bindPanel(ConfiguratorPanel panel, ConfiguratorPanel.Tab tab) {
@@ -4382,26 +4076,20 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, false), data -> toggle())
                     .setHoverTexture(PatternCatalystWidgets.buttonTexture(machine::isCatalystPageOpen, true)));
 
-            // 代理只在真正查看目标槽时建仓，打开界面本身不应实体化全部催化剂仓。
-            this.itemView = machine.new CatalystItemView();
-            List<IFluidTransfer> tanks = new ArrayList<>(CATALYST_FLUID_TANKS);
-            this.fluidViews = new CatalystFluidView[CATALYST_FLUID_TANKS];
-            for (int i = 0; i < CATALYST_FLUID_TANKS; i++) {
-                fluidViews[i] = machine.new CatalystFluidView(i);
-                tanks.add(fluidViews[i]);
-            }
-            this.countBuffer = new byte[]{(byte) DEFAULT_CACHE_RECIPE_COUNT};
+            // 页面控件只建一次：切槽只换代理指向，控件结构永不变化，菜单槽号也就不会错位。
+            this.pageSync = new CatalystPageSync(machine, CATALYST_ITEM_SLOTS, CATALYST_FLUID_TANKS,
+                    CATALYST_TANK_CAPACITY, DEFAULT_CACHE_RECIPE_COUNT, "惰性猪咪催化剂页");
+            pageSync.setTarget(currentViewIndex());
             catalystUI = new MEPatternCatalystUIManager(0,
-                    new IItemTransfer[]{itemView},
-                    new FluidTransferList[]{new FluidTransferList(tanks)},
-                    countBuffer,
-                    ignored -> machine.onCacheCountChangedFromUi(currentViewIndex(), countBuffer));
+                    pageSync.itemTransfers(),
+                    pageSync.fluidTransfers(),
+                    pageSync.cacheCountBuffer(),
+                    pageSync.cacheCountListener());
             catalystUI.setSelfPosition(2, 42);
             catalystUI.setSize(PAGE_WIDTH - 8, PAGE_OPEN_HEIGHT - 48);
             catalystUI.setVisible(false);
             catalystUI.setActive(false);
             root.waitToAdded(catalystUI);
-            // 两侧在建界面时一次创建全部槽控件，避免切页改变菜单槽号映射。
             catalystUI.toggleFor(0);
             layoutSideBySide();
             followMachineState();
@@ -4434,14 +4122,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             int index = currentViewIndex();
             if (index != shownIndex) {
                 shownIndex = index;
-                if (itemView != null) {
-                    itemView.setTarget(index);
-                }
-                if (fluidViews != null) {
-                    for (CatalystFluidView view : fluidViews) {
-                        view.setTarget(index);
-                    }
-                }
+                pageSync.setTarget(index);
             }
             if (!catalystUI.isVisible()) {
                 catalystUI.setVisible(true);
@@ -4451,92 +4132,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 root.setSize(PAGE_WIDTH, PAGE_OPEN_HEIGHT);
             }
             if (machine.isRemote()) {
-                applyCatalystViewFromMachine();
+                pageSync.apply(machine.getCatalystViewPayload());
             } else {
-                publishCatalystViewToMachine();
-            }
-        }
-
-        /** 只在内容或槽号变化时序列化，避免每 tick 重建同步文本。 */
-        private void publishCatalystViewToMachine() {
-            if (itemView == null || fluidViews == null) {
-                return;
-            }
-            int index = currentViewIndex();
-            boolean indexChanged = index != lastSentIndex;
-            boolean itemsChanged = indexChanged;
-            for (int i = 0; i < CATALYST_ITEM_SLOTS && !itemsChanged; i++) {
-                if (!ItemStack.matches(itemView.getStackInSlot(i), lastSentItems[i])) {
-                    itemsChanged = true;
+                String payload = pageSync.publishIfChanged();
+                if (payload != null) {
+                    machine.catalystViewPayload = payload;
                 }
-            }
-            boolean fluidsChanged = indexChanged;
-            for (int i = 0; i < CATALYST_FLUID_TANKS && !fluidsChanged; i++) {
-                FluidStack now = fluidViews[i].getFluidInTank(0);
-                if (!now.isFluidEqual(lastSentFluids[i]) || now.getAmount() != lastSentFluids[i].getAmount()) {
-                    fluidsChanged = true;
-                }
-            }
-            if (!itemsChanged && !fluidsChanged) {
-                return;
-            }
-            try {
-                CompoundTag payload = new CompoundTag();
-                net.minecraft.nbt.ListTag items = new net.minecraft.nbt.ListTag();
-                for (int i = 0; i < CATALYST_ITEM_SLOTS; i++) {
-                    ItemStack stack = itemView.getStackInSlot(i).copy();
-                    lastSentItems[i] = stack;
-                    items.add(stack.serializeNBT());
-                }
-                payload.put("items", items);
-                net.minecraft.nbt.ListTag fluids = new net.minecraft.nbt.ListTag();
-                for (int i = 0; i < CATALYST_FLUID_TANKS; i++) {
-                    FluidStack fluid = fluidViews[i].getFluidInTank(0).copy();
-                    lastSentFluids[i] = fluid;
-                    fluids.add(fluid.saveToTag(new CompoundTag()));
-                }
-                payload.put("fluids", fluids);
-                machine.catalystViewPayload = payload.toString();
-                lastSentIndex = index;
-            } catch (Throwable failure) {
-                SwallowedErrors.report("LazyPatternAssemblyPartMachine.CatalystAccessConfigurator#publishCatalystViewToMachine", failure);
-                GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪催化剂页: 内容同步失败（已忽略）pos={} 槽={} 原因={}",
-                        machine.getPos(), index + 1, failure.toString());
-            }
-        }
-
-        private void applyCatalystViewFromMachine() {
-            if (itemView == null || fluidViews == null) {
-                return;
-            }
-            String payload = machine.getCatalystViewPayload();
-            if (payload == null || payload.isEmpty() || payload.equals(lastAppliedPayload)) {
-                return;
-            }
-            lastAppliedPayload = payload;
-            try {
-                CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(payload);
-                net.minecraft.nbt.ListTag items = tag.getList("items", Tag.TAG_COMPOUND);
-                int nonEmpty = 0;
-                for (int i = 0; i < CATALYST_ITEM_SLOTS && i < items.size(); i++) {
-                    ItemStack stack = ItemStack.of(items.getCompound(i));
-                    if (!stack.isEmpty()) {
-                        nonEmpty++;
-                    }
-                    itemView.setStackInSlot(i, stack);
-                }
-                net.minecraft.nbt.ListTag fluids = tag.getList("fluids", Tag.TAG_COMPOUND);
-                for (int i = 0; i < CATALYST_FLUID_TANKS && i < fluids.size(); i++) {
-                    fluidViews[i].setFluidInTank(0, FluidStack.loadFromTag(fluids.getCompound(i)));
-                }
-                if (!loggedPayloadApply) {
-                    loggedPayloadApply = true;
-                    GTLModular.LOGGER.info(
-                            "[gtlmodular] 惰性猪咪催化剂页: 客户端收到内容同步 非空物品={}/{} 槽={}",
-                            nonEmpty, CATALYST_ITEM_SLOTS, currentViewIndex() + 1);
-                }
-            } catch (Throwable ignored) {
-                SwallowedErrors.report("LazyPatternAssemblyPartMachine.CatalystAccessConfigurator#applyCatalystViewFromMachine", ignored);
             }
         }
 
