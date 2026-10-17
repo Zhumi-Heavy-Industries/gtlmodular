@@ -23,6 +23,9 @@ public final class GameTestMod {
         event.register(ResourceIntegrityTests.class);
         event.register(NacStructureTests.class);
         event.register(NacProcessingTests.class);
+        event.register(NacImpurityTests.class);
+        event.register(NacHatchAdmissionTests.class);
+        event.register(NacMatrixTierTests.class);
         event.register(NacCalibrationTests.class);
         event.register(NacCalibrationTierTests.class);
         event.register(NacPersistenceTests.class);
