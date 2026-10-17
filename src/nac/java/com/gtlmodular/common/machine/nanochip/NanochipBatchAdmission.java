@@ -170,6 +170,15 @@ final class NanochipBatchAdmission {
             recordProbe(0L);
             return 0L;
         }
+        // ★【冷槽兜底】ME 样板仓的输入上限只从「已缓存配方 → 槽」表里查
+        //   （IParallelLogic → MEPatternRecipeHandlePart.getMEContent → recipes2SlotsMap），
+        //   而那张表只在一次**成功匹配**（handleRecipe(..., setSlotCache=true)）之后才写入。
+        //   样板刚推进去、或结构重判后接线重建过的机器，缓存是空的 ⇒ 上游返回 0
+        //   ⇒ 本方法在匹配之前就把候选拒了 ⇒ 永远走不到那次能写缓存的匹配 ⇒ 冷槽自锁。
+        //   这里补一次只读匹配把缓存加热，再重读上游上限（细节见 warmColdInputCache）。
+        if (upstreamInputMax <= 0L && !logic.perSlotParallelBound()) {
+            upstreamInputMax = warmColdInputCache(recipe, limitArgument, upstreamInputMax);
+        }
         fitUpstreamInputMax = upstreamInputMax;
         fitSlotInputMax = logic.perSlotParallelBound()
                 ? inputs.perSlotInputBound(recipe)
@@ -203,6 +212,44 @@ final class NanochipBatchAdmission {
         fitBranch = parallelBranchText(matchable, fitBound);
         fitSampleMatchable = matchable;
         return matchable;
+    }
+
+    /**
+     * ★【冷槽兜底】用一次<b>只读</b>匹配把 ME 样板仓的「配方 → 槽」缓存加热，
+     * 再重读上游输入上限。
+     *
+     * <h3>为什么必须是这条路径</h3>
+     * 上游的槽缓存唯一写入点在
+     * {@code MEPatternRecipeHandlePart.handleRecipe(..., setSlotCache=true)}；
+     * 而 {@code RecipeRunnerHelper.matchRecipeInput} 正是带
+     * {@code RecipeCacheStrategy.FULL_CACHE} 的模拟匹配 ⇒ 与真实开批走同一套判据、
+     * 同样会调用 {@code setSlotCacheRecipe}，但<b>不扣料、不改任何成形/电压/并行语义</b>。
+     *
+     * <p>匹配失败 ⇒ 保持原值（真的没料，不是冷槽）。匹配成功但重读仍为 0 ⇒ 返回 {@code 1}：
+     * 刚刚已经证明 1 份放得下，把它作为二分的上界是安全的，第一刀就会把缓存真正加热。
+     *
+     * @param previous 本次上游读到的值（≤0；匹配失败时原样返回）
+     * @return 重读的上游上限；重读失败/仍 ≤0 时返回 {@code 1}
+     */
+    private long warmColdInputCache(GTRecipe recipe, long limitArgument, long previous) {
+        try {
+            if (!RecipeRunnerHelper.matchRecipeInput(machine, recipe)) {
+                return previous;
+            }
+        } catch (RuntimeException e) {
+            NanochipModContext.logger().debug("[gtlmodular] NAC 独立线程：冷槽兜底匹配抛异常（保持原判）：{}",
+                    e.toString());
+            return previous;
+        }
+        try {
+            long reread = IParallelLogic.getMaxParallel(machine, recipe, limitArgument);
+            if (reread > 0L) {
+                return reread;
+            }
+        } catch (RuntimeException ignored) {
+            // 重读失败不影响结论：上面的模拟匹配已经成功，1 份一定放得下。
+        }
+        return 1L;
     }
 
     private static String parallelBranchText(long matchable, long bound) {

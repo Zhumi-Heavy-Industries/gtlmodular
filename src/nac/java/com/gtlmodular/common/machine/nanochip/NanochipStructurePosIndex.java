@@ -34,6 +34,46 @@ public final class NanochipStructurePosIndex {
 
     private static final Map<ResourceKey<Level>, Map<Long, HostEntry>> HOSTS = new ConcurrentHashMap<>();
 
+    // ==========================================================================================
+    // ★【模块塔身拆块兜底】—— 模块没有主机那种「精确 CELL 表」，改用包围盒触发
+    //   背景：主机的拆块失效链（本类 + NanochipHostStructureIndex）有效，14 台模块没有对应物。
+    //   模块只能依赖上游 gtlcore 的 LevelMixin 事件路径，而那条路径要求
+    //   `chunkPosMapping` 命中 + `MultiblockState.cache` 里有这一格；读档/区块重载后缓存为空时，
+    //   拆掉塔身外壳不会有人重判 ⇒ 模块一直显示已成形、主机也一直把它算作已连接。
+    //   这里只做「哪台模块的包围盒被碰了」这一件事，真正的判定仍由
+    //   `MultiblockState.onBlockStateChanged → checkPatternWithLock()` 交给上游（本类不产生 true/false）。
+    // ==========================================================================================
+
+    /** 模块登记表：键 = 控制器坐标，值 = 弱引用（与主机同款，避免索引钉住已卸载的模块）。 */
+    private static final Map<ResourceKey<Level>, Map<Long, ModuleEntry>> MODULES = new ConcurrentHashMap<>();
+
+    /** 模块塔身最大水平半径：7×7 塔身、控制器在一条边上 ⇒ 从控制器算最多 6 格。 */
+    private static final int MODULE_SCAN_RADIUS = 6;
+
+    /** 模块塔身最大纵向范围：底座 row 0~2，塔身最多再 +8（控制器在 row 2）。 */
+    private static final int MODULE_SCAN_UP = 9;
+    private static final int MODULE_SCAN_DOWN = 2;
+
+    private static final class ModuleEntry {
+
+        final long packed;
+
+        final int x;
+        final int y;
+        final int z;
+
+        /** 弱引用避免全局索引阻止卸载机器被回收。 */
+        final WeakReference<NanochipModuleMachine> pointer;
+
+        ModuleEntry(long packed, int x, int y, int z, NanochipModuleMachine module) {
+            this.packed = packed;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.pointer = new WeakReference<>(module);
+        }
+    }
+
     private static final class HostEntry {
 
         final long packed;
@@ -175,10 +215,92 @@ public final class NanochipStructurePosIndex {
         }
         try {
             HOSTS.remove(dim);
+            MODULES.remove(dim);
         } catch (Throwable t) {
             SwallowedErrors.report("NanochipStructurePosIndex#forgetDimension", t);
             NanochipModContext.logger().debug("[gtlmodular] NAC 结构位置维度清理失败（弱引用兜底，无对象泄漏）：{}",
                     t.toString());
+        }
+    }
+
+    /** ★：登记一台模块（幂等）。模块卸载/被拆时由 {@link #unregisterModule} 摘除。 */
+    public static boolean registerModule(Level level, NanochipModuleMachine module) {
+        if (!ENABLED || NanochipModContext.config().isNanochipOriginalMode()
+                || level == null || module == null || level.isClientSide) {
+            return false;
+        }
+        try {
+            BlockPos pos = module.getPos();
+            if (pos == null) {
+                return false;
+            }
+            long packed = pos.asLong();
+            Map<Long, ModuleEntry> modules = modulesOf(level.dimension(), true);
+            if (modules == null) {
+                return false;
+            }
+            modules.put(packed, new ModuleEntry(packed, pos.getX(), pos.getY(), pos.getZ(), module));
+            purgeDeadModules(modules);
+            return true;
+        } catch (RuntimeException e) {
+            SwallowedErrors.report("NanochipStructurePosIndex#registerModule", e);
+            NanochipModContext.logger().debug("[gtlmodular] NAC 模块结构位置登记失败（该台退回上游路径，"
+                    + "结构判定不受任何影响）：{}", e.toString());
+            return false;
+        }
+    }
+
+    /** ★：注销一台模块（幂等）。维度用登记时保存的键，避免卸载阶段 getLevel() 已不可用。 */
+    public static void unregisterModule(ResourceKey<Level> dim, NanochipModuleMachine module) {
+        if (dim == null || module == null) {
+            return;
+        }
+        try {
+            Map<Long, ModuleEntry> modules = MODULES.get(dim);
+            if (modules == null) {
+                return;
+            }
+            BlockPos pos = module.getPos();
+            if (pos == null) {
+                return;
+            }
+            long packed = pos.asLong();
+            ModuleEntry entry = modules.get(packed);
+            if (entry == null) {
+                return;
+            }
+            NanochipModuleMachine current = entry.pointer.get();
+            if (current != null && current != module) {
+                return;                                  // 不是自己那条 ⇒ 绝不误摘
+            }
+            modules.remove(packed, entry);
+        } catch (RuntimeException e) {
+            SwallowedErrors.report("NanochipStructurePosIndex#unregisterModule", e);
+            NanochipModContext.logger().debug("[gtlmodular] NAC 模块结构位置注销失败（最坏只留一个空壳）：{}",
+                    e.toString());
+        }
+    }
+
+    private static Map<Long, ModuleEntry> modulesOf(ResourceKey<Level> dim, boolean create) {
+        if (dim == null) {
+            return null;
+        }
+        Map<Long, ModuleEntry> modules = MODULES.get(dim);
+        if (modules == null && create) {
+            Map<Long, ModuleEntry> fresh = new ConcurrentHashMap<>();
+            Map<Long, ModuleEntry> prev = MODULES.putIfAbsent(dim, fresh);
+            modules = prev == null ? fresh : prev;
+        }
+        return modules;
+    }
+
+    private static void purgeDeadModules(Map<Long, ModuleEntry> modules) {
+        for (Map.Entry<Long, ModuleEntry> row : modules.entrySet()) {
+            ModuleEntry entry = row.getValue();
+            NanochipModuleMachine module = entry.pointer.get();
+            if (module == null || module.isInValid()) {
+                modules.remove(row.getKey(), entry);
+            }
         }
     }
 
@@ -220,45 +342,68 @@ public final class NanochipStructurePosIndex {
             return;
         }
         try {
-            Map<Long, HostEntry> hosts = HOSTS.get(level.dimension());
-            if (hosts == null || hosts.isEmpty()) {
-                return;
-            }
-            long[] table = cells();
-            if (table == null) {
-                return;
-            }
             int bx = brokenPos.getX();
             int by = brokenPos.getY();
             int bz = brokenPos.getZ();
-            for (Map.Entry<Long, HostEntry> row : hosts.entrySet()) {
-                HostEntry entry = row.getValue();
-                long key = BlockPos.asLong(bx - entry.x, by - entry.y, bz - entry.z);
-                if (Arrays.binarySearch(table, key) < 0) {
-                    continue;
-                }
-                NanochipAssemblyComplexMachine host = entry.pointer.get();
-                if (host == null) {
-                    hosts.remove(row.getKey(), entry);
-                    continue;
-                }
-                if (!POINTER_LOOKUP) {
-                    BlockPos hostPos = BlockPos.of(entry.packed);
-                    if (MetaMachine.getMachine(level, hostPos) instanceof NanochipAssemblyComplexMachine world) {
-                        host = world;
-                    } else {
-                        continue;
+            // ① 主机：精确 CELL 表（现有路径，一字未改；没有登记主机时直接跳过）
+            Map<Long, HostEntry> hosts = HOSTS.get(level.dimension());
+            if (hosts != null && !hosts.isEmpty()) {
+                long[] table = cells();
+                if (table != null) {
+                    for (Map.Entry<Long, HostEntry> row : hosts.entrySet()) {
+                        HostEntry entry = row.getValue();
+                        long key = BlockPos.asLong(bx - entry.x, by - entry.y, bz - entry.z);
+                        if (Arrays.binarySearch(table, key) < 0) {
+                            continue;
+                        }
+                        NanochipAssemblyComplexMachine host = entry.pointer.get();
+                        if (host == null) {
+                            hosts.remove(row.getKey(), entry);
+                            continue;
+                        }
+                        if (!POINTER_LOOKUP) {
+                            BlockPos hostPos = BlockPos.of(entry.packed);
+                            if (MetaMachine.getMachine(level, hostPos) instanceof NanochipAssemblyComplexMachine world) {
+                                host = world;
+                            } else {
+                                continue;
+                            }
+                        }
+                        if (host.isInValid()) {
+                            hosts.remove(row.getKey(), entry);
+                            continue;
+                        }
+                        if (host.getPos().asLong() != entry.packed) {
+                            hosts.remove(row.getKey(), entry);
+                            continue;
+                        }
+                        host.noteCachedBlockRemoved(brokenPos);
                     }
                 }
-                if (host.isInValid()) {
-                    hosts.remove(row.getKey(), entry);
-                    continue;
+            }
+            // ② 模块：包围盒（模块没有精确 CELL 表；命中后仍由上游 onBlockStateChanged 判定）
+            Map<Long, ModuleEntry> modules = MODULES.get(level.dimension());
+            if (modules != null && !modules.isEmpty()) {
+                for (Map.Entry<Long, ModuleEntry> row : modules.entrySet()) {
+                    ModuleEntry entry = row.getValue();
+                    int dx = Math.abs(bx - entry.x);
+                    int dz = Math.abs(bz - entry.z);
+                    int dy = by - entry.y;
+                    if (dx > MODULE_SCAN_RADIUS || dz > MODULE_SCAN_RADIUS
+                            || dy < -MODULE_SCAN_DOWN || dy > MODULE_SCAN_UP) {
+                        continue;
+                    }
+                    NanochipModuleMachine module = entry.pointer.get();
+                    if (module == null || module.isInValid()) {
+                        modules.remove(row.getKey(), entry);
+                        continue;
+                    }
+                    if (module.getPos().asLong() != entry.packed) {
+                        modules.remove(row.getKey(), entry);
+                        continue;
+                    }
+                    module.notePossibleStructureRemoval(brokenPos);
                 }
-                if (host.getPos().asLong() != entry.packed) {
-                    hosts.remove(row.getKey(), entry);
-                    continue;
-                }
-                host.noteCachedBlockRemoved(brokenPos);
             }
         } catch (Throwable t) {
             SwallowedErrors.report("NanochipStructurePosIndex#noteBlockRemoved", t);
