@@ -5,7 +5,6 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.RecipeCondition;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gtladd.gtladditions.api.recipe.WirelessGTRecipe;
-import com.gtladd.gtladditions.utils.RecipeCalculationHelper;
 import com.mojang.serialization.JsonOps;
 import org.gtlcore.gtlcore.api.recipe.IGTRecipe;
 import org.gtlcore.gtlcore.api.recipe.RecipeExtensionCopier;
@@ -39,8 +38,8 @@ public final class RecipeCandidateSnapshots {
 
     public static GTRecipe scale(GTRecipe source, long parallels) {
         if (parallels < 1) throw new IllegalArgumentException("Invalid parallels");
-        // multipleRecipe(..., 1) 会改写传入对象，GTRecipe.copy() 又共享 data，必须先隔离。
-        return RecipeCalculationHelper.INSTANCE.multipleRecipe(copy(source), parallels);
+        // 先隔离 source，再按 long 精确乘；不能直接让上游 double 乘数处理巨构级并行。
+        return IndependentRecipeScale.scale(copy(source), parallels);
     }
 
     public static GTRecipe normal(GTRecipe ingredients, SingleBatchEnergy.Normal energy) {
