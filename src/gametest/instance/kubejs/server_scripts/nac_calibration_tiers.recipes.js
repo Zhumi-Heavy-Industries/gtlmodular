@@ -1,4 +1,6 @@
 ServerEvents.highPriorityData(event => {
+    // 依赖 GTCEu：本夹具的配方类型与 gtceu:sized 原料都由它提供，裸环境会在数据包解析期报错；能跑这个夹具的环境里它必然在。
+    if (!Platform.isLoaded('gtceu')) return
     const product = Java.loadClass('com.gtlmodular.common.data.nanochip.NanochipModContext').modId()
     // 件数表由 startup_scripts/nac_calibration.js 单点定义；两份清单手工同步的做法崩过一次测试服。
     const amounts = global.NAC_TIER_AMOUNTS
