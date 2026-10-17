@@ -20,6 +20,19 @@ public final class NanochipCalibrationFluids {
     private NanochipCalibrationFluids() {
     }
 
+    /** 满校准只看本模块族是否激活；加成、水耗倍率、界面读数都必须走这一份判定。 */
+    public static boolean fullCalibration(NanochipModuleMachine module) {
+        com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec spec = module.getModuleSpec();
+        if (spec.organizerFamily() == null) {
+            return false;
+        }
+        NanochipAssemblyComplexMachine host = module.getHost();
+        if (host == null || !module.hostConnected()) {
+            return false;
+        }
+        return host.getCalibration().specialActive(spec.organizerFamily());
+    }
+
     public static NanochipCalibration.Family exemptionFor(NanochipModuleMachine module) {
         if (!module.getModuleSpec().features().biologicalExemption()) return null;
         NanochipAssemblyComplexMachine host = module.getHost();

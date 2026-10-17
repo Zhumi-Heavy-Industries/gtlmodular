@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.nanochip;
 
+import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.utils.GTUtil;
@@ -8,6 +9,7 @@ import com.gtlmodular.common.data.nanochip.NanochipModContext;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -245,6 +247,19 @@ final class NanochipAssemblyMatrixTier {
         return DEFAULT_RECIPE_TIER;
     }
 
+    /** 同一把尺子，只读得到元数据时用：候选筛选钩子拿不到 GTRecipe。 */
+    static int recipeTier(CompoundTag data) {
+        if (data != null && data.contains(METADATA_KEY)) {
+            return clamp(data.getInt(METADATA_KEY));
+        }
+        return DEFAULT_RECIPE_TIER;
+    }
+
+    /** 准入的唯一判据：外壳档不低于配方要求档。成形判定与候选筛选共用它，避免两处各写一遍。 */
+    private static boolean tierAllows(int housingTier, int requiredTier) {
+        return housingTier >= requiredTier;
+    }
+
     private static int clamp(int tier) {
         return Math.max(1, Math.min(MAX_CASING_TIER, tier));
     }
@@ -256,12 +271,33 @@ final class NanochipAssemblyMatrixTier {
     static int gatedRecipeTier(NanochipModuleMachine module, GTRecipe recipe) {
         int machine = machineTier(module);
         int required = recipeTier(recipe);
-        if (machine > 0 && machine < required) {
+        if (machine > 0 && !tierAllows(machine, required)) {
             NanochipModContext.logger().debug("[gtlmodular] NAC 组装矩阵 @{} 外壳 {} 档 < 配方要求 {} 档"
                     + "⇒ 不取该配方", module.getPos(), machine, required);
             return -1;
         }
         return required;
+    }
+
+    /**
+     * 候选筛选钩子：{@code MultipleRecipesLogic.checkRecipe} 会把它套在每一个候选上，于是低于外壳档的
+     * 配方在扣料之前就被剔除。只拦超频回调挡不住候选搜索——那条路在配方已经选好之后才跑。
+     *
+     * <p>不是组装矩阵、或外壳档还没扫到（{@code -1}）时一律放行，避免把整台机器锁死。
+     */
+    static boolean gateAllows(CompoundTag data, IRecipeLogicMachine machine) {
+        if (!(machine instanceof NanochipModuleMachine module)
+                || !module.getModuleSpec().features().assembly()) {
+            return true;
+        }
+        int housing = machineTier(module);
+        int required = recipeTier(data);
+        if (housing <= 0 || tierAllows(housing, required)) {
+            return true;
+        }
+        NanochipModContext.logger().debug("[gtlmodular] NAC 组装矩阵 @{} 外壳 {} 档 < 配方要求 {} 档"
+                + "⇒ 不取该配方", module.getPos(), housing, required);
+        return false;
     }
 
     /**

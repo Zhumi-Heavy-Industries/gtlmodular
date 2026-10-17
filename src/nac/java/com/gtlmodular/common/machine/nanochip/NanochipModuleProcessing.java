@@ -30,9 +30,6 @@ final class NanochipModuleProcessing {
     private final DoubleConsumer writeImpurity;
     private final IntSupplier readFlushThreshold;
 
-    private static final java.util.regex.Pattern PURIFIED_WATER =
-            java.util.regex.Pattern.compile("grade_(\\d+)_purified_water");
-
     NanochipModuleProcessing(NanochipModuleMachine module, NanochipModuleSpec kind,
                              NanochipModulePower power, DoubleSupplier readImpurity,
                              DoubleConsumer writeImpurity, IntSupplier readFlushThreshold) {
@@ -70,28 +67,9 @@ final class NanochipModuleProcessing {
         }
     }
 
-    int highestPurifiedWaterGrade() {
-        int best = 0;
-        for (com.lowdragmc.lowdraglib.side.fluid.FluidStack fs
-                : NanochipModuleUpkeep.scanInputFluids(module)) {
-            var id = net.minecraftforge.registries.ForgeRegistries.FLUIDS.getKey(fs.getFluid());
-            if (id == null) {
-                continue;
-            }
-            java.util.regex.Matcher m = PURIFIED_WATER.matcher(id.getPath());
-            if (m.matches()) {
-                best = Math.max(best, Integer.parseInt(m.group(1)));
-            }
-        }
-        return best;
-    }
-
-    double waterStrength() {
-        int grade = module.highestPurifiedWaterGrade();
-        if (grade <= 0) {
-            return 0.0D;
-        }
-        return Math.min(2.0D, 1.0D + (grade - 1) * (1.0D / 15.0D));
+    /** 组织器取样一次：档位选择同时供加成与扣水，两处不能各扫一遍流体。 */
+    NanochipPurifiedWater.Selection purifiedWaterSelection() {
+        return NanochipModuleUpkeep.purifiedWaterSelection(module);
     }
 
     int laserHatchTier() {
@@ -135,9 +113,11 @@ final class NanochipModuleProcessing {
         long eut = Math.max(1L, RecipeHelper.getInputEUt(copy));
         int duration = Math.max(1, copy.duration);
         int hatchTier = GTUtil.getTierByVoltage(maxVoltage);
-        // 组装矩阵覆写 getRecipeTier：基类用配方电压档，矩阵改用部装外壳档。
-        int recipeTier = kind.features().assembly()
-                ? NanochipAssemblyMatrixTier.recipeTier(copy)
+        // 组装矩阵的超频基准是机器上装的外壳档（CHANGELOG 与 NH 的虚方法形状），不是配方要求的档；
+        // 外壳档还未知（结构未成形/还没扫过）时退回配方电压档，避免把 maxOc 算大。
+        int housingTier = NanochipAssemblyMatrixTier.machineTier(module);
+        int recipeTier = kind.features().assembly() && housingTier >= 0
+                ? housingTier
                 : GTUtil.getTierByVoltage(eut);
         int maxOc = Math.max(0, hatchTier - recipeTier);
         long powerCap = power.availableInputPower(maxVoltage);
@@ -189,14 +169,6 @@ final class NanochipModuleProcessing {
         copy.duration = Math.max(floorTicks, duration);
         copy.ocTier = oc;
         return copy;
-    }
-
-    /** 组装矩阵把「配方等级」重定义为部装外壳档；其它模块沿用配方电压档。 */
-    int getRecipeTier(GTRecipe recipe) {
-        if (!kind.features().assembly()) {
-            return GTUtil.getTierByVoltage(Math.max(1L, RecipeHelper.getInputEUt(recipe)));
-        }
-        return NanochipAssemblyMatrixTier.gatedRecipeTier(module, recipe);
     }
 
     static GTRecipe moduleFlexibleOverclock(MetaMachine machine, GTRecipe recipe,

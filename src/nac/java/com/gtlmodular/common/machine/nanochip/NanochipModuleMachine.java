@@ -26,6 +26,7 @@ import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
@@ -81,6 +82,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     private final NanochipModuleSpec spec;
 
     private final NanochipModuleStructure structure;
+
+    /** ★：拆块索引登记时记下的维度键（卸载阶段 {@code getLevel()} 可能已不可用）。 */
+    private ResourceKey<Level> structureIndexDim;
 
     private final NanochipModuleProcessing processing;
 
@@ -251,12 +255,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         }
     }
 
-    public int highestPurifiedWaterGrade() {
-        return processing.highestPurifiedWaterGrade();
-    }
-
-    public double waterStrength() {
-        return processing.waterStrength();
+    /** 组织器当前选中的两份水：界面显示与主机加成读同一份结果。 */
+    public NanochipPurifiedWater.Selection purifiedWaterSelection() {
+        return processing.purifiedWaterSelection();
     }
 
     public int laserHatchTier() {
@@ -351,6 +352,10 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             unsubscribeHostStateTick();
             hostStateSub = subscribeServerTick(this::tickHostState);
             refreshHostSync();
+            // ★：登记进「拆块 → 定点重判」索引（与主机同款兜底）。
+            if (NanochipStructurePosIndex.registerModule(getLevel(), this)) {
+                this.structureIndexDim = getLevel().dimension();
+            }
         }
         if (spec.isRouter() && getLevel() != null && !getLevel().isClientSide) {
             unsubscribeRouterTick();
@@ -362,7 +367,15 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     public void onUnload() {
         unsubscribeRouterTick();
         unsubscribeHostStateTick();
+        NanochipStructurePosIndex.unregisterModule(this.structureIndexDim, this);
+        this.structureIndexDim = null;
+        structure.dropPendingRemoval();
         super.onUnload();
+    }
+
+    /** 拆块事件入口（由 {@link NanochipStructurePosIndex} 在包围盒命中后调用）：只记坐标。 */
+    public void notePossibleStructureRemoval(BlockPos pos) {
+        structure.notePossibleStructureRemoval(pos);
     }
 
     private void unsubscribeHostStateTick() {
@@ -378,11 +391,17 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             return;
         }
         long now = level.getGameTime();
+        // 配置屏把「原初模式」关掉后，已加载模块不必重进世界：每 tick 只补一次登记（O(1) 分支）。
+        if (this.structureIndexDim == null
+                && NanochipStructurePosIndex.registerModule(level, this)) {
+            this.structureIndexDim = level.dimension();
+        }
         // NH 的排空判断在后处理里每 20 tick 一次；只挂在配方结束上，满含杂度的设备补上输出仓也永远排不掉。
         if (now % 20L == 0L && spec.features().board() && NanochipModuleImpurity.shouldFlush(this)) {
             flushImpurity();
         }
         structure.confirmFoldedPattern();
+        structure.tickRemovalRecheck();
         slotPublisher.tickNacSlotHeartbeat();
         hostLink.tickHostSync(now);
     }
@@ -430,7 +449,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         private final NanochipCalibrationBatch calibrationBatch = new NanochipCalibrationBatch();
 
         ModuleRecipeLogic(NanochipModuleMachine module) {
-            super(module);
+            // 外壳档准入必须挂在候选筛选上：组装矩阵走 MultipleRecipesLogic 的候选搜索，
+            // 超频回调在候选已被选中之后才跑，拦不住整条搜索。
+            super(module, NanochipAssemblyMatrixTier::gateAllows);
             this.module = module;
         }
 
@@ -594,6 +615,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     @Override
     public void onMachineRemoved() {
         hostLink.onMachineRemoved();
+        NanochipStructurePosIndex.unregisterModule(this.structureIndexDim, this);
+        this.structureIndexDim = null;
+        structure.dropPendingRemoval();
     }
 
     @Override

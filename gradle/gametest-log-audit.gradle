@@ -11,6 +11,9 @@ def warningRules = [
         [id: 'tower_superconductor_fallback',
          reason: '最小依赖没有上游板金属方块，生产候选链正常选择已有 UEV 超导块。',
          message: ~/\[gtlmodular\] 塔身方块 gtceu:superconductor_uev_base_sheetmetal 不存在，回落到 gtceu:superconductor_uev_base_block/],
+        [id: 'nac_matrix_tier_mismatch',
+         reason: '组装矩阵外壳档负例故意把 20 格中的一格换成不同档，这条 WARN 正是「混级⇒不成形」的预期输出；对应用例必须同时断言模块未成形。',
+         message: ~/\[gtlmodular\] NAC 组装矩阵 @.* 的 20 格部装外壳不同级（.*）⇒ 不成形；请把 20 格换成同一档外壳/],
         [id: 'pattern_fixture_occupied',
          reason: '样板回归主动在无 AE CPU 任务的缓冲内放入专用 pattern_gate_common，随后由用例核对消费和产出。仅放行这个测试物品。',
          message: ~/\[gtlmodular\] (?:惰性猪咪)?提示：『item\.kubejs\.pattern_gate_common』\(kubejs:pattern_gate_common\) \*\*被占用，且整个 AE 当前没有任何手工合成任务\*\*（网络可用=0，在途=0，AE追踪本件=false，AE全局有任务=false，本次需要=1）@BlockPos\{x=-?\d+, y=-?\d+, z=-?\d+\} —— 这是真占用：料很可能卡在本机内部槽里（推来后没被消费掉）。可先在 AE 终端「全部取消」再重新下单；若反复出现，请把本行与同一时刻的 `AE 推送样板` \/ `累计推来` (?:两行|\/ `独立线程` 三行)一起留档。（每个物品只提醒一次）/]

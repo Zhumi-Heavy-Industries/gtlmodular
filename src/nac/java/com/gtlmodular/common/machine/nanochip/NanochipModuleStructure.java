@@ -2,6 +2,7 @@ package com.gtlmodular.common.machine.nanochip;
 
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gregtechceu.gtceu.api.block.ActiveBlock;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
@@ -48,6 +49,30 @@ final class NanochipModuleStructure {
     private long lastUnformedLogTick = -10_000L;
 
     private final NanochipStructureLogGate structureLogGate = new NanochipStructureLogGate();
+
+    // ==========================================================================================
+    // ★【模块塔身拆块兜底】—— 与主机的 NanochipHostStructureIndex 同款、同取舍：
+    //   事件在方块真正被移除**之前**触发 ⇒ 只记坐标，下一 tick 读到新世界后才让上游重判。
+    //   为什么需要：模块只能走上游 gtlcore 的 LevelMixin 事件路径，而那条路径要求
+    //   `MultiblockState.cache` 里有这一格；读档/区块重载后缓存为空时，拆塔身外壳没有人重判
+    //   ⇒ 模块一直显示已成形、主机也一直算它已连接、舱室的外壳连片纹理也就一直连着。
+    //   ⚠ 本段**不产生**任何成形/失效结论：只调 `state.onBlockStateChanged(pos, 当前方块)`，
+    //     跑不跑匹配、成不成形全部由上游自己的 checkPatternWithLock() 决定。
+    // ==========================================================================================
+
+    /** 待重判的移除坐标（{@code null} = 没有待办）。 */
+    private volatile BlockPos pendingRemovedPos;
+
+    /** 待办的存活窗口（tick）：区块没加载时等它加载，超时丢弃，避免陈旧事件无限滞留。 */
+    private long pendingRemovalDeadline = -1L;
+
+    private static final long PENDING_REMOVAL_WINDOW_TICKS = 200L;
+
+    private static final String LOG_CONCLUSION_REMOVAL = "方块移除定点失效";
+
+    private static final String LOG_REMOVAL_FORMAT =
+            "[gtlmodular] NAC 模块 方块移除 ⇒ 定点重判 @{}（{}，移除格={}；"
+                    + "跑不跑匹配、成形还是失效全部由 gtlcore 自己判）";
 
     private static final String LOG_CONCLUSION_FORMED = "已成形";
 
@@ -103,7 +128,14 @@ final class NanochipModuleStructure {
 
     boolean checkPatternWithLock() {
         if (NAC_MODULE_FORMATION_BY_UPSTREAM) {
-            return upstreamLock.getAsBoolean();
+            final boolean upstream = upstreamLock.getAsBoolean();
+            // 上游对 20 个装配格只要求「是某档外壳」，原地换档（/setblock、/fill replace、WorldEdit、
+            // 直接 setBlockState）不会让它重新判档；档位缓存与「不同级不成形」只能在这里补一次，
+            // 否则换成高层外壳的矩阵会一直按旧档拒绝配方，只有手动刷新结构或重进世界才恢复。
+            if (!upstream || !kind.features().assembly()) {
+                return upstream;
+            }
+            return NanochipAssemblyMatrixTier.checkPattern(module);
         }
         Level level = module.getLevel();
         if (level == null || level.isClientSide) {
@@ -167,6 +199,85 @@ final class NanochipModuleStructure {
             module.getPatternLock().unlock();
         }
         this.foldDebt = false;
+    }
+
+    /** 由 Forge 拆块事件登记（方块还没真的移除）：只记坐标，下一 tick 读到新世界后再请上游重判。 */
+    void notePossibleStructureRemoval(BlockPos pos) {
+        if (pos == null) {
+            return;
+        }
+        this.pendingRemovedPos = pos.immutable();
+        this.pendingRemovalDeadline = -1L;
+    }
+
+    /**
+     * 每 tick 消费一次「塔身被拆」待办（由 {@code NanochipModuleMachine.tickHostState()} 调用）。
+     *
+     * <p>判定权完全在上游：本方法只把「这一格现在是 N 方块」交给
+     * {@link MultiblockState#onBlockStateChanged(BlockPos, BlockState)}，
+     * 成不成形、要不要断开连接全部由 gtlcore 自己的 {@code checkPatternWithLock()} 决定。
+     * 拿不到 patternLock（异步匹配正在跑）就保留待办，下一 tick 重试。
+     */
+    void tickRemovalRecheck() {
+        BlockPos broken = this.pendingRemovedPos;
+        if (broken == null) {
+            return;
+        }
+        Level level = module.getLevel();
+        if (level == null || level.isClientSide) {
+            dropPendingRemoval();
+            return;
+        }
+        if (!module.isFormed()) {
+            dropPendingRemoval();
+            return;
+        }
+        if (!NanochipStructurePosIndex.structureChunksLoaded(level, module.getPos())) {
+            // 未加载区块不能作为结构破坏证据，等加载完成再让上游重判。
+            long now = level.getGameTime();
+            if (this.pendingRemovalDeadline < 0L) {
+                this.pendingRemovalDeadline = now + PENDING_REMOVAL_WINDOW_TICKS;
+            } else if (now > this.pendingRemovalDeadline) {
+                dropPendingRemoval();
+            }
+            return;
+        }
+        MultiblockState state = module.getMultiblockState();
+        if (state == null) {
+            dropPendingRemoval();
+            return;
+        }
+        if (!module.getPatternLock().tryLock()) {
+            return;
+        }
+        try {
+            BlockState nowState = level.getBlockState(broken);
+            dropPendingRemoval();
+            logRemovalRecheck(broken, level.getGameTime());
+            state.onBlockStateChanged(broken, nowState);
+        } catch (RuntimeException e) {
+            dropPendingRemoval();
+            SwallowedErrors.report("NanochipModuleStructure#tickRemovalRecheck", e);
+            NanochipModContext.logger().debug("[gtlmodular] NAC 模块 方块移除定点失效：本次重判定抛出异常，已放弃 @{}",
+                    module.getPos(), e);
+        } finally {
+            module.getPatternLock().unlock();
+        }
+    }
+
+    void dropPendingRemoval() {
+        this.pendingRemovedPos = null;
+        this.pendingRemovalDeadline = -1L;
+    }
+
+    private void logRemovalRecheck(BlockPos broken, long now) {
+        String detail = "移除格=" + broken.toShortString();
+        if (this.structureLogGate.shouldEmitInfo(LOG_CONCLUSION_REMOVAL, detail,
+                structureLogLabel(), now)) {
+            NanochipModContext.logger().info(LOG_REMOVAL_FORMAT, module.getPos(), kind.nameZh(), broken);
+        } else if (NanochipModContext.logger().isDebugEnabled()) {
+            NanochipModContext.logger().debug(LOG_REMOVAL_FORMAT, module.getPos(), kind.nameZh(), broken);
+        }
     }
 
     void asyncCheckPattern(long periodID) {
@@ -318,6 +429,7 @@ final class NanochipModuleStructure {
 
     void onStructureInvalid() {
         NanochipAssemblyMatrixTier.forget(module);
+        dropPendingRemoval();
         if (loggedFormed) {
             loggedFormed = false;
             String detail = NanochipAssemblyComplexMachine.describeStructureFailure(module.getMultiblockState());

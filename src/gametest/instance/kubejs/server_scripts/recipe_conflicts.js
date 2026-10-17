@@ -1,4 +1,6 @@
 ServerEvents.highPriorityData(event => {
+    // 依赖 GTCEu：以下配方全部写成 gtceu:* 类型，裸环境在数据包解析期会报错；夹具测试本身也依赖 GT。
+    if (!Platform.isLoaded('gtceu')) return
     const item = (name, amount) => ({content: {
         type: 'gtceu:sized', count: amount || 1,
         ingredient: {item: 'kubejs:conflict_scan_' + name}

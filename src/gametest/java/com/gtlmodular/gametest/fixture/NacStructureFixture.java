@@ -7,6 +7,7 @@ import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
 import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
+import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTMachines;
 import com.gtlmodular.common.data.NanochipBlocks;
 import com.gtlmodular.common.data.nanochip.NanochipComplexPattern;
@@ -16,13 +17,16 @@ import com.mojang.authlib.GameProfile;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -30,6 +34,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.FakePlayerFactory;
 
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,7 +50,11 @@ public final class NacStructureFixture {
     private final ServerLevel level;
     private final FakePlayer player;
     private final MachineDefinition moduleEnergyHatch;
+    private final ResourceLocation moduleId;
+    private final boolean installFluidOutput;
     private final NacStructureLayout layout = NacStructureLayout.current();
+    private List<BlockPos> moduleLaserSlots = List.of();
+    private List<BlockPos> moduleTowerHatchSlots = List.of();
     private final List<Long> forcedChunks = new ArrayList<>();
     private final List<BlockPos> hostHatches = new ArrayList<>();
     private final List<BlockPos> moduleHatches = new ArrayList<>();
@@ -65,8 +74,15 @@ public final class NacStructureFixture {
     }
 
     public NacStructureFixture(GameTestHelper helper, MachineDefinition moduleEnergyHatch) {
+        this(helper, moduleEnergyHatch, null, true);
+    }
+
+    public NacStructureFixture(GameTestHelper helper, MachineDefinition moduleEnergyHatch, ResourceLocation moduleId,
+                               boolean installFluidOutput) {
         this.helper = helper;
         this.moduleEnergyHatch = moduleEnergyHatch;
+        this.moduleId = moduleId;
+        this.installFluidOutput = installFluidOutput;
         this.level = helper.getLevel();
         UUID identity = UUID.nameUUIDFromBytes((level.dimension().location() + ":" +
                 helper.absolutePos(layout.hostPosition())).getBytes(StandardCharsets.UTF_8));
@@ -75,6 +91,8 @@ public final class NacStructureFixture {
     }
 
     public void build() {
+        moduleLaserSlots = List.of();
+        moduleTowerHatchSlots = List.of();
         BlockPos min = helper.absolutePos(BlockPos.ZERO);
         BlockPos max = helper.absolutePos(layout.size().offset(-1, -1, -1));
         for (int x = min.getX() >> 4; x <= max.getX() >> 4; x++) {
@@ -98,7 +116,7 @@ public final class NacStructureFixture {
         host = (NanochipAssemblyComplexMachine) placeMachine(layout.host().definition(),
                 helper.absolutePos(layout.hostPosition()));
         Map<BlockPos, TraceabilityPredicate> hostPattern = buildAndFitHatches(host, hostHatches);
-        module = (NanochipModuleMachine) placeMachine(layout.module().definition(),
+        module = (NanochipModuleMachine) placeMachine(moduleDefinition(),
                 helper.absolutePos(layout.modulePosition()));
         Map<BlockPos, TraceabilityPredicate> modulePattern = buildAndFitHatches(module, moduleHatches);
         hostKey = keyBlock(hostPattern, false);
@@ -143,6 +161,12 @@ public final class NacStructureFixture {
             if (machine == module) {
                 if (moduleEnergyHatch == null) definitions.remove(GTMachines.ENERGY_INPUT_HATCH[1]);
                 else definitions.set(4, moduleEnergyHatch);
+                if (!installFluidOutput) definitions.remove(GTMachines.FLUID_EXPORT_HATCH[1]);
+                moduleLaserSlots = positions.stream()
+                        .filter(pos -> acceptsLaser(predicates.get(pos))).toList();
+                // 底座 V 位是 hatchOrCasing(...).or(air())，塔身 HATCH 格没有 air()：用这个差别分开两者。
+                moduleTowerHatchSlots = positions.stream()
+                        .filter(pos -> !acceptsAir(predicates.get(pos))).toList();
             }
             if (positions.size() < definitions.size()) {
                 helper.fail("缺少合法仓位：" + machine.getDefinition().getId() + "@" + machine.getPos()
@@ -178,6 +202,26 @@ public final class NacStructureFixture {
                 .filter(part -> part.candidates != null)
                 .flatMap(part -> Arrays.stream(part.candidates.get()))
                 .anyMatch(info -> PartAbility.INPUT_ENERGY.isApplicable(info.getBlockState().getBlock()));
+    }
+
+    /** 组合谓词里出现激光仓候选，才说明这一格是塔身单独开出来的激光仓格。 */
+    private boolean acceptsLaser(TraceabilityPredicate predicate) {
+        if (predicate == null) {
+            return false;
+        }
+        return Stream.concat(predicate.common.stream(), predicate.limited.stream())
+                .filter(part -> part.candidates != null)
+                .flatMap(part -> Arrays.stream(part.candidates.get()))
+                .anyMatch(info -> PartAbility.INPUT_LASER.isApplicable(info.getBlockState().getBlock()));
+    }
+
+    /** 底座 V 位带 air() 子句（AIR 是上游共用单例），塔身 HATCH 格没有；这正是两者的分界。 */
+    private boolean acceptsAir(TraceabilityPredicate predicate) {
+        if (predicate == null) {
+            return false;
+        }
+        return Stream.concat(predicate.common.stream(), predicate.limited.stream())
+                .anyMatch(part -> part == SimplePredicate.AIR);
     }
 
     private BlockPos keyBlock(Map<BlockPos, TraceabilityPredicate> pattern, boolean tower) {
@@ -248,6 +292,128 @@ public final class NacStructureFixture {
                     net.minecraft.world.level.ChunkPos.getZ(chunk), false);
         }
         forcedChunks.clear();
+    }
+
+    private MachineDefinition moduleDefinition() {
+        if (moduleId == null) {
+            return layout.module().definition();
+        }
+        MachineDefinition definition = GTRegistries.MACHINES.get(moduleId);
+        helper.assertTrue(definition != null, "模块未注册：" + moduleId);
+        return definition;
+    }
+
+    /** 蚀刻阵列塔身 H 格单独开放激光仓；其它模块没有这种格子。 */
+    public List<BlockPos> moduleLaserSlots() {
+        return moduleLaserSlots;
+    }
+
+    public void installLaserInModuleLaserSlot(int index) {
+        helper.assertTrue(index >= 0 && index < moduleLaserSlots.size(),
+                "模块没有第 " + index + " 个激光仓格（实有 " + moduleLaserSlots.size() + " 个）");
+        installLaser(moduleLaserSlots.get(index));
+    }
+
+    public void installLaserInModuleHatchSlot(int index) {
+        helper.assertTrue(index >= 0 && index < moduleHatches.size(),
+                "模块没有第 " + index + " 个普通仓格（实有 " + moduleHatches.size() + " 个）");
+        installLaser(moduleHatches.get(index));
+    }
+
+    /** 激光仓只开给塔身 H 格；挑一个普通 V 格放第 2 个激光仓，验证它不被接纳。 */
+    public void installLaserInModuleOrdinaryHatchSlot() {
+        for (BlockPos pos : moduleHatches) {
+            if (!moduleLaserSlots.contains(pos)) {
+                installLaser(pos);
+                return;
+            }
+        }
+        helper.fail("模块没有可对照的普通仓格：" + moduleHatches.size());
+    }
+
+    /** 塔身 HATCH 格（按 air() 子句区分出来）；没声明激光能力的模块也有这种格子。 */
+    public List<BlockPos> moduleTowerHatchSlots() {
+        return moduleTowerHatchSlots;
+    }
+
+    /** 往塔身 HATCH 格直接装激光仓：模块没声明激光能力时，这一格本该只收普通仓与机壳。 */
+    public void installLaserInModuleTowerHatchSlot(int index) {
+        helper.assertTrue(index >= 0 && index < moduleTowerHatchSlots.size(),
+                "模块没有第 " + index + " 个塔身 HATCH 格（实有 " + moduleTowerHatchSlots.size() + " 个）");
+        installLaser(moduleTowerHatchSlots.get(index));
+    }
+
+    public void installLaserInHostHatchSlot(int index) {
+        helper.assertTrue(index >= 0 && index < hostHatches.size(),
+                "主机没有第 " + index + " 个仓格（实有 " + hostHatches.size() + " 个）");
+        installLaser(hostHatches.get(index));
+    }
+
+    private void installLaser(BlockPos pos) {
+        helper.assertTrue(GTMachines.LASER_INPUT_HATCH_256.length > 5
+                        && GTMachines.LASER_INPUT_HATCH_256[5] != null,
+                "激光源仓未注册：" + GTMachines.LASER_INPUT_HATCH_256.length);
+        placeMachine(GTMachines.LASER_INPUT_HATCH_256[5], pos);
+    }
+
+    /** 20 个部装外壳格的实际世界坐标；只对朝北放置的矩阵成立。 */
+    public List<BlockPos> assemblyCellPositions() {
+        helper.assertTrue(module != null, "模块尚未放置");
+        helper.assertTrue(module.getFrontFacing() == Direction.NORTH,
+                "装配格坐标只覆盖 NORTH 朝向，当前 " + module.getFrontFacing());
+        int[] cells = NanochipComplexPattern.moduleAssemblyCells(module.getDefinition().getId().toString());
+        helper.assertTrue(cells != null && cells.length > 0 && cells.length % 3 == 0,
+                "没有登记装配格：" + module.getDefinition().getId());
+        List<BlockPos> out = new ArrayList<>(cells.length / 3);
+        int[] offset = new int[3];
+        for (int i = 0; i < cells.length / 3; i++) {
+            int base = i * 3;
+            NanochipComplexPattern.elementOffset(0, NanochipComplexPattern.MOD_CTRL_X - cells[base],
+                    cells[base + 1] - NanochipComplexPattern.MOD_CTRL_ROW,
+                    NanochipComplexPattern.MOD_CTRL_Z - cells[base + 2], offset);
+            out.add(module.getPos().offset(offset[0], offset[1], offset[2]));
+        }
+        return out;
+    }
+
+    public int replaceAssemblyCasings(Block block) {
+        List<BlockPos> cells = assemblyCellPositions();
+        for (BlockPos pos : cells) {
+            if (!level.getBlockState(pos).is(block)) {
+                helper.assertTrue(level.setBlockAndUpdate(pos, block.defaultBlockState()),
+                        "部装外壳替换失败：" + pos);
+            }
+        }
+        return cells.size();
+    }
+
+    public void replaceAssemblyCasing(Block block, int index) {
+        List<BlockPos> cells = assemblyCellPositions();
+        helper.assertTrue(index >= 0 && index < cells.size(),
+                "装配格序号越界：" + index + "/" + cells.size());
+        BlockPos pos = cells.get(index);
+        helper.assertTrue(level.setBlockAndUpdate(pos, block.defaultBlockState()),
+                "部装外壳替换失败：" + pos);
+    }
+
+    /** 外壳档是包内实现，测试用反射读取；改名时按用例失败报出，不静默跳过。 */
+    public int moduleHousingTier() {
+        try {
+            Method method = Class.forName("com.gtlmodular.common.machine.nanochip.NanochipAssemblyMatrixTier")
+                    .getDeclaredMethod("machineTier", NanochipModuleMachine.class);
+            method.setAccessible(true);
+            return (int) method.invoke(null, module);
+        } catch (ReflectiveOperationException failure) {
+            throw new GameTestAssertException("无法读取组装矩阵外壳档：" + failure);
+        }
+    }
+
+    public void assertHostNotFormed(String expectation) {
+        helper.assertTrue(!host.isFormed(), expectation + "；" + diagnostics());
+    }
+
+    public void assertModuleNotFormed(String expectation) {
+        helper.assertTrue(!module.isFormed(), expectation + "；" + diagnostics());
     }
 
     public NanochipAssemblyComplexMachine host() { return host; }
