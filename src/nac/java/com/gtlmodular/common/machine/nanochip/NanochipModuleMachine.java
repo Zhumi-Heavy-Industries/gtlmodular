@@ -427,7 +427,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         private final NanochipCalibrationBatch calibrationBatch = new NanochipCalibrationBatch();
 
         ModuleRecipeLogic(NanochipModuleMachine module) {
-            super(module);
+            // 外壳档准入必须挂在候选筛选上：组装矩阵走 MultipleRecipesLogic 的候选搜索，
+            // 超频回调在候选已被选中之后才跑，拦不住整条搜索。
+            super(module, NanochipAssemblyMatrixTier::gateAllows);
             this.module = module;
         }
 

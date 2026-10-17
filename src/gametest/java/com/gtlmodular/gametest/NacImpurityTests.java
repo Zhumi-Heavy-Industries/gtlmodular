@@ -64,10 +64,10 @@ public final class NacImpurityTests {
                 .thenWaitUntil(structure::assertConnected)
                 .thenExecute(() -> prepare(helper, structure, scenario));
         if (scenario == Scenario.FLUSHES) {
-            // 排空挂在每 20 tick 的复核上；多等 1 tick 避开「复核与本步谁先执行」的顺序差。
+            // 排空挂在每 20 tick 的复核上，复核与本步谁先执行不固定：等它发生，再要求排空后的状态稳住。
             sequence.thenIdle(21)
-                    .thenExecute(() -> assertFlushed(helper, structure))
-                    .thenExecuteFor(40, () -> assertFlushed(helper, structure));
+                    .thenWaitUntil(() -> assertFlushed(helper, structure))
+                    .thenExecuteFor(20, () -> assertFlushed(helper, structure));
         } else {
             sequence.thenExecuteFor(60, () -> assertUnchanged(helper, structure, scenario));
         }

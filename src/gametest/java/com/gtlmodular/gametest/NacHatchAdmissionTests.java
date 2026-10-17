@@ -74,9 +74,10 @@ public final class NacHatchAdmissionTests {
             case HOST_ONE_LASER -> structure.installLaserInHostHatchSlot(0);
         }
         if (scenario == Scenario.ETCHER_ONE_LASER) {
+            // 成形可能先于激光仓被复检接纳：等它被接纳，别拿成形当「仓已收下」。
             helper.startSequence()
                     .thenWaitUntil(structure::assertConnected)
-                    .thenExecute(() -> {
+                    .thenWaitUntil(() -> {
                         long lasers = lasers(structure.module());
                         helper.assertTrue(lasers == 1,
                                 "激光仓未被蚀刻阵列结构接纳：期望 1 个，实际 " + lasers + " 个；" + state(structure));
