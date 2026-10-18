@@ -3,6 +3,7 @@
   "itemGroup.gtlmodular.creative_tab": "GTL Modular Magma Machines",
   "block.gtlmodular.molten_module_host": "Geo-Pulse Energy Conversion Hub",
   "block.gtlmodular.molten_module_host.desc": "§7Coils can be §bmixed§7: the coil type holding the §blargest share§7 of the structure's coil blocks sets the temperature, powers the three modules, and grants an energy discount based on coil temperature — counting from §65400K§7, +§61%§7 per §6240K§7, up to §6§l50%§7.\n§7The hub can power up to §6§l12§7 modules.\n§7Structure source: §bBV1RgXTBVEJ1",
+  "block.gtlmodular.buffered_me_output_buffer": "ME Buffered Export Buffer",
   "block.gtlmodular.molten_blast_module": "Zhu-Mi Raging Ore Roaster",
   "block.gtlmodular.molten_blast_module.desc": "§7Module A: shares the Electric Blast Furnace recipes.",
   "gtlmodular.blast.tooltip.duration": "§7Duration multiplier§r %s",

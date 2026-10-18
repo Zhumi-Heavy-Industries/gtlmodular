@@ -209,11 +209,8 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             if (amount <= 0) {
                 continue;
             }
-            Int128 wouldAccept = itemBuffer.simulateAccept(ITEM_CODEC.keyOf(ingredient), Int128.of(amount));
-            long rest = amount - wouldAccept.toLongClamped();
-            if (rest > 0) {
-                remainder.add(remaining(ingredient, firstStack(ingredient), rest));
-            }
+            var accepted = itemBuffer.accept(java.util.List.of(ingredient), true);
+            remainder.addAll(accepted.remainder());
         }
         return remainder;
     }
@@ -232,11 +229,8 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             if (amount <= 0) {
                 continue;
             }
-            Int128 wouldAccept = fluidBuffer.simulateAccept(FLUID_CODEC.keyOf(ingredient), Int128.of(amount));
-            long rest = amount - wouldAccept.toLongClamped();
-            if (rest > 0) {
-                remainder.add(FLUID_CODEC.withAmount(ingredient, rest));
-            }
+            var accepted = fluidBuffer.accept(java.util.List.of(ingredient), true);
+            remainder.addAll(accepted.remainder());
         }
         return remainder;
     }

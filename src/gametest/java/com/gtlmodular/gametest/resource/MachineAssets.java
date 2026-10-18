@@ -55,6 +55,12 @@ final class MachineAssets {
                     new ResourceLocation("gtceu:block/multiblock/fusion_reactor"));
             case "molten_space_ore_module" -> audit.workable(new ResourceLocation("gtlcore:block/space_elevator_mechanical_casing"),
                     new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "buffered_me_output_buffer" -> {
+                String voltage = "gtceu:block/casings/voltage/" + GTValues.VN[definition.getTier()].toLowerCase(Locale.ROOT);
+                audit.model("gtceu:block/machine/hull_machine",
+                        hull(voltage + "/bottom", voltage + "/top", voltage + "/side"));
+                audit.model("gtceu:block/machine/part/me_extended_export_buffer", Map.of());
+            }
             default -> throw new IOException("未覆盖的动态机器 " + id);
         }
     }

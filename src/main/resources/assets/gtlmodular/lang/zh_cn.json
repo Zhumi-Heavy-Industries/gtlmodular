@@ -3,6 +3,7 @@
   "itemGroup.gtlmodular.creative_tab": "GTL·熔岩模块化机组",
   "block.gtlmodular.molten_module_host": "地心涌动能量转换枢纽",
   "block.gtlmodular.molten_module_host.desc": "§7线圈可以§b混搭§7：以结构里§b数量占比最多§7的线圈作为温度判定基准，为三个模块提供能量，同时根据线圈温度提供电量减免——§65400K§7 起算，每提升 §6240K§7 提升 §61%§7 减免，最高 §6§l50%§7。\n§7枢纽最多可为 §6§l12§7 个模块提供能量。\n§7结构来源：§bBV1RgXTBVEJ1",
+  "block.gtlmodular.buffered_me_output_buffer": "ME 聚合输出总成",
   "block.gtlmodular.molten_blast_module": "猪咪愤怒烧矿机",
   "block.gtlmodular.molten_blast_module.desc": "§7模块A：沿用§f电力高炉§7配方。",
   "gtlmodular.blast.tooltip.duration": "§7耗时倍率§r %s",
