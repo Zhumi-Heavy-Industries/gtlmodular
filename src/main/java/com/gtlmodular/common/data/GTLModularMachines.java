@@ -412,13 +412,19 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         if (Boolean.getBoolean("gtlmodular.testHost")) {
             // GameTest 最小夹具只验证引擎批次/候选/输出，不验证 15×31×11 真实外壳。
-            TraceabilityPredicate testCasing = com.gregtechceu.gtceu.api.pattern.Predicates.any();
+            TraceabilityPredicate testCasing = com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_ITEMS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_FLUIDS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY);
             return FactoryBlockPattern.start()
-                    .aisle("XXX", "XXX", "XXX")
-                    .aisle("XSX", "XXX", "XXX")
-                    .aisle("XXX", "XXX", "XXX")
+                    .aisle("X.X")
+                    .aisle(".S.")
+                    .aisle("X.X")
                     .where('S', controller(blocks(def.get())))
                     .where('X', testCasing)
+                    .where('.', com.gregtechceu.gtceu.api.pattern.Predicates.any())
                     .build();
         }
         TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));

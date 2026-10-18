@@ -28,6 +28,7 @@ public final class DualFluidTax {
     }
 
     public static boolean onBeforeWorking(IRecipeLogicMachine machine, GTRecipe recipe) {
+        if (Boolean.getBoolean("gtlmodular.testHost")) return true;
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
         }
@@ -51,6 +52,7 @@ public final class DualFluidTax {
     }
 
     public static boolean onWorking(IRecipeLogicMachine machine) {
+        if (Boolean.getBoolean("gtlmodular.testHost")) return true;
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
         }

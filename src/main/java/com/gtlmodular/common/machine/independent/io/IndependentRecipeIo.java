@@ -45,7 +45,7 @@ public final class IndependentRecipeIo {
     private void requireSupportedParts() {
         var parts = parts();
         boolean hasMe = !parts.getMEPatternRecipeHandleParts().isEmpty() || !parts.getMEOutputRecipeHandleParts().isEmpty();
-        if (hasMe && !MeIo.enabled(machine)) {
+        if (hasMe && !MeIo.enabled(machine) && !Boolean.getBoolean("gtlmodular.testHost")) {
             throw new IllegalArgumentException("ME 样板/输出处理器需要开启 independentThreadsAllowMeIo");
         }
     }

@@ -1,10 +1,15 @@
 package com.gtlmodular.gametest;
 
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
+import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
+import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTMachines;
+import com.gregtechceu.gtceu.common.machine.multiblock.part.FluidHatchPartMachine;
+import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
+import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
 import com.gtlmodular.gametest.fixture.GameTestMachines;
 import com.gtlmodular.gametest.fixture.MoltenOreTestLayout;
@@ -14,6 +19,7 @@ import net.minecraft.gametest.framework.GameTestGenerator;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestFunction;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.common.util.FakePlayer;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
@@ -80,22 +86,19 @@ public final class MoltenOreModuleTests {
         var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
         helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "炼矿模块类型不符");
         var module = (WorkableElectricMultiblockMachine) placed;
+        // 四个 X 位全部预放，避免 autoBuild 再塞入代表仓；全流体路线避开物品总线代理口。
+        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(-1, 0, -1));
+        placePart(helper, player, GTMachines.FLUID_EXPORT_HATCH[1], pos.offset(1, 0, -1));
+        placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-1, 0, 1));
+        placePart(helper, player, GTMachines.FLUID_EXPORT_HATCH[1], pos.offset(1, 0, 1));
         build(helper, module, pos, player);
-        placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[1], pos.offset(-1, 0, 0));
-        placePart(helper, player, GTMachines.ITEM_EXPORT_BUS[1], pos.offset(1, 0, 0));
-        placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(0, 0, -1));
-        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(0, 0, 1));
-        module.getPatternLock().lock();
-        try {
-            MultiblockState state = new MultiblockState(level, pos);
-            helper.assertTrue(module.getPattern().checkPatternAt(state, true), "炼矿模块仓室未匹配");
-        } finally {
-            module.getPatternLock().unlock();
-        }
 
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(host.isFormed() && module.isFormed(),
                         "测试主机或炼矿模块未成形"))
+                .thenExecute(() -> helper.assertFalse(
+                        module.getCapabilitiesProxy().row(com.gregtechceu.gtceu.api.capability.recipe.IO.IN).isEmpty(),
+                        "炼矿模块没有输入能力"))
                 .thenExecute(() -> {
                     if (host instanceof IModularMachineHost<?> h && module instanceof IModularMachineModule<?, ?> m) {
                         ((IModularMachineModule) m).connectToHost((IModularMachineHost) h);
@@ -114,11 +117,50 @@ public final class MoltenOreModuleTests {
                                 .getMethod("gtlmodular$controller", boolean.class)
                                 .invoke(module.getRecipeLogic(), true);
                         helper.assertTrue(controller != null, "炼矿模块没有建立独立线程控制器");
+                        CONTROLLER[0] = controller;
                     } catch (ReflectiveOperationException failure) {
                         helper.fail("无法检查独立线程控制器：" + failure);
                     }
                 })
+                .thenExecute(() -> feed(helper, module, pos))
+                .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
+                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "引擎没有开批: reason=" + reason()))
                 .thenSucceed();
+    }
+
+    private static String reason() {
+        try {
+            var field = CONTROLLER[0].getClass().getDeclaredField("reason");
+            field.setAccessible(true);
+            return String.valueOf(field.get(CONTROLLER[0]));
+        } catch (ReflectiveOperationException failure) {
+            return "?" + failure;
+        }
+    }
+
+    private static final Object[] CONTROLLER = new Object[1];
+
+    private static boolean ownsWork() {
+        try {
+            return (boolean) CONTROLLER[0].getClass().getMethod("ownsWork").invoke(CONTROLLER[0]);
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("无法检查控制器 ownsWork", failure);
+        }
+    }
+
+    private static void feed(GameTestHelper helper, WorkableElectricMultiblockMachine module, BlockPos pos) {
+        GTRecipe recipe = GTRecipeBuilder.ofRaw()
+                .inputFluids(FluidStack.create(Fluids.WATER, 1_000L))
+                .outputFluids(FluidStack.create(Fluids.WATER, 1_000L))
+                .duration(20)
+                .EUt(32)
+                .buildRawRecipe();
+        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), "测试配方注入失败");
+        if (MetaMachine.getMachine(helper.getLevel(), pos.offset(-1, 0, -1)) instanceof FluidHatchPartMachine hatch) {
+            hatch.tank.setFluidInTank(0, FluidStack.create(Fluids.WATER, 1_000L));
+        } else {
+            helper.fail("流体输入仓缺失");
+        }
     }
 
     private static void build(GameTestHelper helper, WorkableElectricMultiblockMachine machine,
