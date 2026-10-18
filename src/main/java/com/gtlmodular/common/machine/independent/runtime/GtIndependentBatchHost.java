@@ -185,6 +185,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         payload.remainders().remove(INPUT);
         admissions.add(payload, prepared.source);
         runtime.consumed(payload);
+        adapter.admitted(payload.recipe());
         return true;
     }
 

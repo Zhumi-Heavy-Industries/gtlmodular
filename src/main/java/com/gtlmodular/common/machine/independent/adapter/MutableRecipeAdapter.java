@@ -8,17 +8,23 @@ import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.persistence.BatchRecipeExtensions.Power;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import com.gtlmodular.mixin.independent.MutableRecipeLogicInvoker;
+import net.minecraft.resources.ResourceLocation;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 final class MutableRecipeAdapter implements IndependentRecipeAdapter {
     private final MutableRecipesLogic<?> logic;
     private final MutableRecipeLogicInvoker access;
+    private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
+    private final RecipeFairness fairness = new RecipeFairness();
 
-    MutableRecipeAdapter(MutableRecipesLogic<?> logic) {
+    MutableRecipeAdapter(MutableRecipesLogic<?> logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
         this.logic = logic;
+        this.activeRecipes = activeRecipes;
         access = (MutableRecipeLogicInvoker) logic;
     }
 
@@ -34,6 +40,12 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
     @Override public boolean allowsRunningBatches() { return access.gtlmodular$checkBeforeWorking(); }
 
     @Override
+    public void admitted(GTRecipe recipe) {
+        fairness.admitted(recipe.id, logic.getMachine().getLevel() == null
+                ? 0L : logic.getMachine().getLevel().getGameTime());
+    }
+
+    @Override
     public List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget, long availablePower) {
         if (availableSlots <= 0 || availableBudget <= 0 || !allowsNewBatches()) return List.of();
         long remaining = Math.min(availableBudget, totalBudget());
@@ -46,9 +58,16 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
         int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
         long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
         long power = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
-        for (GTRecipe found : access.gtlmodular$lookupCandidates()) {
-            if (remaining == 0 || inputs.size() >= availableSlots) break;
-            GTRecipe origin = RecipeCandidateSnapshots.copy(found);
+        List<GTRecipe> origins = new ArrayList<>();
+        for (GTRecipe found : access.gtlmodular$lookupCandidates()) origins.add(RecipeCandidateSnapshots.copy(found));
+        int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
+        Map<ResourceLocation, Integer> active = activeRecipes.get();
+        var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
+                active == null ? Map.of() : active);
+        int window = Math.min(order.size(), availableSlots + 8);
+        for (int n = 0; n < window; n++) {
+            if (remaining == 0) break;
+            GTRecipe origin = origins.get(order.get(n));
             var pair = access.gtlmodular$calculateParallel(logic.getMachine(), origin, remaining);
             long eut = access.gtlmodular$recipeEut(origin);
             double multiplier = access.gtlmodular$euMultiplier();

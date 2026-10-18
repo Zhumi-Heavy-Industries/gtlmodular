@@ -13,10 +13,13 @@ import com.gtlmodular.common.machine.independent.runtime.IndependentBatchPolicy;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public final class IndependentMachineController {
@@ -68,8 +71,17 @@ public final class IndependentMachineController {
     }
 
     private IndependentRecipeAdapters.Selection selection() {
-        if (selection == null) selection = IndependentRecipeAdapters.select(logic);
+        if (selection == null) selection = IndependentRecipeAdapters.select(logic, this::activeRecipeCounts);
         return selection;
+    }
+
+    private Map<ResourceLocation, Integer> activeRecipeCounts() {
+        if (session == null) return Map.of();
+        Map<ResourceLocation, Integer> counts = new HashMap<>();
+        for (var batch : session.batches()) {
+            counts.merge(batch.payload().recipe().id, 1, Integer::sum);
+        }
+        return counts;
     }
 
     private String unsupportedReason() {

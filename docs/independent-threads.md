@@ -72,13 +72,14 @@
 - `independentThreadsMaxBatchTicks` 默认 10000（约 8 分钟），0 表示不限制；`independentThreadsMaxBatchRuns` 默认 0（不限制）。它们是安全阀，不是吞吐上限：长期配方会自动缩批，短配方仍可开很大。
 - 候选内容用 `IAdvancedContentModifier.preciseMultiplier` 做 long 精确放大，并按原配方逐项校正数量；超出 `Long.MAX` 的批直接拒绝，不静默饱和。EU/t 不在物料倍率里重复放大，仍由能量层重新计算。
 - `independentThreadsAllowMeIo` 默认 false。开启且机器装了 ME 样板/输出处理器时，非 tick 的物品/流体走上游 ME 的 long 计数路径；模拟通过才真实转移，剩余量写回同一张 Content 表。ME 的 tick 物品/流体尚未适配，遇到会拒绝该批；普通总线机器不受影响。
+- 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 0（不限），矿物处理这类配方种类远多于线程的场景建议设为 1，让每种矿最坏等一个轮转周期而不是永远轮不到。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
 - 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
 
 已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
 
 例如 `maxParallel=100`、线程数 2，A/B 各占 100：A 完成但堵输出时仍无剩余额度，A 实际结清后才能使用释放的 100。此时降到 1 线程，B 的 100 占满新总额，继续等待它结清，不裁剪旧批次。
 
-同配方类型＋同配方 ID 允许同时存在多批，共用总预算。每批沿用原族单条配方的并行算法和上限；上游单候选允许使用整个可用预算，不能另加 `maxParallel` 单批硬上限，也不能每批重新领取完整总额。NAC 的 `FAN_OUT_SAME_RECIPE` 和每配方满并行规则不适用于本功能。
+同配方类型＋同配方 ID 默认允许同时存在多批，共用总预算；`independentThreadsMaxBatchesPerRecipe` 大于 0 时按该上限过滤候选（已扣料批次不受影响）。每批沿用原族单条配方的并行算法和上限；上游单候选允许使用整个可用预算，不能另加 `maxParallel` 单批硬上限，也不能每批重新领取完整总额。NAC 的 `FAN_OUT_SAME_RECIPE` 和每配方满并行规则不适用于本功能。
 
 已确认整机功率也必须共用：同时运行的批次每 tick 总耗电不超过上游一台机器按相同电压、电流合批时的耗电，总吞吐与上游一致，不能是批次数倍。无线和电网沿用上游的功率计算方式，批次之间同样共用。
 
@@ -93,7 +94,7 @@
 
 ## 完整版候选组件的使用边界
 
-`IndependentRecipeAdapters.select()` 返回族适配器或具体不支持原因，调用方须先通过配置准入。它仅判断候选计算能力，不能替代 S5 的 handler/持久化准入或 S6 的调度器互斥。`candidates(availableSlots, availableBudget, availablePower)` 接受会话给出的剩余并行预算和有线功率，返回一轮预分配结果；每条成功开工前仍须重新校验真实输入，由 `IndependentBatchSession` 的 `BatchBudgetLedger` 预留预算。调用方不能把候选列表当成库存预留，也不能脱离会话另算一份总预算。下一轮可再次查到同配方，不按运行中的配方 ID 去重。
+`IndependentRecipeAdapters.select()` 返回族适配器或具体不支持原因，调用方须先通过配置准入。它仅判断候选计算能力，不能替代 S5 的 handler/持久化准入或 S6 的调度器互斥。适配器内部按配方 ID 的“最久未服务”顺序轮转，并可按 `independentThreadsMaxBatchesPerRecipe` 过滤活跃配方；`candidates(availableSlots, availableBudget, availablePower)` 接受会话给出的剩余并行预算和有线功率，返回一轮预分配结果；每条成功开工前仍须重新校验真实输入，由 `IndependentBatchSession` 的 `BatchBudgetLedger` 预留预算。调用方不能把候选列表当成库存预留，也不能脱离会话另算一份总预算。默认 `independentThreadsMaxBatchesPerRecipe=0` 时下一轮仍可再次查到同配方，不按运行中的配方 ID 去重。
 
 候选的 `ingredients` 是独占的原类型缩放快照，保留 ID、条件和未抽取的概率内容；`execution` 保存独立时长、能耗及上游无线构建类型（多类型无线使用机器当前类型，其余标准无线使用上游默认类型）。两者不得在 S5 再叠加 `fullModifyRecipe()`。概率抽取须使用原类型语义，真实扣料前须完成 S3 payload 的无损 prepare 校验。原配方子类、不可编码条件和 ingredient actions 在扣料前拒绝，等待专用适配。
 

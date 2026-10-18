@@ -9,18 +9,24 @@ import com.gtlmodular.common.machine.independent.recipe.*;
 import com.gtlmodular.mixin.independent.MultipleRecipeEnergyInvoker;
 import com.gtlmodular.mixin.independent.MultipleRecipeLogicInvoker;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import net.minecraft.resources.ResourceLocation;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
     private final GTLAddMultipleRecipesLogic logic;
     private final MultipleRecipeLogicInvoker access;
     private final MultipleRecipeEnergyInvoker energy;
+    private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
+    private final RecipeFairness fairness = new RecipeFairness();
 
-    MultipleRecipeAdapter(GTLAddMultipleRecipesLogic logic) {
+    MultipleRecipeAdapter(GTLAddMultipleRecipesLogic logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
         this.logic = logic;
+        this.activeRecipes = activeRecipes;
         access = (MultipleRecipeLogicInvoker) logic;
         energy = (MultipleRecipeEnergyInvoker) logic;
     }
@@ -37,6 +43,12 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
     @Override public boolean allowsRunningBatches() { return access.gtlmodular$checkBeforeWorking(); }
 
     @Override
+    public void admitted(GTRecipe recipe) {
+        fairness.admitted(recipe.id, logic.getMachine().getLevel() == null
+                ? 0L : logic.getMachine().getLevel().getGameTime());
+    }
+
+    @Override
     public List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget, long availablePower) {
         if (availableSlots <= 0 || availableBudget <= 0 || !allowsNewBatches()) return List.of();
         long budget = Math.min(availableBudget, totalBudget());
@@ -45,17 +57,22 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         if (handler != null && !handler.isOnline()) return List.of();
         List<GTRecipe> origins = new ArrayList<>();
         for (GTRecipe recipe : access.gtlmodular$lookupCandidates()) origins.add(RecipeCandidateSnapshots.copy(recipe));
-        long[] demands = new long[origins.size()];
         int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
         long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
         long powerCap = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
-        for (int i = 0; i < origins.size(); i++) {
+        int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
+        Map<ResourceLocation, Integer> active = activeRecipes.get();
+        var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
+                active == null ? Map.of() : active);
+        int window = Math.min(order.size(), availableSlots + 8);
+        long[] demands = new long[window];
+        for (int n = 0; n < window; n++) {
             // lookup 已通过原检查；这里只虚调用并行试算，避免将构造器谓词重复执行。
-            GTRecipe origin = origins.get(i);
+            GTRecipe origin = origins.get(order.get(n));
             long demand = access.gtlmodular$maxParallel(origin, budget);
             if (demand < 0 || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
             long maxAmount = BatchRunLimits.maxContentAmount(origin);
-            demands[i] = handler == null
+            demands[n] = handler == null
                     ? BatchRunLimits.cap(demand, energy.gtlmodular$totalRecipeEu(origin) * energy.gtlmodular$euMultiplier(),
                             powerCap, maxBatchTicks, maxBatchRuns, maxAmount)
                     : BatchRunLimits.cap(demand, 0.0D, 0L, 0, maxBatchRuns, maxAmount);
@@ -64,10 +81,10 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
         List<Double> normalEnergy = new ArrayList<>();
         List<BigInteger> wirelessEnergy = new ArrayList<>();
-        for (int i = 0; i < origins.size() && inputs.size() < availableSlots; i++) {
-            long p = allocated[i];
+        for (int n = 0; n < window; n++) {
+            long p = allocated[n];
             if (p == 0) continue;
-            GTRecipe origin = origins.get(i);
+            GTRecipe origin = origins.get(order.get(n));
             GTRecipe ingredients = RecipeCandidateSnapshots.scale(origin, p);
             inputs.add(new RecipeCandidateGroup.Input(ingredients, new ParallelAllocation(p, p), 1, 1));
             if (handler == null) {

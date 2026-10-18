@@ -23,6 +23,7 @@ class OtherMachineThreadsConfigTest {
     private static final String MAX_TICKS = "independentThreadsMaxBatchTicks";
     private static final String MAX_RUNS = "independentThreadsMaxBatchRuns";
     private static final String ALLOW_ME_IO = "independentThreadsAllowMeIo";
+    private static final String MAX_PER_RECIPE = "independentThreadsMaxBatchesPerRecipe";
     private static final String MACHINE = "gtladditions:arcane_cache_vault";
 
     @Test
@@ -31,23 +32,28 @@ class OtherMachineThreadsConfigTest {
         ForgeConfigSpec.ConfigValue<?> ticks = spec.getValues().get(List.of(MAX_TICKS));
         ForgeConfigSpec.ConfigValue<?> runs = spec.getValues().get(List.of(MAX_RUNS));
         ForgeConfigSpec.ConfigValue<?> me = spec.getValues().get(List.of(ALLOW_ME_IO));
+        ForgeConfigSpec.ConfigValue<?> perRecipe = spec.getValues().get(List.of(MAX_PER_RECIPE));
         assertNotNull(ticks);
         assertNotNull(runs);
         assertNotNull(me);
+        assertNotNull(perRecipe);
         assertEquals(10_000, ticks.getDefault());
         assertEquals(0L, runs.getDefault());
         assertEquals(false, me.getDefault());
+        assertEquals(0, perRecipe.getDefault());
 
         var data = CommentedConfig.inMemory();
         spec.correct(data);
         data.set(MAX_TICKS, 20_000);
         data.set(MAX_RUNS, 1_000_000_000L);
         data.set(ALLOW_ME_IO, true);
+        data.set(MAX_PER_RECIPE, 1);
         try {
             spec.setConfig(data);
             assertEquals(20_000, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks());
             assertEquals(1_000_000_000L, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns());
             assertTrue(GTLModularConfig.OTHER_MACHINE_THREADS.allowMeIo());
+            assertEquals(1, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe());
         } finally {
             spec.setConfig(null);
         }
@@ -180,7 +186,7 @@ class OtherMachineThreadsConfigTest {
         new NanochipConfig(builder, "gtl_nac");
         var spec = builder.build();
 
-        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST, MAX_TICKS, MAX_RUNS, ALLOW_ME_IO)) {
+        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST, MAX_TICKS, MAX_RUNS, ALLOW_ME_IO, MAX_PER_RECIPE)) {
             assertFalse(spec.getValues().contains(key));
         }
     }

@@ -13,6 +13,7 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.IntValue maxBatchTicks;
     private final ForgeConfigSpec.LongValue maxBatchRuns;
     private final ForgeConfigSpec.BooleanValue allowMeIo;
+    private final ForgeConfigSpec.IntValue maxBatchesPerRecipe;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
         enabled = builder.comment(
@@ -53,6 +54,12 @@ public final class OtherMachineThreadsConfig {
                         "ME tick 物品/流体尚未适配：配方带 tick 物料时仍会拒绝，等后续批次。",
                         "Allow ME pattern/output handlers in independent batches. ME tick item/fluid IO is not implemented yet.")
                 .define("independentThreadsAllowMeIo", false);
+        maxBatchesPerRecipe = builder.comment(
+                        "同一配方最多同时占几条独立批次，默认 0 = 不限制。",
+                        "矿物处理这类“配方种类远多于线程”的场景建议设为 1：防止一种矿占满所有槽，让后面的矿能轮转。",
+                        "这是候选级公平上限；已经扣料的批次不受影响。",
+                        "Maximum concurrent independent batches per recipe. 0 = unlimited; 1 is recommended for many-recipe ore processing.")
+                .defineInRange("independentThreadsMaxBatchesPerRecipe", 0, 0, 256);
     }
 
     public int maxBatchTicks() {
@@ -76,6 +83,14 @@ public final class OtherMachineThreadsConfig {
             return allowMeIo.get();
         } catch (IllegalStateException unloaded) {
             return allowMeIo.getDefault();
+        }
+    }
+
+    public int maxBatchesPerRecipe() {
+        try {
+            return maxBatchesPerRecipe.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchesPerRecipe.getDefault();
         }
     }
 

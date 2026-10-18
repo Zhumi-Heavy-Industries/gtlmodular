@@ -9,13 +9,16 @@ import com.gtladd.gtladditions.api.machine.logic.MutableRecipesLogic;
 import com.gtlmodular.mixin.independent.MultipleRecipeEnergyInvoker;
 import com.gtlmodular.mixin.independent.MultipleRecipeLogicInvoker;
 import com.gtlmodular.mixin.independent.MutableRecipeLogicInvoker;
+import net.minecraft.resources.ResourceLocation;
 
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 public final class IndependentRecipeAdapters {
     private IndependentRecipeAdapters() {}
 
-    public static Selection select(RecipeLogic logic) {
+    public static Selection select(RecipeLogic logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
         if (logic instanceof GTLAddMultipleRecipesLogic multiple) {
             String reason = RecipeAdapterSupport.unsupportedOverride(logic.getClass(), GTLAddMultipleRecipesLogic.class,
                     Set.of(GTLAddMultipleTypeRecipesLogic.class, GTLAddMultipleWirelessRecipesLogic.class,
@@ -26,7 +29,7 @@ public final class IndependentRecipeAdapters {
             if (!(logic instanceof MultipleRecipeLogicInvoker) || !(logic instanceof MultipleRecipeEnergyInvoker)) {
                 return new Selection(null, "普通族只读访问器未完整注入");
             }
-            return new Selection(new MultipleRecipeAdapter(multiple), null);
+            return new Selection(new MultipleRecipeAdapter(multiple, activeRecipes), null);
         }
         if (logic instanceof MutableRecipesLogic<?> mutable) {
             String reason = RecipeAdapterSupport.unsupportedOverride(logic.getClass(), MutableRecipesLogic.class, Set.of(),
@@ -35,7 +38,7 @@ public final class IndependentRecipeAdapters {
                             "getRecipeEut", "getWirelessMachine"));
             if (reason != null) return new Selection(null, reason);
             if (!(logic instanceof MutableRecipeLogicInvoker)) return new Selection(null, "Mutable 族只读访问器未注入");
-            return new Selection(new MutableRecipeAdapter(mutable), null);
+            return new Selection(new MutableRecipeAdapter(mutable, activeRecipes), null);
         }
         return new Selection(null, "需要专用逻辑族适配：" + logic.getClass().getName());
     }
