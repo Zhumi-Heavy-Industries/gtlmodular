@@ -410,6 +410,13 @@ public final class GTLModularMachines {
 
     private static com.gregtechceu.gtceu.api.pattern.BlockPattern spaceShellPattern(
             MultiblockMachineDefinition def) {
+        if (Boolean.getBoolean("gtlmodular.testHost")) {
+            // GameTest 最小夹具只验证引擎批次/候选/输出，不验证 15×31×11 真实外壳。
+            return FactoryBlockPattern.start()
+                    .aisle("S")
+                    .where('S', controller(blocks(def.get())))
+                    .build();
+        }
         TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));
         FactoryBlockPattern f = FactoryBlockPattern.start();
         for (String[] aisle : SpaceOrePatternLayers.AISLES) {

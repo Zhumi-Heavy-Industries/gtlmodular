@@ -30,7 +30,10 @@ public final class MoltenOreModuleTests {
         return List.of(
                 new TestFunction(BATCH, "gtlmodular.molten_ore_host_forms",
                         MoltenOreTestLayout.templateId().toString(), 1200, 0, true,
-                        MoltenOreModuleTests::hostForms));
+                        MoltenOreModuleTests::hostForms),
+                new TestFunction(BATCH + "_module", "gtlmodular.molten_ore_module_forms",
+                        MoltenOreTestLayout.templateId().toString(), 2400, 0, true,
+                        MoltenOreModuleTests::moduleForms));
     }
 
     private static void hostForms(GameTestHelper helper) {
@@ -71,7 +74,11 @@ public final class MoltenOreModuleTests {
             MultiblockState state = new MultiblockState(level, pos);
             module.getPattern().autoBuild((FakePlayer) player, state);
             helper.assertTrue(module.getPattern().checkPatternAt(state, true),
-                    "炼矿模块结构未成形：" + (state.error == null ? "unknown" : state.error.getErrorInfo().getString()));
+                    "炼矿模块结构未成形：" + (state.error == null ? "unknown"
+                            : state.error.getErrorInfo().getString() + " pos=" + module.getPos()
+                            + " candidates=" + state.error.getCandidates().stream()
+                                    .map(list -> list.isEmpty() ? "none" : list.get(0).getHoverName().getString())
+                                    .toList()));
         } finally {
             module.getPatternLock().unlock();
         }
