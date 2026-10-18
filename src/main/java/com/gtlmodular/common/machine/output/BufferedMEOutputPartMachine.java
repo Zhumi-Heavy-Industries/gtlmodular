@@ -4,6 +4,7 @@ import appeng.api.config.Actionable;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEFluidKey;
 import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKey;
 import appeng.api.storage.MEStorage;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
@@ -11,42 +12,96 @@ import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
+import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
 import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEExtendedOutputPartMachine;
 import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.NotifiableMERecipeHandlerTrait;
-import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 带合并的 ME 输出总成（sink 补丁，模式 A：产物先真进 ME，批次才算完成）。
+ * 带合并的 ME 输出总成（模式 A：产物先真进 ME，批次才算完成）。
  *
- * <p><b>未在本仓库编译验证</b>：接口签名取自 {@code deps-src/gtlcore-1.2.3.2-fix4} 的反编译源码，
- * 若上游更新导致签名变化，需按报错修。</p>
+ * <p>交付路径：同一批内容先按 {@link AEKey} 合并 long（{@link MEOutputBuffer}），再逐 key 直接
+ * {@link MEStorage#insert}，按实际接受量扣 pending；刷不出去的余量立刻用
+ * {@link MEOutputBuffer#drainRemainders()} 交还调用方，因此不跨 tick 持有 pending，
+ * “批次完成”永远等价于“产物已在 ME”。</p>
  *
- * <p>语义（对应联合讨论稿 §四 / §8）：</p>
- * <ul>
- *   <li>simulate：沿用上游过滤语义，只回答“哪些会被拒收”，不改状态；</li>
- *   <li>真实交付：同一 capability 下按 {@link AEKey} 合并 long 数量；每个 key 先
- *       {@link Actionable#SIMULATE} 问一次，能全收才 MODULATE，做不到就整组留在余量里——</li>
- *   <li>因此不跨 tick 持有 pending：余量由调用方（引擎 payload）持有，
- *       “批次完成 = 产物已在 ME”，不存在“完成但只在内存里”的窗口；</li>
- *   <li>过滤在合并前完成，未通过过滤的内容原样留在余量里，由上游决定丢弃或另走通道。</li>
- * </ul>
+ * <p>过滤在合并前完成。被过滤的内容和没插进去的余量一样交回调用方：引擎会把它转给普通输出仓，
+ * 只做 ME 输出的机器需要另配普通仓或作废手段，否则批次会一直等待。</p>
  */
 public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
+    private static final int PENDING_ENTRIES = 512;
+    private static final Int128 PENDING_LIMIT = Int128.ofUnsigned(1L, 0L);
+    private static final FairPendingFlusher.Budget FLUSH_BUDGET =
+            new FairPendingFlusher.Budget(PENDING_ENTRIES, Long.MAX_VALUE);
+
+    private static final MEOutputBuffer.Codec<AEKey, Ingredient> ITEM_CODEC = new MEOutputBuffer.Codec<>() {
+        @Override
+        public AEKey keyOf(Ingredient value) {
+            return AEItemKey.of(firstStack(value));
+        }
+
+        @Override
+        public long amountOf(Ingredient value) {
+            ItemStack stack = firstStack(value);
+            if (stack == null || stack.isEmpty()) {
+                return 0;
+            }
+            return value instanceof LongIngredient longIngredient ? longIngredient.getActualAmount() : stack.getCount();
+        }
+
+        @Override
+        public Ingredient withAmount(Ingredient value, long amount) {
+            return remaining(value, firstStack(value), amount);
+        }
+    };
+
+    private static final MEOutputBuffer.Codec<AEKey, FluidIngredient> FLUID_CODEC = new MEOutputBuffer.Codec<>() {
+        @Override
+        public AEKey keyOf(FluidIngredient value) {
+            FluidStack stack = firstFluid(value);
+            return AEFluidKey.of(stack.getFluid(), stack.getTag());
+        }
+
+        @Override
+        public long amountOf(FluidIngredient value) {
+            return value.getAmount();
+        }
+
+        @Override
+        public FluidIngredient withAmount(FluidIngredient value, long amount) {
+            FluidIngredient rest = value.copy();
+            rest.setAmount(amount);
+            return rest;
+        }
+    };
+
+    private final MEOutputBuffer<AEKey, Ingredient> itemBuffer = new MEOutputBuffer<>(
+            new PendingProducts<>(new PendingProducts.Capacity(PENDING_ENTRIES, PENDING_LIMIT, PENDING_LIMIT)),
+            ITEM_CODEC, this::allowedItem);
+
+    private final MEOutputBuffer<AEKey, FluidIngredient> fluidBuffer = new MEOutputBuffer<>(
+            new PendingProducts<>(new PendingProducts.Capacity(PENDING_ENTRIES, PENDING_LIMIT, PENDING_LIMIT)),
+            FLUID_CODEC, this::allowedFluid);
+
     public BufferedMEOutputPartMachine(IMachineBlockEntity holder) {
         super(holder);
     }
 
     private boolean allowedItem(Ingredient ingredient) {
-        if (!filterHandler.isHasItemFilter()) return true;
+        if (!filterHandler.isHasItemFilter()) {
+            return true;
+        }
         var probe = new ObjectArrayList<Ingredient>();
         probe.add(ingredient);
         return !filterHandler.testIngredient(probe).isEmpty();
     }
 
     private boolean allowedFluid(FluidIngredient ingredient) {
-        if (!filterHandler.isHasFluidFilter()) return true;
+        if (!filterHandler.isHasFluidFilter()) {
+            return true;
+        }
         var probe = new ObjectArrayList<FluidIngredient>();
         probe.add(ingredient);
         return !filterHandler.testFluidIngredient(probe).isEmpty();
@@ -65,7 +120,7 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
                 if (simulate) {
                     return filterHandler.testIngredient(left);
                 }
-                mergeAndInsertItems(left);
+                deliverItems(left);
                 return left;
             }
         };
@@ -84,64 +139,48 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
                 if (simulate) {
                     return filterHandler.testFluidIngredient(left);
                 }
-                mergeAndInsertFluids(left);
+                deliverFluids(left);
                 return left;
             }
         };
     }
 
-    /** 逐条真实插入，按实际接收量保留余量；不先模拟再插，避免“插一半、余量整条留下”的重复。 */
-    private void mergeAndInsertItems(List<Ingredient> left) {
-        ifPresentStorage(storage -> insertItems(storage, left));
+    private void deliverItems(List<Ingredient> left) {
+        ifPresentStorage(storage -> {
+            var accepted = itemBuffer.accept(left, false);
+            itemBuffer.flush(sinkFor(storage), FLUSH_BUDGET, false);
+            List<Ingredient> leftover = new ArrayList<>(accepted.filtered());
+            leftover.addAll(accepted.remainder());
+            leftover.addAll(itemBuffer.drainRemainders());
+            left.clear();
+            left.addAll(leftover);
+        });
     }
 
-    private void mergeAndInsertFluids(List<FluidIngredient> left) {
-        ifPresentStorage(storage -> insertFluids(storage, left));
+    private void deliverFluids(List<FluidIngredient> left) {
+        ifPresentStorage(storage -> {
+            var accepted = fluidBuffer.accept(left, false);
+            fluidBuffer.flush(sinkFor(storage), FLUSH_BUDGET, false);
+            List<FluidIngredient> leftover = new ArrayList<>(accepted.filtered());
+            leftover.addAll(accepted.remainder());
+            leftover.addAll(fluidBuffer.drainRemainders());
+            left.clear();
+            left.addAll(leftover);
+        });
     }
 
-    private void insertItems(MEStorage storage, List<Ingredient> left) {
-        var iterator = left.listIterator();
-        while (iterator.hasNext()) {
-            Ingredient ingredient = iterator.next();
-            ItemStack stack = firstStack(ingredient);
-            if (stack == null || stack.isEmpty() || !allowedItem(ingredient)) continue;
-            long amount = ingredient instanceof LongIngredient longIngredient
-                    ? longIngredient.getActualAmount() : stack.getCount();
-            if (amount <= 0L) continue;
-            long accepted = storage.insert(AEItemKey.of(stack), amount, Actionable.MODULATE, actionSource());
-            if (accepted >= amount) {
-                iterator.remove();
-            } else if (accepted > 0L) {
-                iterator.set(remaining(ingredient, stack, amount - accepted));
+    private FairPendingFlusher.Sink<AEKey> sinkFor(MEStorage storage) {
+        return new FairPendingFlusher.Sink<>() {
+            @Override
+            public long insert(AEKey key, long amount) {
+                return storage.insert(key, amount, Actionable.MODULATE, actionSource());
             }
-        }
-    }
 
-    private void insertFluids(MEStorage storage, List<FluidIngredient> left) {
-        var iterator = left.listIterator();
-        while (iterator.hasNext()) {
-            FluidIngredient ingredient = iterator.next();
-            FluidStack stack = firstFluid(ingredient);
-            if (stack == null || stack.isEmpty() || !allowedFluid(ingredient)) continue;
-            long amount = ingredient.getAmount();
-            if (amount <= 0L) continue;
-            long accepted = storage.insert(AEFluidKey.of(stack.getFluid(), stack.getTag()), amount,
-                    Actionable.MODULATE, actionSource());
-            if (accepted >= amount) {
-                iterator.remove();
-            } else if (accepted > 0L) {
-                FluidIngredient rest = ingredient.copy();
-                rest.setAmount(amount - accepted);
-                iterator.set(rest);
+            @Override
+            public long simulate(AEKey key, long amount) {
+                return storage.insert(key, amount, Actionable.SIMULATE, actionSource());
             }
-        }
-    }
-
-    private static Ingredient remaining(Ingredient ingredient, ItemStack stack, long amount) {
-        if (ingredient instanceof LongIngredient longIngredient) {
-            return LongIngredient.create(longIngredient.getInner(), amount);
-        }
-        return LongIngredient.create(Ingredient.of(stack), amount);
+        };
     }
 
     private void ifPresentStorage(java.util.function.Consumer<MEStorage> consumer) {
@@ -161,5 +200,12 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
     private static FluidStack firstFluid(FluidIngredient ingredient) {
         FluidStack[] stacks = ingredient.getStacks();
         return stacks.length == 0 ? null : stacks[0];
+    }
+
+    private static Ingredient remaining(Ingredient ingredient, ItemStack stack, long amount) {
+        if (ingredient instanceof LongIngredient longIngredient) {
+            return LongIngredient.create(longIngredient.getInner(), amount);
+        }
+        return LongIngredient.create(Ingredient.of(stack), amount);
     }
 }
