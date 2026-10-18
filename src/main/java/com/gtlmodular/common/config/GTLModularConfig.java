@@ -113,6 +113,13 @@ public final class GTLModularConfig {
                             "  ②『身份闸拒绝配方』误挡提示。")
                     .define("patternAssembly.debugPatternLogs", false);
 
+    private static final ForgeConfigSpec.BooleanValue OUTPUT_ASSEMBLY_VOID_FILTERED =
+            BUILDER.comment("带合并的 ME 输出总成：被过滤的产物怎么处理（默认 true = 作废）",
+                            "true （默认）：过滤即作废，不进余量 —— 只做 ME 输出的机器不会因被拦下的产物死锁；",
+                            "false：被过滤的产物原样交回余量，交给有普通输出仓的机器继续处理。",
+                            "改这一项立即生效。")
+                    .define("outputAssembly.voidFiltered", true);
+
     public static final NanochipConfig NANOCHIP = new NanochipConfig(BUILDER, "gtlmodular");
     public static final OtherMachineThreadsConfig OTHER_MACHINE_THREADS = new OtherMachineThreadsConfig(BUILDER);
 
@@ -225,6 +232,15 @@ public final class GTLModularConfig {
         } catch (Throwable ignored) {
             SwallowedErrors.report("GTLModularConfig#isPatternDebugLogsEnabled", ignored);
             return PATTERN_DEBUG_LOGS.getDefault();
+        }
+    }
+
+    /** true = 过滤即作废；false = 过滤内容交回余量（交给有普通输出仓的机器）。 */
+    public static boolean isOutputAssemblyVoidFiltered() {
+        try {
+            return OUTPUT_ASSEMBLY_VOID_FILTERED.get();
+        } catch (IllegalStateException notLoaded) {
+            return OUTPUT_ASSEMBLY_VOID_FILTERED.getDefault();
         }
     }
 

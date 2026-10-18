@@ -8,6 +8,8 @@ import appeng.api.stacks.AEKey;
 import appeng.api.storage.MEStorage;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
+import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.config.GTLModularConfig;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.world.item.ItemStack;
@@ -35,6 +37,10 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
     private static final Int128 PENDING_LIMIT = Int128.ofUnsigned(1L, 0L);
     private static final FairPendingFlusher.Budget FLUSH_BUDGET =
             new FairPendingFlusher.Budget(PENDING_ENTRIES, Long.MAX_VALUE);
+
+    private long voidedItems;
+    private long voidedFluids;
+    private boolean voidedLogged;
 
     private static final MEOutputBuffer.Codec<AEKey, Ingredient> ITEM_CODEC = new MEOutputBuffer.Codec<>() {
         @Override
@@ -118,7 +124,7 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             @Override
             public List<Ingredient> meHandleRecipeOutputInner(List<Ingredient> left, boolean simulate) {
                 if (simulate) {
-                    return filterHandler.testIngredient(left);
+                    return simulateItems(left);
                 }
                 deliverItems(left);
                 return left;
@@ -137,7 +143,7 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             @Override
             public List<FluidIngredient> meHandleRecipeOutputInner(List<FluidIngredient> left, boolean simulate) {
                 if (simulate) {
-                    return filterHandler.testFluidIngredient(left);
+                    return simulateFluids(left);
                 }
                 deliverFluids(left);
                 return left;
@@ -149,11 +155,16 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
         ifPresentStorage(storage -> {
             var accepted = itemBuffer.accept(left, false);
             itemBuffer.flush(sinkFor(storage), FLUSH_BUDGET, false);
-            List<Ingredient> leftover = new ArrayList<>(accepted.filtered());
-            leftover.addAll(accepted.remainder());
+            List<Ingredient> leftover = new ArrayList<>(accepted.remainder());
             leftover.addAll(itemBuffer.drainRemainders());
+            if (GTLModularConfig.isOutputAssemblyVoidFiltered()) {
+                accepted.filtered().forEach(value -> voidedItems += Math.max(1, ITEM_CODEC.amountOf(value)));
+            } else {
+                leftover.addAll(accepted.filtered());
+            }
             left.clear();
             left.addAll(leftover);
+            logVoidedOnce();
         });
     }
 
@@ -161,12 +172,73 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
         ifPresentStorage(storage -> {
             var accepted = fluidBuffer.accept(left, false);
             fluidBuffer.flush(sinkFor(storage), FLUSH_BUDGET, false);
-            List<FluidIngredient> leftover = new ArrayList<>(accepted.filtered());
-            leftover.addAll(accepted.remainder());
+            List<FluidIngredient> leftover = new ArrayList<>(accepted.remainder());
             leftover.addAll(fluidBuffer.drainRemainders());
+            if (GTLModularConfig.isOutputAssemblyVoidFiltered()) {
+                accepted.filtered().forEach(value -> voidedFluids += Math.max(1, FLUID_CODEC.amountOf(value)));
+            } else {
+                leftover.addAll(accepted.filtered());
+            }
             left.clear();
             left.addAll(leftover);
+            logVoidedOnce();
         });
+    }
+
+    /** 作废统计只报一次，避免每 tick 刷日志；数量本身是玩家可见行为，不能静默。 */
+    private void logVoidedOnce() {
+        if (voidedLogged || (voidedItems == 0 && voidedFluids == 0)) {
+            return;
+        }
+        voidedLogged = true;
+        GTLModular.LOGGER.info("[gtlmodular] 带合并的 ME 输出总成已作废被过滤的产物: 物品={} 流体={} @{}",
+                voidedItems, voidedFluids, getPos());
+    }
+
+    private List<Ingredient> simulateItems(List<Ingredient> left) {
+        boolean voidFiltered = GTLModularConfig.isOutputAssemblyVoidFiltered();
+        List<Ingredient> remainder = new ArrayList<>();
+        for (Ingredient ingredient : left) {
+            if (!allowedItem(ingredient)) {
+                if (!voidFiltered) {
+                    remainder.add(ingredient);
+                }
+                continue;
+            }
+            long amount = ITEM_CODEC.amountOf(ingredient);
+            if (amount <= 0) {
+                continue;
+            }
+            Int128 wouldAccept = itemBuffer.simulateAccept(ITEM_CODEC.keyOf(ingredient), Int128.of(amount));
+            long rest = amount - wouldAccept.toLongClamped();
+            if (rest > 0) {
+                remainder.add(remaining(ingredient, firstStack(ingredient), rest));
+            }
+        }
+        return remainder;
+    }
+
+    private List<FluidIngredient> simulateFluids(List<FluidIngredient> left) {
+        boolean voidFiltered = GTLModularConfig.isOutputAssemblyVoidFiltered();
+        List<FluidIngredient> remainder = new ArrayList<>();
+        for (FluidIngredient ingredient : left) {
+            if (!allowedFluid(ingredient)) {
+                if (!voidFiltered) {
+                    remainder.add(ingredient);
+                }
+                continue;
+            }
+            long amount = FLUID_CODEC.amountOf(ingredient);
+            if (amount <= 0) {
+                continue;
+            }
+            Int128 wouldAccept = fluidBuffer.simulateAccept(FLUID_CODEC.keyOf(ingredient), Int128.of(amount));
+            long rest = amount - wouldAccept.toLongClamped();
+            if (rest > 0) {
+                remainder.add(FLUID_CODEC.withAmount(ingredient, rest));
+            }
+        }
+        return remainder;
     }
 
     private FairPendingFlusher.Sink<AEKey> sinkFor(MEStorage storage) {

@@ -118,6 +118,7 @@ public final class GTLModularMachines {
         registerPatternAssemblies();
         registerSuperPatternAssembly();
         registerLazyPatternAssembly();
+        registerBufferedOutputAssembly();
         NanochipRegistration.registerMachines();
     }
 
@@ -215,6 +216,19 @@ public final class GTLModularMachines {
                 .register();
         GTLModular.LOGGER.info("[gtlmodular] 已注册惰性猪咪样板总成: id={} tier={} 槽位硬上限={}（常态容量=已用+{}）",
                 "lazy_me_pattern_assembly", tier, maxSlots, LazyPatternAssemblyPartMachine.RESERVE);
+    }
+
+    /** 复用 gtlcore 已有的 ME 扩展输出 overlay，不新增贴图资源。 */
+    private static void registerBufferedOutputAssembly() {
+        REGISTRATE.machine("buffered_me_output_buffer", com.gtlmodular.common.machine.output.BufferedMEOutputPartMachine::new)
+                .rotationState(RotationState.ALL)
+                .abilities(PartAbility.EXPORT_ITEMS, PartAbility.EXPORT_FLUIDS)
+                .tier(9)
+                .renderer(() -> new com.gregtechceu.gtceu.client.renderer.machine.OverlayTieredMachineRenderer(
+                        9, new ResourceLocation("gtceu", "block/machine/part/me_extended_export_buffer")))
+                .langValue("ME Buffered Export Buffer")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] 已注册带合并的 ME 输出总成: id={} tier=9", "buffered_me_output_buffer");
     }
 
     private static void registerModuleHost() {
