@@ -108,6 +108,16 @@ public final class MoltenOreModuleTests {
                                 && module instanceof IModularMachineModule<?, ?> m
                                 && m.getHost() == h && h.getModules().contains(m),
                         "测试主机与炼矿模块未连接"))
+                .thenExecute(() -> {
+                    try {
+                        Object controller = module.getRecipeLogic().getClass()
+                                .getMethod("gtlmodular$controller", boolean.class)
+                                .invoke(module.getRecipeLogic(), true);
+                        helper.assertTrue(controller != null, "炼矿模块没有建立独立线程控制器");
+                    } catch (ReflectiveOperationException failure) {
+                        helper.fail("无法检查独立线程控制器：" + failure);
+                    }
+                })
                 .thenSucceed();
     }
 
