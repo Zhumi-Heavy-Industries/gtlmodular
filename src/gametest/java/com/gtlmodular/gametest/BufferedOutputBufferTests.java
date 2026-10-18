@@ -48,7 +48,8 @@ public final class BufferedOutputBufferTests {
         return List.of(
                 function("void_simulate", BufferedOutputBufferTests::voidModeSimulateReturnsEmpty),
                 function("void_log_once", BufferedOutputBufferTests::voidModeLogsOnceWithCoords),
-                function("return_mode", BufferedOutputBufferTests::returnModeKeepsFiltered));
+                function("return_mode", BufferedOutputBufferTests::returnModeKeepsFiltered),
+                function("offline_keeps_remainder", BufferedOutputBufferTests::offlineKeepsRemainder));
     }
 
     @AfterBatch(batch = BATCH + "_void_simulate")
@@ -121,6 +122,31 @@ public final class BufferedOutputBufferTests {
                 .thenExecute(() -> helper.assertTrue(handle(part, false).size() == 1,
                         "交回模式下真实交付应把 filtered 留在余量"))
                 .thenSucceed();
+    }
+
+    /** ME 离线时 simulate 必须返回余量（批次不开），真实交付也不能丢产物。 */
+    private static void offlineKeepsRemainder(GameTestHelper helper) {
+        var part = buildOffline(helper);
+        helper.startSequence()
+                .thenExecute(() -> helper.assertFalse(part.getMainNode().isActive(), "无供电时 AE 节点不应激活"))
+                .thenExecute(() -> helper.assertTrue(handle(part, true).size() == 1,
+                        "ME 离线时 simulate 必须返回余量，否则会开出永远出不了料的批次"))
+                .thenExecute(() -> helper.assertTrue(handle(part, false).size() == 1,
+                        "ME 离线时产物必须留在余量，不能丢"))
+                .thenSucceed();
+    }
+
+    private static MEExtendedOutputPartMachine buildOffline(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos pos = helper.absolutePos(new BlockPos(20, 5, 20));
+        level.setBlockAndUpdate(pos.below(), net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+        MachineDefinition definition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
+        helper.assertTrue(definition != null, "机器未注册: buffered_me_output_buffer");
+        var machine = GameTestMachines.place(helper, GameTestMachines.player(helper, "BufferedOutputOffline"),
+                definition, pos, Direction.NORTH);
+        helper.assertTrue(machine instanceof MEExtendedOutputPartMachine, "机器类型不符");
+        return (MEExtendedOutputPartMachine) machine;
     }
 
     private static MEExtendedOutputPartMachine build(GameTestHelper helper) {

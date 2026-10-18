@@ -123,6 +123,20 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             }
 
             @Override
+            public List<Ingredient> meHandleRecipeOutput(List<?> leftContents, boolean simulate) {
+                // 上游默认在“无过滤 + simulate”时直接返回空，等于假设 ME 一定收；
+                // 本机要按真实容量回答，所以无论有没有过滤都进 inner。
+                if (leftContents.isEmpty()) {
+                    return List.of();
+                }
+                var typed = new ObjectArrayList<Ingredient>(leftContents.size());
+                for (Object content : leftContents) {
+                    typed.add(copyContent(content));
+                }
+                return meHandleRecipeOutputInner(typed, simulate);
+            }
+
+            @Override
             public List<Ingredient> meHandleRecipeOutputInner(List<Ingredient> left, boolean simulate) {
                 if (simulate) {
                     return simulateItems(left);
@@ -139,6 +153,19 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
             @Override
             public boolean outputHasFilter() {
                 return filterHandler.isHasFluidFilter();
+            }
+
+            @Override
+            public List<FluidIngredient> meHandleRecipeOutput(List<?> leftContents, boolean simulate) {
+                // 同 item：没过滤时上游默认直接返回空，本机要如实回答 ME 能不能收。
+                if (leftContents.isEmpty()) {
+                    return List.of();
+                }
+                var typed = new ObjectArrayList<FluidIngredient>(leftContents.size());
+                for (Object content : leftContents) {
+                    typed.add(copyContent(content));
+                }
+                return meHandleRecipeOutputInner(typed, simulate);
             }
 
             @Override
@@ -211,7 +238,14 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
                 continue;
             }
             var accepted = itemBuffer.accept(java.util.List.of(ingredient), true);
-            remainder.addAll(accepted.remainder());
+            long capacityAccepted = amount - accepted.remainder().stream()
+                    .mapToLong(ITEM_CODEC::amountOf).sum();
+            AEKey key = ITEM_CODEC.keyOf(ingredient);
+            long meAccepted = simulateStorage(key, Math.min(amount, capacityAccepted));
+            long rest = amount - Math.min(capacityAccepted, meAccepted);
+            if (rest > 0) {
+                remainder.add(remaining(ingredient, firstStack(ingredient), rest));
+            }
         }
         return remainder;
     }
@@ -231,7 +265,14 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
                 continue;
             }
             var accepted = fluidBuffer.accept(java.util.List.of(ingredient), true);
-            remainder.addAll(accepted.remainder());
+            long capacityAccepted = amount - accepted.remainder().stream()
+                    .mapToLong(FLUID_CODEC::amountOf).sum();
+            AEKey key = FLUID_CODEC.keyOf(ingredient);
+            long meAccepted = simulateStorage(key, Math.min(amount, capacityAccepted));
+            long rest = amount - Math.min(capacityAccepted, meAccepted);
+            if (rest > 0) {
+                remainder.add(FLUID_CODEC.withAmount(ingredient, rest));
+            }
         }
         return remainder;
     }
@@ -253,6 +294,21 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
     private void ifPresentStorage(java.util.function.Consumer<MEStorage> consumer) {
         getMainNode().ifPresent((grid, node) ->
                 consumer.accept(grid.getStorageService().getInventory()));
+    }
+
+    /** 网络不在时返回 0：simulate 必须如实反映“ME 现在收不了”，否则引擎会开一个永远出不了料的批次。 */
+    private MEStorage storageOrNull() {
+        final MEStorage[] holder = new MEStorage[1];
+        getMainNode().ifPresent((grid, node) -> holder[0] = grid.getStorageService().getInventory());
+        return holder[0];
+    }
+
+    private long simulateStorage(AEKey key, long amount) {
+        if (amount <= 0) {
+            return 0;
+        }
+        MEStorage storage = storageOrNull();
+        return storage == null ? 0 : storage.insert(key, amount, Actionable.SIMULATE, actionSource());
     }
 
     private IActionSource actionSource() {
