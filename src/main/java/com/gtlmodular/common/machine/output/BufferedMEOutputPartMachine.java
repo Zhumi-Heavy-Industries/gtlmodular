@@ -101,7 +101,8 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
         }
         var probe = new ObjectArrayList<Ingredient>();
         probe.add(ingredient);
-        return !filterHandler.testIngredient(probe).isEmpty();
+        // testIngredient 返回“被过滤后剩下的”，空 = 允许。
+        return filterHandler.testIngredient(probe).isEmpty();
     }
 
     private boolean allowedFluid(FluidIngredient ingredient) {
@@ -110,7 +111,7 @@ public class BufferedMEOutputPartMachine extends MEExtendedOutputPartMachine {
         }
         var probe = new ObjectArrayList<FluidIngredient>();
         probe.add(ingredient);
-        return !filterHandler.testFluidIngredient(probe).isEmpty();
+        return filterHandler.testFluidIngredient(probe).isEmpty();
     }
 
     @Override

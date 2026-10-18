@@ -6,9 +6,7 @@ import appeng.blockentity.networking.EnergyCellBlockEntity;
 import appeng.core.definitions.AEBlocks;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
-import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gtlmodular.common.machine.output.BufferedMEOutputPartMachine;
 import com.gtlmodular.gametest.fixture.GameTestMachines;
 import com.gtlmodular.gametest.fixture.NacStructureLayout;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -29,6 +27,7 @@ import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
+import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEExtendedOutputPartMachine;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -52,19 +51,32 @@ public final class BufferedOutputBufferTests {
                 function("return_mode", BufferedOutputBufferTests::returnModeKeepsFiltered));
     }
 
-    @AfterBatch(batch = BATCH)
-    public static void cleanup(ServerLevel level) {
-        GTLModularConfig.setOutputAssemblyVoidFiltered(true);
+    @AfterBatch(batch = BATCH + "_void_simulate")
+    public static void cleanupVoidSimulate(ServerLevel level) {
+        setVoidFiltered(true);
+        detachCapture();
+    }
+
+    @AfterBatch(batch = BATCH + "_void_log_once")
+    public static void cleanupVoidLog(ServerLevel level) {
+        setVoidFiltered(true);
+        detachCapture();
+    }
+
+    @AfterBatch(batch = BATCH + "_return_mode")
+    public static void cleanupReturnMode(ServerLevel level) {
+        setVoidFiltered(true);
         detachCapture();
     }
 
     private static TestFunction function(String name, Consumer<GameTestHelper> body) {
-        return new TestFunction(BATCH, "gtlmodular.buffered_output_" + name,
+        return new TestFunction(BATCH + "_" + name, "gtlmodular.buffered_output_" + name,
                 NacStructureLayout.templateId().toString(), 4800, 0, true, body);
     }
 
     /** 过滤命中的产物不进余量，引擎才会认为 outputFits=true 并允许开批。 */
     private static void voidModeSimulateReturnsEmpty(GameTestHelper helper) {
+        setVoidFiltered(true);
         var part = build(helper);
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(part.getMainNode().isActive(), "AE 节点未激活"))
@@ -78,6 +90,7 @@ public final class BufferedOutputBufferTests {
 
     /** 作废统计一次性上报，坐标要指向这台机器。 */
     private static void voidModeLogsOnceWithCoords(GameTestHelper helper) {
+        setVoidFiltered(true);
         var part = build(helper);
         attachCapture();
         helper.startSequence()
@@ -98,8 +111,8 @@ public final class BufferedOutputBufferTests {
 
     /** 关掉开关后，被过滤的产物原样回到余量。 */
     private static void returnModeKeepsFiltered(GameTestHelper helper) {
-        GTLModularConfig.setOutputAssemblyVoidFiltered(false);
         var part = build(helper);
+        setVoidFiltered(false);
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(part.getMainNode().isActive(), "AE 节点未激活"))
                 .thenExecute(() -> applyBlacklist(helper, part))
@@ -110,7 +123,7 @@ public final class BufferedOutputBufferTests {
                 .thenSucceed();
     }
 
-    private static BufferedMEOutputPartMachine build(GameTestHelper helper) {
+    private static MEExtendedOutputPartMachine build(GameTestHelper helper) {
         var level = helper.getLevel();
         BlockPos pos = helper.absolutePos(new BlockPos(20, 5, 20));
         BlockPos cellPos = pos.below();
@@ -123,11 +136,26 @@ public final class BufferedOutputBufferTests {
         helper.assertTrue(definition != null, "机器未注册: buffered_me_output_buffer");
         var machine = GameTestMachines.place(helper, GameTestMachines.player(helper, "BufferedOutput"),
                 definition, pos, Direction.NORTH);
-        helper.assertTrue(machine instanceof BufferedMEOutputPartMachine, "机器类型不符");
-        return (BufferedMEOutputPartMachine) machine;
+        // ME part 的节点在正面；能量元件在下侧，必须把正面转向下方才能连上。
+        machine.setFrontFacing(Direction.DOWN);
+        helper.assertTrue(machine instanceof MEExtendedOutputPartMachine, "机器类型不符");
+        return (MEExtendedOutputPartMachine) machine;
     }
 
-    private static void applyBlacklist(GameTestHelper helper, BufferedMEOutputPartMachine part) {
+    private static void setVoidFiltered(boolean value) {
+        try {
+            Class<?> config = Class.forName("com.gtlmodular.common.config.GTLModularConfig");
+            config.getMethod("setOutputAssemblyVoidFiltered", boolean.class).invoke(null, value);
+            Object actual = config.getMethod("isOutputAssemblyVoidFiltered").invoke(null);
+            if (!Boolean.valueOf(value).equals(actual)) {
+                throw new IllegalStateException("outputAssembly.voidFiltered 设置未生效: " + actual);
+            }
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("无法设置 outputAssembly.voidFiltered", failure);
+        }
+    }
+
+    private static void applyBlacklist(GameTestHelper helper, MEExtendedOutputPartMachine part) {
         var filter = part.getFilterHandler();
         filter.setItemFilter(0, AEItemKey.of(new ItemStack(Items.IRON_INGOT)));
         filter.updateItemFilterSettings(true, true);
@@ -135,7 +163,7 @@ public final class BufferedOutputBufferTests {
     }
 
     /** 用真实入口（meHandleRecipeOutput）走一遍：过滤命中 64 个铁锭。 */
-    private static List<Ingredient> handle(BufferedMEOutputPartMachine part, boolean simulate) {
+    private static List<Ingredient> handle(MEExtendedOutputPartMachine part, boolean simulate) {
         var contents = new ObjectArrayList<Ingredient>();
         contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.IRON_INGOT)), 64));
         return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
