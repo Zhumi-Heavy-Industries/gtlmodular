@@ -244,6 +244,11 @@ public final class GTLModularConfig {
         }
     }
 
+    /** 仅供 GameTest 切换两种过滤模式；正式玩法改配置文件。 */
+    public static void setOutputAssemblyVoidFiltered(boolean value) {
+        OUTPUT_ASSEMBLY_VOID_FILTERED.set(value);
+    }
+
     public static boolean isPatternIdentityGateEnabled() {
         try {
             return PATTERN_IDENTITY_GATE.get();
