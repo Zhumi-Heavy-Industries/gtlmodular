@@ -77,6 +77,7 @@
 - `independentThreadsCandidateScanBudget` 默认 0 = 空槽数 + 8：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
 - `independentThreadsStats` 默认 false：开启后机器面板显示候选扫描和批次 tick 的平均/最大耗时，用于调 active 线程数和候选预算。
 - 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
+- 地心炼矿模块（`gtlmodular:molten_space_ore_module`）是第一个 `MultipleRecipesLogic` 专用适配目标：引擎用 `getRecipeType().getLookup()` 只读枚举候选，不调用会真实扣料的 `getRecipe()`；模块实现 `IndependentEnergyMultiplier`，主机线圈折扣后的 EU 在引擎 tick 前按比例缩放，实际扣电仍走 `MoltenModuleHostMachine.requestEnergy`。旧 `MultipleRecipesLogic` 合批路径保留给未开启的存档。启用方式：总开关开启 + 白名单加入该机器 ID；ME 进出料还需 `independentThreadsAllowMeIo`。
 
 已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
 

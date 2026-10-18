@@ -6,10 +6,12 @@ import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeRecipesLogic;
 import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeWirelessRecipesLogic;
 import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleWirelessRecipesLogic;
 import com.gtladd.gtladditions.api.machine.logic.MutableRecipesLogic;
+import com.gtlmodular.common.machine.MoltenModuleMachineBase;
 import com.gtlmodular.mixin.independent.MultipleRecipeEnergyInvoker;
 import com.gtlmodular.mixin.independent.MultipleRecipeLogicInvoker;
 import com.gtlmodular.mixin.independent.MutableRecipeLogicInvoker;
 import net.minecraft.resources.ResourceLocation;
+import org.gtlcore.gtlcore.common.machine.trait.MultipleRecipesLogic;
 
 import java.util.Map;
 import java.util.Set;
@@ -19,6 +21,9 @@ public final class IndependentRecipeAdapters {
     private IndependentRecipeAdapters() {}
 
     public static Selection select(RecipeLogic logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
+        if (logic instanceof MultipleRecipesLogic multiple && logic.getMachine() instanceof MoltenModuleMachineBase<?> module) {
+            return new Selection(new MoltenOreModuleAdapter(multiple, module, activeRecipes), null);
+        }
         if (logic instanceof GTLAddMultipleRecipesLogic multiple) {
             String reason = RecipeAdapterSupport.unsupportedOverride(logic.getClass(), GTLAddMultipleRecipesLogic.class,
                     Set.of(GTLAddMultipleTypeRecipesLogic.class, GTLAddMultipleWirelessRecipesLogic.class,

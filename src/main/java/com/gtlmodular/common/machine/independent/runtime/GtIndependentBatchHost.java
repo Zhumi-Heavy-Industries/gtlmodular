@@ -10,6 +10,7 @@ import com.gtlmodular.common.machine.independent.adapter.IndependentRecipeAdapte
 import com.gtlmodular.common.machine.independent.core.IndependentBatchOperations.Candidate;
 import com.gtlmodular.common.machine.independent.core.IndependentSessionSnapshot;
 import com.gtlmodular.common.machine.independent.io.BatchContents;
+import com.gtlmodular.common.machine.independent.io.IndependentEnergyMultiplier;
 import com.gtlmodular.common.machine.independent.io.IndependentRecipeIo;
 import com.gtlmodular.common.machine.independent.io.IndependentWirelessPower;
 import com.gtlmodular.common.machine.independent.io.SharedTickPower;
@@ -223,12 +224,14 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         var in = io.tickRoute(IO.IN);
         var out = io.tickRoute(IO.OUT);
         if (!payload.remainders().containsKey(TICK_INPUT)) {
-            if (!in.fitsTickInput(payload.recipe().tickInputs, wiredPower) || !out.fits(payload.recipe().tickOutputs, IO.OUT) ||
+            var tickInputs = scaledTickInputs(payload.recipe().tickInputs);
+            if (!in.fitsTickInput(tickInputs, wiredPower) || !out.fits(payload.recipe().tickOutputs, IO.OUT) ||
                     !IndependentWirelessPower.ready(machine, payload)) {
                 runtime.waitFor(payload, "tick 输入、电量或输出容量不足");
                 return null;
             }
             var inputs = BatchChanceResolver.resolve(payload.recipe(), payload, machine, IO.IN, true);
+            scaleEnergy(inputs);
             var outputs = BatchChanceResolver.resolve(payload.recipe(), payload, machine, IO.OUT, true);
             payload.remainders().put(TICK_INPUT, inputs);
             payload.remainders().put(TICK_OUTPUT, outputs);
@@ -245,6 +248,29 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     }
 
     private record TickRoutes(IndependentRecipeIo.Route input, IndependentRecipeIo.Route output) {}
+
+    private java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+            java.util.List<com.gregtechceu.gtceu.api.recipe.content.Content>> scaledTickInputs(
+            java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+                    java.util.List<com.gregtechceu.gtceu.api.recipe.content.Content>> contents) {
+        var copy = BatchContents.copy(contents);
+        scaleEnergy(copy);
+        return copy;
+    }
+
+    private void scaleEnergy(java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+            java.util.List<com.gregtechceu.gtceu.api.recipe.content.Content>> contents) {
+        if (!(machine instanceof IndependentEnergyMultiplier discount)) return;
+        double multiplier = Math.max(0.0D, discount.independentEnergyMultiplier());
+        if (multiplier == 1.0D) return;
+        var energy = contents.get(EURecipeCapability.CAP);
+        if (energy == null) return;
+        for (var content : energy) {
+            if (content.content instanceof Long value) {
+                content.content = Math.max(0L, Math.round(value * multiplier));
+            }
+        }
+    }
 
     @Override
     public void completeTick(IndependentRecipePayload payload) {
