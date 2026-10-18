@@ -121,6 +121,7 @@ productGroups.each { product ->
         property 'forge.logging.console.level', 'info'
         property 'forge.enabledGameTestNamespaces', product.id
         property 'gtl.gametest.product', product.id
+        if (product.id == 'gtlmodular') property 'gtlmodular.testHost', 'true'
         property 'gtl.gametest.assetRoot', '{assets_root}'
         property 'gtl.gametest.assetIndex', '{asset_index}'
         property 'gtl.gametest.report', report.get().asFile.absolutePath

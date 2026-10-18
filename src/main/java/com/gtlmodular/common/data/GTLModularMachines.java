@@ -6,6 +6,7 @@ import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.api.module.ModuleKind;
 import com.gtlmodular.common.machine.LazyPatternAssemblyPartMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
+import com.gtlmodular.common.machine.TestMoltenModuleHostMachine;
 import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
 import com.gtlmodular.common.machine.MoltenModuleMachineBase;
 import com.gtlmodular.common.machine.MoltenPatternAssemblyPartMachine;
@@ -115,6 +116,7 @@ public final class GTLModularMachines {
         registerModuleB();
         registerModuleC();
         registerModuleHost();
+        if (Boolean.getBoolean("gtlmodular.testHost")) registerTestHost();
         registerPatternAssemblies();
         registerSuperPatternAssembly();
         registerLazyPatternAssembly();
@@ -248,6 +250,26 @@ public final class GTLModularMachines {
                 .register();
         GTLModular.LOGGER.info("[gtlmodular] M5 已注册机器: {} ({})",
                 MOLTEN_MODULE_HOST.getId(), kind.displayNameZh());
+    }
+
+    /** GameTest 专用 3×3×3 炼矿主机；只在 -Dgtlmodular.testHost=true 时注册。 */
+    private static void registerTestHost() {
+        REGISTRATE.multiblock("molten_module_host_test", TestMoltenModuleHostMachine::new)
+                .rotationState(RotationState.NON_Y_AXIS)
+                .recipeType(GTRecipeTypes.DUMMY_RECIPES)
+                .pattern(def -> FactoryBlockPattern.start()
+                        .aisle("XXX", "XXX", "XXX")
+                        .aisle("XSX", "XXX", "XXX")
+                        .aisle("XXX", "XXX", "XXX")
+                        .where('S', controller(blocks(def.get())))
+                        .where('X', MoltenModuleHostPattern.modularHeatingCoils())
+                        .build())
+                .appearanceBlock(() -> GTBlocks.CASING_STEEL_SOLID.get())
+                .workableCasingRenderer(gtceuId("block/casings/solid/machine_casing_heatproof"),
+                        gtceuId("block/multiblock/data_bank"))
+                .langValue("Test Molten Ore Host")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] GameTest 测试主机已注册: molten_module_host_test");
     }
 
     /** 保留温度拒绝的读数，便于区分线圈读取失败与实际炉温不足。 */

@@ -29,6 +29,7 @@ public final class GameTestMod {
         event.register(NacRestartTests.class);
         event.register(PatternAssemblyTests.class);
         event.register(BufferedOutputBufferTests.class);
+        event.register(MoltenOreModuleTests.class);
         event.register(IndependentOwnershipTests.class);
         event.register(RecipeConflictTests.class);
     }

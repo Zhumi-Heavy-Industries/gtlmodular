@@ -49,6 +49,9 @@ final class MachineAssets {
         switch (id.getPath()) {
             case "molten_module_host" -> audit.workable(new ResourceLocation("gtlcore:block/casings/iridium_casing"),
                     new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "molten_module_host_test" -> audit.workable(
+                    new ResourceLocation("gtceu:block/casings/solid/machine_casing_heatproof"),
+                    new ResourceLocation("gtceu:block/multiblock/data_bank"));
             case "molten_blast_module" -> audit.workable(new ResourceLocation("gtceu:block/casings/solid/machine_casing_heatproof"),
                     new ResourceLocation("gtceu:block/multiblock/electric_blast_furnace"));
             case "molten_stripper_module" -> audit.workable(new ResourceLocation("gtlcore:block/casings/hyper_mechanical_casing"),
