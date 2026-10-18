@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
+import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.adapter.IndependentRecipeAdapter;
 import com.gtlmodular.common.machine.independent.core.IndependentBatchOperations.Candidate;
 import com.gtlmodular.common.machine.independent.core.IndependentSessionSnapshot;
@@ -39,6 +40,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     private final SharedTickPower wiredPower = new SharedTickPower();
     private final SharedTickPower wirelessPower = new SharedTickPower();
     private final AdmissionPower admissions = new AdmissionPower();
+    private final IndependentWorkStats stats = new IndependentWorkStats(GTLModularConfig.OTHER_MACHINE_THREADS.statsEnabled());
     private boolean searched;
 
     public GtIndependentBatchHost(RecipeLogic logic, IndependentRecipeAdapter adapter) {
@@ -58,6 +60,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     public void finishAdmissions(java.util.function.ObjIntConsumer<IndependentRecipePayload> updateDuration) {
         admissions.finish(updateDuration);
+    }
+
+    public String statsSummary() {
+        return stats.summary();
     }
 
     @Override
@@ -88,7 +94,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         if (!canAdmit()) return null;
         if (!searched) {
             searched = true;
-            candidates.addAll(adapter.candidates(slots, budget, availablePower()));
+            long start = stats.enabled() ? System.nanoTime() : 0L;
+            var found = adapter.candidates(slots, budget, availablePower());
+            if (start != 0L) stats.scan(System.nanoTime() - start, found.size());
+            candidates.addAll(found);
         }
         while (!candidates.isEmpty()) {
             var source = candidates.removeFirst();
@@ -191,17 +200,22 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean tickIo(IndependentRecipePayload payload) {
-        TickRoutes routes;
+        long start = stats.enabled() ? System.nanoTime() : 0L;
         try {
-            routes = prepareTick(payload);
-        } catch (RuntimeException exception) {
-            return waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
+            TickRoutes routes;
+            try {
+                routes = prepareTick(payload);
+            } catch (RuntimeException exception) {
+                return waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
+            }
+            if (routes == null) return false;
+            if (!IndependentWirelessPower.pay(machine, payload, wirelessPower)) return runtime.waitFor(payload, "等待整机无线功率或账户/终端实际扣电");
+            if (!routes.input().transfer(payload.remainders().get(TICK_INPUT), IO.IN, false, wiredPower)) return runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
+            if (!routes.output().transfer(payload.remainders().get(TICK_OUTPUT), IO.OUT, false)) return runtime.waitFor(payload, "tick 输出部分完成");
+            return true;
+        } finally {
+            if (start != 0L) stats.tick(System.nanoTime() - start);
         }
-        if (routes == null) return false;
-        if (!IndependentWirelessPower.pay(machine, payload, wirelessPower)) return runtime.waitFor(payload, "等待整机无线功率或账户/终端实际扣电");
-        if (!routes.input().transfer(payload.remainders().get(TICK_INPUT), IO.IN, false, wiredPower)) return runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
-        if (!routes.output().transfer(payload.remainders().get(TICK_OUTPUT), IO.OUT, false)) return runtime.waitFor(payload, "tick 输出部分完成");
-        return true;
     }
 
     private TickRoutes prepareTick(IndependentRecipePayload payload) {

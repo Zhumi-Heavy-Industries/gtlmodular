@@ -23,6 +23,7 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
     private final MultipleRecipeEnergyInvoker energy;
     private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
     private final RecipeFairness fairness = new RecipeFairness();
+    private final CandidateCache<GTRecipe> candidateCache = new CandidateCache<>();
 
     MultipleRecipeAdapter(GTLAddMultipleRecipesLogic logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
         this.logic = logic;
@@ -44,8 +45,11 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
 
     @Override
     public void admitted(GTRecipe recipe) {
-        fairness.admitted(recipe.id, logic.getMachine().getLevel() == null
-                ? 0L : logic.getMachine().getLevel().getGameTime());
+        fairness.admitted(recipe.id, now());
+    }
+
+    private long now() {
+        return logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
     }
 
     @Override
@@ -56,7 +60,10 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         var handler = logic.getMachine().getWirelessNetworkEnergyHandler();
         if (handler != null && !handler.isOnline()) return List.of();
         List<GTRecipe> origins = new ArrayList<>();
-        for (GTRecipe recipe : access.gtlmodular$lookupCandidates()) origins.add(RecipeCandidateSnapshots.copy(recipe));
+        int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
+        long now = now();
+        var cached = candidateCache.get(now, cacheTicks, () -> new ArrayList<>(access.gtlmodular$lookupCandidates()));
+        for (GTRecipe recipe : cached) origins.add(RecipeCandidateSnapshots.copy(recipe));
         int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
         long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
         long powerCap = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
@@ -64,7 +71,10 @@ final class MultipleRecipeAdapter implements IndependentRecipeAdapter {
         Map<ResourceLocation, Integer> active = activeRecipes.get();
         var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
                 active == null ? Map.of() : active);
-        int window = Math.min(order.size(), availableSlots + 8);
+        int scanBudget = GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget();
+        int window = scanBudget > 0
+                ? Math.min(order.size(), scanBudget)
+                : Math.min(order.size(), availableSlots + 8);
         long[] demands = new long[window];
         for (int n = 0; n < window; n++) {
             // lookup 已通过原检查；这里只虚调用并行试算，避免将构造器谓词重复执行。

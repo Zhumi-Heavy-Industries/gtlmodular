@@ -21,6 +21,7 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
     private final MutableRecipeLogicInvoker access;
     private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
     private final RecipeFairness fairness = new RecipeFairness();
+    private final CandidateCache<GTRecipe> candidateCache = new CandidateCache<>();
 
     MutableRecipeAdapter(MutableRecipesLogic<?> logic, Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
         this.logic = logic;
@@ -41,8 +42,11 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
 
     @Override
     public void admitted(GTRecipe recipe) {
-        fairness.admitted(recipe.id, logic.getMachine().getLevel() == null
-                ? 0L : logic.getMachine().getLevel().getGameTime());
+        fairness.admitted(recipe.id, now());
+    }
+
+    private long now() {
+        return logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
     }
 
     @Override
@@ -59,12 +63,18 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
         long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
         long power = Math.min(availablePower, logic.getMachine().getOverclockVoltage());
         List<GTRecipe> origins = new ArrayList<>();
-        for (GTRecipe found : access.gtlmodular$lookupCandidates()) origins.add(RecipeCandidateSnapshots.copy(found));
+        int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
+        long now = now();
+        var cached = candidateCache.get(now, cacheTicks, () -> new ArrayList<>(access.gtlmodular$lookupCandidates()));
+        for (GTRecipe found : cached) origins.add(RecipeCandidateSnapshots.copy(found));
         int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
         Map<ResourceLocation, Integer> active = activeRecipes.get();
         var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
                 active == null ? Map.of() : active);
-        int window = Math.min(order.size(), availableSlots + 8);
+        int scanBudget = GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget();
+        int window = scanBudget > 0
+                ? Math.min(order.size(), scanBudget)
+                : Math.min(order.size(), availableSlots + 8);
         for (int n = 0; n < window; n++) {
             if (remaining == 0) break;
             GTRecipe origin = origins.get(order.get(n));

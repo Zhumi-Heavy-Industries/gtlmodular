@@ -277,6 +277,10 @@ public final class IndependentMachineController {
             if (wait != null) text.add(Component.translatable("gtlmodular.independent.wait", wait));
         }
         if (batches.size() > 8) text.add(Component.translatable("gtlmodular.independent.more", batches.size() - 8));
+        if (host != null) {
+            String stats = host.statsSummary();
+            if (!stats.isEmpty()) text.add(Component.literal(stats));
+        }
         return List.copyOf(text);
     }
 }

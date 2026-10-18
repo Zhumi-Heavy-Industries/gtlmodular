@@ -14,6 +14,9 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.LongValue maxBatchRuns;
     private final ForgeConfigSpec.BooleanValue allowMeIo;
     private final ForgeConfigSpec.IntValue maxBatchesPerRecipe;
+    private final ForgeConfigSpec.IntValue candidateCacheTicks;
+    private final ForgeConfigSpec.IntValue candidateScanBudget;
+    private final ForgeConfigSpec.BooleanValue statsEnabled;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
         enabled = builder.comment(
@@ -60,6 +63,21 @@ public final class OtherMachineThreadsConfig {
                         "这是候选级公平上限；已经扣料的批次不受影响。",
                         "Maximum concurrent independent batches per recipe. 0 = unlimited; 1 is recommended for many-recipe ore processing.")
                 .defineInRange("independentThreadsMaxBatchesPerRecipe", 0, 0, 256);
+        candidateCacheTicks = builder.comment(
+                        "候选查询缓存的有效 tick 数，默认 5；0 表示每 tick 都重新 lookup。",
+                        "上游输入变化没有统一 revision，因此只做短 TTL；真实扣料仍逐条校验，缓存不会绕过输入检查。",
+                        "Candidate lookup cache TTL in ticks; 0 disables. Real input checks still run per batch.")
+                .defineInRange("independentThreadsCandidateCacheTicks", 5, 0, 200);
+        candidateScanBudget = builder.comment(
+                        "每 tick 最多试算多少条候选，默认 0 = 空槽数 + 8。",
+                        "调低可以压 TPS 峰值，但会减少每 tick 能补的批次数；调高让补位更充分但扫描更贵。",
+                        "Maximum candidates probed per tick; 0 = free slots + 8.")
+                .defineInRange("independentThreadsCandidateScanBudget", 0, 0, 4096);
+        statsEnabled = builder.comment(
+                        "在机器面板显示候选扫描/批次 tick 的耗时统计，默认关闭。",
+                        "用于调 maxActiveThreads、maxBatchTicks 和候选预算；开启只多一次 nanoTime，不写日志。",
+                        "Show per-machine candidate/batch timing stats; off by default.")
+                .define("independentThreadsStats", false);
     }
 
     public int maxBatchTicks() {
@@ -91,6 +109,30 @@ public final class OtherMachineThreadsConfig {
             return maxBatchesPerRecipe.get();
         } catch (IllegalStateException unloaded) {
             return maxBatchesPerRecipe.getDefault();
+        }
+    }
+
+    public int candidateCacheTicks() {
+        try {
+            return candidateCacheTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return candidateCacheTicks.getDefault();
+        }
+    }
+
+    public int candidateScanBudget() {
+        try {
+            return candidateScanBudget.get();
+        } catch (IllegalStateException unloaded) {
+            return candidateScanBudget.getDefault();
+        }
+    }
+
+    public boolean statsEnabled() {
+        try {
+            return statsEnabled.get();
+        } catch (IllegalStateException unloaded) {
+            return statsEnabled.getDefault();
         }
     }
 

@@ -73,6 +73,9 @@
 - 候选内容用 `IAdvancedContentModifier.preciseMultiplier` 做 long 精确放大，并按原配方逐项校正数量；超出 `Long.MAX` 的批直接拒绝，不静默饱和。EU/t 不在物料倍率里重复放大，仍由能量层重新计算。
 - `independentThreadsAllowMeIo` 默认 false。开启且机器装了 ME 样板/输出处理器时，非 tick 的物品/流体走上游 ME 的 long 计数路径；模拟通过才真实转移，剩余量写回同一张 Content 表。ME 的 tick 物品/流体尚未适配，遇到会拒绝该批；普通总线机器不受影响。
 - 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 0（不限），矿物处理这类配方种类远多于线程的场景建议设为 1，让每种矿最坏等一个轮转周期而不是永远轮不到。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
+- `independentThreadsCandidateCacheTicks` 默认 5：候选 lookup 结果短缓存，降低每 tick 重查成本；0 关闭。上游输入没有统一 revision，缓存可能让新出现的配方最多延迟这么多 tick，但真实扣料仍逐条校验，不会凭空开工。
+- `independentThreadsCandidateScanBudget` 默认 0 = 空槽数 + 8：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
+- `independentThreadsStats` 默认 false：开启后机器面板显示候选扫描和批次 tick 的平均/最大耗时，用于调 active 线程数和候选预算。
 - 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
 
 已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
