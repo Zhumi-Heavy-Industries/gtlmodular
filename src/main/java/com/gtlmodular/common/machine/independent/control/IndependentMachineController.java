@@ -113,6 +113,7 @@ public final class IndependentMachineController {
     }
 
     public void configurationChanged() {
+        if (selection != null && selection.supported()) selection.adapter().invalidateCandidates();
         if (ownsWork() && !handoff(unsupportedReason() == null).admit()) requestDrain();
     }
 

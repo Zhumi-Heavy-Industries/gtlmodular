@@ -14,6 +14,9 @@ public interface IndependentRecipeAdapter {
     /** 会话真正接下一条候选后回调，用于公平游标/老化；预分配阶段不能算作已服务。 */
     default void admitted(GTRecipe recipe) {}
 
+    /** 机器自身 IO 或配置改变后丢弃候选缓存；外部输入变化仍由短 TTL 兜底。 */
+    default void invalidateCandidates() {}
+
     // 这里只预分配预算，不承诺输入仍然存在；会话必须在每批真正扣料前重新校验并预留。
     default List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget) {
         return candidates(availableSlots, availableBudget, Long.MAX_VALUE);

@@ -43,6 +43,12 @@ final class MutableRecipeAdapter implements IndependentRecipeAdapter {
     @Override
     public void admitted(GTRecipe recipe) {
         fairness.admitted(recipe.id, now());
+        candidateCache.invalidate();
+    }
+
+    @Override
+    public void invalidateCandidates() {
+        candidateCache.invalidate();
     }
 
     private long now() {
