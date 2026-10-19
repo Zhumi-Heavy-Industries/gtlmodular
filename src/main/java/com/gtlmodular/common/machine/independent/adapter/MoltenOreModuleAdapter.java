@@ -8,6 +8,7 @@ import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
 import com.gtlmodular.common.machine.MoltenModuleMachineBase;
+import com.gtlmodular.common.machine.MoltenSpaceOreModuleMachine;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import net.minecraft.resources.ResourceLocation;
 import org.gtlcore.gtlcore.api.machine.trait.ILockRecipe;
@@ -43,7 +44,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     @Override
     public int threads() {
-        return machine instanceof MoltenBlastModuleMachine blast ? Math.max(1, blast.totalThreads()) : 1;
+        if (machine instanceof MoltenBlastModuleMachine blast) return Math.max(1, blast.totalThreads());
+        if (machine instanceof MoltenSpaceOreModuleMachine ore) return Math.max(1, ore.totalThreads());
+        return 1;
     }
 
     @Override
