@@ -7,6 +7,7 @@ import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTMachines;
+import com.gregtechceu.gtceu.common.machine.multiblock.part.EnergyHatchPartMachine;
 import com.gregtechceu.gtceu.common.machine.multiblock.part.FluidHatchPartMachine;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
@@ -123,9 +124,43 @@ public final class MoltenOreModuleTests {
                     }
                 })
                 .thenExecute(() -> feed(helper, module, pos))
+                .thenExecute(() -> fillEnergy(level, pos))
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "引擎没有开批: reason=" + reason()))
+                .thenWaitUntil(() -> helper.assertTrue(outputFluid(level, pos), "批次没有输出流体"))
+                .thenExecute(() -> helper.assertTrue(energyStored(level, pos) < energyCapacity(level, pos),
+                        "批次没有扣能源仓电量"))
                 .thenSucceed();
+    }
+
+    private static void fillEnergy(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        if (MetaMachine.getMachine(level, pos.offset(-1, 0, 1)) instanceof EnergyHatchPartMachine hatch) {
+            hatch.energyContainer.setEnergyStored(hatch.energyContainer.getEnergyCapacity());
+        }
+    }
+
+    private static long energyStored(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        if (MetaMachine.getMachine(level, pos.offset(-1, 0, 1)) instanceof EnergyHatchPartMachine hatch) {
+            return hatch.energyContainer.getEnergyStored();
+        }
+        return -1L;
+    }
+
+    private static long energyCapacity(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        if (MetaMachine.getMachine(level, pos.offset(-1, 0, 1)) instanceof EnergyHatchPartMachine hatch) {
+            return hatch.energyContainer.getEnergyCapacity();
+        }
+        return -1L;
+    }
+
+    private static boolean outputFluid(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        for (BlockPos offset : new BlockPos[]{pos.offset(1, 0, -1), pos.offset(1, 0, 1)}) {
+            if (MetaMachine.getMachine(level, offset) instanceof FluidHatchPartMachine hatch
+                    && hatch.tank.getFluidInTank(0).getAmount() > 0L) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String reason() {
