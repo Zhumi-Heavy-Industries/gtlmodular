@@ -45,7 +45,10 @@ public final class MoltenOreModuleTests {
                         MoltenOreModuleTests::hostForms),
                 new TestFunction(BATCH + "_module", "gtlmodular.molten_ore_module_forms",
                         MoltenOreTestLayout.templateId().toString(), 2400, 0, true,
-                        MoltenOreModuleTests::moduleForms));
+                        MoltenOreModuleTests::moduleForms),
+                new TestFunction(BATCH + "_fair", "gtlmodular.molten_ore_fairness",
+                        MoltenOreTestLayout.templateId().toString(), 2400, 0, true,
+                        MoltenOreModuleTests::fairness));
     }
 
     private static void hostForms(GameTestHelper helper) {
@@ -141,6 +144,105 @@ public final class MoltenOreModuleTests {
                 .thenSucceed();
     }
 
+    private static final Set<String> FAIR_PRODUCED = new HashSet<>();
+
+    private static void fairness(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var player = GameTestMachines.player(helper, "MoltenOreFairness");
+        MachineDefinition hostDefinition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "molten_module_host_test"));
+        helper.assertTrue(hostDefinition != null, "测试主机未注册");
+        var hostPos = helper.absolutePos(MoltenOreTestLayout.hostPosition());
+        var host = (WorkableElectricMultiblockMachine) GameTestMachines.place(helper, player,
+                hostDefinition, hostPos, Direction.NORTH);
+        build(helper, host, hostPos, player);
+
+        MachineDefinition definition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "molten_space_ore_module"));
+        helper.assertTrue(definition != null, "炼矿模块未注册");
+        var pos = helper.absolutePos(MoltenOreTestLayout.modulePosition());
+        var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
+        helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "炼矿模块类型不符");
+        var module = (WorkableElectricMultiblockMachine) placed;
+        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(-1, 0, -1));
+        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(1, 0, -1));
+        placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-1, 0, 1));
+        placePart(helper, player, GTMachines.FLUID_EXPORT_HATCH[1], pos.offset(1, 0, 1));
+        build(helper, module, pos, player);
+        FAIR_PRODUCED.clear();
+
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(host.isFormed() && module.isFormed(),
+                        "测试主机或炼矿模块未成形"))
+                .thenExecute(() -> {
+                    if (host instanceof IModularMachineHost<?> h && module instanceof IModularMachineModule<?, ?> m) {
+                        ((IModularMachineModule) m).connectToHost((IModularMachineHost) h);
+                    } else {
+                        helper.fail("模块/主机未实现模组化接口");
+                    }
+                })
+                .thenWaitUntil(() -> helper.assertTrue(
+                        host instanceof IModularMachineHost<?> h
+                                && module instanceof IModularMachineModule<?, ?> m
+                                && m.getHost() == h && h.getModules().contains(m),
+                        "测试主机与炼矿模块未连接"))
+                .thenExecute(() -> {
+                    module.getRecipeType().getLookup().removeAllRecipes();
+                    addFairRecipe(helper, module, Fluids.WATER, "fair_water");
+                    addFairRecipe(helper, module, Fluids.LAVA, "fair_lava");
+                    fillFairInputs(level, pos);
+                    fillEnergy(level, pos);
+                })
+                .thenExecute(() -> {
+                    try {
+                        Object controller = module.getRecipeLogic().getClass()
+                                .getMethod("gtlmodular$controller", boolean.class)
+                                .invoke(module.getRecipeLogic(), true);
+                        helper.assertTrue(controller != null, "炼矿模块没有建立独立线程控制器");
+                        CONTROLLER[0] = controller;
+                    } catch (ReflectiveOperationException failure) {
+                        helper.fail("无法检查独立线程控制器：" + failure);
+                    }
+                })
+                .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
+                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "引擎没有开批: reason=" + reason()))
+                .thenWaitUntil(() -> helper.assertTrue(fairTick(level, pos),
+                        "同时可做的两条配方没有都轮到: " + FAIR_PRODUCED))
+                .thenSucceed();
+    }
+
+    private static void addFairRecipe(GameTestHelper helper, WorkableElectricMultiblockMachine module,
+                                      net.minecraft.world.level.material.Fluid fluid, String id) {
+        GTRecipe recipe = GTRecipeBuilder.of(new ResourceLocation("gtlmodular", id), module.getRecipeType())
+                .inputFluids(FluidStack.create(fluid, 1_000L))
+                .outputFluids(FluidStack.create(fluid, 1_000L))
+                .duration(20)
+                .EUt(32)
+                .buildRawRecipe();
+        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), id + " 注入失败");
+    }
+
+    private static void fillFairInputs(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        if (MetaMachine.getMachine(level, pos.offset(-1, 0, -1)) instanceof FluidHatchPartMachine water) {
+            water.tank.setFluidInTank(0, FluidStack.create(Fluids.WATER, 1_000L));
+        }
+        if (MetaMachine.getMachine(level, pos.offset(1, 0, -1)) instanceof FluidHatchPartMachine lava) {
+            lava.tank.setFluidInTank(0, FluidStack.create(Fluids.LAVA, 1_000L));
+        }
+    }
+
+    private static boolean fairTick(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        fillEnergy(level, pos);
+        fillFairInputs(level, pos);
+        if (MetaMachine.getMachine(level, pos.offset(1, 0, 1)) instanceof FluidHatchPartMachine output) {
+            FluidStack fluid = output.tank.getFluidInTank(0);
+            if (!fluid.isEmpty()) {
+                FAIR_PRODUCED.add(fluid.getFluid().builtInRegistryHolder().key().location().toString());
+                output.tank.setFluidInTank(0, FluidStack.empty());
+            }
+        }
+        return FAIR_PRODUCED.contains("minecraft:water") && FAIR_PRODUCED.contains("minecraft:lava");
+    }
     private static long outputAmount(net.minecraft.server.level.ServerLevel level, BlockPos pos,
                                      net.minecraft.world.level.material.Fluid fluid) {
         long total = 0L;
