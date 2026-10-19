@@ -134,7 +134,23 @@ public final class MoltenOreModuleTests {
                 .thenExecute(() -> helper.assertTrue(energyStored(level, pos) < energyCapacity(level, pos),
                         "批次没有扣能源仓电量"))
                 .thenWaitUntil(() -> helper.assertTrue(rotate(level, pos), "候选没有轮转到 lava, produced=" + PRODUCED))
+                .thenExecute(() -> helper.assertTrue(outputAmount(level, pos, Fluids.WATER) == 1_000L,
+                        "水产物数量不守恒: " + outputAmount(level, pos, Fluids.WATER)))
+                .thenExecute(() -> helper.assertTrue(outputAmount(level, pos, Fluids.LAVA) == 1_000L,
+                        "熔岩产物数量不守恒: " + outputAmount(level, pos, Fluids.LAVA)))
                 .thenSucceed();
+    }
+
+    private static long outputAmount(net.minecraft.server.level.ServerLevel level, BlockPos pos,
+                                     net.minecraft.world.level.material.Fluid fluid) {
+        long total = 0L;
+        for (BlockPos offset : new BlockPos[]{pos.offset(1, 0, -1), pos.offset(1, 0, 1)}) {
+            if (MetaMachine.getMachine(level, offset) instanceof FluidHatchPartMachine hatch) {
+                FluidStack stack = hatch.tank.getFluidInTank(0);
+                if (stack.getFluid() == fluid) total += stack.getAmount();
+            }
+        }
+        return total;
     }
 
     private static final Set<String> PRODUCED = new HashSet<>();
