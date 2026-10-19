@@ -26,7 +26,9 @@ import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
 
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** 炼矿模块最小夹具：先验证 GameTest 专用 3×3×3 主机能成形并供电。 */
 public final class MoltenOreModuleTests {
@@ -123,6 +125,7 @@ public final class MoltenOreModuleTests {
                         helper.fail("无法检查独立线程控制器：" + failure);
                     }
                 })
+                .thenExecute(() -> addLavaRecipe(helper, module))
                 .thenExecute(() -> feed(helper, module, pos))
                 .thenExecute(() -> fillEnergy(level, pos))
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
@@ -130,7 +133,39 @@ public final class MoltenOreModuleTests {
                 .thenWaitUntil(() -> helper.assertTrue(outputFluid(level, pos), "批次没有输出流体"))
                 .thenExecute(() -> helper.assertTrue(energyStored(level, pos) < energyCapacity(level, pos),
                         "批次没有扣能源仓电量"))
+                .thenWaitUntil(() -> helper.assertTrue(rotate(level, pos), "候选没有轮转到 lava, produced=" + PRODUCED))
                 .thenSucceed();
+    }
+
+    private static final Set<String> PRODUCED = new HashSet<>();
+
+    private static void addLavaRecipe(GameTestHelper helper, WorkableElectricMultiblockMachine module) {
+        PRODUCED.clear();
+        GTRecipe recipe = GTRecipeBuilder.of(
+                        new ResourceLocation("gtlmodular", "test_lava_recipe"), module.getRecipeType())
+                .inputFluids(FluidStack.create(Fluids.LAVA, 1_000L))
+                .outputFluids(FluidStack.create(Fluids.LAVA, 1_000L))
+                .duration(20)
+                .EUt(32)
+                .buildRawRecipe();
+        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), "lava 测试配方注入失败");
+    }
+
+    private static boolean rotate(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        fillEnergy(level, pos);
+        boolean waterSeen = PRODUCED.contains("minecraft:water");
+        if (MetaMachine.getMachine(level, pos.offset(-1, 0, -1)) instanceof FluidHatchPartMachine input) {
+            input.tank.setFluidInTank(0, FluidStack.create(waterSeen ? Fluids.LAVA : Fluids.WATER, 1_000L));
+        }
+        for (BlockPos offset : new BlockPos[]{pos.offset(1, 0, -1), pos.offset(1, 0, 1)}) {
+            if (MetaMachine.getMachine(level, offset) instanceof FluidHatchPartMachine output) {
+                FluidStack fluid = output.tank.getFluidInTank(0);
+                if (!fluid.isEmpty()) {
+                    PRODUCED.add(fluid.getFluid().builtInRegistryHolder().key().location().toString());
+                }
+            }
+        }
+        return PRODUCED.contains("minecraft:water") && PRODUCED.contains("minecraft:lava");
     }
 
     private static void fillEnergy(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
@@ -184,7 +219,8 @@ public final class MoltenOreModuleTests {
     }
 
     private static void feed(GameTestHelper helper, WorkableElectricMultiblockMachine module, BlockPos pos) {
-        GTRecipe recipe = GTRecipeBuilder.ofRaw()
+        GTRecipe recipe = GTRecipeBuilder.of(
+                        new ResourceLocation("gtlmodular", "test_water_recipe"), module.getRecipeType())
                 .inputFluids(FluidStack.create(Fluids.WATER, 1_000L))
                 .outputFluids(FluidStack.create(Fluids.WATER, 1_000L))
                 .duration(20)
