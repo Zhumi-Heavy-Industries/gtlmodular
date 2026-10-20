@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.trait.ItemHandlerProxyRecipeTrait;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
+import com.gtlmodular.common.GameTestHooks;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.RecipeHandlePart;
 
@@ -46,7 +47,7 @@ public final class IndependentRecipeIo {
     private void requireSupportedParts() {
         var parts = parts();
         boolean hasMe = !parts.getMEPatternRecipeHandleParts().isEmpty() || !parts.getMEOutputRecipeHandleParts().isEmpty();
-        if (hasMe && !MeIo.enabled(machine) && !Boolean.getBoolean("gtlmodular.testHost")) {
+        if (hasMe && !MeIo.enabled(machine) && !GameTestHooks.active()) {
             throw new IllegalArgumentException("ME 样板/输出处理器需要开启 independentThreadsAllowMeIo");
         }
     }

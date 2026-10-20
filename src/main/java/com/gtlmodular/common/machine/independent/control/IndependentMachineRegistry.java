@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine.independent.control;
 
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.eligibility.StandardRecipeLogicClasses;
 import net.minecraftforge.event.TickEvent;
@@ -55,10 +56,8 @@ public final class IndependentMachineRegistry {
     }
 
     public static boolean eligible(RecipeLogic logic) {
-        if (Boolean.getBoolean("gtlmodular.testHost")
-                && !logic.getMachine().isRemote()
-                && logic.getMachine().getDefinition().getId().toString()
-                        .startsWith("gtlmodular:molten_space_ore_module")) {
+        if (!logic.getMachine().isRemote()
+                && GameTestHooks.isOreModule(logic.getMachine().getDefinition().getId().toString())) {
             // GameTest 对炼矿模块及其真实外壳测试机打开引擎，不污染其他机器。
             return true;
         }

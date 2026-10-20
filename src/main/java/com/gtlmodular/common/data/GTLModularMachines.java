@@ -1,6 +1,7 @@
 package com.gtlmodular.common.data;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.data.nanochip.NanochipRegistration;
 import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.api.module.ModuleKind;
@@ -116,7 +117,7 @@ public final class GTLModularMachines {
         registerModuleB();
         registerModuleC();
         registerModuleHost();
-        if (Boolean.getBoolean("gtlmodular.testHost")) {
+        if (GameTestHooks.active()) {
             registerTestHost();
             registerTestRealModule();
         }
@@ -454,7 +455,7 @@ public final class GTLModularMachines {
 
     private static com.gregtechceu.gtceu.api.pattern.BlockPattern spaceShellPattern(
             MultiblockMachineDefinition def) {
-        if (Boolean.getBoolean("gtlmodular.testHost")) {
+        if (GameTestHooks.active()) {
             // GameTest 最小夹具只验证引擎批次/候选/输出，不验证 15×31×11 真实外壳。
             TraceabilityPredicate testCasing = com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
                     com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS,

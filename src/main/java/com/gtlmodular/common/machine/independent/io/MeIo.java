@@ -3,6 +3,7 @@ package com.gtlmodular.common.machine.independent.io;
 import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.config.GTLModularConfig;
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
@@ -31,7 +32,7 @@ public final class MeIo {
 
     public static boolean enabled(Object machine) {
         if (!GTLModularConfig.OTHER_MACHINE_THREADS.allowMeIo()
-                && !Boolean.getBoolean("gtlmodular.testHost")) return false;
+                && !GameTestHooks.active()) return false;
         return machine instanceof IRecipeCapabilityMachine parts && hasMeParts(parts);
     }
 
