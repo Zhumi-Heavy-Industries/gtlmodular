@@ -218,6 +218,14 @@ public final class MoltenOreModuleTests {
     private static void realShellForms(GameTestHelper helper) {
         var level = helper.getLevel();
         var player = GameTestMachines.player(helper, "MoltenOreRealShell");
+        var hostDefinition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "molten_module_host_test"));
+        helper.assertTrue(hostDefinition != null, "测试主机未注册");
+        var hostPos = helper.absolutePos(MoltenOreTestLayout.hostPosition());
+        var host = (WorkableElectricMultiblockMachine) GameTestMachines.place(helper, player,
+                hostDefinition, hostPos, Direction.NORTH);
+        build(helper, host, hostPos, player);
+
         MachineDefinition definition = GTRegistries.MACHINES.get(
                 new ResourceLocation("gtlmodular", "molten_space_ore_module_real"));
         helper.assertTrue(definition != null, "真实外壳测试模块未注册");
@@ -233,7 +241,20 @@ public final class MoltenOreModuleTests {
         var module = (WorkableElectricMultiblockMachine) placed;
         build(helper, module, pos, player);
         helper.startSequence()
-                .thenWaitUntil(() -> helper.assertTrue(module.isFormed(), "真实 15×31×11 外壳未成形"))
+                .thenWaitUntil(() -> helper.assertTrue(host.isFormed() && module.isFormed(),
+                        "测试主机或真实 15×31×11 外壳未成形"))
+                .thenExecute(() -> {
+                    if (host instanceof IModularMachineHost<?> h && module instanceof IModularMachineModule<?, ?> m) {
+                        ((IModularMachineModule) m).connectToHost((IModularMachineHost) h);
+                    } else {
+                        helper.fail("模块/主机未实现模组化接口");
+                    }
+                })
+                .thenWaitUntil(() -> helper.assertTrue(
+                        host instanceof IModularMachineHost<?> h
+                                && module instanceof IModularMachineModule<?, ?> m
+                                && m.getHost() == h && h.getModules().contains(m),
+                        "真实外壳与测试主机未连接"))
                 .thenSucceed();
     }
 
