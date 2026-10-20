@@ -42,6 +42,22 @@ public final class IndependentMachineController {
     }
 
     public boolean ownsWork() { return session != null && session.hasOwnedWork(); }
+
+    public String testBatchInfo() {
+        if (session == null) return "no-session";
+        StringBuilder out = new StringBuilder();
+        for (var batch : session.batches()) {
+            String wait = host == null ? null : host.runtime().waitReason(batch.payload());
+            out.append(batch.payload().recipe().id)
+                    .append(" phase=").append(batch.phase())
+                    .append(" progress=").append(batch.progress()).append('/').append(batch.duration())
+                    .append(" stage=").append(batch.payload().stage())
+                    .append(" failure=").append(batch.failure())
+                    .append(" wait=").append(wait)
+                    .append(';');
+        }
+        return out.toString();
+    }
     public boolean detached() { return detached; }
     public void detach() { detached = true; }
     public UUID ownershipToken() { return ownership.token(); }

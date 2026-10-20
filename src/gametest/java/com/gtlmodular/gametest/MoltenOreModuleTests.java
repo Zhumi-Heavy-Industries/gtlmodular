@@ -246,7 +246,7 @@ public final class MoltenOreModuleTests {
         for (BlockPos base : realBaseOffsets(pos)) {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
-        placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[1], pos.offset(-2, 0, 1));
+        placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[2], pos.offset(-2, 0, 1));
         placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-2, 0, -1));
         var sinkDefinition = GTRegistries.MACHINES.get(
                 new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
@@ -288,8 +288,18 @@ public final class MoltenOreModuleTests {
                             .EUt(32)
                             .buildRawRecipe();
                     module.getRecipeType().getLookup().addRecipe(recipe);
+                    GTRecipe sand = GTRecipeBuilder.of(
+                                    new ResourceLocation("gtlmodular", "real_shell_sand"),
+                                    module.getRecipeType())
+                            .inputItems(new ItemStack(Items.COBBLESTONE))
+                            .outputItems(new ItemStack(Items.SAND))
+                            .duration(20)
+                            .EUt(32)
+                            .buildRawRecipe();
+                    module.getRecipeType().getLookup().addRecipe(sand);
                     if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof ItemBusPartMachine bus) {
-                        bus.getInventory().setStackInSlot(0, new ItemStack(Items.STONE));
+                        bus.getInventory().setStackInSlot(0, new ItemStack(Items.STONE, 64));
+                        bus.getInventory().setStackInSlot(1, new ItemStack(Items.COBBLESTONE, 64));
                     }
                     if (MetaMachine.getMachine(level, pos.offset(-2, 0, -1)) instanceof EnergyHatchPartMachine hatch) {
                         hatch.energyContainer.setEnergyStored(hatch.energyContainer.getEnergyCapacity());
@@ -308,7 +318,9 @@ public final class MoltenOreModuleTests {
                 })
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "真实外壳引擎没有开批: reason=" + reason()))
-                .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos), "真实外壳没有输出物品"))
+                .thenWaitUntil(() -> helper.assertTrue(batchCount() >= 2, "没有并行两批: " + batchCount()))
+                .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos),
+                        "真实外壳没有输出物品: " + testBatchInfo()))
                 .thenSucceed();
     }
 
@@ -328,10 +340,16 @@ public final class MoltenOreModuleTests {
     }
 
     private static boolean realOutput(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        if (MetaMachine.getMachine(level, pos.offset(-2, 0, -1)) instanceof EnergyHatchPartMachine hatch) {
+            hatch.energyContainer.setEnergyStored(hatch.energyContainer.getEnergyCapacity());
+        }
         if (!(level.getBlockEntity(pos.offset(4, 0, -1)) instanceof DriveBlockEntity drive)) return false;
         MEStorage storage = drive.getCellInventory(0);
-        return storage != null && storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
-                Actionable.SIMULATE, IActionSource.empty()) > 0L;
+        return storage != null
+                && storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
+                        Actionable.SIMULATE, IActionSource.empty()) > 0L
+                && storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 1L,
+                        Actionable.SIMULATE, IActionSource.empty()) > 0L;
     }
 
     private static BlockPos[] realBaseOffsets(BlockPos p) {
@@ -475,6 +493,14 @@ public final class MoltenOreModuleTests {
             return (boolean) CONTROLLER[0].getClass().getMethod("ownsWork").invoke(CONTROLLER[0]);
         } catch (ReflectiveOperationException failure) {
             throw new IllegalStateException("无法检查控制器 ownsWork", failure);
+        }
+    }
+
+    private static String testBatchInfo() {
+        try {
+            return (String) CONTROLLER[0].getClass().getMethod("testBatchInfo").invoke(CONTROLLER[0]);
+        } catch (ReflectiveOperationException failure) {
+            return "?" + failure;
         }
     }
 
