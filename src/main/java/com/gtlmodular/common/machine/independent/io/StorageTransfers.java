@@ -9,6 +9,7 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.lowdragmc.lowdraglib.misc.FluidStorage;
 import com.lowdragmc.lowdraglib.misc.ItemStackTransfer;
+import org.gtlcore.gtlcore.integration.gtmt.InfinityEnergyContainer;
 import net.minecraft.world.item.crafting.Ingredient;
 import org.gtlcore.gtlcore.api.machine.trait.NotifiableCircuitItemStackHandler;
 
@@ -29,6 +30,7 @@ final class StorageTransfers {
     }
 
     static void requireSupported(IRecipeHandler<?> handler) {
+        if (handler instanceof InfinityEnergyContainer) return;
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) return;
         // 子类可能加入隔离、催化或无限库存语义；这里只允许已核实的具体处理器和存储。
         if (handler.getClass() == NotifiableItemStackHandler.class) {
@@ -64,6 +66,11 @@ final class StorageTransfers {
 
     void move(IRecipeHandler<?> handler, IO io, Content content) {
         requireSupported(handler);
+        if (handler instanceof InfinityEnergyContainer) {
+            // 创造能源仓本身无上限，也不走 EnergyDebitContext；视为本 tick 已足额供能。
+            if (io == IO.IN) content.content = 0L;
+            return;
+        }
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) {
             // 虚拟电路只参与上游模拟匹配，绝不能当作实际可扣除的物品。
             if (simulate && io == IO.IN && handler.handleRecipe(io, null, List.of(content.content), null, true) == null) {

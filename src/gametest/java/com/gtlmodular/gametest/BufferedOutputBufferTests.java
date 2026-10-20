@@ -162,7 +162,7 @@ public final class BufferedOutputBufferTests {
         level.setBlockAndUpdate(cellPos, AEBlocks.CREATIVE_ENERGY_CELL.block().defaultBlockState());
         level.setBlockAndUpdate(drivePos, AEBlocks.DRIVE.block().defaultBlockState());
         if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
-            drive.getInternalInventory().setItemDirect(0, AEItems.ITEM_CELL_1K.stack());
+            drive.getInternalInventory().setItemDirect(0, AEItems.ITEM_CELL_256K.stack());
         }
         MachineDefinition definition = GTRegistries.MACHINES.get(
                 new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
@@ -182,9 +182,9 @@ public final class BufferedOutputBufferTests {
                 .thenExecute(() -> {
                     if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
                         MEStorage storage = drive.getCellInventory(0);
-                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 100_000L,
                                 Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 dirt");
-                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 1L,
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 100_000L,
                                 Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 sand");
                     }
                 })
@@ -193,14 +193,14 @@ public final class BufferedOutputBufferTests {
 
     private static List<Ingredient> handleTwo(MEExtendedOutputPartMachine part, boolean simulate) {
         var contents = new ObjectArrayList<Ingredient>();
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 64));
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.SAND)), 64));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 100_000L));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.SAND)), 100_000L));
         return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 
     private static List<Ingredient> handleDirt(MEExtendedOutputPartMachine part, boolean simulate) {
         var contents = new ObjectArrayList<Ingredient>();
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 64));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 100_000L));
         return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 

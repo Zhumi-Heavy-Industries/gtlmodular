@@ -201,8 +201,8 @@ public final class MoltenOreModuleTests {
                                 && m.getHost() == h && h.getModules().contains(m),
                         "测试主机与炼矿模块未连接"))
                 .thenExecute(() -> {
-                    addFairRecipe(helper, module, Fluids.WATER, "fair_water");
-                    addFairRecipe(helper, module, Fluids.LAVA, "fair_lava");
+                    addLavaRecipe(helper, module);
+                    feed(helper, module, pos);
                     fillFairInputs(level, pos);
                     fillEnergy(level, pos);
                 })
@@ -247,7 +247,10 @@ public final class MoltenOreModuleTests {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
         placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[2], pos.offset(-2, 0, 1));
-        placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-2, 0, -1));
+        var creativeEnergy = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtmthings", "creative_energy_hatch"));
+        helper.assertTrue(creativeEnergy != null, "创造能源仓未注册");
+        placePart(helper, player, creativeEnergy, pos.offset(-2, 0, -1));
         var sinkDefinition = GTRegistries.MACHINES.get(
                 new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
         helper.assertTrue(sinkDefinition != null, "ME 输出总成未注册");
@@ -330,7 +333,9 @@ public final class MoltenOreModuleTests {
         level.setBlockAndUpdate(cellPos, AEBlocks.CREATIVE_ENERGY_CELL.block().defaultBlockState());
         level.setBlockAndUpdate(drivePos, AEBlocks.DRIVE.block().defaultBlockState());
         if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
-            drive.getInternalInventory().setItemDirect(0, AEItems.ITEM_CELL_1K.stack());
+            var cell = net.minecraftforge.registries.ForgeRegistries.ITEMS.getValue(
+                    new ResourceLocation("gtlcore", "fast_infinity_cell"));
+            if (cell != null) drive.getInternalInventory().setItemDirect(0, new ItemStack(cell));
         }
     }
 
