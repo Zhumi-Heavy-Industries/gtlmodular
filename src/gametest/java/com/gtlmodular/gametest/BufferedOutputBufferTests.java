@@ -175,18 +175,27 @@ public final class BufferedOutputBufferTests {
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(part.getMainNode().isActive(),
                         "输出总成节点未激活"))
-                .thenExecute(() -> helper.assertTrue(handleDirt(part, true).isEmpty(),
+                .thenExecute(() -> helper.assertTrue(handleTwo(part, true).isEmpty(),
                         "有存储时 simulate 应返回空余量"))
-                .thenExecute(() -> helper.assertTrue(handleDirt(part, false).isEmpty(),
+                .thenExecute(() -> helper.assertTrue(handleTwo(part, false).isEmpty(),
                         "有存储时真实交付应成功"))
                 .thenExecute(() -> {
                     if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
                         MEStorage storage = drive.getCellInventory(0);
                         helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
                                 Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 dirt");
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 1L,
+                                Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 sand");
                     }
                 })
                 .thenSucceed();
+    }
+
+    private static List<Ingredient> handleTwo(MEExtendedOutputPartMachine part, boolean simulate) {
+        var contents = new ObjectArrayList<Ingredient>();
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 64));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.SAND)), 64));
+        return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 
     private static List<Ingredient> handleDirt(MEExtendedOutputPartMachine part, boolean simulate) {
