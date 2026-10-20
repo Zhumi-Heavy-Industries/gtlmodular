@@ -206,6 +206,7 @@ public final class MoltenOreModuleTests {
                 })
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "引擎没有开批: reason=" + reason()))
+                .thenWaitUntil(() -> helper.assertTrue(batchCount() >= 2, "没有并行开第二批: " + batchCount()))
                 .thenWaitUntil(() -> helper.assertTrue(fairTick(level, pos),
                         "同时可做的两条配方没有都轮到: " + FAIR_PRODUCED))
                 .thenSucceed();
@@ -333,6 +334,19 @@ public final class MoltenOreModuleTests {
             return (boolean) CONTROLLER[0].getClass().getMethod("ownsWork").invoke(CONTROLLER[0]);
         } catch (ReflectiveOperationException failure) {
             throw new IllegalStateException("无法检查控制器 ownsWork", failure);
+        }
+    }
+
+    private static int batchCount() {
+        try {
+            var field = CONTROLLER[0].getClass().getDeclaredField("session");
+            field.setAccessible(true);
+            Object session = field.get(CONTROLLER[0]);
+            if (session == null) return 0;
+            Object batches = session.getClass().getMethod("batches").invoke(session);
+            return batches instanceof java.util.List<?> list ? list.size() : 0;
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("无法读取批次数量", failure);
         }
     }
 
