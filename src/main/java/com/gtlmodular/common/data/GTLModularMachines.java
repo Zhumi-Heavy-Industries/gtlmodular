@@ -296,7 +296,11 @@ public final class GTLModularMachines {
 
     private static com.gregtechceu.gtceu.api.pattern.BlockPattern realSpaceShellPattern(
             MultiblockMachineDefinition def) {
-        TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));
+        TraceabilityPredicate casing = SpaceOreModulePattern.casing()
+                .or(com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_FLUIDS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY));
         FactoryBlockPattern f = FactoryBlockPattern.start();
         for (String[] aisle : SpaceOrePatternLayers.AISLES) {
             f = f.aisle(aisle);

@@ -57,9 +57,9 @@ public final class IndependentMachineRegistry {
     public static boolean eligible(RecipeLogic logic) {
         if (Boolean.getBoolean("gtlmodular.testHost")
                 && !logic.getMachine().isRemote()
-                && "gtlmodular:molten_space_ore_module".equals(
-                        logic.getMachine().getDefinition().getId().toString())) {
-            // GameTest 只对炼矿模块打开引擎，不污染其他机器。
+                && logic.getMachine().getDefinition().getId().toString()
+                        .startsWith("gtlmodular:molten_space_ore_module")) {
+            // GameTest 对炼矿模块及其真实外壳测试机打开引擎，不污染其他机器。
             return true;
         }
         var settings = SETTINGS.current();

@@ -236,6 +236,10 @@ public final class MoltenOreModuleTests {
         for (BlockPos base : realBaseOffsets(pos)) {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
+        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(-2, 0, 1));
+        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(2, 0, 1));
+        placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-2, 0, -1));
+        placePart(helper, player, GTMachines.FLUID_EXPORT_HATCH[1], pos.offset(2, 0, -1));
         var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
         helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "真实外壳类型不符");
         var module = (WorkableElectricMultiblockMachine) placed;
@@ -255,7 +259,45 @@ public final class MoltenOreModuleTests {
                                 && module instanceof IModularMachineModule<?, ?> m
                                 && m.getHost() == h && h.getModules().contains(m),
                         "真实外壳与测试主机未连接"))
+                .thenExecute(() -> {
+                    module.getRecipeType().getLookup().removeAllRecipes();
+                    GTRecipe recipe = GTRecipeBuilder.of(
+                                    new ResourceLocation("gtlmodular", "real_shell_water"),
+                                    module.getRecipeType())
+                            .inputFluids(FluidStack.create(Fluids.WATER, 1_000L))
+                            .outputFluids(FluidStack.create(Fluids.WATER, 1_000L))
+                            .duration(20)
+                            .EUt(32)
+                            .buildRawRecipe();
+                    helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe),
+                            "真实外壳测试配方注入失败");
+                    if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof FluidHatchPartMachine hatch) {
+                        hatch.tank.setFluidInTank(0, FluidStack.create(Fluids.WATER, 1_000L));
+                    }
+                    if (MetaMachine.getMachine(level, pos.offset(-2, 0, -1)) instanceof EnergyHatchPartMachine hatch) {
+                        hatch.energyContainer.setEnergyStored(hatch.energyContainer.getEnergyCapacity());
+                    }
+                })
+                .thenExecute(() -> {
+                    try {
+                        Object controller = module.getRecipeLogic().getClass()
+                                .getMethod("gtlmodular$controller", boolean.class)
+                                .invoke(module.getRecipeLogic(), true);
+                        helper.assertTrue(controller != null, "真实外壳没有建立独立线程控制器");
+                        CONTROLLER[0] = controller;
+                    } catch (ReflectiveOperationException failure) {
+                        helper.fail("无法检查真实外壳控制器：" + failure);
+                    }
+                })
+                .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
+                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "真实外壳引擎没有开批: reason=" + reason()))
+                .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos), "真实外壳没有输出流体"))
                 .thenSucceed();
+    }
+
+    private static boolean realOutput(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        return MetaMachine.getMachine(level, pos.offset(2, 0, -1)) instanceof FluidHatchPartMachine hatch
+                && hatch.tank.getFluidInTank(0).getAmount() > 0L;
     }
 
     private static BlockPos[] realBaseOffsets(BlockPos p) {
