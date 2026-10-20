@@ -1,5 +1,12 @@
 package com.gtlmodular.gametest;
 
+import appeng.api.config.Actionable;
+import appeng.api.networking.security.IActionSource;
+import appeng.api.stacks.AEItemKey;
+import appeng.api.storage.MEStorage;
+import appeng.blockentity.storage.DriveBlockEntity;
+import appeng.core.definitions.AEBlocks;
+import appeng.core.definitions.AEItems;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
@@ -26,6 +33,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.common.util.FakePlayer;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
+import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEExtendedOutputPartMachine;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
 
 import java.util.Collection;
@@ -240,8 +248,14 @@ public final class MoltenOreModuleTests {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
         placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[1], pos.offset(-2, 0, 1));
-        placePart(helper, player, GTMachines.ITEM_EXPORT_BUS[1], pos.offset(2, 0, 1));
         placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-2, 0, -1));
+        var sinkDefinition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
+        helper.assertTrue(sinkDefinition != null, "ME 输出总成未注册");
+        var sink = GameTestMachines.place(helper, player, sinkDefinition, pos.offset(2, 0, -1),
+                Direction.NORTH);
+        sink.setFrontFacing(Direction.EAST);
+        helper.assertTrue(sink instanceof MEExtendedOutputPartMachine, "ME 输出总成类型不符");
         var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
         helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "真实外壳类型不符");
         var module = (WorkableElectricMultiblockMachine) placed;
@@ -261,6 +275,10 @@ public final class MoltenOreModuleTests {
                                 && module instanceof IModularMachineModule<?, ?> m
                                 && m.getHost() == h && h.getModules().contains(m),
                         "真实外壳与测试主机未连接"))
+                .thenExecute(() -> setupAe(level, pos))
+                .thenWaitUntil(() -> helper.assertTrue(aeActive(level, pos)
+                        && sink instanceof MEExtendedOutputPartMachine out && out.getMainNode().isActive(),
+                        "真实 ME 网络或输出总成节点未激活"))
                 .thenExecute(() -> {
                     module.getRecipeType().getLookup().removeAllRecipes();
                     GTRecipe recipe = GTRecipeBuilder.of(
@@ -297,9 +315,26 @@ public final class MoltenOreModuleTests {
                 .thenSucceed();
     }
 
+    private static void setupAe(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        BlockPos cellPos = pos.offset(3, 0, -1);
+        BlockPos drivePos = pos.offset(4, 0, -1);
+        level.setBlockAndUpdate(cellPos, AEBlocks.CREATIVE_ENERGY_CELL.block().defaultBlockState());
+        level.setBlockAndUpdate(drivePos, AEBlocks.DRIVE.block().defaultBlockState());
+        if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
+            drive.getInternalInventory().setItemDirect(0, AEItems.ITEM_CELL_1K.stack());
+        }
+    }
+
+    private static boolean aeActive(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
+        return level.getBlockEntity(pos.offset(4, 0, -1)) instanceof DriveBlockEntity drive
+                && drive.getMainNode().isActive();
+    }
+
     private static boolean realOutput(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
-        return MetaMachine.getMachine(level, pos.offset(2, 0, 1)) instanceof ItemBusPartMachine bus
-                && bus.getInventory().getStackInSlot(0).is(Items.DIRT);
+        if (!(level.getBlockEntity(pos.offset(4, 0, -1)) instanceof DriveBlockEntity drive)) return false;
+        MEStorage storage = drive.getCellInventory(0);
+        return storage != null && storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
+                Actionable.SIMULATE, IActionSource.empty()) > 0L;
     }
 
     private static BlockPos[] realBaseOffsets(BlockPos p) {

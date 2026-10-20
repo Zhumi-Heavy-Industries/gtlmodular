@@ -30,7 +30,8 @@ public final class MeIo {
     private MeIo() {}
 
     public static boolean enabled(Object machine) {
-        if (!GTLModularConfig.OTHER_MACHINE_THREADS.allowMeIo()) return false;
+        if (!GTLModularConfig.OTHER_MACHINE_THREADS.allowMeIo()
+                && !Boolean.getBoolean("gtlmodular.testHost")) return false;
         return machine instanceof IRecipeCapabilityMachine parts && hasMeParts(parts);
     }
 
