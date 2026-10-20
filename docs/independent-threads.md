@@ -200,7 +200,9 @@ persistence.load(tag, MachineBatch::new, engine::restoreBatch);
 
 - 太空电梯这类机器自己覆写的特殊逻辑（工作钩子）会被独立批次绕过。
 - 开关打开后，空闲机器也会占用调度时间，机器多时拖慢 TPS。
-- GameTest 只覆盖了批次所有权（复制、剪切、放置回滚不会复制出批次），没有覆盖加工和扣电。
+- 真实 15×31×11 炼矿模块外壳、ME 输出和长数量产物还没有进入 GameTest；当前炼矿夹具用 test-only 3×3×3 外壳和普通流体输出验证引擎行为。
+
+炼矿模块的 GameTest 已从“只验证所有权”扩展为完整加工链：测试主机 + 模块成形、四仓连接、独立控制器、引擎开批、能源扣电、批次 `20/20`、水/熔岩双配方切换与输出守恒，以及同时可做两条配方时 `session.batches().size() >= 2` 的并行断言。夹具清空输出仓避免容量掩盖并行，测试只清空该用例自己的 recipe lookup。
 
 接入新机器或改动以上行为时，还要逐机核对无线扩展、具体类型强转、Mutable 切模式与子类钩子，以及 gtladditions 的 `mixin/gtlcore/machine/trait/MultipleRecipesLogicMixin` 对合批和无线工作的覆写。一个基类注入覆盖不了所有逻辑族。新增 mixin 只放在完整版，登记到 `gtlmodular.mixins.json`，不能混进独立版。
 
