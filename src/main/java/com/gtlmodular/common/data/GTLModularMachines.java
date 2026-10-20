@@ -116,7 +116,10 @@ public final class GTLModularMachines {
         registerModuleB();
         registerModuleC();
         registerModuleHost();
-        if (Boolean.getBoolean("gtlmodular.testHost")) registerTestHost();
+        if (Boolean.getBoolean("gtlmodular.testHost")) {
+            registerTestHost();
+            registerTestRealModule();
+        }
         registerPatternAssemblies();
         registerSuperPatternAssembly();
         registerLazyPatternAssembly();
@@ -270,6 +273,41 @@ public final class GTLModularMachines {
                 .langValue("Test Molten Ore Host")
                 .register();
         GTLModular.LOGGER.info("[gtlmodular] GameTest 测试主机已注册: molten_module_host_test");
+    }
+
+    /** GameTest 真实 15×31×11 外壳版本的炼矿模块；只在 testHost 下注册。 */
+    private static void registerTestRealModule() {
+        ModuleKind kind = ModuleKind.SPACE_ORE_PROCESSOR;
+        GTRecipeType recipeType = GTRegistries.RECIPE_TYPES.get(kind.recipeTypeId());
+        if (recipeType == null) return;
+        REGISTRATE.multiblock("molten_space_ore_module_real", MoltenSpaceOreModuleMachine::new)
+                .rotationState(RotationState.ALL)
+                .recipeType(recipeType)
+                .recipeModifier(MoltenRelaxedElectricOverclock::apply)
+                .appearanceBlock(() -> blockOf("gtlcore:space_elevator_mechanical_casing"))
+                .pattern(GTLModularMachines::realSpaceShellPattern)
+                .workableCasingRenderer(
+                        new ResourceLocation("gtlcore", "block/space_elevator_mechanical_casing"),
+                        gtceuId("block/multiblock/data_bank"))
+                .langValue("Test Real Space Ore Module")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] GameTest 真实外壳模块已注册: molten_space_ore_module_real");
+    }
+
+    private static com.gregtechceu.gtceu.api.pattern.BlockPattern realSpaceShellPattern(
+            MultiblockMachineDefinition def) {
+        TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));
+        FactoryBlockPattern f = FactoryBlockPattern.start();
+        for (String[] aisle : SpaceOrePatternLayers.AISLES) {
+            f = f.aisle(aisle);
+        }
+        f = f.where('S', controller(blocks(def.get())));
+        f = f.where('C', casing);
+        f = f.where('I', SpaceOreModulePattern.internalSupport());
+        f = f.where('B', SpaceOreModulePattern.moduleBase());
+        f = f.where('P', SpaceOreModulePattern.powerSlot());
+        f = f.where('.', com.gregtechceu.gtceu.api.pattern.Predicates.any());
+        return f.build();
     }
 
     /** 保留温度拒绝的读数，便于区分线圈读取失败与实际炉温不足。 */

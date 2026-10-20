@@ -48,7 +48,10 @@ public final class MoltenOreModuleTests {
                         MoltenOreModuleTests::moduleForms),
                 new TestFunction(BATCH + "_fair", "gtlmodular.molten_ore_fairness",
                         MoltenOreTestLayout.templateId().toString(), 2400, 0, true,
-                        MoltenOreModuleTests::fairness));
+                        MoltenOreModuleTests::fairness),
+                new TestFunction(BATCH + "_real", "gtlmodular.molten_ore_real_shell",
+                        MoltenOreTestLayout.templateId().toString(), 2400, 0, true,
+                        MoltenOreModuleTests::realShellForms));
     }
 
     private static void hostForms(GameTestHelper helper) {
@@ -212,6 +215,47 @@ public final class MoltenOreModuleTests {
                 .thenSucceed();
     }
 
+    private static void realShellForms(GameTestHelper helper) {
+        var level = helper.getLevel();
+        var player = GameTestMachines.player(helper, "MoltenOreRealShell");
+        MachineDefinition definition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "molten_space_ore_module_real"));
+        helper.assertTrue(definition != null, "真实外壳测试模块未注册");
+        var pos = helper.absolutePos(MoltenOreTestLayout.modulePosition());
+        var moduleBase = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(
+                new ResourceLocation("kubejs", "module_base"));
+        helper.assertTrue(moduleBase != null, "缺少 module_base");
+        for (BlockPos base : realBaseOffsets(pos)) {
+            level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
+        }
+        var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
+        helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "真实外壳类型不符");
+        var module = (WorkableElectricMultiblockMachine) placed;
+        build(helper, module, pos, player);
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(module.isFormed(), "真实 15×31×11 外壳未成形"))
+                .thenSucceed();
+    }
+
+    private static BlockPos[] realBaseOffsets(BlockPos p) {
+        return new BlockPos[]{
+                p.offset(-2, -4, 6), p.offset(2, -4, 6), p.offset(-2, -4, 5), p.offset(2, -4, 5),
+                p.offset(-2, -4, 4), p.offset(2, -4, 4), p.offset(-2, -3, 4), p.offset(2, -3, 4),
+                p.offset(-2, -4, 3), p.offset(2, -4, 3), p.offset(-2, -3, 3), p.offset(2, -3, 3),
+                p.offset(-2, -4, 2), p.offset(2, -4, 2), p.offset(-2, -3, 2), p.offset(2, -3, 2),
+                p.offset(-2, -4, 1), p.offset(2, -4, 1), p.offset(-2, -3, 1), p.offset(2, -3, 1),
+                p.offset(-2, -4, 0), p.offset(2, -4, 0), p.offset(-2, -3, 0), p.offset(2, -3, 0),
+                p.offset(-2, -4, -1), p.offset(2, -4, -1), p.offset(-2, -3, -1), p.offset(-1, -3, -1),
+                p.offset(0, -3, -1), p.offset(1, -3, -1), p.offset(2, -3, -1), p.offset(-2, -4, -2),
+                p.offset(2, -4, -2), p.offset(-2, -3, -2), p.offset(-1, -3, -2), p.offset(0, -3, -2),
+                p.offset(1, -3, -2), p.offset(2, -3, -2), p.offset(-2, -4, -3), p.offset(-1, -4, -3),
+                p.offset(0, -4, -3), p.offset(1, -4, -3), p.offset(2, -4, -3), p.offset(-2, -3, -3),
+                p.offset(-1, -3, -3), p.offset(0, -3, -3), p.offset(1, -3, -3), p.offset(2, -3, -3),
+                p.offset(-2, -4, -4), p.offset(-1, -4, -4), p.offset(0, -4, -4), p.offset(1, -4, -4),
+                p.offset(2, -4, -4)
+        };
+    }
+
     private static void addFairRecipe(GameTestHelper helper, WorkableElectricMultiblockMachine module,
                                       net.minecraft.world.level.material.Fluid fluid, String id) {
         GTRecipe recipe = GTRecipeBuilder.of(new ResourceLocation("gtlmodular", id), module.getRecipeType())
@@ -373,7 +417,8 @@ public final class MoltenOreModuleTests {
             MultiblockState state = new MultiblockState(helper.getLevel(), pos);
             machine.getPattern().autoBuild(player, state);
             helper.assertTrue(machine.getPattern().checkPatternAt(state, true),
-                    "结构未匹配：" + machine.getDefinition().getId());
+                    "结构未匹配：" + machine.getDefinition().getId() + " err="
+                            + (state.error == null ? "none" : state.error.getErrorInfo().getString()));
         } finally {
             machine.getPatternLock().unlock();
         }

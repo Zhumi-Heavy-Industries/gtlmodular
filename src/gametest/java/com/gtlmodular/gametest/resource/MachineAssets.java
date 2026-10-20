@@ -58,6 +58,9 @@ final class MachineAssets {
                     new ResourceLocation("gtceu:block/multiblock/fusion_reactor"));
             case "molten_space_ore_module" -> audit.workable(new ResourceLocation("gtlcore:block/space_elevator_mechanical_casing"),
                     new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "molten_space_ore_module_real" -> audit.workable(
+                    new ResourceLocation("gtlcore:block/space_elevator_mechanical_casing"),
+                    new ResourceLocation("gtceu:block/multiblock/data_bank"));
             case "buffered_me_output_buffer" -> {
                 String voltage = "gtceu:block/casings/voltage/" + GTValues.VN[definition.getTier()].toLowerCase(Locale.ROOT);
                 audit.model("gtceu:block/machine/hull_machine",
