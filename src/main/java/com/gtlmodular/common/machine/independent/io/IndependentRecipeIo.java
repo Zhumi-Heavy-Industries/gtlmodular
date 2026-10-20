@@ -2,6 +2,7 @@ package com.gtlmodular.common.machine.independent.io;
 
 import com.gregtechceu.gtceu.api.capability.recipe.*;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
+import com.gregtechceu.gtceu.api.machine.trait.ItemHandlerProxyRecipeTrait;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
@@ -151,6 +152,10 @@ public final class IndependentRecipeIo {
         }
 
         private void add(IRecipeHandler<?> handler) {
+            if (handler instanceof ItemHandlerProxyRecipeTrait proxy) {
+                proxy.getHandlers().forEach(this::add);
+                return;
+            }
             if (seen.put(handler, true) == null) handlers.computeIfAbsent(handler.getCapability(), cap -> new ArrayList<>()).add(handler);
         }
 
