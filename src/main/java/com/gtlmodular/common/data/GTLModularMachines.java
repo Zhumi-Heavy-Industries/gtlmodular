@@ -298,6 +298,8 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         TraceabilityPredicate casing = SpaceOreModulePattern.casing()
                 .or(com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_ITEMS,
                         com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_FLUIDS,
                         com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS,
                         com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY));

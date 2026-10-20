@@ -9,6 +9,7 @@ import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTMachines;
 import com.gregtechceu.gtceu.common.machine.multiblock.part.EnergyHatchPartMachine;
 import com.gregtechceu.gtceu.common.machine.multiblock.part.FluidHatchPartMachine;
+import com.gregtechceu.gtceu.common.machine.multiblock.part.ItemBusPartMachine;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
@@ -20,6 +21,8 @@ import net.minecraft.gametest.framework.GameTestGenerator;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.gametest.framework.TestFunction;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.common.util.FakePlayer;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
@@ -236,10 +239,9 @@ public final class MoltenOreModuleTests {
         for (BlockPos base : realBaseOffsets(pos)) {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
-        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(-2, 0, 1));
-        placePart(helper, player, GTMachines.FLUID_IMPORT_HATCH[1], pos.offset(2, 0, 1));
+        placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[1], pos.offset(-2, 0, 1));
+        placePart(helper, player, GTMachines.ITEM_EXPORT_BUS[1], pos.offset(2, 0, 1));
         placePart(helper, player, GTMachines.ENERGY_INPUT_HATCH[1], pos.offset(-2, 0, -1));
-        placePart(helper, player, GTMachines.FLUID_EXPORT_HATCH[1], pos.offset(2, 0, -1));
         var placed = GameTestMachines.place(helper, player, definition, pos, Direction.NORTH);
         helper.assertTrue(placed instanceof WorkableElectricMultiblockMachine, "真实外壳类型不符");
         var module = (WorkableElectricMultiblockMachine) placed;
@@ -262,17 +264,17 @@ public final class MoltenOreModuleTests {
                 .thenExecute(() -> {
                     module.getRecipeType().getLookup().removeAllRecipes();
                     GTRecipe recipe = GTRecipeBuilder.of(
-                                    new ResourceLocation("gtlmodular", "real_shell_water"),
+                                    new ResourceLocation("gtlmodular", "real_shell_item"),
                                     module.getRecipeType())
-                            .inputFluids(FluidStack.create(Fluids.WATER, 1_000L))
-                            .outputFluids(FluidStack.create(Fluids.WATER, 1_000L))
+                            .inputItems(new ItemStack(Items.STONE))
+                            .outputItems(new ItemStack(Items.DIRT))
                             .duration(20)
                             .EUt(32)
                             .buildRawRecipe();
                     helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe),
                             "真实外壳测试配方注入失败");
-                    if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof FluidHatchPartMachine hatch) {
-                        hatch.tank.setFluidInTank(0, FluidStack.create(Fluids.WATER, 1_000L));
+                    if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof ItemBusPartMachine bus) {
+                        bus.getInventory().setStackInSlot(0, new ItemStack(Items.STONE));
                     }
                     if (MetaMachine.getMachine(level, pos.offset(-2, 0, -1)) instanceof EnergyHatchPartMachine hatch) {
                         hatch.energyContainer.setEnergyStored(hatch.energyContainer.getEnergyCapacity());
@@ -291,13 +293,13 @@ public final class MoltenOreModuleTests {
                 })
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "真实外壳引擎没有开批: reason=" + reason()))
-                .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos), "真实外壳没有输出流体"))
+                .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos), "真实外壳没有输出物品"))
                 .thenSucceed();
     }
 
     private static boolean realOutput(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
-        return MetaMachine.getMachine(level, pos.offset(2, 0, -1)) instanceof FluidHatchPartMachine hatch
-                && hatch.tank.getFluidInTank(0).getAmount() > 0L;
+        return MetaMachine.getMachine(level, pos.offset(2, 0, 1)) instanceof ItemBusPartMachine bus
+                && bus.getInventory().getStackInSlot(0).is(Items.DIRT);
     }
 
     private static BlockPos[] realBaseOffsets(BlockPos p) {
