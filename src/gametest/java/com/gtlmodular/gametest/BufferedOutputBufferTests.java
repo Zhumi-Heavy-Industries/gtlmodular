@@ -1,9 +1,13 @@
 package com.gtlmodular.gametest;
 
 import appeng.api.config.Actionable;
+import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEItemKey;
+import appeng.api.storage.MEStorage;
 import appeng.blockentity.networking.EnergyCellBlockEntity;
+import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.core.definitions.AEBlocks;
+import appeng.core.definitions.AEItems;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
@@ -49,7 +53,8 @@ public final class BufferedOutputBufferTests {
                 function("void_simulate", BufferedOutputBufferTests::voidModeSimulateReturnsEmpty),
                 function("void_log_once", BufferedOutputBufferTests::voidModeLogsOnceWithCoords),
                 function("return_mode", BufferedOutputBufferTests::returnModeKeepsFiltered),
-                function("offline_keeps_remainder", BufferedOutputBufferTests::offlineKeepsRemainder));
+                function("offline_keeps_remainder", BufferedOutputBufferTests::offlineKeepsRemainder),
+                function("storage_simulate", BufferedOutputBufferTests::storageSimulate));
     }
 
     @AfterBatch(batch = BATCH + "_void_simulate")
@@ -147,6 +152,47 @@ public final class BufferedOutputBufferTests {
                 definition, pos, Direction.NORTH);
         helper.assertTrue(machine instanceof MEExtendedOutputPartMachine, "机器类型不符");
         return (MEExtendedOutputPartMachine) machine;
+    }
+
+    private static void storageSimulate(GameTestHelper helper) {
+        var level = helper.getLevel();
+        BlockPos pos = helper.absolutePos(new BlockPos(20, 5, 20));
+        BlockPos cellPos = pos.east();
+        BlockPos drivePos = cellPos.east();
+        level.setBlockAndUpdate(cellPos, AEBlocks.CREATIVE_ENERGY_CELL.block().defaultBlockState());
+        level.setBlockAndUpdate(drivePos, AEBlocks.DRIVE.block().defaultBlockState());
+        if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
+            drive.getInternalInventory().setItemDirect(0, AEItems.ITEM_CELL_1K.stack());
+        }
+        MachineDefinition definition = GTRegistries.MACHINES.get(
+                new ResourceLocation("gtlmodular", "buffered_me_output_buffer"));
+        helper.assertTrue(definition != null, "机器未注册: buffered_me_output_buffer");
+        var machine = GameTestMachines.place(helper, GameTestMachines.player(helper, "BufferedStorage"),
+                definition, pos, Direction.NORTH);
+        machine.setFrontFacing(Direction.EAST);
+        helper.assertTrue(machine instanceof MEExtendedOutputPartMachine, "机器类型不符");
+        var part = (MEExtendedOutputPartMachine) machine;
+        helper.startSequence()
+                .thenWaitUntil(() -> helper.assertTrue(part.getMainNode().isActive(),
+                        "输出总成节点未激活"))
+                .thenExecute(() -> helper.assertTrue(handleDirt(part, true).isEmpty(),
+                        "有存储时 simulate 应返回空余量"))
+                .thenExecute(() -> helper.assertTrue(handleDirt(part, false).isEmpty(),
+                        "有存储时真实交付应成功"))
+                .thenExecute(() -> {
+                    if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
+                        MEStorage storage = drive.getCellInventory(0);
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
+                                Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 dirt");
+                    }
+                })
+                .thenSucceed();
+    }
+
+    private static List<Ingredient> handleDirt(MEExtendedOutputPartMachine part, boolean simulate) {
+        var contents = new ObjectArrayList<Ingredient>();
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 64));
+        return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 
     private static MEExtendedOutputPartMachine build(GameTestHelper helper) {
