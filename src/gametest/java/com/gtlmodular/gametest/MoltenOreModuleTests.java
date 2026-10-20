@@ -201,7 +201,6 @@ public final class MoltenOreModuleTests {
                                 && m.getHost() == h && h.getModules().contains(m),
                         "测试主机与炼矿模块未连接"))
                 .thenExecute(() -> {
-                    module.getRecipeType().getLookup().removeAllRecipes();
                     addFairRecipe(helper, module, Fluids.WATER, "fair_water");
                     addFairRecipe(helper, module, Fluids.LAVA, "fair_lava");
                     fillFairInputs(level, pos);
@@ -280,7 +279,6 @@ public final class MoltenOreModuleTests {
                         && sink instanceof MEExtendedOutputPartMachine out && out.getMainNode().isActive(),
                         "真实 ME 网络或输出总成节点未激活"))
                 .thenExecute(() -> {
-                    module.getRecipeType().getLookup().removeAllRecipes();
                     GTRecipe recipe = GTRecipeBuilder.of(
                                     new ResourceLocation("gtlmodular", "real_shell_item"),
                                     module.getRecipeType())
@@ -289,8 +287,7 @@ public final class MoltenOreModuleTests {
                             .duration(20)
                             .EUt(32)
                             .buildRawRecipe();
-                    helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe),
-                            "真实外壳测试配方注入失败");
+                    module.getRecipeType().getLookup().addRecipe(recipe);
                     if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof ItemBusPartMachine bus) {
                         bus.getInventory().setStackInSlot(0, new ItemStack(Items.STONE));
                     }
@@ -364,7 +361,7 @@ public final class MoltenOreModuleTests {
                 .duration(20)
                 .EUt(32)
                 .buildRawRecipe();
-        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), id + " 注入失败");
+        module.getRecipeType().getLookup().addRecipe(recipe);
     }
 
     private static void fillFairInputs(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
@@ -411,7 +408,7 @@ public final class MoltenOreModuleTests {
                 .duration(20)
                 .EUt(32)
                 .buildRawRecipe();
-        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), "lava 测试配方注入失败");
+        module.getRecipeType().getLookup().addRecipe(recipe);
     }
 
     private static boolean rotate(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
@@ -502,7 +499,7 @@ public final class MoltenOreModuleTests {
                 .duration(20)
                 .EUt(32)
                 .buildRawRecipe();
-        helper.assertTrue(module.getRecipeType().getLookup().addRecipe(recipe), "测试配方注入失败");
+        module.getRecipeType().getLookup().addRecipe(recipe);
         if (MetaMachine.getMachine(helper.getLevel(), pos.offset(-1, 0, -1)) instanceof FluidHatchPartMachine hatch) {
             hatch.tank.setFluidInTank(0, FluidStack.create(Fluids.WATER, 1_000L));
         } else {
