@@ -222,11 +222,6 @@ public final class IndependentMachineController {
         logic.updateTickSubscription();
     }
 
-    /** ME 网络重连后由输出件/宿主调用，丢弃可能缓存的输出容量判断并重新开批。 */
-    public void networkChanged() {
-        invalidateRuntime();
-    }
-
     public void load(CompoundTag tag) {
         if (!tag.contains(IndependentBatchPersistence.ROOT_KEY)) return;
         // 读档可能早于首个服务端 tick；排空必须由 tick 使用已发布的配置决定。

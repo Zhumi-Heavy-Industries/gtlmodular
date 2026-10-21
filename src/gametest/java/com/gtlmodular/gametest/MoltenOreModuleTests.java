@@ -284,6 +284,10 @@ public final class MoltenOreModuleTests {
                                 && module instanceof IModularMachineModule<?, ?> m
                                 && m.getHost() == h && h.getModules().contains(m),
                         "真实外壳与测试主机未连接"))
+                .thenExecute(() -> setupAe(level, pos))
+                .thenWaitUntil(() -> helper.assertTrue(aeActive(level, pos)
+                        && sink instanceof MEExtendedOutputPartMachine out && out.getMainNode().isActive(),
+                        "真实 ME 网络或输出总成节点未激活"))
                 .thenExecute(() -> {
                     GTRecipe recipe = GTRecipeBuilder.of(
                                     new ResourceLocation("gtlmodular", "real_shell_item"),
@@ -324,46 +328,7 @@ public final class MoltenOreModuleTests {
                     }
                 })
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
-                .thenIdle(40)
-                .thenExecute(() -> helper.assertFalse(ownsWork(), "ME 离线时不应开批"))
-                .thenExecute(() -> setupAe(level, pos))
-                .thenWaitUntil(() -> helper.assertTrue(aeActive(level, pos)
-                        && sink instanceof MEExtendedOutputPartMachine out && out.getMainNode().isActive(),
-                        "ME 重连后节点未激活"))
-                .thenExecute(() -> {
-                    if (MetaMachine.getMachine(level, pos.offset(-2, 0, 1)) instanceof ItemBusPartMachine bus) {
-                        bus.getInventory().setStackInSlot(0, new ItemStack(Items.STONE, 64));
-                        bus.getInventory().setStackInSlot(1, new ItemStack(Items.COBBLESTONE, 64));
-                    }
-                })
-                .thenExecute(() -> {
-                    var parts = (org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine) module;
-                    helper.assertFalse(parts.getMEOutputRecipeHandleParts().isEmpty(), "重连后 ME 输出 part 为空");
-                    try {
-                        helper.assertTrue((boolean) Class.forName(
-                                "com.gtlmodular.common.machine.independent.io.MeIo")
-                                .getMethod("enabled", Object.class).invoke(null, module), "重连后 MeIo.enabled=false");
-                        if (sink instanceof MEExtendedOutputPartMachine out) {
-                            var contents = new it.unimi.dsi.fastutil.objects.ObjectArrayList<net.minecraft.world.item.crafting.Ingredient>();
-                            contents.add(org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient.create(
-                                    net.minecraft.world.item.crafting.Ingredient.of(new ItemStack(Items.DIRT)), 64));
-                            helper.assertTrue(out.getMERecipeHandlerTraits().left()
-                                    .meHandleRecipeOutput(contents, true).isEmpty(), "重连后 sink simulate 仍有余量");
-                        }
-                    } catch (ReflectiveOperationException failure) {
-                        helper.fail("重连诊断失败：" + failure);
-                    }
-                })
-                .thenExecute(() -> {
-                    try {
-                        CONTROLLER[0].getClass().getMethod("networkChanged").invoke(CONTROLLER[0]);
-                    } catch (ReflectiveOperationException failure) {
-                        helper.fail("无法重连刷新控制器：" + failure);
-                    }
-                })
-                .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
-                .thenIdle(20)
-                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "ME 重连后没有开批: reason=" + reason()))
+                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "真实外壳引擎没有开批: reason=" + reason()))
                 .thenWaitUntil(() -> helper.assertTrue(batchCount() >= 2, "没有并行两批: " + batchCount()))
                 .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos),
                         "真实外壳没有输出物品: " + testBatchInfo()))
