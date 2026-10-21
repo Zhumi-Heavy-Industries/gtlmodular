@@ -185,9 +185,9 @@ public final class BufferedOutputBufferTests {
                 .thenExecute(() -> {
                     if (level.getBlockEntity(drivePos) instanceof DriveBlockEntity drive) {
                         MEStorage storage = drive.getCellInventory(0);
-                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1_000_000L,
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 9_223_372_036_854_775_807L,
                                 Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 dirt");
-                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 1_000_000L,
+                        helper.assertTrue(storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 9_223_372_036_854_775_807L,
                                 Actionable.SIMULATE, IActionSource.empty()) > 0L, "驱动里没有 sand");
                     }
                 })
@@ -196,14 +196,14 @@ public final class BufferedOutputBufferTests {
 
     private static List<Ingredient> handleTwo(MEExtendedOutputPartMachine part, boolean simulate) {
         var contents = new ObjectArrayList<Ingredient>();
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 1_000_000L));
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.SAND)), 1_000_000L));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 9_223_372_036_854_775_807L));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.SAND)), 9_223_372_036_854_775_807L));
         return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 
     private static List<Ingredient> handleDirt(MEExtendedOutputPartMachine part, boolean simulate) {
         var contents = new ObjectArrayList<Ingredient>();
-        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 1_000_000L));
+        contents.add(LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 9_223_372_036_854_775_807L));
         return part.getMERecipeHandlerTraits().left().meHandleRecipeOutput(contents, simulate);
     }
 
