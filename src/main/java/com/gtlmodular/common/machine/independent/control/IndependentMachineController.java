@@ -32,6 +32,7 @@ public final class IndependentMachineController {
     private GtIndependentBatchHost host;
     private IndependentBatchPolicy<IndependentRecipePayload> policy;
     private String reason;
+    private long lastIoRecovery;
     private final IndependentTickGuard tickGuard = new IndependentTickGuard();
     private boolean detached;
 
@@ -186,6 +187,14 @@ public final class IndependentMachineController {
                     Math.max(0, adapter.threads()), adapter.totalBudget()), policy);
             host.finishAdmissions(session::updateUnstartedDuration);
             reason = !formed ? "结构未成形，保留批次" : paused ? "机器已暂停，保留批次" : host.runtime().admissionReason();
+            if (!ownsWork() && reason != null && reason.contains("开工输入或输出容量不足")
+                    && now - lastIoRecovery >= 20L) {
+                // 输出件网络恢复不会通知本控制器；周期性丢弃缓存的容量判断，等待下一 tick 重建。
+                lastIoRecovery = now;
+                host = null;
+                policy = null;
+                reason = null;
+            }
             if (!hadWork && !ownsWork()) {
                 tickGuard.passThrough();
                 return false;
