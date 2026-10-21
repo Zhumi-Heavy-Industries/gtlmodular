@@ -330,9 +330,24 @@ public final class MoltenOreModuleTests {
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "真实外壳引擎没有开批: reason=" + reason()))
                 .thenWaitUntil(() -> helper.assertTrue(batchCount() >= 2, "没有并行两批: " + batchCount()))
+                .thenExecute(() -> reloadController(module, helper))
+                .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "读档后批次没有恢复: " + testBatchInfo()))
                 .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos),
                         "真实外壳没有输出物品: " + testBatchInfo()))
                 .thenSucceed();
+    }
+
+    private static void reloadController(WorkableElectricMultiblockMachine module, GameTestHelper helper) {
+        try {
+            var tag = new net.minecraft.nbt.CompoundTag();
+            CONTROLLER[0].getClass().getMethod("save", net.minecraft.nbt.CompoundTag.class, boolean.class)
+                    .invoke(CONTROLLER[0], tag, false);
+            CONTROLLER[0].getClass().getMethod("load", net.minecraft.nbt.CompoundTag.class)
+                    .invoke(CONTROLLER[0], tag);
+            module.getRecipeLogic().updateTickSubscription();
+        } catch (ReflectiveOperationException failure) {
+            helper.fail("无法完成批次存档恢复：" + failure);
+        }
     }
 
     private static void assertPowerModules(GameTestHelper helper, WorkableElectricMultiblockMachine module) {
