@@ -248,6 +248,10 @@ public final class MoltenOreModuleTests {
         for (BlockPos base : realBaseOffsets(pos)) {
             level.setBlockAndUpdate(base, moduleBase.defaultBlockState());
         }
+        var power7 = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getValue(
+                new ResourceLocation("gtlcore", "power_module_7"));
+        helper.assertTrue(power7 != null, "缺少 MK7 动力模块");
+        level.setBlockAndUpdate(pos.offset(-2, 7, 1), power7.defaultBlockState());
         placePart(helper, player, GTMachines.ITEM_IMPORT_BUS[2], pos.offset(-2, 0, 1));
         var creativeEnergy = GTRegistries.MACHINES.get(
                 new ResourceLocation("gtmthings", "creative_energy_hatch"));
@@ -267,6 +271,7 @@ public final class MoltenOreModuleTests {
         helper.startSequence()
                 .thenWaitUntil(() -> helper.assertTrue(host.isFormed() && module.isFormed(),
                         "测试主机或真实 15×31×11 外壳未成形"))
+                .thenExecute(() -> assertPowerModules(helper, module))
                 .thenExecute(() -> {
                     if (host instanceof IModularMachineHost<?> h && module instanceof IModularMachineModule<?, ?> m) {
                         ((IModularMachineModule) m).connectToHost((IModularMachineHost) h);
@@ -331,6 +336,19 @@ public final class MoltenOreModuleTests {
                 .thenWaitUntil(() -> helper.assertTrue(realOutput(level, pos),
                         "真实外壳没有输出物品: " + testBatchInfo()))
                 .thenSucceed();
+    }
+
+    private static void assertPowerModules(GameTestHelper helper, WorkableElectricMultiblockMachine module) {
+        try {
+            int tier = (int) module.getClass().getMethod("powerModuleTier").invoke(module);
+            int count = (int) module.getClass().getMethod("powerModuleCount").invoke(module);
+            int threads = (int) module.getClass().getMethod("totalThreads").invoke(module);
+            helper.assertTrue(tier >= 7, "真实动力模块等级未生效: " + tier);
+            helper.assertTrue(count > 0, "没有识别到动力模块");
+            helper.assertTrue(threads > 64, "MK7 动力模块没有提高线程数: " + threads);
+        } catch (ReflectiveOperationException failure) {
+            helper.fail("无法检查真实动力模块：" + failure);
+        }
     }
 
     private static void setupAe(net.minecraft.server.level.ServerLevel level, BlockPos pos) {
