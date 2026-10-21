@@ -1,6 +1,8 @@
 package com.gtlmodular.common.machine.independent.io;
 
 import com.gregtechceu.gtceu.api.capability.recipe.*;
+import com.gregtechceu.gtceu.integration.ae2.slot.ExportOnlyAEFluidList;
+import com.gregtechceu.gtceu.integration.ae2.slot.ExportOnlyAEItemList;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableEnergyContainer;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableFluidTank;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableItemStackHandler;
@@ -31,6 +33,8 @@ final class StorageTransfers {
 
     static void requireSupported(IRecipeHandler<?> handler) {
         if (handler instanceof InfinityEnergyContainer) return;
+        // AE 只输出仓：容量由 ME 网络决定，真实数量由上游 handleRecipeInner 计数（模拟/真实都返回余量）。
+        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) return;
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) return;
         // 子类可能加入隔离、催化或无限库存语义；这里只允许已核实的具体处理器和存储。
         if (handler.getClass() == NotifiableItemStackHandler.class) {
@@ -66,6 +70,10 @@ final class StorageTransfers {
 
     void move(IRecipeHandler<?> handler, IO io, Content content) {
         requireSupported(handler);
+        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) {
+            moveViaHandler(handler, io, content);
+            return;
+        }
         if (handler instanceof InfinityEnergyContainer) {
             // 创造能源仓本身无上限，也不走 EnergyDebitContext；视为本 tick 已足额供能。
             if (io == IO.IN) content.content = 0L;
@@ -93,6 +101,23 @@ final class StorageTransfers {
                 fluid(storage, io, content);
             }
         }
+    }
+
+    /**
+     * AE 只输出仓没有可直接搬运的 FluidStorage/ItemStackTransfer：它们的真实去向是 ME 网络。
+     * 这里直接用上游的 handleRecipeInner 计数：它消费多少、返回多少余量，我们都按返回值回写。
+     */
+    @SuppressWarnings("unchecked")
+    private void moveViaHandler(IRecipeHandler<?> handler, IO io, Content content) {
+        if (io != IO.OUT) return;
+        var cap = (RecipeCapability<Object>) handler.getCapability();
+        if (BatchContents.amount(cap, content.content) <= 0) return;
+        var input = new java.util.ArrayList<Object>();
+        input.add(content.content);
+        IRecipeHandler<Object> raw = (IRecipeHandler<Object>) handler;
+        List<Object> left = raw.handleRecipeInner(io, null, input, null, simulate);
+        long remaining = left == null || left.isEmpty() ? 0 : BatchContents.amount(cap, left.get(0));
+        BatchContents.amount(cap, content, remaining);
     }
 
     private void item(ItemStackTransfer storage, IO io, Content content) {
