@@ -30,6 +30,8 @@ import net.minecraft.gametest.framework.TestFunction;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.Ingredient;
+import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
 import net.minecraft.world.level.material.Fluids;
 import net.minecraftforge.common.util.FakePlayer;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
@@ -286,10 +288,14 @@ public final class MoltenOreModuleTests {
                                     new ResourceLocation("gtlmodular", "real_shell_item"),
                                     module.getRecipeType())
                             .inputItems(new ItemStack(Items.STONE))
-                            .outputItems(new ItemStack(Items.DIRT))
+                            .outputItems((Ingredient) LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 1_000_000L))
                             .duration(20)
                             .EUt(32)
                             .buildRawRecipe();
+                    recipe.outputs.put(com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability.CAP,
+                            new java.util.ArrayList<>(java.util.List.of(new com.gregtechceu.gtceu.api.recipe.content.Content(
+                                    LongIngredient.create(Ingredient.of(new ItemStack(Items.DIRT)), 1_000_000L),
+                                    10000, 10000, 0, null, null))));
                     module.getRecipeType().getLookup().addRecipe(recipe);
                     GTRecipe sand = GTRecipeBuilder.of(
                                     new ResourceLocation("gtlmodular", "real_shell_sand"),
@@ -351,7 +357,7 @@ public final class MoltenOreModuleTests {
         if (!(level.getBlockEntity(pos.offset(4, 0, -1)) instanceof DriveBlockEntity drive)) return false;
         MEStorage storage = drive.getCellInventory(0);
         return storage != null
-                && storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1L,
+                && storage.extract(AEItemKey.of(new ItemStack(Items.DIRT)), 1_000_000L,
                         Actionable.SIMULATE, IActionSource.empty()) > 0L
                 && storage.extract(AEItemKey.of(new ItemStack(Items.SAND)), 1L,
                         Actionable.SIMULATE, IActionSource.empty()) > 0L;
