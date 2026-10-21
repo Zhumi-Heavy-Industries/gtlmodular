@@ -275,6 +275,8 @@ public final class IndependentMachineController {
 
     public List<Component> display() {
         if (!ownsWork() && !IndependentMachineRegistry.eligible(logic)) return List.of();
+        // 没接管、又适配不了这族逻辑/仓室时，机器会继续走上游逻辑，不该显示「等待」误导玩家。
+        if (!ownsWork() && !selection().supported()) return List.of();
         List<Component> text = new ArrayList<>();
         var batches = session == null ? List.<IndependentSessionSnapshot.Batch<IndependentRecipePayload>>of() : session.batches();
         long pending = batches.stream().filter(batch -> batch.phase() == IndependentSessionSnapshot.Phase.PENDING_SETTLEMENT).count();
