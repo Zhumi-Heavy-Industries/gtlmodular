@@ -354,6 +354,13 @@ public final class MoltenOreModuleTests {
                         helper.fail("重连诊断失败：" + failure);
                     }
                 })
+                .thenExecute(() -> {
+                    try {
+                        CONTROLLER[0].getClass().getMethod("networkChanged").invoke(CONTROLLER[0]);
+                    } catch (ReflectiveOperationException failure) {
+                        helper.fail("无法重连刷新控制器：" + failure);
+                    }
+                })
                 .thenExecute(() -> module.getRecipeLogic().updateTickSubscription())
                 .thenIdle(20)
                 .thenWaitUntil(() -> helper.assertTrue(ownsWork(), "ME 重连后没有开批: reason=" + reason()))
