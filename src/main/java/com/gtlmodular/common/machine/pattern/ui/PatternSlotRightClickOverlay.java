@@ -1,5 +1,7 @@
 package com.gtlmodular.common.machine.pattern.ui;
 
+import com.gtlmodular.GTLModular;
+
 import com.lowdragmc.lowdraglib.gui.widget.Widget;
 import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
 import net.minecraft.network.FriendlyByteBuf;
@@ -8,19 +10,16 @@ import org.gtlcore.gtlcore.integration.ae2.widget.AEPatternViewExtendSlotWidget;
 import java.util.function.IntConsumer;
 
 public final class PatternSlotRightClickOverlay extends WidgetGroup {
-    private static final int ACTION_OPEN_CATALYST_SLOT = 20;
     private static final int ACTION_ASSIGN_MODE_SLOT = 21;
 
     private final WidgetGroup base;
     private final IntConsumer assignModeSlot;
-    private final IntConsumer openCatalystSlot;
 
     public PatternSlotRightClickOverlay(WidgetGroup base, int width, int height,
-                                        IntConsumer assignModeSlot, IntConsumer openCatalystSlot) {
+                                        IntConsumer assignModeSlot) {
         super(0, 0, width, height);
         this.base = base;
         this.assignModeSlot = assignModeSlot;
-        this.openCatalystSlot = openCatalystSlot;
     }
 
     @Override
@@ -35,13 +34,12 @@ public final class PatternSlotRightClickOverlay extends WidgetGroup {
         if (slot < 0) {
             return false;
         }
-        boolean assign = net.minecraft.client.gui.screens.Screen.hasShiftDown();
-        if (!assign) {
-            // 本侧先跑一遍再发包：页签展开、页面控件都要在本帧建好，等服务端回包再建会让首包内容对不上。
-            openCatalystSlot.accept(slot);
+        // 专属催化剂槽不再由本模组提供：这里只在 Shift+中键/右键时接管，普通点击一律透传。
+        if (!net.minecraft.client.gui.screens.Screen.hasShiftDown()) {
+            return false;
         }
-        writeClientAction(assign ? ACTION_ASSIGN_MODE_SLOT : ACTION_OPEN_CATALYST_SLOT,
-                buffer -> buffer.writeVarInt(slot));
+        GTLModular.LOGGER.info("[gtlmodular] 中键入口(覆盖层): 槽={} 动作=指定模式", slot + 1);
+        writeClientAction(ACTION_ASSIGN_MODE_SLOT, buffer -> buffer.writeVarInt(slot));
         return true;
     }
 
@@ -52,10 +50,7 @@ public final class PatternSlotRightClickOverlay extends WidgetGroup {
             assignModeSlot.accept(buffer.readVarInt());
             return;
         }
-        if (id != ACTION_OPEN_CATALYST_SLOT) {
-            return;
-        }
-        openCatalystSlot.accept(buffer.readVarInt());
+
     }
 
     private static boolean handsNotEmpty() {

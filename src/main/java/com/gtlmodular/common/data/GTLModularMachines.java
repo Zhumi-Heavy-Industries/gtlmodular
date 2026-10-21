@@ -160,7 +160,6 @@ public final class GTLModularMachines {
                 Component.translatable("gtlmodular.pattern_assembly.tooltip.2"),
                 Component.translatable("gtlmodular.pattern_assembly.tooltip.3"),
                 Component.translatable("gtlmodular.pattern_assembly.tooltip.4"),
-                Component.translatable("gtlmodular.pattern_assembly.tooltip.5"),
                 Component.translatable("gtlmodular.pattern_assembly.tooltip.6"),
                 Component.translatable("gtlmodular.pattern_assembly.tooltip.7"),
         };

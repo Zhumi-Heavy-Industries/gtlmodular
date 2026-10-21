@@ -2728,23 +2728,12 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 .setOnConfirm(this::onPlayerConfirmedCustomName)
                 .setButtonTooltips(Component.translatable("gui.gtceu.rename.desc")));
         group.addWidget(paginationUIManager.createPaginationUI(slot -> {
-            setCatalystViewSlot(slot + 1);
-            setCatalystPageOpen(true);
         }));
-        // LDLib 从末尾开始派发点击，覆盖层须放在分页控件之后。
+        // LDLib 从末尾开始派发点击，覆盖层须放在分页控件之后；现在只负责 Shift+中键/右键指定模式。
         group.addWidget(new PatternSlotRightClickOverlay(group, width, height,
                 slot -> {
                     setManualAssignSlot(slot + 1);
                     assignManualType(slot + 1, false);
-                }, slot -> {
-                    setManualAssignSlot(slot + 1);
-                    CatalystAccessConfigurator page = activeCatalystPage;
-                    if (page != null) {
-                        page.openSlotFromPattern(slot);
-                    } else {
-                        setCatalystViewSlot(slot + 1);
-                        setCatalystPageOpen(true);
-                    }
                 }));
         return group;
     }
@@ -2813,14 +2802,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         super.attachConfigurators(panel);
         List<IFancyConfigurator> pages = new ArrayList<>();
         pages.add(new ModeScaleConfigurator(this));
-        CatalystAccessConfigurator catalystPage = new CatalystAccessConfigurator(this);
-        this.activeCatalystPage = catalystPage;
-        pages.add(catalystPage);
         panel.attachConfigurators(pages.toArray(new IFancyConfigurator[0]));
-        int before = panel.getTabs().size() - pages.size();
-        List<ConfiguratorPanel.Tab> tabs = panel.getTabs();
-        int catalystTabIndex = before + pages.size() - 1;
-        catalystPage.bindPanel(panel, tabs.size() > catalystTabIndex ? tabs.get(catalystTabIndex) : null);
         // 催化剂页缓存自己的 tab 下标，归档页须在其后追加，避免右键选槽打开错误页面。
         try {
             int archiveTabBefore = panel.getTabs().size();
