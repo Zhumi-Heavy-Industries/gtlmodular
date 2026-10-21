@@ -169,8 +169,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         // 概率结果和实际余量也必须能保存，不能只验证未抽签的配方本体。
         codec.decode(codec.encode(payload));
         prepared.beforeInputs = BatchContents.copy(payload.remainders().get(INPUT));
-        return io.outputFits(payload.resolvedOutputs()) && prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN)
-                || waitFor(payload, "开工输入或输出容量不足");
+        boolean outputFits = io.outputFits(payload.resolvedOutputs());
+        boolean inputFits = prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN);
+        return outputFits && inputFits
+                || waitFor(payload, "开工输入或输出容量不足: out=" + outputFits + " in=" + inputFits);
     }
 
     @Override

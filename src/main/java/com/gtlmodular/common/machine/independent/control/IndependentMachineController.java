@@ -123,6 +123,8 @@ public final class IndependentMachineController {
 
     public boolean blockUpstreamStarts() {
         if (tickGuard.executing() || ownsWork()) return true;
+        // 已被引擎接管的机器即使本 tick 因输出/电量不足没开批，也不能让父类旧合批先扣料。
+        if (IndependentMachineRegistry.eligible(logic) && selection().supported()) return true;
         var level = logic.getMachine().getLevel();
         // 回退后，同一 tick 的合批、缓存重试和 setup 必须沿用放行决定。
         return level != null && tickGuard.repeated(level.getGameTime()) && tickGuard.blocksStarts();
@@ -218,6 +220,11 @@ public final class IndependentMachineController {
         policy = null;
         reason = "生命周期变化，保留批次并等待机器就绪";
         logic.updateTickSubscription();
+    }
+
+    /** ME 网络重连后由输出件/宿主调用，丢弃可能缓存的输出容量判断并重新开批。 */
+    public void networkChanged() {
+        invalidateRuntime();
     }
 
     public void load(CompoundTag tag) {
