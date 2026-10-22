@@ -83,7 +83,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     @Override
     public void admitted(GTRecipe recipe) {
         fairness.admitted(recipe.id, now());
-        candidateCache.invalidate();
+        // 不要在这里失效配方集合：一批结算就会重搜 999 条配方（实测 1~1.4 ms/次）。
+        // 集合只按 TTL 与配置/材料变化失效；准入本身仍逐条重新校验输入。
     }
 
     @Override
@@ -92,20 +93,38 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         matchTrueAt.clear();
         matchFalseAt.clear();
         scaledCache.clear();
+        demandCache.clear();
     }
 
     private long now() {
         return machine.getLevel() == null ? 0L : machine.getLevel().getGameTime();
     }
 
-    /** 空结果只做 20 tick 的短重试，不缓存空集：料一到最多 1 秒就能开工（对齐山海）。 */
+    /** 空结果暂停搜索：40 tick 起退避，连续为空翻倍到 200 tick（对齐山海「没匹配就暂停/缓存」）。 */
     private long emptyRetryAt = Long.MIN_VALUE;
+    private int emptyStreak;
 
     /** 缩放结果缓存：同配方同并行只缩一次，取用时再复制，避免批次之间共享可变对象。 */
+    private final java.util.IdentityHashMap<GTRecipe, long[]> demandCache = new java.util.IdentityHashMap<>();
+    private static final int DEMAND_CACHE_LIMIT = 256;
+
+    private long cachedDemand(GTRecipe origin, long now, long budget) {
+        long[] cached = demandCache.get(origin);
+        if (cached != null && now - cached[0] < 20L) return Math.min(cached[1], budget);
+        long demand = IParallelLogic.getMaxParallel(machine, origin, budget);
+        if (demandCache.size() >= DEMAND_CACHE_LIMIT) demandCache.clear();
+        demandCache.put(origin, new long[]{now, demand});
+        return demand;
+    }
+
+    private List<SingleRecipeCandidate> candidateSnapshot;
+    private long candidateSnapshotAt = Long.MIN_VALUE;
+    private String candidateSnapshotSignature = "";
+
     private final java.util.Map<Long, GTRecipe> scaledCache = new java.util.LinkedHashMap<>(32, 0.75F, true) {
         @Override
         protected boolean removeEldestEntry(java.util.Map.Entry<Long, GTRecipe> eldest) {
-            return size() > 128;
+            return size() > 512;
         }
     };
 
@@ -116,7 +135,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             cached = RecipeCandidateSnapshots.scale(origin, parallels);
             scaledCache.put(key, cached);
         }
-        return RecipeCandidateSnapshots.copy(cached);
+        // 只读共享：解析 tick 内容时已经把 Content 复制出来，批次不会改到这份缓存。
+        return cached;
     }
 
     private final java.util.IdentityHashMap<GTRecipe, Long> matchTrueAt = new java.util.IdentityHashMap<>();
@@ -249,10 +269,11 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             return found;
         });
         if (cached.isEmpty()) {
-            emptyRetryAt = now + 20L;
-            candidateCache.invalidate();
+            emptyStreak = Math.min(3, emptyStreak + 1);
+            emptyRetryAt = now + (40L << (emptyStreak - 1));
             return List.of();
         }
+        emptyStreak = 0;
         int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
         Map<ResourceLocation, Integer> active = activeRecipes.get();
         // 直接用缓存里的配方做排序，不再每 tick 复制 16 份；真正要开批时才按索引缩放。
@@ -269,9 +290,12 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             return List.of();
         }
         int scanBudget = GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget();
+        // 每轮只处理最久没被服务的 8 条候选，而不是把所有匹配配方（可能 70+）都缩放一遍；
+        // 轮转靠公平排序在后续 tick 覆盖其余配方。scanBudget 显式配置时优先。
+        // 扫描改成 5 tick 一次后，单次要补更多候选才能跟上结算速度（每 tick ~2.4 条）。
         int window = scanBudget > 0
                 ? Math.min(order.size(), scanBudget)
-                : Math.min(order.size(), availableSlots + 8);
+                : Math.min(order.size(), 16);
         long[] demands = new long[window];
         long powerCap = Math.min(availablePower, machine.getOverclockVoltage());
         int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
@@ -279,7 +303,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         double multiplier = multiplier();
         for (int n = 0; n < window; n++) {
             GTRecipe origin = origins.get(order.get(n));
-            long demand = IParallelLogic.getMaxParallel(machine, origin, budget);
+            // getMaxParallel 要按配方核对 ME 库存，单条 100+ µs；同一配方 20 tick 内复用上次的并行上限。
+            long demand = cachedDemand(origin, now, budget);
             if (demand < 0L || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
             long maxAmount = BatchRunLimits.maxContentAmount(origin);
             double energyPerRun = RecipeHelper.getInputEUt(origin) * (double) origin.duration * multiplier;
@@ -287,6 +312,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             // 再按「每 tick EU/t ≤ 机器功率」夹一次：否则 p 会把 tick 耗电放大到开不了工。
             demands[n] = BatchRunLimits.tickCap(capped, RecipeHelper.getInputEUt(origin) * multiplier, powerCap);
         }
+        // 最终候选（缩放+分配结果）短缓存：同一活跃组合下 5 tick 内直接复用，
+        // 不然每 tick 都要把 40+ 条配方各缩放一次（实测扫描 380 µs / 最大 54 ms）。
+        long nowTick = now();
         long[] allocated = FairParallelAllocation.allocate(budget, demands);
         long allocatedSum = 0L;
         for (long value : allocated) allocatedSum += value;

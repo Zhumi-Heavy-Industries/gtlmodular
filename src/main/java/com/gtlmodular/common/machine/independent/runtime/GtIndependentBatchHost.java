@@ -49,7 +49,9 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     private final SharedTickPower wirelessPower = new SharedTickPower();
     private final AdmissionPower admissions = new AdmissionPower();
     private final IndependentWorkStats stats = new IndependentWorkStats(GTLModularConfig.OTHER_MACHINE_THREADS.statsEnabled());
-    private boolean searched;
+    private long lastCandidateScan = Long.MIN_VALUE / 2;
+    private boolean lastScanHadCandidates;
+    private long scanWindowNanos, scanWindowTicks;
 
     public GtIndependentBatchHost(RecipeLogic logic, IndependentRecipeAdapter adapter) {
         this(logic, adapter, List::of);
@@ -95,18 +97,27 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
             if (now - lastStatsLog >= 200L) {
                 lastStatsLog = now;
-                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次） 快路径={} 慢={} 活跃批次={}",
+                String admit = admitCalls == 0 ? "0"
+                        : String.format(java.util.Locale.ROOT, "%.1f", admitNanos / 1000.0D / admitCalls);
+                String admitMaxText = String.format(java.util.Locale.ROOT, "%.1f", admitMax / 1000.0D);
+                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次） 快路径={} 慢={} 活跃批次={} 准入={}µs/次（{} 次 最大 {}µs）",
                         logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), stats.summary(),
                         profile(profPrep), profile(profFirst), profFirstCalls,
                         profile(profPay), profile(profIn), profile(profOut), profCalls, fastTicks, slowTicks,
-                        batches.get() == null ? "?" : batches.get().size());
+                        batches.get() == null ? "?" : batches.get().size(), admit, admitCalls, admitMaxText
+                        + String.format(java.util.Locale.ROOT, " 扫描/tick=%sµs 扣料=%sµs/次 结算=%sµs/次",
+                        scanWindowTicks == 0 ? "0" : String.format(java.util.Locale.ROOT, "%.1f",
+                                scanWindowNanos / 1000.0D / scanWindowTicks),
+                        perCall(consumeNanos, consumeCalls), perCall(settleNanos, settleCalls)));
                 profPrep = profPay = profIn = profOut = profCalls = profFirst = profFirstCalls = 0L;
                 fastTicks = slowTicks = 0L;
+                admitNanos = admitCalls = admitMax = 0L;
+                consumeNanos = consumeCalls = consumeMax = 0L;
+                settleNanos = settleCalls = settleMax = 0L;
+                scanWindowNanos = scanWindowTicks = 0L;
             }
         }
         runtime.beginTick();
-        candidates.clear();
-        searched = false;
         admissions.clear();
         wiredPower.reset(BigInteger.valueOf(wiredVoltage()));
         wirelessPower.reset(IndependentWirelessPower.available(machine));
@@ -181,11 +192,24 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             logAdmitBlocked();
             return null;
         }
-        if (!searched) {
-            searched = true;
+        long nowTick = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        // 候选队列跨 tick 复用；空了才重扫，且最多每 5 tick 一次（山海是每配方周期一次）。
+        // 队列吃空且上次确实扫到了候选，就立刻补扫（不然会出现“停机几秒再开”的空窗）；
+        // 但同一 tick 内只扫一次，且两次扫描至少隔 5 tick，避免刷屏扫描。
+        boolean urgent = lastScanHadCandidates;
+        if (candidates.isEmpty()
+                && (urgent || nowTick - lastCandidateScan >= 20L)
+                && nowTick - lastCandidateScan >= 5L) {
+            lastCandidateScan = nowTick;
             long start = stats.enabled() ? System.nanoTime() : 0L;
             var found = adapter.candidates(slots, budget, availablePower());
-            if (start != 0L) stats.scan(System.nanoTime() - start, found.size());
+            if (start != 0L) {
+                long spent = System.nanoTime() - start;
+                stats.scan(spent, found.size());
+                scanWindowNanos += spent;
+                scanWindowTicks++;
+            }
+            lastScanHadCandidates = !found.isEmpty();
             candidates.addAll(found);
         }
         while (!candidates.isEmpty()) {
@@ -235,10 +259,19 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         return "formed=" + host.isFormed() + " working=" + host.isWorkingEnabled();
     }
 
-    @Override
+    private final java.util.IdentityHashMap<IndependentRecipePayload, Long> canWorkTrueAt = new java.util.IdentityHashMap<>();
+
     public boolean canWork(IndependentRecipePayload payload) {
         if (!machineReady() || !adapter.allowsRunningBatches()) return waitFor(payload, "机器暂停、结构或宿主条件未满足");
-        if (!payload.recipe().checkConditions(logic).isSuccess()) return waitFor(payload, "配方运行条件未满足");
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        Long cached = canWorkTrueAt.get(payload);
+        // 条件通过的结果缓存 5 tick：每秒 50 条批次 × 每 tick 都验条件，是现在剩下的大头。
+        if (cached != null && now - cached < 5L) return true;
+        if (!payload.recipe().checkConditions(logic).isSuccess()) {
+            canWorkTrueAt.remove(payload);
+            return waitFor(payload, "配方运行条件未满足");
+        }
+        canWorkTrueAt.put(payload, now);
         return true;
     }
 
@@ -296,18 +329,54 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
     }
 
-    @Override
+    private long admitNanos, admitCalls, admitMax;
+    private record CachedRoute(long tick, IndependentRecipeIo.InputRoute route) {}
+    private final java.util.Map<String, CachedRoute> inputRouteCache = new java.util.HashMap<>();
+
+    /** 钩子前后比的轻量签名：id + 时长 + 并行 + 四组内容条数。 */
+    private static String recipeSignature(com.gregtechceu.gtceu.api.recipe.GTRecipe recipe) {
+        return recipe.id + "|" + recipe.duration + "|" + recipe.parallels
+                + "|" + recipe.inputs.size() + "|" + recipe.outputs.size()
+                + "|" + recipe.tickInputs.size() + "|" + recipe.tickOutputs.size();
+    }
+
     public boolean prepareInputs(IndependentRecipePayload payload) {
+        long t0 = stats.enabled() ? System.nanoTime() : 0L;
+        try {
+            return prepareInputsInternal(payload);
+        } finally {
+            if (t0 != 0L) {
+                long spent = System.nanoTime() - t0;
+                admitNanos += spent;
+                admitCalls++;
+                admitMax = Math.max(admitMax, spent);
+            }
+        }
+    }
+
+    private boolean prepareInputsInternal(IndependentRecipePayload payload) {
         var prepared = runtime.prepared(payload);
-        io.requireSupported(payload.recipe());
-        prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
+        // 准入里的输入路线要物化 ME 库存（实测 600~700 µs/次）；同一配方 + 同并行短缓存复用。
+        String routeKey = payload.recipe().id + "|" + payload.recipe().parallels;
+        long nowTick = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        var cachedRoute = inputRouteCache.get(routeKey);
+        if (cachedRoute != null && nowTick - cachedRoute.tick() < 40L) {
+            prepared.inputs = cachedRoute.route();
+        } else {
+            io.requireSupported(payload.recipe());
+            prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
+            if (prepared.inputs != null) inputRouteCache.put(routeKey, new CachedRoute(nowTick, prepared.inputs));
+        }
         if (prepared.inputs == null) {
             logMissingInputs(payload, prepared.source.ingredients());
             return waitFor(payload, "开工输入不足");
         }
-        var beforeHook = codec.encode(payload);
+        // 完整 NBT 前后比对每次要几百微秒；改用轻量签名只防「钩子换掉配方/内容数量」这类越界改写。
+        String beforeHook = recipeSignature(payload.recipe());
         if (!machine.beforeWorking(payload.recipe())) return waitFor(payload, "beforeWorking 否决");
-        if (!beforeHook.equals(codec.encode(payload))) throw new IllegalArgumentException("需要改变配方的开工钩子专用适配");
+        if (!beforeHook.equals(recipeSignature(payload.recipe()))) {
+            throw new IllegalArgumentException("需要改变配方的开工钩子专用适配");
+        }
         if (!canWork(payload)) return false;
         // 钩子可能触发库存监听或结构变化，不能把前一次模拟当成扣料承诺。
         io.requireSupported(payload.recipe());
@@ -320,8 +389,6 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             payload.setStage(new BatchExecutionStage(Input.PREPARED, Output.READY, Hook.NOT_RUN));
             payload.remainders().put(INPUT, BatchChanceResolver.resolve(prepared.source.ingredients(), payload, machine, IO.IN, false));
         }
-        // 概率结果和实际余量也必须能保存，不能只验证未抽签的配方本体。
-        codec.decode(codec.encode(payload));
         prepared.beforeInputs = BatchContents.copy(payload.remainders().get(INPUT));
         boolean outputFits = io.outputFits(payload.resolvedOutputs());
         boolean inputFits = prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN);
@@ -329,8 +396,25 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                 || waitFor(payload, "开工输入或输出容量不足: out=" + outputFits + " in=" + inputFits);
     }
 
+    private long settleNanos, settleCalls, settleMax;
+    private long consumeNanos, consumeCalls, consumeMax;
+
     @Override
     public boolean consumeInputs(IndependentRecipePayload payload) {
+        long t0 = stats.enabled() ? System.nanoTime() : 0L;
+        try {
+            return consumeInputsInternal(payload);
+        } finally {
+            if (t0 != 0L) {
+                long spent = System.nanoTime() - t0;
+                consumeNanos += spent;
+                consumeCalls++;
+                consumeMax = Math.max(consumeMax, spent);
+            }
+        }
+    }
+
+    private boolean consumeInputsInternal(IndependentRecipePayload payload) {
         var remaining = payload.remainders().get(INPUT);
         var prepared = runtime.prepared(payload);
         var before = prepared.beforeInputs;
@@ -546,6 +630,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         return "tick 不足[" + (tickIn ? "" : "输入/电") + (tickOut ? "" : "输出") + (wireless ? "" : "无线") + "]";
     }
 
+    private static String perCall(long nanos, long calls) {
+        return calls == 0L ? "0" : String.format(java.util.Locale.ROOT, "%.1f", nanos / 1000.0D / calls);
+    }
+
     private static String profile(long nanos) {
         return String.format(java.util.Locale.ROOT, "%.1f", nanos / 1000.0D);
     }
@@ -601,6 +689,20 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean output(IndependentRecipePayload payload) {
+        long t0 = stats.enabled() ? System.nanoTime() : 0L;
+        try {
+            return outputInternal(payload);
+        } finally {
+            if (t0 != 0L) {
+                long spent = System.nanoTime() - t0;
+                settleNanos += spent;
+                settleCalls++;
+                settleMax = Math.max(settleMax, spent);
+            }
+        }
+    }
+
+    private boolean outputInternal(IndependentRecipePayload payload) {
         if (payload.resolvedOutputs() == null) throw new IllegalStateException("Missing determined batch outputs");
         var remaining = payload.remainders().get(OUTPUT);
         if (remaining == null) throw new IllegalStateException("Missing output remainder");

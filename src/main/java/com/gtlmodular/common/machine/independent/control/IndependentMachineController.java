@@ -174,6 +174,28 @@ public final class IndependentMachineController {
 
     public boolean tick() {
         if (detached) return true;
+        long tickStart = System.nanoTime();
+        try {
+            return tickInternal();
+        } finally {
+            tickNanos += System.nanoTime() - tickStart;
+            tickCount++;
+            var lv = logic.getMachine().getLevel();
+            long nowTick = lv == null ? 0L : lv.getGameTime();
+            if (tickCount >= 200L) {
+                GTLModular.LOGGER.info("[independent] tick 耗时 {} {}: 平均 {}µs 最大 {}µs（{} 次）",
+                        logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(),
+                        String.format(java.util.Locale.ROOT, "%.1f", tickNanos / 1000.0D / tickCount),
+                        String.format(java.util.Locale.ROOT, "%.1f", tickMax / 1000.0D), tickCount);
+                tickNanos = tickCount = tickMax = 0L;
+            }
+            tickMax = Math.max(tickMax, System.nanoTime() - tickStart);
+        }
+    }
+
+    private long tickNanos, tickCount, tickMax;
+
+    private boolean tickInternal() {
         tickCalls++;
         try {
             var lv = logic.getMachine().getLevel();
