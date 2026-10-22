@@ -67,7 +67,7 @@ public final class OtherMachineThreadsConfig {
                         "候选查询缓存的有效 tick 数，默认 5；0 表示每 tick 都重新 lookup。",
                         "上游输入变化没有统一 revision，因此只做短 TTL；真实扣料仍逐条校验，缓存不会绕过输入检查。",
                         "Candidate lookup cache TTL in ticks; 0 disables. Real input checks still run per batch.")
-                .defineInRange("independentThreadsCandidateCacheTicks", 5, 0, 200);
+                .defineInRange("independentThreadsCandidateCacheTicks", 100, 0, 400);
         candidateScanBudget = builder.comment(
                         "每 tick 最多试算多少条候选，默认 0 = 空槽数 + 8。",
                         "调低可以压 TPS 峰值，但会减少每 tick 能补的批次数；调高让补位更充分但扫描更贵。",

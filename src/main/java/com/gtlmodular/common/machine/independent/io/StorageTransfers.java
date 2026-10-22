@@ -35,6 +35,7 @@ final class StorageTransfers {
         if (handler instanceof InfinityEnergyContainer) return;
         // AE 只输出仓：容量由 ME 网络决定，真实数量由上游 handleRecipeInner 计数（模拟/真实都返回余量）。
         if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) return;
+        if (handler instanceof ModuleEnergyHandler) return;
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) return;
         // 子类可能加入隔离、催化或无限库存语义；这里只允许已核实的具体处理器和存储。
         if (handler.getClass() == NotifiableItemStackHandler.class) {
@@ -70,7 +71,8 @@ final class StorageTransfers {
 
     void move(IRecipeHandler<?> handler, IO io, Content content) {
         requireSupported(handler);
-        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) {
+        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList
+                || handler instanceof ModuleEnergyHandler) {
             moveViaHandler(handler, io, content);
             return;
         }
@@ -109,7 +111,9 @@ final class StorageTransfers {
      */
     @SuppressWarnings("unchecked")
     private void moveViaHandler(IRecipeHandler<?> handler, IO io, Content content) {
-        if (io != IO.OUT) return;
+        // 输入方向也要走这里：标签过滤 ME 库存输入总线是 ExportOnlyAEStockingItemList
+        // （ExportOnlyAEItemList 的子类），它只能靠 handleRecipeInner 从 ME 库存里取料。
+        // 纯输出的 ExportOnlyAE*List 对 IO.IN 会原样返回，等于正确地报告"没取到"。
         var cap = (RecipeCapability<Object>) handler.getCapability();
         if (BatchContents.amount(cap, content.content) <= 0) return;
         var input = new java.util.ArrayList<Object>();

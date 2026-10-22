@@ -92,6 +92,11 @@ public final class IndependentRecipeIo {
                 sorted.forEach(route::add);
             });
         }
+        // 模块机没有自己的能源仓：补一个走主机消费的 EU 处理器，否则每 tick 的电永远扣不进去。
+        if (io == IO.IN && machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module
+                && !route.handles(EURecipeCapability.CAP)) {
+            route.add(new ModuleEnergyHandler(module));
+        }
         return route;
     }
 
@@ -150,6 +155,10 @@ public final class IndependentRecipeIo {
         private Route add(RecipeHandlePart part) {
             for (var entry : part.getHandlerFastIterable()) entry.getValue().forEach(this::add);
             return this;
+        }
+
+        private boolean handles(RecipeCapability<?> capability) {
+            return handlers.containsKey(capability);
         }
 
         private void add(IRecipeHandler<?> handler) {

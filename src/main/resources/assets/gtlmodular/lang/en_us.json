@@ -1324,5 +1324,7 @@
   "gtlmodular.independent.draining": "Draining: finish owned work before returning to upstream",
   "gtlmodular.independent.wait": "Waiting: %s",
   "gtlmodular.independent.batch": "Batch %s · %s: %s/%s ticks",
+  "gtlmodular.independent.jade.coil_reduction": "§7Coil discount (current coil temperature): §benergy −%s§7 · §bduration −%s",
+  "gtlmodular.independent.jade.details_hint": "§7Hold §fShift§7 for thread details",
   "gtlmodular.independent.more": "%s more batches"
 }

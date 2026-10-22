@@ -30,6 +30,17 @@ public final class BatchRunLimits {
     }
 
     /**
+     * 每 tick 的 EU/t 是 p 倍放大：单批的 tick 耗电不能超过机器能给的功率。
+     * 没有这一道时，时长上限会允许 p 大到「每 tick 要 1000 倍功率」，批量永远开不了工。
+     */
+    public static long tickCap(long runs, double energyPerTick, long power) {
+        if (runs <= 0L || power <= 0L || !(energyPerTick > 0.0D) || !Double.isFinite(energyPerTick)) return runs;
+        double max = (double) power / energyPerTick;
+        if (!Double.isFinite(max) || max >= (double) runs) return runs;
+        return Math.max(0L, (long) Math.floor(max));
+    }
+
+    /**
      * 单份总耗电 × p / 功率 = 这一批的 tick 数；用最长时长反推 p。
      * 功率或单份耗电无效时不加时长限制，交给输入/输出容量去夹。
      */

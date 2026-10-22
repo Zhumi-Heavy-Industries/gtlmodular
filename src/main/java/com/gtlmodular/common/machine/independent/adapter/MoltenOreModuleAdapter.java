@@ -3,6 +3,7 @@ package com.gtlmodular.common.machine.independent.adapter;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
+import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
@@ -88,6 +89,10 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return machine.getLevel() == null ? 0L : machine.getLevel().getGameTime();
     }
 
+    /** 空候选退避：缺料时不再每 5 tick 全量重扫，和山海的空结果退避同一思路。 */
+    private long emptyBackoffUntil = Long.MIN_VALUE;
+    private int emptyBackoffTicks = 20;
+
     private boolean check(GTRecipe recipe) {
         try {
             return RecipeRunnerHelper.matchRecipe(machine, recipe)
@@ -99,6 +104,29 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             return false;
         }
     }
+
+    /** 候选为空时，抽样一条配方逐项说清是哪道门卡住，免得只看到「未找到配方」。 */
+    private void logWhyNoCandidates(GTRecipeType type) {
+        if (type == null || !noCandidateLogged.add(type)) return;
+        try {
+            Iterator<GTRecipe> all = type.getLookup().getRecipeIterator(machine, recipe -> true);
+            if (!all.hasNext()) {
+                GTLModular.LOGGER.info("[independent] 候选为空：配方表本身就是空的 type={}", type.registryName);
+                return;
+            }
+            GTRecipe recipe = all.next();
+            boolean match = RecipeRunnerHelper.matchRecipe(machine, recipe);
+            boolean tier = IGTRecipe.of(recipe).getEuTier() <= machine.getTier();
+            boolean condition = recipe.checkConditions(logic).isSuccess();
+            boolean data = logic.getDataCheck() == null || logic.getDataCheck().test(recipe.data, machine);
+            GTLModular.LOGGER.info("[independent] 候选为空 type={} 抽样配方={} match={} tier={} condition={} data={}",
+                    type.registryName, recipe.id, match, tier, condition, data);
+        } catch (RuntimeException exception) {
+            GTLModular.LOGGER.info("[independent] 候选为空排查失败: {}", exception.toString());
+        }
+    }
+
+    private final java.util.Set<GTRecipeType> noCandidateLogged = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     private Iterator<GTRecipe> lookup(GTRecipeType type) {
         ILockRecipe lock = logic instanceof ILockRecipe ? (ILockRecipe) logic : null;
@@ -120,6 +148,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         long budget = Math.min(availableBudget, totalBudget());
         if (budget <= 0L) return List.of();
         long now = now();
+        if (now < emptyBackoffUntil) return List.of();
         int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
         var cached = candidateCache.get(now, cacheTicks, () -> {
             List<GTRecipe> found = new ArrayList<>();
@@ -128,8 +157,15 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 GTRecipe recipe = iterator.next();
                 if (recipe != null) found.add(RecipeCandidateSnapshots.copy(recipe));
             }
+            if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
             return found;
         });
+        if (cached.isEmpty()) {
+            emptyBackoffUntil = now + emptyBackoffTicks;
+            emptyBackoffTicks = Math.min(200, emptyBackoffTicks * 2);
+            return List.of();
+        }
+        emptyBackoffTicks = 20;
         List<GTRecipe> origins = new ArrayList<>(cached.size());
         for (GTRecipe recipe : cached) origins.add(RecipeCandidateSnapshots.copy(recipe));
 
@@ -152,7 +188,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             if (demand < 0L || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
             long maxAmount = BatchRunLimits.maxContentAmount(origin);
             double energyPerRun = RecipeHelper.getInputEUt(origin) * (double) origin.duration * multiplier;
-            demands[n] = BatchRunLimits.cap(demand, energyPerRun, powerCap, maxBatchTicks, maxBatchRuns, maxAmount);
+            long capped = BatchRunLimits.cap(demand, energyPerRun, powerCap, maxBatchTicks, maxBatchRuns, maxAmount);
+            // 再按「每 tick EU/t ≤ 机器功率」夹一次：否则 p 会把 tick 耗电放大到开不了工。
+            demands[n] = BatchRunLimits.tickCap(capped, RecipeHelper.getInputEUt(origin) * multiplier, powerCap);
         }
         long[] allocated = FairParallelAllocation.allocate(budget, demands);
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
