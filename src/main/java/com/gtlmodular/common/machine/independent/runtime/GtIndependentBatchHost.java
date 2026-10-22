@@ -499,6 +499,15 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             if (content.content instanceof Long value) cost += Math.max(0L, value);
         }
         if (cost <= 0L) return true;
+        if (!payModuleCost(payload, module, cost)) return false;
+        for (var content : input.get(EURecipeCapability.CAP)) content.content = 0L;
+        return true;
+    }
+
+    /** 实际扣电：本 tick 只读一次主机余额，扣成功就同步减掉。 */
+    private boolean payModuleCost(IndependentRecipePayload payload,
+                                  com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module, long cost) {
+        if (cost <= 0L) return true;
         var host = module.getHost();
         long stored = hostStoredEu(module);
         if (host == null || stored < cost) {
@@ -511,8 +520,31 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             return false;
         }
         storedEuCache -= cost;
-        for (var content : input.get(EURecipeCapability.CAP)) content.content = 0L;
         return true;
+    }
+
+    /**
+     * 只有 EU 的 tick IO 快路径（地心模块这类配方）：直接按配方 EU（含线圈折扣）扣电，
+     * 跳过 prepareTick 的路由查询与内容表复制（spark 实测这两段合计 0.08% 服务端时间）。
+     * 返回 null 表示这条配方还有别的 tick 内容，交给通用路径。
+     */
+    private Boolean euOnlyTickIo(IndependentRecipePayload payload,
+                                 com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module) {
+        // 只有电网供电的批次走这条路；无线族要经过 IndependentWirelessPower 的账户/终端检查，不能绕。
+        if (payload.power() != BatchRecipeExtensions.Power.WIRED) return null;
+        var recipe = payload.recipe();
+        if (recipe.tickOutputs != null && !recipe.tickOutputs.isEmpty()) return null;
+        var inputs = recipe.tickInputs;
+        if (inputs == null || inputs.isEmpty()) return Boolean.TRUE; // 什么 tick 内容都没有，直接过
+        if (inputs.size() != 1 || !inputs.containsKey(EURecipeCapability.CAP)) return null;
+        double multiplier = machine instanceof IndependentEnergyMultiplier discount
+                ? Math.max(0.0D, discount.independentEnergyMultiplier()) : 1.0D;
+        long cost = 0L;
+        for (var content : inputs.get(EURecipeCapability.CAP)) {
+            if (content.content instanceof Long value) cost += Math.max(0L, Math.round(value * multiplier));
+        }
+        fastTicks++;
+        return payModuleCost(payload, module, cost);
     }
 
     private static boolean euOnlyTickInput(java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
@@ -526,8 +558,12 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         long start = stats.enabled() ? System.nanoTime() : 0L;
         long p0 = start;
         try {
-            // 完全没有 tick 输入/输出的配方（地心蒸汽矿处理就是这类）不需要任何 IO：
-            // 直接返回，省掉 prepareTick 的路由查询与空内容表搬运（实测占 0.07% 服务端时间）。
+            // 只有 EU 的 tick IO（地心模块这类）：直接扣电，不建路由、不复制内容表。
+            if (machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module) {
+                Boolean euOnly = euOnlyTickIo(payload, module);
+                if (euOnly != null) return euOnly;
+            }
+            // 完全没有 tick 输入/输出的配方不需要任何 IO，直接返回。
             if (payload.recipe().tickInputs.isEmpty() && payload.recipe().tickOutputs.isEmpty()) return true;
             TickRoutes routes;
             try {
