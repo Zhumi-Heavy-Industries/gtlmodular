@@ -54,6 +54,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return 1;
     }
 
+    /** 保留接口口径（上游「最大并行 × 线程数」）；模块的候选阶段不再用它分摊，见 candidates 里的独立并行口径。 */
     @Override
     public long totalBudget() {
         return ParallelAllocation.totalBudget(machine.getMaxParallel(), threads());
@@ -253,11 +254,11 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                     + " host=" + (host == null ? "null" : host.isFormed() + "/" + host.isWorkingEnabled()));
             return List.of();
         }
-        // 独立线程的定义是「每条线程各跑各的」：每条批次最多用机器自己的并行上限，
-        // 不能拿「上限 × 线程数」的总池当单批预算，否则一条批次就会吃掉整个池、把线程数压到个位数。
+        // 独立线程：每条批次各自吃满「本配方自己的上限」，不与其他候选分摊一份总池。
+        // 对齐上游 MultipleRecipesLogic.calculateParallels 的覆写：同时选中多个配方类型时，
+        // 每个配方各自独立吃满自己的 getMaxParallel(recipe, totalParallel)，互不挤占。
         long perBatch = Math.max(1L, machine.getMaxParallel());
-        long budget = Math.min(Math.min(availableBudget, totalBudget()), perBatch);
-        if (budget <= 0L) return List.of();
+        if (availableBudget <= 0L) return List.of();
         int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
         // 长批次：目标时长由配置给（0 = 关闭），单批时长不能被 maxBatchTicks 安全阀放大。
         int longBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.longBatchTicks();
@@ -266,7 +267,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         if (GameTestHooks.active()) longBatchTicks = 0;
         if (maxBatchTicks > 0 && longBatchTicks > maxBatchTicks) longBatchTicks = maxBatchTicks;
         int targetRuns = longBatchTicks > 0 ? Math.max(1, longBatchTicks / MINIMUM_BATCH_TICKS) : 1;
-        long demandBound = targetRuns > 1 ? saturatingMultiply(budget, targetRuns) : budget;
+        long demandBound = targetRuns > 1 ? saturatingMultiply(perBatch, targetRuns) : perBatch;
         long now = now();
         if (now < emptyRetryAt) return List.of();
         int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
@@ -296,7 +297,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         if (now - lastDiagTick >= 200L) {
             diag("管线 cached=" + cached.size() + " active=" + (active == null ? 0 : active.size())
                     + " maxPerRecipe=" + maxPerRecipe + " order=" + order.size()
-                    + " slots=" + availableSlots + " budget=" + availableBudget);
+                    + " slots=" + availableSlots + " 单批上限=" + perBatch + " 份数上限=" + targetRuns);
         }
         if (order.isEmpty()) {
             diag("候选被活跃计数全部过滤 active=" + active + " maxPerRecipe=" + maxPerRecipe + " cached=" + cached.size());
@@ -319,29 +320,26 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             // getMaxParallel 要按配方核对 ME 库存，单条 100+ µs；同一配方 20 tick 内复用上次的并行上限。
             // 长批次要 p×N 份原料，所以这里按「目标份数」问一次真实库存上限，再夹回本批预算。
             long headroom = cachedDemand(origin, now, demandBound);
-            long demand = Math.min(headroom, budget);
+            long demand = Math.min(headroom, perBatch);
             headrooms[n] = headroom;
-            if (demand < 0L || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
+            if (demand < 0L || demand > perBatch) throw new IllegalArgumentException("Parallel override exceeds the machine limit");
             long maxAmount = BatchRunLimits.maxContentAmount(origin);
             double energyPerRun = RecipeHelper.getInputEUt(origin) * (double) origin.duration * multiplier;
             long capped = BatchRunLimits.cap(demand, energyPerRun, powerCap, maxBatchTicks, maxBatchRuns, maxAmount);
             // 再按「每 tick EU/t ≤ 机器功率」夹一次：否则 p 会把 tick 耗电放大到开不了工。
             demands[n] = BatchRunLimits.tickCap(capped, RecipeHelper.getInputEUt(origin) * multiplier, powerCap);
         }
-        // 最终候选（缩放+分配结果）短缓存：同一活跃组合下 5 tick 内直接复用，
-        // 不然每 tick 都要把 40+ 条配方各缩放一次（实测扫描 380 µs / 最大 54 ms）。
-        long nowTick = now();
-        long[] allocated = FairParallelAllocation.allocate(budget, demands);
+        // 独立线程不做跨候选的并行分摊：每条候选各自用自己算出来的 p（已过库存/功率/时长安全阀）。
         long allocatedSum = 0L;
-        for (long value : allocated) allocatedSum += value;
+        for (long value : demands) allocatedSum += value;
         if (allocatedSum <= 0L) {
-            diag("并行分配为 0 budget=" + budget + " window=" + window + " demands=" + java.util.Arrays.toString(demands));
+            diag("并行上限为 0 perBatch=" + perBatch + " window=" + window + " demands=" + java.util.Arrays.toString(demands));
             return List.of();
         }
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
         List<Double> energy = new ArrayList<>();
         for (int n = 0; n < window; n++) {
-            long p = allocated[n];
+            long p = demands[n];
             if (p <= 0L) continue;
             GTRecipe origin = origins.get(order.get(n));
             GTRecipe ingredients = scaledIngredients(origin, p);
