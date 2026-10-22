@@ -127,15 +127,24 @@ public final class IndependentMachineController {
                 level == null ? "?" : level.dimension().location(), logic.getMachine().getPos(), next);
     }
 
+    /** 仓室/处理器支持性每 tick 重算一次要遍历全部能力代理（spark 实测 0.10% 服务端时间），改成 5 秒复核。 */
+    private long supportedCheckedAt = Long.MIN_VALUE / 2;
+    private String supportedFailure;
+
     private String unsupportedReason() {
         if (!selection().supported()) return selection().unsupportedReason();
         if (logic.needFuel()) return "燃料配方需要专用适配";
+        var level = logic.getMachine().getLevel();
+        long now = level == null ? 0L : level.getGameTime();
+        if (now - supportedCheckedAt < 100L) return supportedFailure;
+        supportedCheckedAt = now;
         try {
             new IndependentRecipeIo(logic.machine).requireSupportedMachine();
-            return null;
+            supportedFailure = null;
         } catch (IllegalArgumentException failure) {
-            return failure.getMessage();
+            supportedFailure = failure.getMessage();
         }
+        return supportedFailure;
     }
 
     private IndependentHandoff handoff(boolean supported) {
@@ -158,6 +167,7 @@ public final class IndependentMachineController {
     }
 
     public void configurationChanged() {
+        supportedCheckedAt = Long.MIN_VALUE / 2;
         if (selection != null && selection.supported()) selection.adapter().invalidateCandidates();
         if (ownsWork() && !handoff(unsupportedReason() == null).admit()) requestDrain();
     }
@@ -286,6 +296,7 @@ public final class IndependentMachineController {
     public void invalidateRuntime() {
         host = null;
         policy = null;
+        supportedCheckedAt = Long.MIN_VALUE / 2;
         reason = "生命周期变化，保留批次并等待机器就绪";
         logic.updateTickSubscription();
     }

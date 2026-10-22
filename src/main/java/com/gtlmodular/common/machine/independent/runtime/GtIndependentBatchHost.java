@@ -101,15 +101,14 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                 String admit = admitCalls == 0 ? "0"
                         : String.format(java.util.Locale.ROOT, "%.1f", admitNanos / 1000.0D / admitCalls);
                 String admitMaxText = String.format(java.util.Locale.ROOT, "%.1f", admitMax / 1000.0D);
-                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次） 快路径={} 慢={} 活跃批次={} 准入={}µs/次（{} 次 最大 {}µs）",
+                String scan = scanWindowTicks == 0 ? "0"
+                        : String.format(java.util.Locale.ROOT, "%.1f", scanWindowNanos / 1000.0D / scanWindowTicks);
+                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次） 快路径={} 慢={} 活跃批次={} 准入={}µs/次（{} 次，最大 {}µs） 扫描={}µs/次（{} 次） 扣料={}µs/次 结算={}µs/次",
                         logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), stats.summary(),
                         profile(profPrep), profile(profFirst), profFirstCalls,
                         profile(profPay), profile(profIn), profile(profOut), profCalls, fastTicks, slowTicks,
-                        batches.get() == null ? "?" : batches.get().size(), admit, admitCalls, admitMaxText
-                        + String.format(java.util.Locale.ROOT, " 扫描/tick=%sµs 扣料=%sµs/次 结算=%sµs/次",
-                        scanWindowTicks == 0 ? "0" : String.format(java.util.Locale.ROOT, "%.1f",
-                                scanWindowNanos / 1000.0D / scanWindowTicks),
-                        perCall(consumeNanos, consumeCalls), perCall(settleNanos, settleCalls)));
+                        batches.get() == null ? "?" : batches.get().size(), admit, admitCalls, admitMaxText,
+                        scan, scanWindowTicks, perCall(consumeNanos, consumeCalls), perCall(settleNanos, settleCalls));
                 profPrep = profPay = profIn = profOut = profCalls = profFirst = profFirstCalls = 0L;
                 fastTicks = slowTicks = 0L;
                 admitNanos = admitCalls = admitMax = 0L;
@@ -525,7 +524,8 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                 boolean paid = payModuleTick(payload, module, fastIn);
                 if (stats.enabled()) {
                     long done = System.nanoTime();
-                    profIn += done - (stats.enabled() ? System.nanoTime() : 0L);
+                    // 快路径整段就是「准备 + 扣电」，都记到 in 段；以前写成 done - 另一个 now() 会得到负数。
+                    profIn += done - p0;
                     profCalls++;
                 }
                 return paid;

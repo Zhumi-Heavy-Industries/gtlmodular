@@ -99,6 +99,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         matchFalseAt.clear();
         scaledCache.clear();
         demandCache.clear();
+        snapshotCache.clear();
     }
 
     private long now() {
@@ -115,11 +116,26 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private long cachedDemand(GTRecipe origin, long now, long budget) {
         long[] cached = demandCache.get(origin);
-        if (cached != null && now - cached[0] < 20L) return Math.min(cached[1], budget);
+        // 库存变化比缓存慢得多：20 tick 太短，扫描里大部分时间都在重算 getMaxParallel（单条数百微秒）。
+        if (cached != null && now - cached[0] < 100L) return Math.min(cached[1], budget);
         long demand = IParallelLogic.getMaxParallel(machine, origin, budget);
         if (demandCache.size() >= DEMAND_CACHE_LIMIT) demandCache.clear();
         demandCache.put(origin, new long[]{now, demand});
         return demand;
+    }
+
+    /**
+     * 候选快照的惰性复制：只复制本轮窗口真正用到的配方。
+     * 原来在缓存重载时一口气复制全部 ~50 条（含条件 JSON 往返），实测一次 10~32ms 尖峰。
+     */
+    private final java.util.IdentityHashMap<GTRecipe, GTRecipe> snapshotCache = new java.util.IdentityHashMap<>();
+
+    private GTRecipe snapshot(GTRecipe origin) {
+        var cached = snapshotCache.get(origin);
+        if (cached != null) return cached;
+        cached = RecipeCandidateSnapshots.copy(origin);
+        snapshotCache.put(origin, cached);
+        return cached;
     }
 
     private List<SingleRecipeCandidate> candidateSnapshot;
@@ -276,7 +292,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             Iterator<GTRecipe> iterator = lookup(machine.getRecipeType());
             while (iterator.hasNext()) {
                 GTRecipe recipe = iterator.next();
-                if (recipe != null) found.add(RecipeCandidateSnapshots.copy(recipe));
+                // 只收引用，快照留到真正进入本轮窗口时再复制（见 snapshot()）。
+                if (recipe != null) found.add(recipe);
             }
             if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
             else logCandidateCount(found);
@@ -342,7 +359,14 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             long p = demands[n];
             if (p <= 0L) continue;
             GTRecipe origin = origins.get(order.get(n));
-            GTRecipe ingredients = scaledIngredients(origin, p);
+            GTRecipe snapshot;
+            try {
+                snapshot = snapshot(origin);
+            } catch (RuntimeException unsupported) {
+                // 需要专用快照适配的配方只跳过这一条，不影响本轮其他候选。
+                continue;
+            }
+            GTRecipe ingredients = scaledIngredients(snapshot, p);
             // 库存撑不起 p×N 就缩 N，缩到 1 就是原来的「一条批次一次配方」。
             int maxRuns = targetRuns > 1
                     ? (int) Math.max(1L, Math.min(targetRuns, headrooms[n] / Math.max(1L, p)))
