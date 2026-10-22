@@ -472,6 +472,23 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     private long profPrep, profPay, profIn, profOut, profCalls, profFirst, profFirstCalls;
     private long fastTicks, slowTicks;
 
+    private long storedEuTick = Long.MIN_VALUE / 2;
+    private long storedEuCache;
+
+    /**
+     * 主机电池存量每 tick 只读一次：51 条批次每 tick 各读一次 getTotalStoredEU 实测占 0.05% 服务端时间。
+     * 本 tick 内每成功扣一次就同步减掉，所以不会给出过期（偏高）的余额；真的扣不动时 consumeEU 会返回 false。
+     */
+    private long hostStoredEu(com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module) {
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        if (now != storedEuTick) {
+            var host = module.getHost();
+            storedEuTick = now;
+            storedEuCache = host == null ? 0L : Math.max(0L, host.getTotalStoredEU());
+        }
+        return storedEuCache;
+    }
+
     /** 模块机 + 纯 EU tick：直接扣主机电池，跳过内容表复制、路由和处理器遍历。 */
     private boolean payModuleTick(IndependentRecipePayload payload,
                                   com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module,
@@ -483,8 +500,8 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
         if (cost <= 0L) return true;
         var host = module.getHost();
-        long stored = host == null ? 0L : Math.max(0L, host.getTotalStoredEU());
-        if (stored < cost) {
+        long stored = hostStoredEu(module);
+        if (host == null || stored < cost) {
             runtime.waitFor(payload, "蓄电中（" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(stored)
                     + " / " + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(cost) + " EU）");
             return false;
@@ -493,6 +510,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
             return false;
         }
+        storedEuCache -= cost;
         for (var content : input.get(EURecipeCapability.CAP)) content.content = 0L;
         return true;
     }
@@ -508,6 +526,9 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         long start = stats.enabled() ? System.nanoTime() : 0L;
         long p0 = start;
         try {
+            // 完全没有 tick 输入/输出的配方（地心蒸汽矿处理就是这类）不需要任何 IO：
+            // 直接返回，省掉 prepareTick 的路由查询与空内容表搬运（实测占 0.07% 服务端时间）。
+            if (payload.recipe().tickInputs.isEmpty() && payload.recipe().tickOutputs.isEmpty()) return true;
             TickRoutes routes;
             try {
                 routes = prepareTick(payload);
