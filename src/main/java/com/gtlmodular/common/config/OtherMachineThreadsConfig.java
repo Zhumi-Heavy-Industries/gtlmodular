@@ -62,7 +62,7 @@ public final class OtherMachineThreadsConfig {
                         "矿物处理这类“配方种类远多于线程”的场景建议设为 1：防止一种矿占满所有槽，让后面的矿能轮转。",
                         "这是候选级公平上限；已经扣料的批次不受影响。",
                         "Maximum concurrent independent batches per recipe. 0 = unlimited; 1 is recommended for many-recipe ore processing.")
-                .defineInRange("independentThreadsMaxBatchesPerRecipe", 0, 0, 256);
+                .defineInRange("independentThreadsMaxBatchesPerRecipe", 1, 0, 256);
         candidateCacheTicks = builder.comment(
                         "候选查询缓存的有效 tick 数，默认 5；0 表示每 tick 都重新 lookup。",
                         "上游输入变化没有统一 revision，因此只做短 TTL；真实扣料仍逐条校验，缓存不会绕过输入检查。",

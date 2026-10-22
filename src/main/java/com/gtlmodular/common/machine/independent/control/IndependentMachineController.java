@@ -107,6 +107,14 @@ public final class IndependentMachineController {
     }
 
     /** 等待原因变化时写一次服务端日志：玩家面板上看到的那句话，得能在日志里对上号。 */
+    private boolean statsLogDue(long nowTick) {
+        if (lastTickLog == Long.MIN_VALUE) {
+            lastTickLog = nowTick;
+            return false;
+        }
+        return nowTick - lastTickLog >= 200L;
+    }
+
     private void reportWait(String next) {
         if (next == null) {
             loggedReason = null;
@@ -161,8 +169,25 @@ public final class IndependentMachineController {
         }
     }
 
+    private long tickCalls;
+    private long lastTickLog = Long.MIN_VALUE;
+
     public boolean tick() {
         if (detached) return true;
+        tickCalls++;
+        try {
+            var lv = logic.getMachine().getLevel();
+            long nowTick = lv == null ? 0L : lv.getGameTime();
+            if (statsLogDue(nowTick)) {
+                GTLModular.LOGGER.info("[independent] 控制器调用 {} {}: 本窗口 {} 次 / 游戏 tick {} 次（{} 次每 tick）",
+                        logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(),
+                        tickCalls, nowTick - lastTickLog, String.format(java.util.Locale.ROOT, "%.2f",
+                                lastTickLog == Long.MIN_VALUE ? 0.0 : tickCalls / (double) Math.max(1L, nowTick - lastTickLog)));
+                tickCalls = 0L;
+                lastTickLog = nowTick;
+            }
+        } catch (RuntimeException ignored) {
+        }
         if (!resolveOwnership()) return true;
         long now = logic.getMachine().getLevel().getGameTime();
         if (tickGuard.repeated(now)) return tickGuard.cancelRepeated();
@@ -204,7 +229,7 @@ public final class IndependentMachineController {
             policy.beginTick();
             var adapter = selection().adapter();
             var result = session.tick(new IndependentSessionControl(decision.admit(), false, paused, formed,
-                    Math.max(0, adapter.threads()), adapter.totalBudget()), policy);
+                    Math.max(0, adapter.threads()), adapter.sessionBudget()), policy);
             host.finishAdmissions(session::updateUnstartedDuration);
             reason = !formed ? "结构未成形，保留批次" : paused ? "机器已暂停，保留批次" : host.runtime().admissionReason();
             if (!hadWork && !ownsWork()) {
@@ -312,12 +337,28 @@ public final class IndependentMachineController {
         }
     }
 
+    public int batchCount() {
+        return session == null ? 0 : session.batches().size();
+    }
+
+    public long totalRuns() {
+        if (session == null) return 0L;
+        long runs = 0L;
+        for (var batch : session.batches()) {
+            try {
+                runs += Math.max(1L, batch.payload().recipe().parallels);
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return runs;
+    }
+
     public List<ThreadView> threads() {
         if (session == null) return List.of();
         var out = new ArrayList<ThreadView>();
         int label = 0;
         for (var batch : session.batches()) {
-            if (++label > 8) break;
+            if (++label > 64) break;
             var recipe = batch.payload().recipe();
             long eu = 0L;
             long parallels = 1L;

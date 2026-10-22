@@ -20,4 +20,7 @@ public interface IndependentBatchHost<P> {
     boolean output(P payload);
     void afterWorking(P payload);
     boolean suspendAfterFinish();
+
+    /** 准入被拒时回传原因；默认忽略。 */
+    default void rejectAdmission(String reason) {}
 }

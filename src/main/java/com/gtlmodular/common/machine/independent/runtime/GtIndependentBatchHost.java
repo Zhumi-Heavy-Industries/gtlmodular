@@ -66,6 +66,21 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     public IndependentBatchRuntime runtime() { return runtime; }
 
+    private String lastReject;
+    private long lastRejectTick = Long.MIN_VALUE;
+    private int rejectCount;
+
+    /** 每 40 tick 最多写一条，避免日志刷屏；同时记录累计次数便于判断是否持续被拒。 */
+    public void rejectAdmission(String reason) {
+        rejectCount++;
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        if (reason.equals(lastReject) && now - lastRejectTick < 40L) return;
+        lastReject = reason;
+        lastRejectTick = now;
+        GTLModular.LOGGER.info("[independent] 准入被拒 {} {}: {}（累计 {} 次）",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), reason, rejectCount);
+    }
+
     public void finishAdmissions(java.util.function.ObjIntConsumer<IndependentRecipePayload> updateDuration) {
         admissions.finish(updateDuration);
     }
@@ -80,11 +95,13 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
             if (now - lastStatsLog >= 200L) {
                 lastStatsLog = now;
-                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（其中首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次）",
+                GTLModular.LOGGER.info("[independent] 统计 {} {}: {} | 分段总 prep={}µs（首tick={}µs/{}次） pay={}µs in={}µs out={}µs（{} 次） 快路径={} 慢={} 活跃批次={}",
                         logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), stats.summary(),
                         profile(profPrep), profile(profFirst), profFirstCalls,
-                        profile(profPay), profile(profIn), profile(profOut), profCalls);
+                        profile(profPay), profile(profIn), profile(profOut), profCalls, fastTicks, slowTicks,
+                        batches.get() == null ? "?" : batches.get().size());
                 profPrep = profPay = profIn = profOut = profCalls = profFirst = profFirstCalls = 0L;
+                fastTicks = slowTicks = 0L;
             }
         }
         runtime.beginTick();
@@ -160,7 +177,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public Candidate<IndependentRecipePayload> findBatch(int slots, long budget) {
-        if (!canAdmit()) return null;
+        if (!canAdmit()) {
+            logAdmitBlocked();
+            return null;
+        }
         if (!searched) {
             searched = true;
             long start = stats.enabled() ? System.nanoTime() : 0L;
@@ -190,6 +210,30 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean canAdmit() { return machineReady() && adapter.allowsNewBatches(); }
+
+    private String lastBlocked;
+    private long lastBlockedAt = Long.MIN_VALUE;
+
+    /** 准入被前置条件挡住时说清是哪一项：机器就绪 / 模块成形 / 主机成形 / 主机开关。 */
+    private void logAdmitBlocked() {
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        String detail = "machineReady=" + machineReady()
+                + " moduleFormed=" + (machine instanceof com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine mb && mb.isFormed())
+                + " host=" + hostDetail()
+                + " newBatchesAllowed=" + adapter.allowsNewBatches();
+        if (detail.equals(lastBlocked) && now - lastBlockedAt < 40L) return;
+        lastBlocked = detail;
+        lastBlockedAt = now;
+        GTLModular.LOGGER.info("[independent] 准入被前置条件挡住 {} {}: {}",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), detail);
+    }
+
+    private String hostDetail() {
+        if (!(machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module)) return "n/a";
+        var host = module.getHost();
+        if (host == null) return "null";
+        return "formed=" + host.isFormed() + " working=" + host.isWorkingEnabled();
+    }
 
     @Override
     public boolean canWork(IndependentRecipePayload payload) {
@@ -312,6 +356,38 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     }
 
     private long profPrep, profPay, profIn, profOut, profCalls, profFirst, profFirstCalls;
+    private long fastTicks, slowTicks;
+
+    /** 模块机 + 纯 EU tick：直接扣主机电池，跳过内容表复制、路由和处理器遍历。 */
+    private boolean payModuleTick(IndependentRecipePayload payload,
+                                  com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module,
+                                  java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+                                          java.util.List<com.gregtechceu.gtceu.api.recipe.content.Content>> input) {
+        long cost = 0L;
+        for (var content : input.getOrDefault(EURecipeCapability.CAP, java.util.List.of())) {
+            if (content.content instanceof Long value) cost += Math.max(0L, value);
+        }
+        if (cost <= 0L) return true;
+        var host = module.getHost();
+        long stored = host == null ? 0L : Math.max(0L, host.getTotalStoredEU());
+        if (stored < cost) {
+            runtime.waitFor(payload, "蓄电中（" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(stored)
+                    + " / " + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(cost) + " EU）");
+            return false;
+        }
+        if (!wiredPower.reserve(java.math.BigInteger.valueOf(cost)) || !host.consumeEU(cost)) {
+            runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
+            return false;
+        }
+        for (var content : input.get(EURecipeCapability.CAP)) content.content = 0L;
+        return true;
+    }
+
+    private static boolean euOnlyTickInput(java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+            java.util.List<com.gregtechceu.gtceu.api.recipe.content.Content>> input) {
+        if (input == null || input.isEmpty()) return true;
+        return input.size() == 1 && input.containsKey(EURecipeCapability.CAP);
+    }
 
     @Override
     public boolean tickIo(IndependentRecipePayload payload) {
@@ -325,6 +401,27 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                 return waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
             }
             if (routes == null) return false;
+            // 纯 EU tick：prepare 已把本 tick 内容算好，直接扣主机电池，跳过路由遍历与内容搬运。
+            var fastIn = payload.remainders().get(TICK_INPUT);
+            var fastOut = payload.remainders().get(TICK_OUTPUT);
+            if (machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module
+                    && euOnlyTickInput(fastIn) && (fastOut == null || fastOut.isEmpty())) {
+                fastTicks++;
+                boolean paid = payModuleTick(payload, module, fastIn);
+                if (stats.enabled()) {
+                    long done = System.nanoTime();
+                    profIn += done - (stats.enabled() ? System.nanoTime() : 0L);
+                    profCalls++;
+                }
+                return paid;
+            }
+            if (fastIn != null) {
+                slowTicks++;
+                if (slowTicks == 1) {
+                    GTLModular.LOGGER.info("[independent] tick 布局: in={} out={}（快路径未命中）",
+                            fastIn.keySet(), fastOut == null ? "null" : fastOut.keySet());
+                }
+            }
             long p1 = stats.enabled() ? System.nanoTime() : 0L;
             if (!IndependentWirelessPower.pay(machine, payload, wirelessPower)) return runtime.waitFor(payload, "等待整机无线功率或账户/终端实际扣电");
             long p2 = stats.enabled() ? System.nanoTime() : 0L;
@@ -364,8 +461,16 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         var out = tickRoute(IO.OUT);
         long f0 = stats.enabled() ? System.nanoTime() : 0L;
         if (!payload.remainders().containsKey(TICK_INPUT)) {
+            var cached = tickCache.get(payload);
+            if (cached != null) {
+                payload.remainders().put(TICK_INPUT, BatchContents.copy((java.util.Map) cached[0]));
+                payload.remainders().put(TICK_OUTPUT, BatchContents.copy((java.util.Map) cached[1]));
+            }
+        }
+        if (!payload.remainders().containsKey(TICK_INPUT)) {
             var tickInputs = scaledTickInputs(payload.recipe().tickInputs);
-            boolean tickIn = in.fitsTickInput(tickInputs, wiredPower);
+            // 纯 EU tick 不走 Route 模拟：tickIo 的快路径会按主机电池复核并实际扣电。
+            boolean tickIn = euOnlyTickInput(tickInputs) || in.fitsTickInput(tickInputs, wiredPower);
             boolean tickOut = out.fits(payload.recipe().tickOutputs, IO.OUT);
             boolean wireless = IndependentWirelessPower.ready(machine, payload);
             if (!tickIn || !tickOut || !wireless) {
@@ -378,6 +483,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             var outputs = BatchChanceResolver.resolve(payload.recipe(), payload, machine, IO.OUT, true);
             payload.remainders().put(TICK_INPUT, inputs);
             payload.remainders().put(TICK_OUTPUT, outputs);
+            // tick 内容是确定的就缓存下来：每一 tick 都重抽/重缩放是现在单批 10µs 的主要来源。
+            if (deterministicTick(payload.recipe())) {
+                tickCache.put(payload, new java.util.Map[]{BatchContents.copy(inputs), BatchContents.copy(outputs)});
+            }
             // 存档时归档编码本身会校验；tick 路径不再做整份 encode/decode。
             if (stats.enabled()) {
                 profFirst += System.nanoTime() - f0;
@@ -386,6 +495,11 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
         var input = payload.remainders().get(TICK_INPUT);
         var output = payload.remainders().get(TICK_OUTPUT);
+        if (machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?>
+                && euOnlyTickInput(input) && (output == null || output.isEmpty())) {
+            // 纯 EU：交给 tickIo 的快路径直接扣电池，不再做一次 Route 模拟。
+            return new TickRoutes(in, out);
+        }
         if (!in.fitsTickInput(input, wiredPower) || !out.fits(output, IO.OUT) || !IndependentWirelessPower.ready(machine, payload)) {
             runtime.waitFor(payload, "等待完成本 tick 的剩余 IO");
             return null;
@@ -461,6 +575,20 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
     }
 
+    private final java.util.IdentityHashMap<IndependentRecipePayload, java.util.Map[]> tickCache = new java.util.IdentityHashMap<>();
+
+    /** 只有内容全是确定概率（chance=max）时才可缓存；带概率的 tick 必须每 tick 重抽。 */
+    private static boolean deterministicTick(com.gregtechceu.gtceu.api.recipe.GTRecipe recipe) {
+        for (var contents : java.util.List.of(recipe.tickInputs, recipe.tickOutputs)) {
+            for (var list : contents.values()) {
+                for (var content : list) {
+                    if (content.chance < 10000) return false;
+                }
+            }
+        }
+        return true;
+    }
+
     @Override
     public void completeTick(IndependentRecipePayload payload) {
         payload.remainders().remove(TICK_INPUT);
@@ -483,7 +611,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         } catch (RuntimeException exception) {
             return waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
         }
-        if (complete) payload.remainders().remove(OUTPUT);
+        if (complete) {
+            payload.remainders().remove(OUTPUT);
+            tickCache.remove(payload);
+        }
         payload.setStage(new BatchExecutionStage(Input.CONSUMED, complete ? Output.COMPLETE : Output.PARTIAL, payload.stage().afterWorking()));
         return complete || runtime.waitFor(payload, "输出未结清，等待剩余容量");
     }

@@ -55,6 +55,12 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return ParallelAllocation.totalBudget(machine.getMaxParallel(), threads());
     }
 
+    /** 独立线程：每批并行已按机器上限夹，线程数由 slots 控制，不再用共享池卡准入。 */
+    @Override
+    public long sessionBudget() {
+        return Long.MAX_VALUE;
+    }
+
     @Override
     public boolean allowsNewBatches() {
         return hostReady();
@@ -83,17 +89,57 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     @Override
     public void invalidateCandidates() {
         candidateCache.invalidate();
+        matchTrueAt.clear();
+        matchFalseAt.clear();
+        scaledCache.clear();
     }
 
     private long now() {
         return machine.getLevel() == null ? 0L : machine.getLevel().getGameTime();
     }
 
-    /** 空候选退避：缺料时不再每 5 tick 全量重扫，和山海的空结果退避同一思路。 */
-    private long emptyBackoffUntil = Long.MIN_VALUE;
-    private int emptyBackoffTicks = 20;
+    /** 空结果只做 20 tick 的短重试，不缓存空集：料一到最多 1 秒就能开工（对齐山海）。 */
+    private long emptyRetryAt = Long.MIN_VALUE;
+
+    /** 缩放结果缓存：同配方同并行只缩一次，取用时再复制，避免批次之间共享可变对象。 */
+    private final java.util.Map<Long, GTRecipe> scaledCache = new java.util.LinkedHashMap<>(32, 0.75F, true) {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<Long, GTRecipe> eldest) {
+            return size() > 128;
+        }
+    };
+
+    private GTRecipe scaledIngredients(GTRecipe origin, long parallels) {
+        long key = ((long) System.identityHashCode(origin) << 32) ^ parallels;
+        var cached = scaledCache.get(key);
+        if (cached == null) {
+            cached = RecipeCandidateSnapshots.scale(origin, parallels);
+            scaledCache.put(key, cached);
+        }
+        return RecipeCandidateSnapshots.copy(cached);
+    }
+
+    private final java.util.IdentityHashMap<GTRecipe, Long> matchTrueAt = new java.util.IdentityHashMap<>();
+    private final java.util.IdentityHashMap<GTRecipe, Long> matchFalseAt = new java.util.IdentityHashMap<>();
 
     private boolean check(GTRecipe recipe) {
+        long nowTick = now();
+        Long fresh = matchTrueAt.get(recipe);
+        if (fresh != null && nowTick - fresh < 20L) return true;
+        Long stale = matchFalseAt.get(recipe);
+        if (stale != null && nowTick - stale < 20L) return false;
+        boolean result = checkUncached(recipe);
+        if (result) {
+            matchFalseAt.remove(recipe);
+            matchTrueAt.put(recipe, nowTick);
+        } else {
+            matchTrueAt.remove(recipe);
+            matchFalseAt.put(recipe, nowTick);
+        }
+        return result;
+    }
+
+    private boolean checkUncached(GTRecipe recipe) {
         try {
             return RecipeRunnerHelper.matchRecipe(machine, recipe)
                     && IGTRecipe.of(recipe).getEuTier() <= machine.getTier()
@@ -103,6 +149,21 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             SwallowedErrors.reportDebug("MoltenOreModuleAdapter.check", ignored);
             return false;
         }
+    }
+
+    private int lastLoggedCandidates = Integer.MIN_VALUE;
+
+    /** 匹配数量变化时列出本轮配方 id，方便对「16 格总线为什么只开 N 条」。 */
+    private void logCandidateCount(List<GTRecipe> found) {
+        if (found.size() == lastLoggedCandidates) return;
+        lastLoggedCandidates = found.size();
+        StringBuilder ids = new StringBuilder();
+        for (int i = 0; i < Math.min(24, found.size()); i++) {
+            if (i > 0) ids.append(", ");
+            ids.append(found.get(i).id.getPath());
+        }
+        if (found.size() > 24) ids.append(", …");
+        GTLModular.LOGGER.info("[independent] 本轮匹配到 {} 种配方: [{}]", found.size(), ids);
     }
 
     /** 候选为空时，抽样一条配方逐项说清是哪道门卡住，免得只看到「未找到配方」。 */
@@ -126,6 +187,16 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         }
     }
 
+    private long lastDiagTick = Long.MIN_VALUE;
+
+    /** 诊断行限流：同一台机器 40 tick 一条。 */
+    private void diag(String message) {
+        long now = now();
+        if (now - lastDiagTick < 40L) return;
+        lastDiagTick = now;
+        GTLModular.LOGGER.info("[independent] 候选诊断 {}: {}", machine.getPos(), message);
+    }
+
     private final java.util.Set<GTRecipeType> noCandidateLogged = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     private Iterator<GTRecipe> lookup(GTRecipeType type) {
@@ -144,11 +215,27 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     @Override
     public List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget, long availablePower) {
-        if (availableSlots <= 0 || availableBudget <= 0 || !allowsNewBatches()) return List.of();
-        long budget = Math.min(availableBudget, totalBudget());
+        if (availableSlots <= 0) {
+            diag("槽位不足 slots=" + availableSlots);
+            return List.of();
+        }
+        if (availableBudget <= 0L) {
+            diag("预算不足 budget=" + availableBudget);
+            return List.of();
+        }
+        if (!allowsNewBatches()) {
+            var host = machine.getHost();
+            diag("宿主未就绪 machineFormed=" + machine.isFormed()
+                    + " host=" + (host == null ? "null" : host.isFormed() + "/" + host.isWorkingEnabled()));
+            return List.of();
+        }
+        // 独立线程的定义是「每条线程各跑各的」：每条批次最多用机器自己的并行上限，
+        // 不能拿「上限 × 线程数」的总池当单批预算，否则一条批次就会吃掉整个池、把线程数压到个位数。
+        long perBatch = Math.max(1L, machine.getMaxParallel());
+        long budget = Math.min(Math.min(availableBudget, totalBudget()), perBatch);
         if (budget <= 0L) return List.of();
         long now = now();
-        if (now < emptyBackoffUntil) return List.of();
+        if (now < emptyRetryAt) return List.of();
         int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
         var cached = candidateCache.get(now, cacheTicks, () -> {
             List<GTRecipe> found = new ArrayList<>();
@@ -158,21 +245,29 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 if (recipe != null) found.add(RecipeCandidateSnapshots.copy(recipe));
             }
             if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
+            else logCandidateCount(found);
             return found;
         });
         if (cached.isEmpty()) {
-            emptyBackoffUntil = now + emptyBackoffTicks;
-            emptyBackoffTicks = Math.min(200, emptyBackoffTicks * 2);
+            emptyRetryAt = now + 20L;
+            candidateCache.invalidate();
             return List.of();
         }
-        emptyBackoffTicks = 20;
-        List<GTRecipe> origins = new ArrayList<>(cached.size());
-        for (GTRecipe recipe : cached) origins.add(RecipeCandidateSnapshots.copy(recipe));
-
         int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
         Map<ResourceLocation, Integer> active = activeRecipes.get();
+        // 直接用缓存里的配方做排序，不再每 tick 复制 16 份；真正要开批时才按索引缩放。
+        List<GTRecipe> origins = cached;
         var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
                 active == null ? Map.of() : active);
+        if (now - lastDiagTick >= 200L) {
+            diag("管线 cached=" + cached.size() + " active=" + (active == null ? 0 : active.size())
+                    + " maxPerRecipe=" + maxPerRecipe + " order=" + order.size()
+                    + " slots=" + availableSlots + " budget=" + availableBudget);
+        }
+        if (order.isEmpty()) {
+            diag("候选被活跃计数全部过滤 active=" + active + " maxPerRecipe=" + maxPerRecipe + " cached=" + cached.size());
+            return List.of();
+        }
         int scanBudget = GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget();
         int window = scanBudget > 0
                 ? Math.min(order.size(), scanBudget)
@@ -193,13 +288,19 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             demands[n] = BatchRunLimits.tickCap(capped, RecipeHelper.getInputEUt(origin) * multiplier, powerCap);
         }
         long[] allocated = FairParallelAllocation.allocate(budget, demands);
+        long allocatedSum = 0L;
+        for (long value : allocated) allocatedSum += value;
+        if (allocatedSum <= 0L) {
+            diag("并行分配为 0 budget=" + budget + " window=" + window + " demands=" + java.util.Arrays.toString(demands));
+            return List.of();
+        }
         List<RecipeCandidateGroup.Input> inputs = new ArrayList<>();
         List<Double> energy = new ArrayList<>();
         for (int n = 0; n < window; n++) {
             long p = allocated[n];
             if (p <= 0L) continue;
             GTRecipe origin = origins.get(order.get(n));
-            GTRecipe ingredients = RecipeCandidateSnapshots.scale(origin, p);
+            GTRecipe ingredients = scaledIngredients(origin, p);
             inputs.add(new RecipeCandidateGroup.Input(ingredients, new ParallelAllocation(p, p), 1, 1));
             energy.add(SingleBatchEnergy.total((double) RecipeHelper.getInputEUt(origin) * origin.duration, p, multiplier));
         }

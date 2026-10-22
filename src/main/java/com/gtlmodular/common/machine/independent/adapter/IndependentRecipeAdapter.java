@@ -8,6 +8,9 @@ import java.util.List;
 public interface IndependentRecipeAdapter {
     int threads();
     long totalBudget();
+
+    /** 会话并行总量上限。默认沿用 totalBudget；独立线程语义下每线程自带并行，不共享池。 */
+    default long sessionBudget() { return totalBudget(); }
     boolean allowsNewBatches();
     boolean allowsRunningBatches();
 

@@ -46,7 +46,7 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
     private static final int BAR_WAITING = 0xFFD9A441;
     private static final int BAR_TEXT = 0xFFFFFFFF;
     private static final int DISPLAY_LINES = 8;
-    private static final int OUTPUT_LINES = 6;
+    private static final int OUTPUT_LINES = 8;
 
     @Override public void register(IWailaCommonRegistration registration) {
         registration.registerBlockDataProvider(Provider.INSTANCE, MetaMachineBlockEntity.class);
@@ -82,12 +82,11 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
             CompoundTag data = new CompoundTag();
             data.putBoolean("owned", controller.ownsWork());
             data.putInt("limit", controller.limit());
-            data.putInt("running", lines.size());
-            long runs = 0L;
+            data.putInt("running", controller.batchCount());
+            long runs = controller.totalRuns();
             var distinct = new HashSet<ResourceLocation>();
             ListTag threads = new ListTag();
             for (var line : lines) {
-                runs += Math.max(1L, line.parallels());
                 if (line.recipeId() != null) distinct.add(line.recipeId());
                 CompoundTag row = new CompoundTag();
                 row.putInt("label", line.label());
