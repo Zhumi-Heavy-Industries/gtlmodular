@@ -16,6 +16,7 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.IntValue maxBatchesPerRecipe;
     private final ForgeConfigSpec.IntValue candidateCacheTicks;
     private final ForgeConfigSpec.IntValue candidateScanBudget;
+    private final ForgeConfigSpec.IntValue longBatchTicks;
     private final ForgeConfigSpec.BooleanValue statsEnabled;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
@@ -73,6 +74,14 @@ public final class OtherMachineThreadsConfig {
                         "调低可以压 TPS 峰值，但会减少每 tick 能补的批次数；调高让补位更充分但扫描更贵。",
                         "Maximum candidates probed per tick; 0 = free slots + 8.")
                 .defineInRange("independentThreadsCandidateScanBudget", 0, 0, 4096);
+        longBatchTicks = builder.comment(
+                        "长批次目标时长（tick），默认 200；0 关闭长批次（每条批次只跑 1 次配方）。",
+                        "N = 目标时长 / 当前单批时长：一条批次跑 N 次配方，开批一次扣 p×N 份，",
+                        "每 tick 仍只按 p 付电，结算一次按 p×N 出料。批次寿命拉长后，每秒的开批/结算次数按 N 倍下降。",
+                        "N 还受输入库存限制：库存撑不起 p×N 时自动缩 N；缩到 1 就是原行为。",
+                        "Longer batches run the recipe N times per batch: inputs p×N at admission, power still p per tick,",
+                        "outputs p×N at settlement. Fewer admission/settlement events per second. Stock still caps N.")
+                .defineInRange("independentThreadsLongBatchTicks", 200, 0, 100_000);
         statsEnabled = builder.comment(
                         "在机器面板显示候选扫描/批次 tick 的耗时统计，默认关闭。",
                         "用于调 maxActiveThreads、maxBatchTicks 和候选预算；开启只多一次 nanoTime，不写日志。",
@@ -125,6 +134,14 @@ public final class OtherMachineThreadsConfig {
             return candidateScanBudget.get();
         } catch (IllegalStateException unloaded) {
             return candidateScanBudget.getDefault();
+        }
+    }
+
+    public int longBatchTicks() {
+        try {
+            return longBatchTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return longBatchTicks.getDefault();
         }
     }
 

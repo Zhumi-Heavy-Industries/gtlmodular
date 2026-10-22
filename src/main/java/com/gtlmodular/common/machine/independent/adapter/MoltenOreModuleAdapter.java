@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
@@ -30,6 +31,9 @@ import java.util.function.Supplier;
  * IndependentEnergyMultiplier 提供，真正扣电仍走宿主枢纽。
  */
 final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
+    /** 单批最小时长：上游聚合配方 20 tick 保底，长批次以此为「一份」的时长基准。 */
+    private static final int MINIMUM_BATCH_TICKS = 20;
+
     private final MultipleRecipesLogic logic;
     private final MoltenModuleMachineBase<?> machine;
     private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
@@ -254,6 +258,15 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         long perBatch = Math.max(1L, machine.getMaxParallel());
         long budget = Math.min(Math.min(availableBudget, totalBudget()), perBatch);
         if (budget <= 0L) return List.of();
+        int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
+        // 长批次：目标时长由配置给（0 = 关闭），单批时长不能被 maxBatchTicks 安全阀放大。
+        int longBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.longBatchTicks();
+        // GameTest 断言的是「一条批次一次配方」的旧口径（精确产物数量、20 tick 时长），
+        // 测试里固定关闭长批次；它只在游戏内由面板「第 k/N 次」和产量对账验收。
+        if (GameTestHooks.active()) longBatchTicks = 0;
+        if (maxBatchTicks > 0 && longBatchTicks > maxBatchTicks) longBatchTicks = maxBatchTicks;
+        int targetRuns = longBatchTicks > 0 ? Math.max(1, longBatchTicks / MINIMUM_BATCH_TICKS) : 1;
+        long demandBound = targetRuns > 1 ? saturatingMultiply(budget, targetRuns) : budget;
         long now = now();
         if (now < emptyRetryAt) return List.of();
         int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
@@ -297,14 +310,17 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 ? Math.min(order.size(), scanBudget)
                 : Math.min(order.size(), 16);
         long[] demands = new long[window];
+        long[] headrooms = new long[window];
         long powerCap = Math.min(availablePower, machine.getOverclockVoltage());
-        int maxBatchTicks = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks();
         long maxBatchRuns = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns();
         double multiplier = multiplier();
         for (int n = 0; n < window; n++) {
             GTRecipe origin = origins.get(order.get(n));
             // getMaxParallel 要按配方核对 ME 库存，单条 100+ µs；同一配方 20 tick 内复用上次的并行上限。
-            long demand = cachedDemand(origin, now, budget);
+            // 长批次要 p×N 份原料，所以这里按「目标份数」问一次真实库存上限，再夹回本批预算。
+            long headroom = cachedDemand(origin, now, demandBound);
+            long demand = Math.min(headroom, budget);
+            headrooms[n] = headroom;
             if (demand < 0L || demand > budget) throw new IllegalArgumentException("Parallel override exceeds the offered budget");
             long maxAmount = BatchRunLimits.maxContentAmount(origin);
             double energyPerRun = RecipeHelper.getInputEUt(origin) * (double) origin.duration * multiplier;
@@ -329,10 +345,23 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             if (p <= 0L) continue;
             GTRecipe origin = origins.get(order.get(n));
             GTRecipe ingredients = scaledIngredients(origin, p);
-            inputs.add(new RecipeCandidateGroup.Input(ingredients, new ParallelAllocation(p, p), 1, 1));
+            // 库存撑不起 p×N 就缩 N，缩到 1 就是原来的「一条批次一次配方」。
+            int maxRuns = targetRuns > 1
+                    ? (int) Math.max(1L, Math.min(targetRuns, headrooms[n] / Math.max(1L, p)))
+                    : 1;
+            inputs.add(new RecipeCandidateGroup.Input(ingredients, new ParallelAllocation(p, p), 1, 1, maxRuns));
             energy.add(SingleBatchEnergy.total((double) RecipeHelper.getInputEUt(origin) * origin.duration, p, multiplier));
         }
         return RecipeCandidateGroup.normal(inputs, energy,
-                Math.min(availablePower, machine.getOverclockVoltage()), 20);
+                Math.min(availablePower, machine.getOverclockVoltage()), MINIMUM_BATCH_TICKS, targetRuns > 1 ? longBatchTicks : 0);
+    }
+
+    /** 目标份数乘预算时可能溢出：饱和到 long 上限，真正的库存上限由 getMaxParallel 自己夹。 */
+    private static long saturatingMultiply(long value, int factor) {
+        try {
+            return Math.multiplyExact(value, (long) factor);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
     }
 }

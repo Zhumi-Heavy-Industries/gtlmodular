@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine.independent.runtime;
 
 import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
+import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gtlmodular.common.machine.independent.io.IndependentRecipeIo;
 import com.gtlmodular.common.machine.independent.persistence.IndependentRecipePayload;
@@ -32,6 +33,8 @@ public final class IndependentBatchRuntime {
         final SingleRecipeCandidate source;
         IndependentRecipeIo.InputRoute inputs;
         Map<RecipeCapability<?>, List<Content>> beforeInputs;
+        // 长批次：p×runs 的独立配料副本，扣料、输出容量检查与概率抽样都用它，避免每 tick 重算。
+        GTRecipe batchIngredients;
         Prepared(SingleRecipeCandidate source) { this.source = source; }
     }
 }

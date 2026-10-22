@@ -19,6 +19,8 @@ public final class IndependentRecipePayload {
     private final Map<Channel, Map<RecipeCapability<?>, List<Content>>> remainders;
     private BatchExecutionStage stage;
     private boolean wirelessPaid;
+    // 长批次份数：一条批次跑几次配方。1 = 原行为；开批扣 p×runs、结算出 p×runs，每 tick 仍只付 p 的电。
+    private int runs = 1;
     private Tag preserved;
 
     public IndependentRecipePayload(GTRecipe recipe, BatchRecipeExtensions.Power power,
@@ -49,6 +51,12 @@ public final class IndependentRecipePayload {
     public BatchExecutionStage stage() { return stage; }
     public boolean wirelessPaid() { return wirelessPaid; }
     public void setWirelessPaid(boolean paid) { wirelessPaid = paid; }
+
+    public int runs() { return runs; }
+    public void setRuns(int runs) {
+        if (runs < 1) throw new IllegalArgumentException("Invalid batch runs");
+        this.runs = runs;
+    }
 
     public void setStage(BatchExecutionStage stage) { this.stage = Objects.requireNonNull(stage); }
     public void setResolvedOutputs(Map<RecipeCapability<?>, List<Content>> outputs) { resolvedOutputs = outputs; }

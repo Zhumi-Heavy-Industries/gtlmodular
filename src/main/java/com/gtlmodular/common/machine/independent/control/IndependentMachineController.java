@@ -348,7 +348,8 @@ public final class IndependentMachineController {
 
     /** 一条线程的显示快照：给 Jade 客户端画行、条和产物图标。 */
     public record ThreadView(int label, long euPerTick, int duration, int progress, long parallels,
-                             String waitReason, String outputId, long outputCount, ResourceLocation recipeId) {}
+                             String waitReason, String outputId, long outputCount, ResourceLocation recipeId,
+                             int runs) {}
 
     public int limit() {
         try {
@@ -368,7 +369,7 @@ public final class IndependentMachineController {
         long runs = 0L;
         for (var batch : session.batches()) {
             try {
-                runs += Math.max(1L, batch.payload().recipe().parallels);
+                runs += Math.max(1L, batch.payload().recipe().parallels) * Math.max(1, batch.payload().runs());
             } catch (RuntimeException ignored) {
             }
         }
@@ -404,10 +405,20 @@ public final class IndependentMachineController {
             }
             String wait = batch.failure();
             if (wait == null && host != null) wait = host.runtime().waitReason(batch.payload());
+            int runs = Math.max(1, batch.payload().runs());
             out.add(new ThreadView(label, eu, batch.duration(), batch.progress(), parallels, wait,
-                    outputId, outputCount, recipe.id));
+                    outputId, runs > 1 ? saturatingMultiply(outputCount, runs) : outputCount, recipe.id, runs));
         }
         return out;
+    }
+
+    /** 长批次把 p×runs 记在一条批次上：显示数量按份数放大，溢出时饱和而不是回绕成负数。 */
+    private static long saturatingMultiply(long value, int factor) {
+        try {
+            return Math.multiplyExact(value, (long) factor);
+        } catch (ArithmeticException overflow) {
+            return Long.MAX_VALUE;
+        }
     }
 
     /** 产物内容可能是 ItemStack、SizedIngredient 或 gtlcore 的 LongIngredient，统一取一个图标样本。 */
@@ -448,7 +459,8 @@ public final class IndependentMachineController {
                 var items = batch.payload().recipe().outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
                 if (!items.isEmpty() && items.get(0).content instanceof ItemStack stack && !stack.isEmpty()) {
                     out.add(new ProductRow(shown, stack.copy(),
-                            BatchContents.amount(ItemRecipeCapability.CAP, items.get(0).content)));
+                            saturatingMultiply(BatchContents.amount(ItemRecipeCapability.CAP, items.get(0).content),
+                                    Math.max(1, batch.payload().runs()))));
                 }
             } catch (RuntimeException ignored) {
             }
@@ -516,7 +528,7 @@ public final class IndependentMachineController {
         long totalRuns = 0L;
         for (var batch : batches) {
             try {
-                totalRuns += Math.max(1L, batch.payload().recipe().parallels);
+                totalRuns += saturatingMultiply(Math.max(1L, batch.payload().recipe().parallels), Math.max(1, batch.payload().runs()));
             } catch (RuntimeException ignored) {
             }
         }
@@ -559,6 +571,12 @@ public final class IndependentMachineController {
             text.add(Component.translatable("gtlmodular.nanochip.thread_details.timing",
                     number(batch.duration()), seconds(batch.duration()),
                     number(batch.progress()), number(batch.duration())));
+            int runs = Math.max(1, batch.payload().runs());
+            if (runs > 1) {
+                text.add(Component.translatable("gtlmodular.independent.runs", number(runs),
+                        number(Math.max(1, batch.duration() / runs)),
+                        number(Math.min(runs, batch.progress() / Math.max(1, batch.duration() / runs) + 1))));
+            }
             text.add(wait == null
                     ? Component.translatable("gtlmodular.nanochip.thread_details.working")
                     : Component.translatable("gtlmodular.nanochip.thread_details.waiting", Component.literal(wait)));

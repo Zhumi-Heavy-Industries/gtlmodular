@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.RecipeCondition;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gtladd.gtladditions.api.recipe.WirelessGTRecipe;
+import com.gtlmodular.common.machine.independent.io.BatchContents;
 import com.mojang.serialization.JsonOps;
 import org.gtlcore.gtlcore.api.recipe.IGTRecipe;
 import org.gtlcore.gtlcore.api.recipe.RecipeExtensionCopier;
@@ -40,6 +41,24 @@ public final class RecipeCandidateSnapshots {
         if (parallels < 1) throw new IllegalArgumentException("Invalid parallels");
         // 先隔离 source，再按 long 精确乘；不能直接让上游 double 乘数处理巨构级并行。
         return IndependentRecipeScale.scale(copy(source), parallels);
+    }
+
+    /**
+     * 长批次：把一条已按并行缩放的只读快照复制成「跑 runs 次」的独有配方。
+     * 只放大开批输入与结算产出；tick 通道仍是单次份量，电由能量层按 p 计算。
+     * 对齐山海 DShanhaiBatchLogic.batch：输入/输出/时长整体×N，EUt 恢复到原值。
+     */
+    public static GTRecipe forRuns(GTRecipe ingredients, int runs) {
+        GTRecipe owned = copy(ingredients);
+        if (runs > 1) {
+            BatchContents.multiplyBy(owned.inputs, runs);
+            BatchContents.multiplyBy(owned.outputs, runs);
+            // 概率按「p×runs 份一起抽」处理：与现在按 p 并行抽签是同一段上游代码，只是份数更大。
+            long real = Math.min(Long.MAX_VALUE / runs, Math.max(1L, IGTRecipe.of(ingredients).getRealParallels())) * runs;
+            IGTRecipe.of(owned).setRealParallels(Math.max(1L, real));
+            owned.parallels = ingredients.parallels;
+        }
+        return owned;
     }
 
     public static GTRecipe normal(GTRecipe ingredients, SingleBatchEnergy.Normal energy) {

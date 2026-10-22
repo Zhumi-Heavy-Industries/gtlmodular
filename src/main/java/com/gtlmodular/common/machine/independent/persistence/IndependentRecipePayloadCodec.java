@@ -34,6 +34,8 @@ public final class IndependentRecipePayloadCodec implements BatchPayloadCodec<In
         tag.putString("outputStage", payload.stage().output().name());
         tag.putString("afterWorking", payload.stage().afterWorking().name());
         if (payload.wirelessPaid()) tag.putBoolean("wirelessPaid", true);
+        // 只在长批次时写：旧档没有这个键，按 N=1 读，encode 也不会补出来，往返校验仍然一致。
+        if (payload.runs() > 1) tag.putInt("runs", payload.runs());
         if (payload.resolvedOutputs() != null) tag.put("resolvedOutputs", encodeContents(payload.resolvedOutputs()));
         CompoundTag remainders = new CompoundTag();
         payload.remainders().forEach((channel, contents) -> remainders.put(channel.name(), encodeContents(contents)));
@@ -50,7 +52,7 @@ public final class IndependentRecipePayloadCodec implements BatchPayloadCodec<In
     @Override
     public IndependentRecipePayload decode(Tag encoded) {
         var f = new ArchiveFields<>(NbtOps.INSTANCE, encoded, "recipe", "chanceCaches", "inputStage", "outputStage",
-                "afterWorking", "resolvedOutputs", "remainders", "wirelessPaid");
+                "afterWorking", "resolvedOutputs", "remainders", "wirelessPaid", "runs");
         var recipe = recipes.decode(f.required("recipe"));
         var stage = new BatchExecutionStage(BatchExecutionStage.Input.valueOf(f.string("inputStage")),
                 BatchExecutionStage.Output.valueOf(f.string("outputStage")), BatchExecutionStage.Hook.valueOf(f.string("afterWorking")));
@@ -60,6 +62,7 @@ public final class IndependentRecipePayloadCodec implements BatchPayloadCodec<In
         var payload = new IndependentRecipePayload(recipe.recipe(), recipe.power(), caches.decode(f.required("chanceCaches")),
                 f.has("resolvedOutputs") ? decodeContents(f.required("resolvedOutputs")) : null, remainders, stage);
         if (f.has("wirelessPaid")) payload.setWirelessPaid(f.bool("wirelessPaid"));
+        if (f.has("runs")) payload.setRuns(f.integer("runs"));
         if (!encode(payload).equals(encoded)) throw new IllegalArgumentException("Lossy recipe execution state");
         return payload;
     }

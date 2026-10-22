@@ -16,6 +16,7 @@ import com.gtlmodular.common.machine.independent.io.IndependentRecipeIo;
 import com.gtlmodular.common.machine.independent.io.IndependentWirelessPower;
 import com.gtlmodular.common.machine.independent.io.SharedTickPower;
 import com.gtlmodular.common.machine.independent.persistence.*;
+import com.gtlmodular.common.machine.independent.recipe.RecipeCandidateSnapshots;
 import com.gtlmodular.common.machine.independent.recipe.SingleRecipeCandidate;
 import org.gtlcore.gtlcore.api.machine.ISuspendableMachine;
 
@@ -222,6 +223,8 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                 var payload = new IndependentRecipePayload(source.execution(), source.power(), new IdentityHashMap<>(),
                         null, new EnumMap<>(IndependentRecipePayload.Channel.class),
                         new BatchExecutionStage(Input.PREPARED, Output.UNROLLED, Hook.NOT_RUN));
+                payload.setRuns(source.runs());
+                logLongBatch(source);
                 var candidate = archive.persistence().prepare(payload, source.execution().duration, source.allocation().budget());
                 runtime.prepare(candidate.payload(), source);
                 return candidate;
@@ -234,6 +237,22 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean canAdmit() { return machineReady() && adapter.allowsNewBatches(); }
+
+    private String lastRunsLog;
+    private long lastRunsAt = Long.MIN_VALUE;
+
+    /** 长批次开批时写一条，玩家能直接看出「这条批次到底合并了几次配方」。 */
+    private void logLongBatch(SingleRecipeCandidate source) {
+        if (source.runs() <= 1) return;
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        String key = source.runs() + "|" + source.execution().duration;
+        if (key.equals(lastRunsLog) && now - lastRunsAt < 200L) return;
+        lastRunsLog = key;
+        lastRunsAt = now;
+        GTLModular.LOGGER.info("[independent] 长批次 {} {}: 每条批次 {} 份配方，总时长 {} tick（{} 秒），并行 {}",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), source.runs(),
+                source.execution().duration, source.execution().duration / 20.0D, source.allocation().parallels());
+    }
 
     private String lastBlocked;
     private long lastBlockedAt = Long.MIN_VALUE;
@@ -356,19 +375,21 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     private boolean prepareInputsInternal(IndependentRecipePayload payload) {
         var prepared = runtime.prepared(payload);
-        // 准入里的输入路线要物化 ME 库存（实测 600~700 µs/次）；同一配方 + 同并行短缓存复用。
-        String routeKey = payload.recipe().id + "|" + payload.recipe().parallels;
+        // 长批次：把只读的 p 并行快照复制成 runs 次的独立配方，开批输入与结算产出都按 p×runs 记账。
+        var ingredients = batchIngredients(payload, prepared);
+        // 准入里的输入路线要物化 ME 库存（实测 600~700 µs/次）；同一配方 + 同并行 + 同份数短缓存复用。
+        String routeKey = ingredients.id + "|" + ingredients.parallels + "|" + payload.runs();
         long nowTick = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
         var cachedRoute = inputRouteCache.get(routeKey);
         if (cachedRoute != null && nowTick - cachedRoute.tick() < 40L) {
             prepared.inputs = cachedRoute.route();
         } else {
-            io.requireSupported(payload.recipe());
-            prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
+            io.requireSupported(ingredients);
+            prepared.inputs = io.selectInput(ingredients, ingredients.inputs);
             if (prepared.inputs != null) inputRouteCache.put(routeKey, new CachedRoute(nowTick, prepared.inputs));
         }
         if (prepared.inputs == null) {
-            logMissingInputs(payload, prepared.source.ingredients());
+            logMissingInputs(payload, ingredients);
             return waitFor(payload, "开工输入不足");
         }
         // 完整 NBT 前后比对每次要几百微秒；改用轻量签名只防「钩子换掉配方/内容数量」这类越界改写。
@@ -379,21 +400,31 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
         if (!canWork(payload)) return false;
         // 钩子可能触发库存监听或结构变化，不能把前一次模拟当成扣料承诺。
-        io.requireSupported(payload.recipe());
-        prepared.inputs = io.selectInput(prepared.source.ingredients(), prepared.source.ingredients().inputs);
+        io.requireSupported(ingredients);
+        prepared.inputs = io.selectInput(ingredients, ingredients.inputs);
         if (prepared.inputs == null) return waitFor(payload, "开工钩子后输入不足");
         if (payload.stage().output() == Output.UNROLLED) {
-            var output = BatchChanceResolver.resolve(prepared.source.ingredients(), payload, machine, IO.OUT, false);
+            var output = BatchChanceResolver.resolve(ingredients, payload, machine, IO.OUT, false);
             payload.setResolvedOutputs(output);
             payload.remainders().put(OUTPUT, BatchContents.copy(output));
             payload.setStage(new BatchExecutionStage(Input.PREPARED, Output.READY, Hook.NOT_RUN));
-            payload.remainders().put(INPUT, BatchChanceResolver.resolve(prepared.source.ingredients(), payload, machine, IO.IN, false));
+            payload.remainders().put(INPUT, BatchChanceResolver.resolve(ingredients, payload, machine, IO.IN, false));
         }
         prepared.beforeInputs = BatchContents.copy(payload.remainders().get(INPUT));
         boolean outputFits = io.outputFits(payload.resolvedOutputs());
         boolean inputFits = prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN);
         return outputFits && inputFits
                 || waitFor(payload, "开工输入或输出容量不足: out=" + outputFits + " in=" + inputFits);
+    }
+
+    /** 长批次的 p×runs 配料副本：同一条候选的多次准入重试共用一份，避免重复复制配方。 */
+    private com.gregtechceu.gtceu.api.recipe.GTRecipe batchIngredients(IndependentRecipePayload payload,
+                                                                       IndependentBatchRuntime.Prepared prepared) {
+        if (payload.runs() <= 1) return prepared.source.ingredients();
+        if (prepared.batchIngredients == null) {
+            prepared.batchIngredients = RecipeCandidateSnapshots.forRuns(prepared.source.ingredients(), payload.runs());
+        }
+        return prepared.batchIngredients;
     }
 
     private long settleNanos, settleCalls, settleMax;

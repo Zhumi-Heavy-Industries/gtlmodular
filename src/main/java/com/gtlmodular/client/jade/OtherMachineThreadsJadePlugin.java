@@ -94,6 +94,7 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
                 row.putInt("duration", line.duration());
                 row.putInt("progress", line.progress());
                 row.putLong("parallels", line.parallels());
+                row.putInt("runs", line.runs());
                 row.putBoolean("working", line.waitReason() == null);
                 if (line.waitReason() != null) row.putString("reason", reasonKey(line.waitReason()));
                 if (line.outputId() != null) {
@@ -150,9 +151,11 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
 
             tooltip.add(Component.literal(DIVIDER));
             int shown = 0;
+            ListTag runRows = data.getList("threads", Tag.TAG_COMPOUND);
             for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
                 if (shown >= DISPLAY_LINES) break;
                 ThreadDisplayText.lines(thread).forEach(tooltip::add);
+                appendRuns(tooltip, runRows, shown, thread);
                 appendBar(tooltip, thread);
                 shown++;
             }
@@ -197,6 +200,18 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
 
         private static String reduction(double multiplier) {
             return String.format(java.util.Locale.ROOT, "%.1f％", (1.0D - multiplier) * 100.0D);
+        }
+
+        /** 长批次：一条批次内跑 N 次配方时补一行「第 k/N 次」，N=1 时不显示。 */
+        private static void appendRuns(ITooltip tooltip, ListTag rows, int index, ThreadDisplaySnapshot.Thread thread) {
+            if (index >= rows.size()) return;
+            int runs = rows.getCompound(index).getInt("runs");
+            if (runs <= 1 || thread.duration() == null || thread.progress() == null) return;
+            int perRun = Math.max(1, thread.duration() / runs);
+            int current = Math.max(1, Math.min(runs, thread.progress() / perRun + 1));
+            tooltip.add(Component.translatable("gtlmodular.independent.runs",
+                    Component.literal(Integer.toString(runs)), Component.literal(Integer.toString(perRun)),
+                    Component.literal(Integer.toString(current))));
         }
 
         /** 与 NAC 完全相同的条：绿色=工作中，橙色=等待，白字。 */

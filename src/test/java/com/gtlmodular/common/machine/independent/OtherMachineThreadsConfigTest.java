@@ -26,6 +26,7 @@ class OtherMachineThreadsConfigTest {
     private static final String MAX_PER_RECIPE = "independentThreadsMaxBatchesPerRecipe";
     private static final String CACHE = "independentThreadsCandidateCacheTicks";
     private static final String SCAN = "independentThreadsCandidateScanBudget";
+    private static final String LONG_BATCH = "independentThreadsLongBatchTicks";
     private static final String STATS = "independentThreadsStats";
     private static final String MACHINE = "gtladditions:arcane_cache_vault";
 
@@ -38,6 +39,7 @@ class OtherMachineThreadsConfigTest {
         ForgeConfigSpec.ConfigValue<?> perRecipe = spec.getValues().get(List.of(MAX_PER_RECIPE));
         ForgeConfigSpec.ConfigValue<?> cache = spec.getValues().get(List.of(CACHE));
         ForgeConfigSpec.ConfigValue<?> scan = spec.getValues().get(List.of(SCAN));
+        ForgeConfigSpec.ConfigValue<?> longBatch = spec.getValues().get(List.of(LONG_BATCH));
         ForgeConfigSpec.ConfigValue<?> stats = spec.getValues().get(List.of(STATS));
         assertNotNull(ticks);
         assertNotNull(runs);
@@ -45,13 +47,15 @@ class OtherMachineThreadsConfigTest {
         assertNotNull(perRecipe);
         assertNotNull(cache);
         assertNotNull(scan);
+        assertNotNull(longBatch);
         assertNotNull(stats);
         assertEquals(10_000, ticks.getDefault());
         assertEquals(0L, runs.getDefault());
         assertEquals(false, me.getDefault());
-        assertEquals(0, perRecipe.getDefault());
-        assertEquals(5, cache.getDefault());
+        assertEquals(1, perRecipe.getDefault());
+        assertEquals(100, cache.getDefault());
         assertEquals(0, scan.getDefault());
+        assertEquals(200, longBatch.getDefault());
         assertEquals(false, stats.getDefault());
 
         var data = CommentedConfig.inMemory();
@@ -62,6 +66,7 @@ class OtherMachineThreadsConfigTest {
         data.set(MAX_PER_RECIPE, 1);
         data.set(CACHE, 7);
         data.set(SCAN, 32);
+        data.set(LONG_BATCH, 60);
         data.set(STATS, true);
         try {
             spec.setConfig(data);
@@ -71,6 +76,7 @@ class OtherMachineThreadsConfigTest {
             assertEquals(1, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe());
             assertEquals(7, GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks());
             assertEquals(32, GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget());
+            assertEquals(60, GTLModularConfig.OTHER_MACHINE_THREADS.longBatchTicks());
             assertTrue(GTLModularConfig.OTHER_MACHINE_THREADS.statsEnabled());
         } finally {
             spec.setConfig(null);

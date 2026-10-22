@@ -72,11 +72,16 @@
 - `independentThreadsMaxBatchTicks` 默认 10000（约 8 分钟），0 表示不限制；`independentThreadsMaxBatchRuns` 默认 0（不限制）。它们是安全阀，不是吞吐上限：长期配方会自动缩批，短配方仍可开很大。
 - 候选内容用 `IAdvancedContentModifier.preciseMultiplier` 做 long 精确放大，并按原配方逐项校正数量；超出 `Long.MAX` 的批直接拒绝，不静默饱和。EU/t 不在物料倍率里重复放大，仍由能量层重新计算。
 - `independentThreadsAllowMeIo` 默认 false。开启且机器装了 ME 样板/输出处理器时，非 tick 的物品/流体走上游 ME 的 long 计数路径；模拟通过才真实转移，剩余量写回同一张 Content 表。ME 的 tick 物品/流体尚未适配，遇到会拒绝该批；普通总线机器不受影响。
-- 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 0（不限），矿物处理这类配方种类远多于线程的场景建议设为 1，让每种矿最坏等一个轮转周期而不是永远轮不到。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
-- `independentThreadsCandidateCacheTicks` 默认 5：候选 lookup 结果短缓存，降低每 tick 重查成本；0 关闭。真实扣料/配置改变会主动失效；外部输入变化没有统一 revision，最多延迟 TTL，但真实扣料仍逐条校验，不会凭空开工。
-- `independentThreadsCandidateScanBudget` 默认 0 = 空槽数 + 8：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
+- 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 1（一种配方最多占一条批次）。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
+- `independentThreadsCandidateCacheTicks` 默认 100：候选 lookup 结果短缓存，降低每 tick 重查成本；0 关闭。真实扣料/配置改变会主动失效；外部输入变化没有统一 revision，最多延迟 TTL，但真实扣料仍逐条校验，不会凭空开工。
+- `independentThreadsCandidateScanBudget` 默认 0 = 每轮最多 16 条候选：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
 - `independentThreadsStats` 默认 false：开启后机器面板显示候选扫描和批次 tick 的平均/最大耗时，用于调 active 线程数和候选预算。
 - 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
+- **长批次**（`independentThreadsLongBatchTicks`，默认 200，0 = 关闭）：一条批次合并 N 次配方，`N = 目标时长 ÷ 当前单批时长`，再被输入库存夹住（`getMaxParallel` 按目标份数问一次真实库存，缩到 1 就是原行为）。开批一次扣 `p×N`、每 tick 仍只按 `p` 付电、结算一次出 `p×N`；总耗电、总产出、总时长都按 N 倍记账，所以单位时间产出与功率不变，只是开批/结算次数降到 1/N。实现对齐山海的 `DShanhaiBatchLogic.batch`（输入/输出/时长整体×N，EUt 恢复原值）。
+  - 只接在聚合族（地心炼矿模块）的 normal 通道上；无线族与非该模块的候选仍是 N=1，避免在"输入已在聚合时扣过"的路径上再乘一次产出。
+  - 概率产物按 `p×N` 份一起抽一次（与现在按 p 并行抽签是同一段上游代码），期望值等价、方差不同于逐份抽。
+  - 存档只在新批次写 `runs` 键，旧档按 N=1 读；`runs > 1` 时面板与 Jade 显示「本批 N 次配方，第 k 次」。
+  - GameTest 固定按 N=1 运行（用例断言的是 20 tick、精确产物数量的旧口径）；长批次的实际时长与产量对账在游戏内验收。
 - 地心炼矿模块（`gtlmodular:molten_space_ore_module`）是第一个 `MultipleRecipesLogic` 专用适配目标：引擎用 `getRecipeType().getLookup()` 只读枚举候选，不调用会真实扣料的 `getRecipe()`；模块实现 `IndependentEnergyMultiplier`，主机线圈折扣后的 EU 在引擎 tick 前按比例缩放，实际扣电仍走 `MoltenModuleHostMachine.requestEnergy`。旧 `MultipleRecipesLogic` 合批路径保留给未开启的存档。启用方式：总开关开启 + 白名单加入该机器 ID；ME 进出料还需 `independentThreadsAllowMeIo`。
 
 已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
