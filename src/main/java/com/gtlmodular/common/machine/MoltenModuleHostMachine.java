@@ -131,21 +131,8 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
         return new HostRecipeLogic(this);
     }
 
-    private EnergyContainerList cachedEnergy;
-    private long cachedEnergyTick = Long.MIN_VALUE / 2;
-
-    /**
-     * 主机能源容器每 tick 只查一次：独立线程每 tick 要为主机的几十个模块扣电，
-     * 原来每次扣电都走一遍能力代理查表（Guava StandardTable.get），spark 实测占 0.04%。
-     * 同一 tick 内结构/仓室不会变，缓存一个 tick 是安全的。
-     */
     private EnergyContainerList energy() {
-        long now = getLevel() == null ? 0L : getLevel().getGameTime();
-        if (now != cachedEnergyTick) {
-            cachedEnergyTick = now;
-            cachedEnergy = isFormed() ? getEnergyContainer() : null;
-        }
-        return cachedEnergy;
+        return isFormed() ? getEnergyContainer() : null;
     }
 
     public long getTotalStoredEU() {
