@@ -326,8 +326,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             StringBuilder need = new StringBuilder();
             for (var entry : ingredients.inputs.entrySet()) {
                 for (var content : entry.getValue()) {
-                    need.append(entry.getKey().getClass().getSimpleName())
-                            .append('x').append(BatchContents.amount(entry.getKey(), content.content))
+                    // 打印物品/流体 ID：只打能力类名看不出到底缺哪一样（玩家的日志里全是 ItemRecipeCapabilityx…）。
+                    need.append(contentName(entry.getKey(), content.content))
+                            .append('×').append(com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(
+                                    BatchContents.amount(entry.getKey(), content.content)))
                             .append(' ');
                 }
             }
@@ -345,6 +347,27 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                     payload.recipe().id, need, have);
         } catch (RuntimeException ignored) {
         }
+    }
+
+    /** 内容的人类可读名字：物品取注册 ID，流体取类型 ID。 */
+    private static String contentName(com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?> cap,
+                                      Object content) {
+        try {
+            if (cap == com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability.CAP) {
+                var ingredient = content instanceof net.minecraft.world.item.crafting.Ingredient item ? item : null;
+                if (ingredient != null && ingredient.getItems().length > 0) {
+                    return net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .getKey(ingredient.getItems()[0].getItem()).getPath();
+                }
+            } else if (cap == com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability.CAP
+                    && content instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid
+                    && fluid.getStacks().length > 0) {
+                return net.minecraft.core.registries.BuiltInRegistries.FLUID
+                        .getKey(fluid.getStacks()[0].getFluid()).getPath();
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return cap.getClass().getSimpleName();
     }
 
     private long admitNanos, admitCalls, admitMax;

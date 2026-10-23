@@ -93,8 +93,21 @@ public final class IndependentBatchPolicy<P> implements IndependentBatchOperatio
         try {
             return check.getAsBoolean();
         } catch (RuntimeException exception) {
+            logFailureOnce(exception);
             return host.waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
         }
+    }
+
+    private static final java.util.Set<String> LOGGED_FAILURES = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * 等待原因里只留一句消息，堆栈就丢了（例如「Cannot read field "ingredientActions" because "recipe" is null」），
+     * 根本看不出是谁读的。同一类失败首次出现时打一条带堆栈的 WARN，便于定位又不刷屏。
+     */
+    private static void logFailureOnce(RuntimeException exception) {
+        String key = exception.getClass().getName() + ": " + exception.getMessage();
+        if (LOGGED_FAILURES.size() >= 64 || !LOGGED_FAILURES.add(key)) return;
+        com.gtlmodular.GTLModular.LOGGER.warn("[independent] 批次操作抛异常（首次出现，附堆栈）", exception);
     }
 
     @Override
