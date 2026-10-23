@@ -17,6 +17,7 @@ import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.ChatFormatting;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.fuel.DualFluidTax;
+import com.gtlmodular.common.machine.independent.io.IndependentEnergyMultiplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -36,7 +37,7 @@ import java.util.function.BiPredicate;
 
 public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<M>>
         extends CoilWorkableElectricMultipleRecipesMachine
-        implements IModularMachineModule<MoltenModuleHostMachine, M>, IMachineLife {
+        implements IModularMachineModule<MoltenModuleHostMachine, M>, IMachineLife, IndependentEnergyMultiplier {
 
     /** 自带同步字段必须挂到本类的 ManagedFieldHolder，客户端才能收到它们。 */
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER =
@@ -364,6 +365,13 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     @Override
     public MoltenModuleHostMachine getHost() {
         return host;
+    }
+
+    @Override
+    public double independentEnergyMultiplier() {
+        MoltenModuleHostMachine h = getHost();
+        double discount = h == null ? 0.0D : h.getModuleEnergyDiscount();
+        return Math.max(0.0D, 1.0D - discount);
     }
 
     @Override

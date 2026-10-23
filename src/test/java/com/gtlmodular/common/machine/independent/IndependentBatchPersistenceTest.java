@@ -170,14 +170,16 @@ class IndependentBatchPersistenceTest {
     }
 
     @Test
-    void preflightMakesAnIndependentCandidateAndRejectsUnserializablePayload() {
+    void preflightHandsBackTheSameExclusivePayloadWithoutAnNbtRoundTrip() {
         JsonElement payload = payload();
         var candidate = codec.prepare(payload, 9, 8);
-        payload.getAsJsonObject().remove("recipe");
-        assertTrue(candidate.payload().getAsJsonObject().has("recipe"));
         assertEquals(9, candidate.duration());
         assertEquals(8, candidate.budget());
-        assertThrows(IllegalArgumentException.class, () -> codec.prepare(payload, 9, 8));
+        // 候选阶段不再做 encode→decode→再 encode（每个候选 3 份 NBT，实测 100µs+/条）：
+        // 返回的就是调用方交进来的那份独占 payload，所以调用方不能再改它。
+        // 不可存档的批次在保存时才暴露，并按原文保留给人工核账，不会静默丢掉已扣料的工作。
+        assertSame(payload, candidate.payload());
+        assertDoesNotThrow(() -> codec.prepare(payload, 9, 8));
     }
 
     @Test

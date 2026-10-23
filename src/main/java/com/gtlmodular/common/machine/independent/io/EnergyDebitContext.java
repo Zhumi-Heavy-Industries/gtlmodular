@@ -32,7 +32,11 @@ public final class EnergyDebitContext implements AutoCloseable {
         var context = CURRENT.get();
         if (context == null || context.container != container || context.recorded) return;
         long moved = context.input ? Math.subtractExact(context.before, stored) : Math.subtractExact(stored, context.before);
-        if (moved < 0 || moved > context.requested) throw new IllegalStateException("Invalid observed energy debit");
+        if (moved < 0 || moved > context.requested) {
+            throw new IllegalStateException("Invalid observed energy debit: before=" + context.before
+                    + " stored=" + stored + " requested=" + context.requested + " input=" + context.input
+                    + " moved=" + moved);
+        }
         context.record.accept(context.requested - moved);
         context.recorded = true;
     }

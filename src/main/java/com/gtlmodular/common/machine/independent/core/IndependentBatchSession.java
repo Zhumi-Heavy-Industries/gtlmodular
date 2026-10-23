@@ -244,10 +244,21 @@ public final class IndependentBatchSession<P, U> {
             if (drainRequested || hasFailure() || !control.admissionAllowed() || owned.size() >= control.slots()) {
                 return null;
             }
-            if (budget.occupied().compareTo(BigInteger.valueOf(control.budgetLimit())) > 0) return null;
+
+            if (budget.occupied().compareTo(BigInteger.valueOf(control.budgetLimit())) > 0) {
+                operations.rejectAdmission("并行预算已占满");
+                return null;
+            }
             long available = budget.available(control.budgetLimit());
             var candidate = operations.findBatch(control.slots() - owned.size(), available);
-            if (candidate == null || candidate.budget() > available) return null;
+            if (candidate == null) {
+                operations.rejectAdmission("没有候选配方");
+                return null;
+            }
+            if (candidate.budget() > available) {
+                operations.rejectAdmission("剩余并行预算不足: 需要 " + candidate.budget() + " 剩余 " + available);
+                return null;
+            }
             requireDistinctPayload(candidate.payload());
             return new OwnedBatch(new IndependentSessionSnapshot.Batch<>(candidate.payload(), candidate.duration(),
                     0, candidate.budget(), Phase.RUNNING, null));

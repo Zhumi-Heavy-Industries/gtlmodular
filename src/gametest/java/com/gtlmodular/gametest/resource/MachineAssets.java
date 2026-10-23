@@ -49,12 +49,24 @@ final class MachineAssets {
         switch (id.getPath()) {
             case "molten_module_host" -> audit.workable(new ResourceLocation("gtlcore:block/casings/iridium_casing"),
                     new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "molten_module_host_test" -> audit.workable(
+                    new ResourceLocation("gtceu:block/casings/solid/machine_casing_heatproof"),
+                    new ResourceLocation("gtceu:block/multiblock/data_bank"));
             case "molten_blast_module" -> audit.workable(new ResourceLocation("gtceu:block/casings/solid/machine_casing_heatproof"),
                     new ResourceLocation("gtceu:block/multiblock/electric_blast_furnace"));
             case "molten_stripper_module" -> audit.workable(new ResourceLocation("gtlcore:block/casings/hyper_mechanical_casing"),
                     new ResourceLocation("gtceu:block/multiblock/fusion_reactor"));
             case "molten_space_ore_module" -> audit.workable(new ResourceLocation("gtlcore:block/space_elevator_mechanical_casing"),
                     new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "molten_space_ore_module_real" -> audit.workable(
+                    new ResourceLocation("gtlcore:block/space_elevator_mechanical_casing"),
+                    new ResourceLocation("gtceu:block/multiblock/data_bank"));
+            case "buffered_me_output_buffer" -> {
+                String voltage = "gtceu:block/casings/voltage/" + GTValues.VN[definition.getTier()].toLowerCase(Locale.ROOT);
+                audit.model("gtceu:block/machine/hull_machine",
+                        hull(voltage + "/bottom", voltage + "/top", voltage + "/side"));
+                audit.model("gtceu:block/machine/part/me_extended_export_buffer", Map.of());
+            }
             default -> throw new IOException("未覆盖的动态机器 " + id);
         }
     }

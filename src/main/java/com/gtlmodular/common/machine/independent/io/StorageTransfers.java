@@ -1,6 +1,8 @@
 package com.gtlmodular.common.machine.independent.io;
 
 import com.gregtechceu.gtceu.api.capability.recipe.*;
+import com.gregtechceu.gtceu.integration.ae2.slot.ExportOnlyAEFluidList;
+import com.gregtechceu.gtceu.integration.ae2.slot.ExportOnlyAEItemList;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableEnergyContainer;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableFluidTank;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableItemStackHandler;
@@ -9,6 +11,7 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.lowdragmc.lowdraglib.misc.FluidStorage;
 import com.lowdragmc.lowdraglib.misc.ItemStackTransfer;
+import org.gtlcore.gtlcore.integration.gtmt.InfinityEnergyContainer;
 import net.minecraft.world.item.crafting.Ingredient;
 import org.gtlcore.gtlcore.api.machine.trait.NotifiableCircuitItemStackHandler;
 
@@ -29,6 +32,12 @@ final class StorageTransfers {
     }
 
     static void requireSupported(IRecipeHandler<?> handler) {
+        if (handler instanceof InfinityEnergyContainer) return;
+        // AE 只输出仓：容量由 ME 网络决定，真实数量由上游 handleRecipeInner 计数（模拟/真实都返回余量）。
+        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) return;
+        if (handler instanceof ModuleEnergyHandler) return;
+        if (isVirtualCircuit(handler)) return;
+        if (isCreativeInput(handler)) return;
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) return;
         // 子类可能加入隔离、催化或无限库存语义；这里只允许已核实的具体处理器和存储。
         if (handler.getClass() == NotifiableItemStackHandler.class) {
@@ -43,6 +52,21 @@ final class StorageTransfers {
             return;
         }
         throw unsupported(handler);
+    }
+
+    /** 增强版（GTL-Enhancedcore）电路编码仓：虚拟电路，只参与匹配，永远不真正扣物品。 */
+    private static final String VIRTUAL_CIRCUIT = "com.gtl.enhancedcore.common.machine.hatch.CircuitEncoderHatchMachine$CircuitEncoderRecipeHandler";
+
+    /** gtmthings 创造输入总线：内部是无限料存储，按上游 handleRecipeInner 计数即可。 */
+    private static final String CREATIVE_INPUT = "com.hepdd.gtmthings.common.block.machine.multiblock.part.CreativeInputBusPartMachine$1";
+
+    // 按类名识别而不是 instanceof：独立版（gtl_nac）不带这些可选模组，硬引用会 NoClassDefFoundError。
+    private static boolean isVirtualCircuit(IRecipeHandler<?> handler) {
+        return handler.getClass().getName().equals(VIRTUAL_CIRCUIT);
+    }
+
+    private static boolean isCreativeInput(IRecipeHandler<?> handler) {
+        return handler.getClass().getName().equals(CREATIVE_INPUT);
     }
 
     private static boolean inheritsEnergyIo(Class<?> type) {
@@ -64,11 +88,33 @@ final class StorageTransfers {
 
     void move(IRecipeHandler<?> handler, IO io, Content content) {
         requireSupported(handler);
+        if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList
+                || handler instanceof ModuleEnergyHandler) {
+            moveViaHandler(handler, io, content);
+            return;
+        }
+        if (handler instanceof InfinityEnergyContainer) {
+            // 创造能源仓本身无上限，也不走 EnergyDebitContext；视为本 tick 已足额供能。
+            if (io == IO.IN) content.content = 0L;
+            return;
+        }
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) {
             // 虚拟电路只参与上游模拟匹配，绝不能当作实际可扣除的物品。
             if (simulate && io == IO.IN && handler.handleRecipe(io, null, List.of(content.content), null, true) == null) {
                 BatchContents.amount(ItemRecipeCapability.CAP, content, 0);
             }
+            return;
+        }
+        if (isVirtualCircuit(handler)) {
+            // 电路编码仓与虚拟电路同语义：配置的电路只用于匹配配方，不占实际库存。
+            if (simulate && io == IO.IN && handler.handleRecipe(io, null, List.of(content.content), null, true) == null) {
+                BatchContents.amount(ItemRecipeCapability.CAP, content, 0);
+            }
+            return;
+        }
+        if (isCreativeInput(handler)) {
+            // 创造输入总线：内部存储是无限料，交给上游 handleRecipeInner 计数（它按配置的无限库存返回余量）。
+            moveViaHandler(handler, io, content);
             return;
         }
         if (handler instanceof NotifiableItemStackHandler items) {
@@ -86,6 +132,25 @@ final class StorageTransfers {
                 fluid(storage, io, content);
             }
         }
+    }
+
+    /**
+     * AE 只输出仓没有可直接搬运的 FluidStorage/ItemStackTransfer：它们的真实去向是 ME 网络。
+     * 这里直接用上游的 handleRecipeInner 计数：它消费多少、返回多少余量，我们都按返回值回写。
+     */
+    @SuppressWarnings("unchecked")
+    private void moveViaHandler(IRecipeHandler<?> handler, IO io, Content content) {
+        // 输入方向也要走这里：标签过滤 ME 库存输入总线是 ExportOnlyAEStockingItemList
+        // （ExportOnlyAEItemList 的子类），它只能靠 handleRecipeInner 从 ME 库存里取料。
+        // 纯输出的 ExportOnlyAE*List 对 IO.IN 会原样返回，等于正确地报告"没取到"。
+        var cap = (RecipeCapability<Object>) handler.getCapability();
+        if (BatchContents.amount(cap, content.content) <= 0) return;
+        var input = new java.util.ArrayList<Object>();
+        input.add(content.content);
+        IRecipeHandler<Object> raw = (IRecipeHandler<Object>) handler;
+        List<Object> left = raw.handleRecipeInner(io, null, input, null, simulate);
+        long remaining = left == null || left.isEmpty() ? 0 : BatchContents.amount(cap, left.get(0));
+        BatchContents.amount(cap, content, remaining);
     }
 
     private void item(ItemStackTransfer storage, IO io, Content content) {

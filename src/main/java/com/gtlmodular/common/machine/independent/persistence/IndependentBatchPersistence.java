@@ -39,11 +39,10 @@ public final class IndependentBatchPersistence<P, T> {
     public IndependentBatchOperations.Candidate<P> prepare(P payload, int duration, long budget) {
         var batch = new Batch<>(payload, duration, 0, budget, Phase.RUNNING, null);
         payloadCodec.validateCandidate(batch);
-        T encoded = copy.apply(payloadCodec.encode(payload));
-        P restored = payloadCodec.decode(copy.apply(encoded));
-        if (!encoded.equals(payloadCodec.encode(restored))) throw new IllegalArgumentException("Lossy batch payload");
-        payloadCodec.validateCandidate(new Batch<>(restored, duration, 0, budget, Phase.RUNNING, null));
-        return new IndependentBatchOperations.Candidate<>(restored, duration, budget);
+        // 不再做 encode→decode→再 encode 的往返校验：每个候选要编 3 份 NBT（实测每条 ~100+ µs，
+        // 每 tick 8 条候选就是近 1 ms）。payload 是刚构造的独立对象，不共享可变状态；
+        // 真正的可存档性由保存时的归档编码兜底，失败会保留原文而不是静默丢批次。
+        return new IndependentBatchOperations.Candidate<>(payload, duration, budget);
     }
 
     public IndependentBatchSession<P, PreservedBatchData<T>> load(Optional<T> root) {

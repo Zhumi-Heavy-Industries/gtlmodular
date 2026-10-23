@@ -10,6 +10,14 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.BooleanValue enabled;
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> whitelist;
     private final ForgeConfigSpec.ConfigValue<List<? extends String>> blacklist;
+    private final ForgeConfigSpec.IntValue maxBatchTicks;
+    private final ForgeConfigSpec.LongValue maxBatchRuns;
+    private final ForgeConfigSpec.BooleanValue allowMeIo;
+    private final ForgeConfigSpec.IntValue maxBatchesPerRecipe;
+    private final ForgeConfigSpec.IntValue candidateCacheTicks;
+    private final ForgeConfigSpec.IntValue candidateScanBudget;
+    private final ForgeConfigSpec.IntValue longBatchTicks;
+    private final ForgeConfigSpec.BooleanValue statsEnabled;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
         enabled = builder.comment(
@@ -32,6 +40,117 @@ public final class OtherMachineThreadsConfig {
                         "加入黑名单仅停止新批准入，不能丢弃已扣料的工作。")
                 .defineListAllowEmpty("independentThreadsMachineBlacklist", List.<String>of(),
                         ThreadEligibilitySettings::isValidMachineId);
+        maxBatchTicks = builder.comment(
+                        "单条独立批次的最长时长（tick），默认 10000（约 8 分钟）。",
+                        "准入时按机器功率把并行数压到这么长以内；0 表示不限制。",
+                        "这是安全阀，不是吞吐上限：长配方会自动缩批，避免一批跑几小时甚至几年。",
+                        "Maximum ticks per independent batch. Admission reduces the parallel count to fit this clock; 0 disables the cap.",
+                        "This is a safety valve, not a throughput rule: long recipes shrink instead of running for hours.")
+                .defineInRange("independentThreadsMaxBatchTicks", 10_000, 0, 2_000_000_000);
+        maxBatchRuns = builder.comment(
+                        "单条独立批次的最多运行份数（realParallels），默认 0 = 不限制。",
+                        "用于给极端库存一个绝对安全阀；0 表示只受输入、输出和单批时长的约束。",
+                        "Maximum runs per independent batch. 0 means no fixed run cap; inputs, outputs and the batch clock still apply.")
+                .defineInRange("independentThreadsMaxBatchRuns", 0L, 0L, Long.MAX_VALUE);
+        allowMeIo = builder.comment(
+                        "允许 ME 样板/输出处理器参与独立批次（默认关闭）。",
+                        "开启后，装了 ME 长数量仓储的机器走 ME 的 long 计数 IO；未装 ME 的机器仍走普通总线。",
+                        "ME tick 物品/流体尚未适配：配方带 tick 物料时仍会拒绝，等后续批次。",
+                        "Allow ME pattern/output handlers in independent batches. ME tick item/fluid IO is not implemented yet.")
+                .define("independentThreadsAllowMeIo", false);
+        maxBatchesPerRecipe = builder.comment(
+                        "同一配方最多同时占几条独立批次，默认 0 = 不限制。",
+                        "矿物处理这类“配方种类远多于线程”的场景建议设为 1：防止一种矿占满所有槽，让后面的矿能轮转。",
+                        "这是候选级公平上限；已经扣料的批次不受影响。",
+                        "Maximum concurrent independent batches per recipe. 0 = unlimited; 1 is recommended for many-recipe ore processing.")
+                .defineInRange("independentThreadsMaxBatchesPerRecipe", 1, 0, 256);
+        candidateCacheTicks = builder.comment(
+                        "候选查询缓存的有效 tick 数，默认 5；0 表示每 tick 都重新 lookup。",
+                        "上游输入变化没有统一 revision，因此只做短 TTL；真实扣料仍逐条校验，缓存不会绕过输入检查。",
+                        "Candidate lookup cache TTL in ticks; 0 disables. Real input checks still run per batch.")
+                .defineInRange("independentThreadsCandidateCacheTicks", 100, 0, 400);
+        candidateScanBudget = builder.comment(
+                        "每 tick 最多试算多少条候选，默认 0 = 空槽数 + 8。",
+                        "调低可以压 TPS 峰值，但会减少每 tick 能补的批次数；调高让补位更充分但扫描更贵。",
+                        "Maximum candidates probed per tick; 0 = free slots + 8.")
+                .defineInRange("independentThreadsCandidateScanBudget", 0, 0, 4096);
+        longBatchTicks = builder.comment(
+                        "长批次目标时长（tick），默认 200；0 关闭长批次（每条批次只跑 1 次配方）。",
+                        "N = 目标时长 / 当前单批时长：一条批次跑 N 次配方，开批一次扣 p×N 份，",
+                        "每 tick 仍只按 p 付电，结算一次按 p×N 出料。批次寿命拉长后，每秒的开批/结算次数按 N 倍下降。",
+                        "N 还受输入库存限制：库存撑不起 p×N 时自动缩 N；缩到 1 就是原行为。",
+                        "Longer batches run the recipe N times per batch: inputs p×N at admission, power still p per tick,",
+                        "outputs p×N at settlement. Fewer admission/settlement events per second. Stock still caps N.")
+                .defineInRange("independentThreadsLongBatchTicks", 200, 0, 100_000);
+        statsEnabled = builder.comment(
+                        "在机器面板显示候选扫描/批次 tick 的耗时统计，默认关闭。",
+                        "用于调 maxActiveThreads、maxBatchTicks 和候选预算；开启只多一次 nanoTime，不写日志。",
+                        "Show per-machine candidate/batch timing stats; off by default.")
+                .define("independentThreadsStats", false);
+    }
+
+    public int maxBatchTicks() {
+        try {
+            return maxBatchTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchTicks.getDefault();
+        }
+    }
+
+    public long maxBatchRuns() {
+        try {
+            return maxBatchRuns.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchRuns.getDefault();
+        }
+    }
+
+    public boolean allowMeIo() {
+        try {
+            return allowMeIo.get();
+        } catch (IllegalStateException unloaded) {
+            return allowMeIo.getDefault();
+        }
+    }
+
+    public int maxBatchesPerRecipe() {
+        try {
+            return maxBatchesPerRecipe.get();
+        } catch (IllegalStateException unloaded) {
+            return maxBatchesPerRecipe.getDefault();
+        }
+    }
+
+    public int candidateCacheTicks() {
+        try {
+            return candidateCacheTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return candidateCacheTicks.getDefault();
+        }
+    }
+
+    public int candidateScanBudget() {
+        try {
+            return candidateScanBudget.get();
+        } catch (IllegalStateException unloaded) {
+            return candidateScanBudget.getDefault();
+        }
+    }
+
+    public int longBatchTicks() {
+        try {
+            return longBatchTicks.get();
+        } catch (IllegalStateException unloaded) {
+            return longBatchTicks.getDefault();
+        }
+    }
+
+    public boolean statsEnabled() {
+        try {
+            return statsEnabled.get();
+        } catch (IllegalStateException unloaded) {
+            return statsEnabled.getDefault();
+        }
     }
 
     public ThreadEligibilitySettings snapshot() {

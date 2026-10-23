@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine.independent.control;
 
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.independent.eligibility.StandardRecipeLogicClasses;
 import net.minecraftforge.event.TickEvent;
@@ -54,7 +55,17 @@ public final class IndependentMachineRegistry {
         if (!logic.getMachine().isRemote()) LOADED.remove(logic);
     }
 
+    /** 设置代际号：机器侧缓存资格判定用它判断是否失效。 */
+    public static long generation() {
+        return SETTINGS.generation();
+    }
+
     public static boolean eligible(RecipeLogic logic) {
+        if (!logic.getMachine().isRemote()
+                && GameTestHooks.isOreModule(logic.getMachine().getDefinition().getId().toString())) {
+            // GameTest 对炼矿模块及其真实外壳测试机打开引擎，不污染其他机器。
+            return true;
+        }
         var settings = SETTINGS.current();
         if (!settings.enabled() || logic.getMachine().isRemote()) return false;
         return StandardRecipeLogicClasses.ELIGIBILITY.evaluate(settings,

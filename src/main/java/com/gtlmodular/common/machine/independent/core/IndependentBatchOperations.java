@@ -6,6 +6,9 @@ public interface IndependentBatchOperations<P> {
     // 候选阶段不能有 IO，否则账本还没接管就可能失去已扣料工作的记录。
     Candidate<P> findBatch(int availableSlots, long availableBudget);
 
+    /** 准入被拒时回传原因，供显示/日志定位；默认忽略。 */
+    default void rejectAdmission(String reason) {}
+
     // false 必须表示未发生实际扣料；无法确定部分执行结果时抛异常，由会话保留候选并暂停。
     boolean consumeInputs(P payload);
 

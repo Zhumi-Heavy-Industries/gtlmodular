@@ -1,5 +1,6 @@
 package com.gtlmodular.gametest;
 
+import com.gtlmodular.gametest.fixture.MoltenOreTestLayout;
 import com.gtlmodular.gametest.fixture.NacStructureLayout;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterGameTestsEvent;
@@ -14,6 +15,7 @@ public final class GameTestMod {
     public GameTestMod() {
         FMLJavaModLoadingContext.get().getModEventBus().addListener(this::registerTests);
         MinecraftForge.EVENT_BUS.addListener(NacStructureLayout::prepareTemplate);
+        MinecraftForge.EVENT_BUS.addListener(MoltenOreTestLayout::prepareTemplate);
         MinecraftForge.EVENT_BUS.addListener(GameTestReport::install);
     }
 
@@ -28,6 +30,8 @@ public final class GameTestMod {
         event.register(NacPersistenceTests.class);
         event.register(NacRestartTests.class);
         event.register(PatternAssemblyTests.class);
+        event.register(BufferedOutputBufferTests.class);
+        event.register(MoltenOreModuleTests.class);
         event.register(IndependentOwnershipTests.class);
         event.register(RecipeConflictTests.class);
     }

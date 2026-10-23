@@ -20,7 +20,68 @@ class OtherMachineThreadsConfigTest {
     private static final String ENABLED = "independentThreadsForOtherMachines";
     private static final String WHITELIST = "independentThreadsMachineWhitelist";
     private static final String BLACKLIST = "independentThreadsMachineBlacklist";
+    private static final String MAX_TICKS = "independentThreadsMaxBatchTicks";
+    private static final String MAX_RUNS = "independentThreadsMaxBatchRuns";
+    private static final String ALLOW_ME_IO = "independentThreadsAllowMeIo";
+    private static final String MAX_PER_RECIPE = "independentThreadsMaxBatchesPerRecipe";
+    private static final String CACHE = "independentThreadsCandidateCacheTicks";
+    private static final String SCAN = "independentThreadsCandidateScanBudget";
+    private static final String LONG_BATCH = "independentThreadsLongBatchTicks";
+    private static final String STATS = "independentThreadsStats";
     private static final String MACHINE = "gtladditions:arcane_cache_vault";
+
+    @Test
+    void megastructureBatchLimitsHaveExplicitDefaultsAndCanBeOverridden() {
+        var spec = GTLModularConfig.SPEC;
+        ForgeConfigSpec.ConfigValue<?> ticks = spec.getValues().get(List.of(MAX_TICKS));
+        ForgeConfigSpec.ConfigValue<?> runs = spec.getValues().get(List.of(MAX_RUNS));
+        ForgeConfigSpec.ConfigValue<?> me = spec.getValues().get(List.of(ALLOW_ME_IO));
+        ForgeConfigSpec.ConfigValue<?> perRecipe = spec.getValues().get(List.of(MAX_PER_RECIPE));
+        ForgeConfigSpec.ConfigValue<?> cache = spec.getValues().get(List.of(CACHE));
+        ForgeConfigSpec.ConfigValue<?> scan = spec.getValues().get(List.of(SCAN));
+        ForgeConfigSpec.ConfigValue<?> longBatch = spec.getValues().get(List.of(LONG_BATCH));
+        ForgeConfigSpec.ConfigValue<?> stats = spec.getValues().get(List.of(STATS));
+        assertNotNull(ticks);
+        assertNotNull(runs);
+        assertNotNull(me);
+        assertNotNull(perRecipe);
+        assertNotNull(cache);
+        assertNotNull(scan);
+        assertNotNull(longBatch);
+        assertNotNull(stats);
+        assertEquals(10_000, ticks.getDefault());
+        assertEquals(0L, runs.getDefault());
+        assertEquals(false, me.getDefault());
+        assertEquals(1, perRecipe.getDefault());
+        assertEquals(100, cache.getDefault());
+        assertEquals(0, scan.getDefault());
+        assertEquals(200, longBatch.getDefault());
+        assertEquals(false, stats.getDefault());
+
+        var data = CommentedConfig.inMemory();
+        spec.correct(data);
+        data.set(MAX_TICKS, 20_000);
+        data.set(MAX_RUNS, 1_000_000_000L);
+        data.set(ALLOW_ME_IO, true);
+        data.set(MAX_PER_RECIPE, 1);
+        data.set(CACHE, 7);
+        data.set(SCAN, 32);
+        data.set(LONG_BATCH, 60);
+        data.set(STATS, true);
+        try {
+            spec.setConfig(data);
+            assertEquals(20_000, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchTicks());
+            assertEquals(1_000_000_000L, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchRuns());
+            assertTrue(GTLModularConfig.OTHER_MACHINE_THREADS.allowMeIo());
+            assertEquals(1, GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe());
+            assertEquals(7, GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks());
+            assertEquals(32, GTLModularConfig.OTHER_MACHINE_THREADS.candidateScanBudget());
+            assertEquals(60, GTLModularConfig.OTHER_MACHINE_THREADS.longBatchTicks());
+            assertTrue(GTLModularConfig.OTHER_MACHINE_THREADS.statsEnabled());
+        } finally {
+            spec.setConfig(null);
+        }
+    }
 
     @Test
     void fullProductDefinesTopLevelDefaultsAndBindsTheComponentToItsSpec() {
@@ -149,7 +210,8 @@ class OtherMachineThreadsConfigTest {
         new NanochipConfig(builder, "gtl_nac");
         var spec = builder.build();
 
-        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST)) {
+        for (String key : List.of(ENABLED, WHITELIST, BLACKLIST, MAX_TICKS, MAX_RUNS, ALLOW_ME_IO, MAX_PER_RECIPE,
+                CACHE, SCAN, STATS)) {
             assertFalse(spec.getValues().contains(key));
         }
     }

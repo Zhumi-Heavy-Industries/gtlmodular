@@ -25,7 +25,9 @@ final class BatchChanceResolver {
             var resolved = new ArrayList<Content>();
             var chanced = new ArrayList<Content>();
             for (Content content : values) {
-                if (content.chance >= content.maxChance) resolved.add(content);
+                // 必须复制：后续 scaleEnergy / Route.transfer 会改 Content 的数量，
+                // 直接分享会把「缓存里只读的缩放配方」改坏。
+                if (content.chance >= content.maxChance) resolved.add(content.copy(cap, ContentModifier.multiplier(1.0)));
                 else if (tick) chanced.add(content.copy(cap, ContentModifier.multiplier(1.0 / source.parallels)));
                 else if (io == IO.OUT || content.chance != 0) chanced.add(content);
             }

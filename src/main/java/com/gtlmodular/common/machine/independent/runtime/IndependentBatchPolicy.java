@@ -96,4 +96,9 @@ public final class IndependentBatchPolicy<P> implements IndependentBatchOperatio
             return host.waitFor(payload, exception.getClass().getSimpleName() + ": " + exception.getMessage());
         }
     }
+
+    @Override
+    public void rejectAdmission(String reason) {
+        host.rejectAdmission(reason);
+    }
 }

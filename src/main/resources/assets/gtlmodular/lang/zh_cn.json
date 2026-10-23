@@ -3,6 +3,9 @@
   "itemGroup.gtlmodular.creative_tab": "GTL·熔岩模块化机组",
   "block.gtlmodular.molten_module_host": "地心涌动能量转换枢纽",
   "block.gtlmodular.molten_module_host.desc": "§7线圈可以§b混搭§7：以结构里§b数量占比最多§7的线圈作为温度判定基准，为三个模块提供能量，同时根据线圈温度提供电量减免——§65400K§7 起算，每提升 §6240K§7 提升 §61%§7 减免，最高 §6§l50%§7。\n§7枢纽最多可为 §6§l12§7 个模块提供能量。\n§7结构来源：§bBV1RgXTBVEJ1",
+  "block.gtlmodular.buffered_me_output_buffer": "ME 聚合输出总成",
+  "block.gtlmodular.molten_module_host_test": "炼矿测试主机",
+  "block.gtlmodular.molten_space_ore_module_real": "炼矿真实外壳测试机",
   "block.gtlmodular.molten_blast_module": "猪咪愤怒烧矿机",
   "block.gtlmodular.molten_blast_module.desc": "§7模块A：沿用§f电力高炉§7配方。",
   "gtlmodular.blast.tooltip.duration": "§7耗时倍率§r %s",
@@ -1321,5 +1324,8 @@
   "gtlmodular.independent.draining": "仅收尾：结清已有批次后交还上游",
   "gtlmodular.independent.wait": "等待：%s",
   "gtlmodular.independent.batch": "批次 %s · %s：%s/%s tick",
-  "gtlmodular.independent.more": "另有 %s 个批次"
+  "gtlmodular.independent.jade.coil_reduction": "§7线圈减免（按当前线圈温度）：§b能耗 −%s§7 · §b时长 −%s",
+  "gtlmodular.independent.jade.details_hint": "§7按住 §fShift§7 查看线程明细与产物",
+  "gtlmodular.independent.more": "另有 %s 个批次",
+  "gtlmodular.independent.runs": "长批次：本批 %s 次配方（每 %s tick 一次），第 %s 次进行中"
 }

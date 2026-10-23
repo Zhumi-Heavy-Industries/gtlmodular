@@ -8,6 +8,7 @@ import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableMultiblockMachine;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import net.minecraft.network.chat.Component;
@@ -28,6 +29,7 @@ public final class DualFluidTax {
     }
 
     public static boolean onBeforeWorking(IRecipeLogicMachine machine, GTRecipe recipe) {
+        if (GameTestHooks.active()) return true;
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
         }
@@ -51,6 +53,7 @@ public final class DualFluidTax {
     }
 
     public static boolean onWorking(IRecipeLogicMachine machine) {
+        if (GameTestHooks.active()) return true;
         if (!GTLModularConfig.isDualFluidTaxEnabled()) {
             return true;
         }

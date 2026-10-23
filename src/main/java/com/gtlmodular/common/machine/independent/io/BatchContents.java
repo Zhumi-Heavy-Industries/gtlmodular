@@ -62,4 +62,26 @@ public final class BatchContents {
     public static boolean empty(Map<RecipeCapability<?>, List<Content>> contents) {
         return contents.entrySet().stream().allMatch(e -> e.getValue().stream().allMatch(c -> amount(e.getKey(), c.content) == 0));
     }
+
+    /**
+     * 长批次：把一整份物料按次数放大（开批一次扣 p×N、结算一次出 p×N）。
+     * EU/t 由能量层单独计算，不在这里乘；超出 long 直接拒绝，不能静默饱和成假数量。
+     */
+    public static void multiplyBy(Map<RecipeCapability<?>, List<Content>> contents, int factor) {
+        if (factor <= 1 || contents == null) return;
+        for (var entry : contents.entrySet()) {
+            if (entry.getKey() == EURecipeCapability.CAP) continue;
+            for (Content content : entry.getValue()) {
+                long per = amount(entry.getKey(), content.content);
+                if (per <= 0L) continue;
+                long scaled;
+                try {
+                    scaled = Math.multiplyExact(per, (long) factor);
+                } catch (ArithmeticException overflow) {
+                    throw new IllegalArgumentException("Batch content overflow", overflow);
+                }
+                amount(entry.getKey(), content, scaled);
+            }
+        }
+    }
 }

@@ -65,11 +65,30 @@
 
 星阵数量已经进入追加线程数，不能再乘一次。NAC 主机自己的电压基线、满并行策略和 256 上限不适用于这些机器。通用引擎只把槽数下限夹到 1，没有 256 上限；槽数缩小时已有批次全部继续运行，数量低于新上限才补位。
 
-已确认的跨 tick 规则：总并行预算沿用 `(long) maxParallel * getMultipleThreads()`。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
+### 巨构级并行与单批安全阀
+
+- 机器实现 `LongParallelMachine` 时，适配器优先读 `getMaxParallelLong()`，否则退回 `getMaxParallel()`；总预算 `totalBudget = longLimit × threads` 用 long 饱和，不截到 int、不回绕。
+- 每轮候选的 `p` 还要过单批安全阀：`p ≤ min(输入可容纳, 输出可容纳, maxBatchRuns, Long.MAX / 单份最大物料量, power × maxBatchTicks / 单份总 EU)`。前两项仍由真实匹配决定，后三项只防"一批跑几年 / 内容乘爆 / 固定份数过大"。
+- `independentThreadsMaxBatchTicks` 默认 10000（约 8 分钟），0 表示不限制；`independentThreadsMaxBatchRuns` 默认 0（不限制）。它们是安全阀，不是吞吐上限：长期配方会自动缩批，短配方仍可开很大。
+- 候选内容用 `IAdvancedContentModifier.preciseMultiplier` 做 long 精确放大，并按原配方逐项校正数量；超出 `Long.MAX` 的批直接拒绝，不静默饱和。EU/t 不在物料倍率里重复放大，仍由能量层重新计算。
+- `independentThreadsAllowMeIo` 默认 false。开启且机器装了 ME 样板/输出处理器时，非 tick 的物品/流体走上游 ME 的 long 计数路径；模拟通过才真实转移，剩余量写回同一张 Content 表。ME 的 tick 物品/流体尚未适配，遇到会拒绝该批；普通总线机器不受影响。
+- 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 1（一种配方最多占一条批次）。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
+- `independentThreadsCandidateCacheTicks` 默认 100：候选 lookup 结果短缓存，降低每 tick 重查成本；0 关闭。真实扣料/配置改变会主动失效；外部输入变化没有统一 revision，最多延迟 TTL，但真实扣料仍逐条校验，不会凭空开工。
+- `independentThreadsCandidateScanBudget` 默认 0 = 每轮最多 16 条候选：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
+- `independentThreadsStats` 默认 false：开启后机器面板显示候选扫描和批次 tick 的平均/最大耗时，用于调 active 线程数和候选预算。
+- 安全阀只在"新批准入"阶段使用；已扣料批次继续按原时长和进度运行，不重算、不裁剪。
+- **长批次**（`independentThreadsLongBatchTicks`，默认 200，0 = 关闭）：一条批次合并 N 次配方，`N = 目标时长 ÷ 当前单批时长`，再被输入库存夹住（`getMaxParallel` 按目标份数问一次真实库存，缩到 1 就是原行为）。开批一次扣 `p×N`、每 tick 仍只按 `p` 付电、结算一次出 `p×N`；总耗电、总产出、总时长都按 N 倍记账，所以单位时间产出与功率不变，只是开批/结算次数降到 1/N。实现对齐山海的 `DShanhaiBatchLogic.batch`（输入/输出/时长整体×N，EUt 恢复原值）。
+  - 只接在聚合族（地心炼矿模块）的 normal 通道上；无线族与非该模块的候选仍是 N=1，避免在"输入已在聚合时扣过"的路径上再乘一次产出。
+  - 概率产物按 `p×N` 份一起抽一次（与现在按 p 并行抽签是同一段上游代码），期望值等价、方差不同于逐份抽。
+  - 存档只在新批次写 `runs` 键，旧档按 N=1 读；`runs > 1` 时面板与 Jade 显示「本批 N 次配方，第 k 次」。
+  - GameTest 固定按 N=1 运行（用例断言的是 20 tick、精确产物数量的旧口径）；长批次的实际时长与产量对账在游戏内验收。
+- 地心炼矿模块（`gtlmodular:molten_space_ore_module`）是第一个 `MultipleRecipesLogic` 专用适配目标：引擎用 `getRecipeType().getLookup()` 只读枚举候选，不调用会真实扣料的 `getRecipe()`；模块实现 `IndependentEnergyMultiplier`，主机线圈折扣后的 EU 在引擎 tick 前按比例缩放，实际扣电仍走 `MoltenModuleHostMachine.requestEnergy`。旧 `MultipleRecipesLogic` 合批路径保留给未开启的存档。启用方式：总开关开启 + 白名单加入该机器 ID；ME 进出料还需 `independentThreadsAllowMeIo`。
+
+已确认的跨 tick 规则：总并行预算沿用 `maxParallel × getMultipleThreads()`（`maxParallel` 允许来自 `getMaxParallelLong()`，乘积用 long 饱和）。运行和待结算批次继续占用额度，实际出料结清才释放；补位仅使用剩余量。线程缩减时不删除批次，存量超额期间停止补位。普通族按上游均分后再分配未满足需求的算法，余量不足一轮时保留尾数；Mutable 按查找顺序分配，`LongLongPair.firstLong()` 是实际并行，`secondLong()` 是预算扣减，二者不能互换。
 
 例如 `maxParallel=100`、线程数 2，A/B 各占 100：A 完成但堵输出时仍无剩余额度，A 实际结清后才能使用释放的 100。此时降到 1 线程，B 的 100 占满新总额，继续等待它结清，不裁剪旧批次。
 
-同配方类型＋同配方 ID 允许同时存在多批，共用总预算。每批沿用原族单条配方的并行算法和上限；上游单候选允许使用整个可用预算，不能另加 `maxParallel` 单批硬上限，也不能每批重新领取完整总额。NAC 的 `FAN_OUT_SAME_RECIPE` 和每配方满并行规则不适用于本功能。
+同配方类型＋同配方 ID 默认允许同时存在多批，共用总预算；`independentThreadsMaxBatchesPerRecipe` 大于 0 时按该上限过滤候选（已扣料批次不受影响）。每批沿用原族单条配方的并行算法和上限；上游单候选允许使用整个可用预算，不能另加 `maxParallel` 单批硬上限，也不能每批重新领取完整总额。NAC 的 `FAN_OUT_SAME_RECIPE` 和每配方满并行规则不适用于本功能。
 
 已确认整机功率也必须共用：同时运行的批次每 tick 总耗电不超过上游一台机器按相同电压、电流合批时的耗电，总吞吐与上游一致，不能是批次数倍。无线和电网沿用上游的功率计算方式，批次之间同样共用。
 
@@ -84,7 +103,7 @@
 
 ## 完整版候选组件的使用边界
 
-`IndependentRecipeAdapters.select()` 返回族适配器或具体不支持原因，调用方须先通过配置准入。它仅判断候选计算能力，不能替代 S5 的 handler/持久化准入或 S6 的调度器互斥。`candidates(availableSlots, availableBudget, availablePower)` 接受会话给出的剩余并行预算和有线功率，返回一轮预分配结果；每条成功开工前仍须重新校验真实输入，由 `IndependentBatchSession` 的 `BatchBudgetLedger` 预留预算。调用方不能把候选列表当成库存预留，也不能脱离会话另算一份总预算。下一轮可再次查到同配方，不按运行中的配方 ID 去重。
+`IndependentRecipeAdapters.select()` 返回族适配器或具体不支持原因，调用方须先通过配置准入。它仅判断候选计算能力，不能替代 S5 的 handler/持久化准入或 S6 的调度器互斥。适配器内部按配方 ID 的“最久未服务”顺序轮转，并可按 `independentThreadsMaxBatchesPerRecipe` 过滤活跃配方；`candidates(availableSlots, availableBudget, availablePower)` 接受会话给出的剩余并行预算和有线功率，返回一轮预分配结果；每条成功开工前仍须重新校验真实输入，由 `IndependentBatchSession` 的 `BatchBudgetLedger` 预留预算。调用方不能把候选列表当成库存预留，也不能脱离会话另算一份总预算。默认 `independentThreadsMaxBatchesPerRecipe=0` 时下一轮仍可再次查到同配方，不按运行中的配方 ID 去重。
 
 候选的 `ingredients` 是独占的原类型缩放快照，保留 ID、条件和未抽取的概率内容；`execution` 保存独立时长、能耗及上游无线构建类型（多类型无线使用机器当前类型，其余标准无线使用上游默认类型）。两者不得在 S5 再叠加 `fullModifyRecipe()`。概率抽取须使用原类型语义，真实扣料前须完成 S3 payload 的无损 prepare 校验。原配方子类、不可编码条件和 ingredient actions 在扣料前拒绝，等待专用适配。
 
@@ -186,7 +205,10 @@ persistence.load(tag, MachineBatch::new, engine::restoreBatch);
 
 - 太空电梯这类机器自己覆写的特殊逻辑（工作钩子）会被独立批次绕过。
 - 开关打开后，空闲机器也会占用调度时间，机器多时拖慢 TPS。
-- GameTest 只覆盖了批次所有权（复制、剪切、放置回滚不会复制出批次），没有覆盖加工和扣电。
+- 真实 15×31×11 炼矿模块外壳、ME 输出、真实 MK7 动力模块已经进入 GameTest；ME 网络自动连接复用 AE 的 `MEIOPartMachine`，引擎不再维护重连事件；ME tick 物品/流体仍未覆盖。
+- 输出总成直接交付已验证到 2^63-1（两个 key 的 Int128 聚合）；引擎配方链路验证到 1,000,000，超过 long 的引擎真实产物仍未验证。
+
+炼矿模块的 GameTest 已从“只验证所有权”扩展为完整加工链：测试主机 + 真实 15×31×11 外壳成形、双向连接、独立控制器、引擎开批、创造能源仓供能、物品/流体总线、输出总成接高速无限磁盘写入 AE，以及两条不同配方并行完成并把泥土/沙子都送入 ME；真实外壳还预放 MK7 动力模块并断言线程数随之提高；ME 网络自动连接复用 AE 的 `MEIOPartMachine`，不再由引擎维护重连事件；运行中双批已通过控制器 NBT save/load 恢复并继续 ME 输出，完整世界重启仍未覆盖。夹具使用 `GameTestHooks` 集中测试接缝，配方按幂等 ID 共享，避免同输入配方跨用例冲突。
 
 接入新机器或改动以上行为时，还要逐机核对无线扩展、具体类型强转、Mutable 切模式与子类钩子，以及 gtladditions 的 `mixin/gtlcore/machine/trait/MultipleRecipesLogicMixin` 对合批和无线工作的覆写。一个基类注入覆盖不了所有逻辑族。新增 mixin 只放在完整版，登记到 `gtlmodular.mixins.json`，不能混进独立版。
 

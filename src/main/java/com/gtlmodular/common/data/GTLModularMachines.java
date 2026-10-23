@@ -1,11 +1,13 @@
 package com.gtlmodular.common.data;
 
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.GameTestHooks;
 import com.gtlmodular.common.data.nanochip.NanochipRegistration;
 import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.api.module.ModuleKind;
 import com.gtlmodular.common.machine.LazyPatternAssemblyPartMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
+import com.gtlmodular.common.machine.TestMoltenModuleHostMachine;
 import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
 import com.gtlmodular.common.machine.MoltenModuleMachineBase;
 import com.gtlmodular.common.machine.MoltenPatternAssemblyPartMachine;
@@ -115,9 +117,14 @@ public final class GTLModularMachines {
         registerModuleB();
         registerModuleC();
         registerModuleHost();
+        if (GameTestHooks.active()) {
+            registerTestHost();
+            registerTestRealModule();
+        }
         registerPatternAssemblies();
         registerSuperPatternAssembly();
         registerLazyPatternAssembly();
+        registerBufferedOutputAssembly();
         NanochipRegistration.registerMachines();
     }
 
@@ -217,6 +224,19 @@ public final class GTLModularMachines {
                 "lazy_me_pattern_assembly", tier, maxSlots, LazyPatternAssemblyPartMachine.RESERVE);
     }
 
+    /** 复用 gtlcore 已有的 ME 扩展输出 overlay，不新增贴图资源。 */
+    private static void registerBufferedOutputAssembly() {
+        REGISTRATE.machine("buffered_me_output_buffer", com.gtlmodular.common.machine.output.BufferedMEOutputPartMachine::new)
+                .rotationState(RotationState.ALL)
+                .abilities(PartAbility.EXPORT_ITEMS, PartAbility.EXPORT_FLUIDS)
+                .tier(9)
+                .renderer(() -> new com.gregtechceu.gtceu.client.renderer.machine.OverlayTieredMachineRenderer(
+                        9, new ResourceLocation("gtceu", "block/machine/part/me_extended_export_buffer")))
+                .langValue("ME Buffered Export Buffer")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] 已注册带合并的 ME 输出总成: id={} tier=9", "buffered_me_output_buffer");
+    }
+
     private static void registerModuleHost() {
         ModuleKind kind = ModuleKind.HOST;
         MOLTEN_MODULE_HOST = REGISTRATE.multiblock(kind.machineId(), MoltenModuleHostMachine::new)
@@ -234,6 +254,67 @@ public final class GTLModularMachines {
                 .register();
         GTLModular.LOGGER.info("[gtlmodular] M5 已注册机器: {} ({})",
                 MOLTEN_MODULE_HOST.getId(), kind.displayNameZh());
+    }
+
+    /** GameTest 专用 3×3×3 炼矿主机；只在 -Dgtlmodular.testHost=true 时注册。 */
+    private static void registerTestHost() {
+        REGISTRATE.multiblock("molten_module_host_test", TestMoltenModuleHostMachine::new)
+                .rotationState(RotationState.NON_Y_AXIS)
+                .recipeType(GTRecipeTypes.DUMMY_RECIPES)
+                .pattern(def -> FactoryBlockPattern.start()
+                        .aisle("XXX", "XXX", "XXX")
+                        .aisle("XSX", "XXX", "XXX")
+                        .aisle("XXX", "XXX", "XXX")
+                        .where('S', controller(blocks(def.get())))
+                        .where('X', MoltenModuleHostPattern.modularHeatingCoils())
+                        .build())
+                .appearanceBlock(() -> GTBlocks.CASING_STEEL_SOLID.get())
+                .workableCasingRenderer(gtceuId("block/casings/solid/machine_casing_heatproof"),
+                        gtceuId("block/multiblock/data_bank"))
+                .langValue("Test Molten Ore Host")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] GameTest 测试主机已注册: molten_module_host_test");
+    }
+
+    /** GameTest 真实 15×31×11 外壳版本的炼矿模块；只在 testHost 下注册。 */
+    private static void registerTestRealModule() {
+        ModuleKind kind = ModuleKind.SPACE_ORE_PROCESSOR;
+        GTRecipeType recipeType = GTRegistries.RECIPE_TYPES.get(kind.recipeTypeId());
+        if (recipeType == null) return;
+        REGISTRATE.multiblock("molten_space_ore_module_real", MoltenSpaceOreModuleMachine::new)
+                .rotationState(RotationState.ALL)
+                .recipeType(recipeType)
+                .recipeModifier(MoltenRelaxedElectricOverclock::apply)
+                .appearanceBlock(() -> blockOf("gtlcore:space_elevator_mechanical_casing"))
+                .pattern(GTLModularMachines::realSpaceShellPattern)
+                .workableCasingRenderer(
+                        new ResourceLocation("gtlcore", "block/space_elevator_mechanical_casing"),
+                        gtceuId("block/multiblock/data_bank"))
+                .langValue("Test Real Space Ore Module")
+                .register();
+        GTLModular.LOGGER.info("[gtlmodular] GameTest 真实外壳模块已注册: molten_space_ore_module_real");
+    }
+
+    private static com.gregtechceu.gtceu.api.pattern.BlockPattern realSpaceShellPattern(
+            MultiblockMachineDefinition def) {
+        TraceabilityPredicate casing = SpaceOreModulePattern.casing()
+                .or(com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_ITEMS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_FLUIDS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS,
+                        com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY));
+        FactoryBlockPattern f = FactoryBlockPattern.start();
+        for (String[] aisle : SpaceOrePatternLayers.AISLES) {
+            f = f.aisle(aisle);
+        }
+        f = f.where('S', controller(blocks(def.get())));
+        f = f.where('C', casing);
+        f = f.where('I', SpaceOreModulePattern.internalSupport());
+        f = f.where('B', SpaceOreModulePattern.moduleBase());
+        f = f.where('P', SpaceOreModulePattern.powerSlot());
+        f = f.where('.', com.gregtechceu.gtceu.api.pattern.Predicates.any());
+        return f.build();
     }
 
     /** 保留温度拒绝的读数，便于区分线圈读取失败与实际炉温不足。 */
@@ -374,6 +455,23 @@ public final class GTLModularMachines {
 
     private static com.gregtechceu.gtceu.api.pattern.BlockPattern spaceShellPattern(
             MultiblockMachineDefinition def) {
+        if (GameTestHooks.active()) {
+            // GameTest 最小夹具只验证引擎批次/候选/输出，不验证 15×31×11 真实外壳。
+            TraceabilityPredicate testCasing = com.gregtechceu.gtceu.api.pattern.Predicates.abilities(
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_ITEMS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_ITEMS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.IMPORT_FLUIDS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS,
+                    com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY);
+            return FactoryBlockPattern.start()
+                    .aisle("X.X")
+                    .aisle(".S.")
+                    .aisle("X.X")
+                    .where('S', controller(blocks(def.get())))
+                    .where('X', testCasing)
+                    .where('.', com.gregtechceu.gtceu.api.pattern.Predicates.any())
+                    .build();
+        }
         TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));
         FactoryBlockPattern f = FactoryBlockPattern.start();
         for (String[] aisle : SpaceOrePatternLayers.AISLES) {

@@ -61,8 +61,26 @@ public abstract class OtherMachineRecipeLogicMixin implements IndependentLogicAc
     private void gtlmodular$tick(CallbackInfo ci) {
         gtlmodular$upstreamSetup.clear();
         RecipeLogic logic = (RecipeLogic) (Object) this;
-        var controller = gtlmodular$controller(IndependentMachineRegistry.eligible(logic));
+        var controller = gtlmodular$controller(gtlmodular$eligibleCached(logic));
         if (controller != null && controller.tick()) ci.cancel();
+    }
+
+    @Unique private long gtlmodular$eligibleGeneration = Long.MIN_VALUE;
+    @Unique private boolean gtlmodular$eligible;
+
+    /**
+     * 资格判定按「设置代际号」缓存：机器类与机器 ID 对一台机器是常量，
+     * 只有配置重载才会改变结果。全服每台机器每 tick 都走一次原判定
+     * （拼 ID 字符串 + 规则求值）在机器多时是线性开销，这里压成一个 long 比较。
+     */
+    @Unique
+    private boolean gtlmodular$eligibleCached(RecipeLogic logic) {
+        long generation = IndependentMachineRegistry.generation();
+        if (generation != gtlmodular$eligibleGeneration) {
+            gtlmodular$eligibleGeneration = generation;
+            gtlmodular$eligible = IndependentMachineRegistry.eligible(logic);
+        }
+        return gtlmodular$eligible;
     }
 
     @Inject(method = "onMachineLoad", at = @At("TAIL"), require = 1)

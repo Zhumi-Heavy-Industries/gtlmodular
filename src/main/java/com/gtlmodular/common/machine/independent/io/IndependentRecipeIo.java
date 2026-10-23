@@ -2,8 +2,10 @@ package com.gtlmodular.common.machine.independent.io;
 
 import com.gregtechceu.gtceu.api.capability.recipe.*;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
+import com.gregtechceu.gtceu.api.machine.trait.ItemHandlerProxyRecipeTrait;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
+import com.gtlmodular.common.GameTestHooks;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.RecipeHandlePart;
 
@@ -33,6 +35,9 @@ public final class IndependentRecipeIo {
         BatchContents.requireSupported(recipe.tickOutputs, true);
         if (!recipe.ingredientActions.isEmpty()) throw new IllegalArgumentException("需要 ingredient action 专用适配");
         requireSupportedParts();
+        if (MeIo.enabled(machine) && MeIo.hasTickItems(recipe)) {
+            throw new IllegalArgumentException("ME tick 物品/流体尚未适配");
+        }
         for (var route : inputRoutes()) route.validate(recipe.inputs);
         outputRoute().validate(recipe.outputs);
         tickRoute(IO.IN).validate(recipe.tickInputs);
@@ -41,14 +46,33 @@ public final class IndependentRecipeIo {
 
     private void requireSupportedParts() {
         var parts = parts();
-        if (!parts.getMEPatternRecipeHandleParts().isEmpty() || !parts.getMEOutputRecipeHandleParts().isEmpty()) {
-            throw new IllegalArgumentException("ME 样板/输出处理器尚无逐笔真实数量适配");
+        boolean hasMe = !parts.getMEPatternRecipeHandleParts().isEmpty() || !parts.getMEOutputRecipeHandleParts().isEmpty();
+        if (hasMe && !MeIo.enabled(machine) && !GameTestHooks.active()) {
+            throw new IllegalArgumentException("ME 样板/输出处理器需要开启 independentThreadsAllowMeIo");
         }
     }
 
-    public Route selectInput(Map<RecipeCapability<?>, List<Content>> contents) {
+    /** ME 输入走上游的整笔匹配/扣料；普通总线仍走逐 handler 的可计数 Route。 */
+    public InputRoute selectInput(GTRecipe recipe, Map<RecipeCapability<?>, List<Content>> contents) {
+        if (MeIo.enabled(machine) && !parts().getMEPatternRecipeHandleParts().isEmpty()) {
+            return new MeInputRoute(recipe);
+        }
         for (var route : inputRoutes()) if (route.fits(contents, IO.IN)) return route;
         return null;
+    }
+
+    public boolean outputFits(Map<RecipeCapability<?>, List<Content>> contents) {
+        if (MeIo.enabled(machine) && !parts().getMEOutputRecipeHandleParts().isEmpty()) {
+            return MeIo.outputFits(machine, contents);
+        }
+        return outputRoute().fits(contents, IO.OUT);
+    }
+
+    public boolean transferOutput(Map<RecipeCapability<?>, List<Content>> contents, boolean simulate) {
+        if (MeIo.enabled(machine) && !parts().getMEOutputRecipeHandleParts().isEmpty()) {
+            return MeIo.transferOutput(machine, contents, simulate);
+        }
+        return outputRoute().transfer(contents, IO.OUT, simulate);
     }
 
     public Route outputRoute() {
@@ -67,6 +91,11 @@ public final class IndependentRecipeIo {
                 sorted.sort(IRecipeHandler.ENTRY_COMPARATOR);
                 sorted.forEach(route::add);
             });
+        }
+        // 模块机没有自己的能源仓：补一个走主机消费的 EU 处理器，否则每 tick 的电永远扣不进去。
+        if (io == IO.IN && machine instanceof com.gtlmodular.common.machine.MoltenModuleMachineBase<?> module
+                && !route.handles(EURecipeCapability.CAP)) {
+            route.add(new ModuleEnergyHandler(module));
         }
         return route;
     }
@@ -95,7 +124,31 @@ public final class IndependentRecipeIo {
         throw new IllegalArgumentException("缺少 GTLCore 处理器分组");
     }
 
-    public static final class Route {
+    public interface InputRoute {
+        boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io);
+        boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate);
+    }
+
+    private final class MeInputRoute implements InputRoute {
+        private final GTRecipe recipe;
+
+        private MeInputRoute(GTRecipe recipe) { this.recipe = recipe; }
+
+        @Override
+        public boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io) {
+            return transfer(BatchContents.copy(contents), io, true);
+        }
+
+        @Override
+        public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate) {
+            if (io != IO.IN) return false;
+            boolean okay = simulate ? MeIo.inputFits(machine, recipe) : MeIo.consumeInputs(machine, recipe);
+            if (okay) remaining.clear();
+            return okay;
+        }
+    }
+
+    public static final class Route implements InputRoute {
         private final Map<RecipeCapability<?>, List<IRecipeHandler<?>>> handlers = new LinkedHashMap<>();
         private final Map<IRecipeHandler<?>, Boolean> seen = new IdentityHashMap<>();
 
@@ -104,7 +157,15 @@ public final class IndependentRecipeIo {
             return this;
         }
 
+        private boolean handles(RecipeCapability<?> capability) {
+            return handlers.containsKey(capability);
+        }
+
         private void add(IRecipeHandler<?> handler) {
+            if (handler instanceof ItemHandlerProxyRecipeTrait proxy) {
+                proxy.getHandlers().forEach(this::add);
+                return;
+            }
             if (seen.put(handler, true) == null) handlers.computeIfAbsent(handler.getCapability(), cap -> new ArrayList<>()).add(handler);
         }
 
