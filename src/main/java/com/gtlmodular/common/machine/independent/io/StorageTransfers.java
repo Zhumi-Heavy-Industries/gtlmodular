@@ -36,6 +36,8 @@ final class StorageTransfers {
         // AE 只输出仓：容量由 ME 网络决定，真实数量由上游 handleRecipeInner 计数（模拟/真实都返回余量）。
         if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList) return;
         if (handler instanceof ModuleEnergyHandler) return;
+        if (isVirtualCircuit(handler)) return;
+        if (isCreativeInput(handler)) return;
         if (handler.getClass() == NotifiableCircuitItemStackHandler.class) return;
         // 子类可能加入隔离、催化或无限库存语义；这里只允许已核实的具体处理器和存储。
         if (handler.getClass() == NotifiableItemStackHandler.class) {
@@ -50,6 +52,21 @@ final class StorageTransfers {
             return;
         }
         throw unsupported(handler);
+    }
+
+    /** 增强版（GTL-Enhancedcore）电路编码仓：虚拟电路，只参与匹配，永远不真正扣物品。 */
+    private static final String VIRTUAL_CIRCUIT = "com.gtl.enhancedcore.common.machine.hatch.CircuitEncoderHatchMachine$CircuitEncoderRecipeHandler";
+
+    /** gtmthings 创造输入总线：内部是无限料存储，按上游 handleRecipeInner 计数即可。 */
+    private static final String CREATIVE_INPUT = "com.hepdd.gtmthings.common.block.machine.multiblock.part.CreativeInputBusPartMachine$1";
+
+    // 按类名识别而不是 instanceof：独立版（gtl_nac）不带这些可选模组，硬引用会 NoClassDefFoundError。
+    private static boolean isVirtualCircuit(IRecipeHandler<?> handler) {
+        return handler.getClass().getName().equals(VIRTUAL_CIRCUIT);
+    }
+
+    private static boolean isCreativeInput(IRecipeHandler<?> handler) {
+        return handler.getClass().getName().equals(CREATIVE_INPUT);
     }
 
     private static boolean inheritsEnergyIo(Class<?> type) {
@@ -86,6 +103,18 @@ final class StorageTransfers {
             if (simulate && io == IO.IN && handler.handleRecipe(io, null, List.of(content.content), null, true) == null) {
                 BatchContents.amount(ItemRecipeCapability.CAP, content, 0);
             }
+            return;
+        }
+        if (isVirtualCircuit(handler)) {
+            // 电路编码仓与虚拟电路同语义：配置的电路只用于匹配配方，不占实际库存。
+            if (simulate && io == IO.IN && handler.handleRecipe(io, null, List.of(content.content), null, true) == null) {
+                BatchContents.amount(ItemRecipeCapability.CAP, content, 0);
+            }
+            return;
+        }
+        if (isCreativeInput(handler)) {
+            // 创造输入总线：内部存储是无限料，交给上游 handleRecipeInner 计数（它按配置的无限库存返回余量）。
+            moveViaHandler(handler, io, content);
             return;
         }
         if (handler instanceof NotifiableItemStackHandler items) {
