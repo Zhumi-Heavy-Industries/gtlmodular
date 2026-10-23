@@ -55,6 +55,11 @@ public final class IndependentMachineRegistry {
         if (!logic.getMachine().isRemote()) LOADED.remove(logic);
     }
 
+    /** 设置代际号：机器侧缓存资格判定用它判断是否失效。 */
+    public static long generation() {
+        return SETTINGS.generation();
+    }
+
     public static boolean eligible(RecipeLogic logic) {
         if (!logic.getMachine().isRemote()
                 && GameTestHooks.isOreModule(logic.getMachine().getDefinition().getId().toString())) {
