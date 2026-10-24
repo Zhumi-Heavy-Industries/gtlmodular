@@ -29,8 +29,15 @@ public final class MeStockHatchDiagnostics {
         return text.toString();
     }
 
-    private static String describe(MEDualHatchStockPartMachine hatch) {
-        StringBuilder text = new StringBuilder("ME库存输入总成[");
+    /** 某一台仓登记了多少个 key（物品+流体）。重放方块会把它清零。 */
+    public static int configuredCount(MEDualHatchStockPartMachine hatch) {
+        List<String> configured = new ArrayList<>();
+        collect(hatch.aeItemHandler, configured);
+        collect(hatch.aeFluidHandler, configured);
+        return configured.size();
+    }
+
+    private static String describe(MEDualHatchStockPartMachine hatch) {        StringBuilder text = new StringBuilder("ME库存输入总成[");
         try {
             text.append("启用=").append(hatch.isWorkingEnabled() ? "是" : "否");
             text.append(" 在线=").append(hatch.isOnline() ? "是" : "否");

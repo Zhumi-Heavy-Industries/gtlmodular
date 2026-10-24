@@ -45,10 +45,34 @@ public final class MeStockHatchRepair {
         boolean attempted = false;
         for (var part : parts) {
             if (!(part instanceof MEDualHatchStockPartMachine hatch)) continue;
-            if (hatch.isOnline()) continue;
+            if (hatch.isOnline()) {
+                warnIfUnconfigured(hatch);
+                continue;
+            }
             attempted |= reconnect(hatch);
         }
         return attempted;
+    }
+
+    private final Map<Object, Long> unconfiguredWarned = new IdentityHashMap<>();
+
+    /** 仓在线但 64 格配置是空的：拆方块重放会清掉配置，此时它一样一滴料都不供。 */
+    private void warnIfUnconfigured(MEDualHatchStockPartMachine hatch) {
+        if (!(hatch.getLevel() instanceof ServerLevel level)) return;
+        int configured;
+        try {
+            configured = MeStockHatchDiagnostics.configuredCount(hatch);
+        } catch (RuntimeException | LinkageError failure) {
+            return;
+        }
+        if (configured > 0) return;
+        long now = level.getGameTime();
+        Long last = unconfiguredWarned.get(hatch);
+        if (last != null && now - last < 600L) return;
+        unconfiguredWarned.put(hatch, now);
+        com.gtlmodular.GTLModular.LOGGER.warn("[independent] ME 库存输入总成在线、但配置槽是空的 @{}："
+                + "拆掉重放方块会清空这 64 格配置，空配置时它一滴料都不供。把配方要的物品/流体重新配进去"
+                + "（或用闪存 Shift+右键复制、右键粘贴整份配置）即可恢复。", hatch.getPos());
     }
 
     private boolean reconnect(MEDualHatchStockPartMachine hatch) {
