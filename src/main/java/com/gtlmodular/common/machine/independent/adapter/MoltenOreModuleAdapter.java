@@ -54,6 +54,12 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      */
     @Override
     public int threads() {
+        // 玩家想统一限流：配置给了固定值就所有机器都按它开批次槽（0 = 由机器自己决定）。
+        int configured = GTLModularConfig.OTHER_MACHINE_THREADS.slotsPerMachine();
+        if (configured > 0) {
+            logThreadSource(value(configured, "配置独立线程槽"));
+            return configured;
+        }
         int value;
         if (machine instanceof MoltenBlastModuleMachine blast) {
             var part = blast.getThreadPartMachine();
@@ -64,23 +70,28 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         } else {
             value = 1;
         }
-        logThreadSourceOnce(value);
+        logThreadSource(value(configured, "机器自报"));
         return value;
     }
+
+    private record ThreadSource(int count, String from) {}
+
+    private static ThreadSource value(int count, String from) { return new ThreadSource(count, from); }
 
     private int loggedThreads = -1;
     private long loggedThreadsAt = Long.MIN_VALUE / 2;
 
-    /** 线程数变了就写一次来源：线程仓条数 / 机器总线程数 / 无仓回退，便于玩家对着面板核对。 */
-    private void logThreadSourceOnce(int value) {
+    /** 线程数变了就写一次来源：配置 / 线程仓条数 / 机器总线程数，便于玩家对着面板核对。 */
+    private void logThreadSource(ThreadSource source) {
         long now = now();
-        if (value == loggedThreads && now - loggedThreadsAt < 1200L) return;
-        loggedThreads = value;
+        if (source.count() == loggedThreads && now - loggedThreadsAt < 1200L) return;
+        loggedThreads = source.count();
         loggedThreadsAt = now;
         var blast = machine instanceof MoltenBlastModuleMachine b ? b : null;
         var part = blast == null ? null : blast.getThreadPartMachine();
-        GTLModular.LOGGER.info("[independent] 线程数 {} @{}: 线程仓={} 机器总线程={}",
-                value, machine.getPos(), part == null ? "无" : String.valueOf(part.getThreadCount()),
+        GTLModular.LOGGER.info("[independent] 线程数 {} @{}（来源：{}）: 线程仓={} 机器总线程={}",
+                source.count(), machine.getPos(), source.from(),
+                part == null ? "无" : String.valueOf(part.getThreadCount()),
                 blast == null ? "不适用" : String.valueOf(blast.totalThreads()));
     }
 
