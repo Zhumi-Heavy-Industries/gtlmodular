@@ -245,13 +245,21 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
         private static IElement iconOf(ITooltip tooltip, String outputId) {
             try {
                 if (outputId == null || outputId.isEmpty()) return null;
+                IElementHelper helper = tooltip.getElementHelper();
+                if (outputId.startsWith("fluid:")) {
+                    // 流体产物用桶物品当图标；没有桶就只显示文字。
+                    var fluid = BuiltInRegistries.FLUID.get(ResourceLocation.tryParse(outputId.substring(6)));
+                    if (fluid == null) return null;
+                    var bucket = fluid.getBucket();
+                    if (bucket == null || bucket == net.minecraft.world.item.Items.AIR) return null;
+                    return helper == null ? null : helper.item(new ItemStack(bucket));
+                }
                 ResourceLocation id = ResourceLocation.tryParse(outputId);
                 if (id == null) return null;
                 Item item = BuiltInRegistries.ITEM.get(id);
                 if (item == null) return null;
                 ItemStack stack = new ItemStack(item);
                 if (stack.isEmpty()) return null;
-                IElementHelper helper = tooltip.getElementHelper();
                 return helper == null ? null : helper.item(stack);
             } catch (RuntimeException ignored) {
                 return null;
@@ -260,6 +268,14 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
 
         private static String displayNameOf(String outputId) {
             try {
+                if (outputId != null && outputId.startsWith("fluid:")) {
+                    var fluid = BuiltInRegistries.FLUID.get(ResourceLocation.tryParse(outputId.substring(6)));
+                    if (fluid != null) {
+                        return com.lowdragmc.lowdraglib.side.fluid.FluidStack.create(fluid, 1000L)
+                                .getDisplayName().getString();
+                    }
+                    return outputId;
+                }
                 ResourceLocation id = ResourceLocation.tryParse(outputId);
                 if (id == null) return outputId;
                 Item item = BuiltInRegistries.ITEM.get(id);

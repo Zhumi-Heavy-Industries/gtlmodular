@@ -383,7 +383,16 @@ public final class IndependentMachineController {
     /** 一条线程的显示快照：给 Jade 客户端画行、条和产物图标。 */
     public record ThreadView(int label, long euPerTick, int duration, int progress, long parallels,
                              String waitReason, String outputId, long outputCount, ResourceLocation recipeId,
-                             int runs) {}
+                             int runs, boolean outputFluid) {
+
+        /** 兼容调用：默认产物按物品处理。 */
+        public ThreadView(int label, long euPerTick, int duration, int progress, long parallels,
+                          String waitReason, String outputId, long outputCount, ResourceLocation recipeId,
+                          int runs) {
+            this(label, euPerTick, duration, progress, parallels, waitReason, outputId, outputCount,
+                    recipeId, runs, false);
+        }
+    }
 
     public int limit() {
         try {
@@ -426,13 +435,25 @@ public final class IndependentMachineController {
             }
             String outputId = null;
             long outputCount = 0L;
+            boolean outputFluid = false;
             try {
-                var item = primaryItemOutput(batch.payload());
-                if (item != null) {
-                    ItemStack stack = stackOf(item.content);
-                    if (!stack.isEmpty()) {
-                        outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                        outputCount = BatchContents.amount(ItemRecipeCapability.CAP, item.content);
+                boolean[] isFluid = new boolean[1];
+                var product = primaryOutput(batch.payload(), isFluid);
+                if (product != null) {
+                    if (isFluid[0]) {
+                        String id = fluidIdOf(product.content);
+                        if (id != null) {
+                            // 用前缀标记流体：Jade 侧据此按流体解析名字/图标，不需要改 nac 的 Thread record。
+                            outputId = "fluid:" + id;
+                            outputCount = BatchContents.amount(FluidRecipeCapability.CAP, product.content);
+                            outputFluid = true;
+                        }
+                    } else {
+                        ItemStack stack = stackOf(product.content);
+                        if (!stack.isEmpty()) {
+                            outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                            outputCount = BatchContents.amount(ItemRecipeCapability.CAP, product.content);
+                        }
                     }
                 }
             } catch (RuntimeException ignored) {
@@ -441,7 +462,8 @@ public final class IndependentMachineController {
             if (wait == null && host != null) wait = host.runtime().waitReason(batch.payload());
             int runs = Math.max(1, batch.payload().runs());
             out.add(new ThreadView(label, eu, batch.duration(), batch.progress(), parallels, wait,
-                    outputId, runs > 1 ? saturatingMultiply(outputCount, runs) : outputCount, recipe.id, runs));
+                    outputId, runs > 1 ? saturatingMultiply(outputCount, runs) : outputCount, recipe.id, runs,
+                    outputFluid));
         }
         return out;
     }
@@ -450,14 +472,33 @@ public final class IndependentMachineController {
      * 主产物：优先用批次真正结算的产物表（概率已经抽定），否则用配方的产物表；
      * 多项产物里取**数量最大**的那一项——配方里第一条不一定是玩家眼里的产物（显示对不上的主因）。
      */
-    private static com.gregtechceu.gtceu.api.recipe.content.Content primaryItemOutput(
-            IndependentRecipePayload payload) {
+    /** 产物展示用：先找数量最大的物品产出，没有就退回数量最大的流体产出（浮游选矿只产泡沫流体）。 */
+    private static com.gregtechceu.gtceu.api.recipe.content.Content primaryOutput(
+            IndependentRecipePayload payload, boolean[] isFluid) {
         var outputs = payload.resolvedOutputs() != null ? payload.resolvedOutputs() : payload.recipe().outputs;
-        var items = outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
+        var item = largest(outputs, ItemRecipeCapability.CAP);
+        if (item != null) {
+            isFluid[0] = false;
+            return item;
+        }
+        var fluid = largest(outputs, FluidRecipeCapability.CAP);
+        isFluid[0] = fluid != null;
+        return fluid;
+    }
+
+    private static com.gregtechceu.gtceu.api.recipe.content.Content largest(
+            java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+                    List<com.gregtechceu.gtceu.api.recipe.content.Content>> outputs,
+            com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?> cap) {
         com.gregtechceu.gtceu.api.recipe.content.Content best = null;
         long bestAmount = -1L;
-        for (var content : items) {
-            long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
+        for (var content : outputs.getOrDefault(cap, List.of())) {
+            long amount;
+            try {
+                amount = BatchContents.amount(cap, content.content);
+            } catch (RuntimeException failure) {
+                continue;
+            }
             if (amount > bestAmount) {
                 best = content;
                 bestAmount = amount;
@@ -476,9 +517,27 @@ public final class IndependentMachineController {
     }
 
     /** 产物内容可能是 ItemStack、SizedIngredient 或 gtlcore 的 LongIngredient，统一取一个图标样本。 */
+    private static String fluidIdOf(Object content) {
+        try {
+            if (content instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid) {
+                var stacks = fluid.getStacks();
+                if (stacks != null && stacks.length > 0 && !stacks[0].isEmpty()) {
+                    return net.minecraft.core.registries.BuiltInRegistries.FLUID
+                            .getKey(stacks[0].getFluid()).toString();
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
+    }
+
     private static ItemStack stackOf(Object content) {
         if (content instanceof ItemStack stack) return stack;
-        if (content instanceof net.minecraft.world.item.crafting.Ingredient ingredient) {
+        Object current = content;
+        while (current instanceof com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient sized) {
+            current = sized.getInner();
+        }
+        if (current instanceof net.minecraft.world.item.crafting.Ingredient ingredient) {
             var items = ingredient.getItems();
             if (items.length > 0) return items[0];
         }
