@@ -35,7 +35,24 @@ public final class IndependentBatchCommands {
                         .then(literal("retry").then(argument("token", UuidArgument.uuid())
                                 .then(literal("confirm_remainders").executes(context -> recover(context, false)))))
                         .then(literal("settle").then(argument("token", UuidArgument.uuid())
-                                .then(literal("confirm_settled").executes(context -> recover(context, true)))))));
+                                .then(literal("confirm_settled").executes(context -> recover(context, true)))))
+                        .then(literal("dump").executes(IndependentBatchCommands::dumpState))));
+    }
+
+    /** 完整状态快照：引擎批次 + 输入/输出仓里到底有什么，同时写进服务端日志方便排查。 */
+    private static int dumpState(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        var pos = BlockPosArgument.getLoadedBlockPos(context, "pos");
+        var machine = MetaMachine.getMachine(context.getSource().getLevel(), pos);
+        if (machine == null) {
+            throw new SimpleCommandExceptionType(Component.literal("该位置没有机器")).create();
+        }
+        int sent = 0;
+        for (String line : com.gtlmodular.common.machine.independent.command.MachineStateDump.describe(machine)) {
+            com.gtlmodular.GTLModular.LOGGER.info("[dump] {}", line);
+            context.getSource().sendSuccess(() -> Component.literal(line), false);
+            sent++;
+        }
+        return Math.max(1, sent);
     }
 
     private static IndependentMachineController controller(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
