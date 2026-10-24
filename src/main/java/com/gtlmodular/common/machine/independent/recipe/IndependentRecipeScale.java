@@ -58,6 +58,9 @@ public final class IndependentRecipeScale {
             for (int i = 0; i < scaled.size(); i++) {
                 // 电路是配置不是材料：并行不能把「1 份编程电路」放大成 p 份，否则永远凑不齐。
                 if (BatchContents.isCircuit(original.get(i).content)) continue;
+                // chance=0 的条目是「非消耗输入」（GTRecipeBuilder.notConsumable 就是把它写成 chance=0）：
+                // 它只用于匹配、永远不扣，数量恒为 1。跟着并行放大就变成要 19.9 亿个，机器永远开不了工。
+                if (original.get(i).chance <= 0) continue;
                 long per = BatchContents.amount(entry.getKey(), original.get(i).content);
                 if (per <= 0L) continue;
                 BatchContents.amount(entry.getKey(), scaled.get(i), multiplyExact(per, parallels));

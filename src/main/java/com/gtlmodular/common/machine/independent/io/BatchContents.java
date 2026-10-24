@@ -83,6 +83,8 @@ public final class BatchContents {
             if (entry.getKey() == EURecipeCapability.CAP) continue;
             for (Content content : entry.getValue()) {
                 if (isCircuit(content.content)) continue;
+                // chance=0 是非消耗输入（GTRecipeBuilder.notConsumable 就是写成 chance=0），数量恒为 1。
+                if (content.chance <= 0) continue;
                 long per = amount(entry.getKey(), content.content);
                 if (per <= 0L) continue;
                 long scaled;
