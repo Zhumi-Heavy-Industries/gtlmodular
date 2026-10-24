@@ -47,6 +47,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     private final CandidateCache<GTRecipe> candidateCache = new CandidateCache<>();
     /** 读档/换仓后 gtlcore 的 ME 接线表可能是空的：派活前按需重建，否则整机按「没有输入」判 0 候选。 */
     private final MeWiringRebuild meWiring = new MeWiringRebuild("ME ");
+    /** 「ME 库存输入总成」掉线自愈：它掉线时供料一律原样返回，机器看起来就是「有货却不加工」。 */
+    private final com.gtlmodular.common.machine.independent.io.MeStockHatchRepair meHatchRepair =
+            new com.gtlmodular.common.machine.independent.io.MeStockHatchRepair();
 
     MoltenOreModuleAdapter(MultipleRecipesLogic logic, MoltenModuleMachineBase<?> machine,
                            Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
@@ -234,6 +237,11 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      */
     private void ensureMeWiring() {
         try {
+            if (meHatchRepair.tick(machine)) {
+                candidateCache.invalidate();
+                matchTrueAt.clear();
+                matchFalseAt.clear();
+            }
             var outcome = meWiring.ensure(machine);
             if (outcome == MeWiringRebuild.Outcome.REBUILT) {
                 candidateCache.invalidate();
