@@ -65,6 +65,12 @@ public final class BatchContents {
      * SizedIngredient 解包到真正的 Ingredient，物品给注册 id、电路标注 [电路]、流体给流体 id。
      */
     public static String describe(RecipeCapability<?> cap, Object value) {
+        // IRecipeHandler#getContents() 对物品仓返回的是 ItemStack 本体，不是 Ingredient。
+        if (value instanceof ItemStack stack) {
+            if (stack.isEmpty()) return "空";
+            return net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(stack.getItem()).toString();
+        }
         Object current = value;
         while (current instanceof SizedIngredient sized) current = sized.getInner();
         boolean circuit = isCircuit(value);

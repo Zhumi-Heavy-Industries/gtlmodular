@@ -308,6 +308,58 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private long lastDiagTick = Long.MIN_VALUE;
 
+    private long signatureAt = Long.MIN_VALUE;
+    private long signatureValue = Long.MIN_VALUE;
+
+    /**
+     * 输入签名：机器里物品种类的集合哈希（数量不影响 matchRecipe，只要 ≥1）。
+     * 20 tick 内复用；带 ME 补给总线的机器内容随网络变化，签名直接返回 now（每次都重建）。
+     */
+    private long inputSignature(long now) {
+        if (now - signatureAt < 20L) return signatureValue;
+        signatureAt = now;
+        long hash = 1125899906842597L;
+        boolean volatileStock = false;
+        try {
+            if (machine instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) {
+                var holder = (com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) machine;
+                var rows = new com.gregtechceu.gtceu.api.capability.recipe.IO[]{
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.IN,
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.BOTH};
+                for (var row : rows) {
+                    for (var entry : holder.getCapabilitiesProxy().row(row).entrySet()) {
+                        if (entry.getKey() != ItemRecipeCapability.CAP) continue;
+                        for (Object handler : entry.getValue()) {
+                            String name = handler.getClass().getSimpleName();
+                            if (name.contains("Proxy")) continue;   // 代理仓，内容由被代理的仓已经统计过
+                            if (name.contains("Stocking") || name.contains("AEItemList")) {
+                                volatileStock = true;               // ME 补给：内容随网络变化
+                                continue;
+                            }
+                            if (handler instanceof com.lowdragmc.lowdraglib.side.item.IItemTransfer) {
+                                var items = (com.lowdragmc.lowdraglib.side.item.IItemTransfer) handler;
+                                for (int slot = 0; slot < items.getSlots(); slot++) {
+                                    var stack = items.getStackInSlot(slot);
+                                    if (stack == null || stack.isEmpty()) continue;
+                                    hash = hash * 31L + net.minecraft.core.registries.BuiltInRegistries.ITEM
+                                            .getKey(stack.getItem()).hashCode();
+                                }
+                            } else {
+                                volatileStock = true;
+                            }
+                        }
+                    }
+                }
+            } else {
+                volatileStock = true;
+            }
+        } catch (RuntimeException failure) {
+            volatileStock = true;
+        }
+        signatureValue = volatileStock ? now : hash;
+        return signatureValue;
+    }
+
     /** 诊断行限流：同一台机器 40 tick 一条。 */
     private void diag(String message) {
         long now = now();
@@ -395,7 +447,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         long now = now();
         if (now < emptyRetryAt) return List.of();
         int cacheTicks = GTLModularConfig.OTHER_MACHINE_THREADS.candidateCacheTicks();
-        var cached = candidateCache.get(now, cacheTicks, () -> {
+        long signature = inputSignature(now);
+        var cached = candidateCache.get(now, cacheTicks, signature, () -> {
             List<GTRecipe> found = new ArrayList<>();
             Iterator<GTRecipe> iterator = lookup(machine.getRecipeType());
             while (iterator.hasNext()) {
