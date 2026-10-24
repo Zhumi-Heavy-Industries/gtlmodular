@@ -6,6 +6,7 @@ import com.gregtechceu.gtceu.api.machine.trait.ItemHandlerProxyRecipeTrait;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gtlmodular.common.GameTestHooks;
+import com.gtlmodular.common.machine.MeWiringRebuild;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.RecipeHandlePart;
 
@@ -57,8 +58,29 @@ public final class IndependentRecipeIo {
         if (MeIo.enabled(machine) && !parts().getMEPatternRecipeHandleParts().isEmpty()) {
             return new MeInputRoute(recipe);
         }
+        if (MeWiringRebuild.wiringStillEmpty(machine)) {
+            // 结构里确实有 ME 部件，但 gtlcore 的接线表是空的（读档没重新成型 / 换仓被 clear）。
+            // 这时逐 handler 搬运对 ME 仓永远喂不上料，静默退化只会把原因伪装成「输入不足」。
+            warnWiringMissing();
+            return null;
+        }
         for (var route : inputRoutes()) if (route.fits(contents, IO.IN, recipe)) return route;
         return null;
+    }
+
+    private long wiringWarnAt = Long.MIN_VALUE / 2;
+
+    private void warnWiringMissing() {
+        try {
+            var level = machine.getRecipeLogic().getMachine().getLevel();
+            long now = level == null ? 0L : level.getGameTime();
+            if (now - wiringWarnAt < 200L) return;
+            wiringWarnAt = now;
+            com.gtlmodular.GTLModular.LOGGER.info("[independent] ME 接线为空，暂不按普通仓供料 @{}（结构里有 ME 部件，等下次重建）",
+                    machine.getRecipeLogic().getMachine().getPos());
+        } catch (RuntimeException ignored) {
+            // 只影响日志，不影响派活。
+        }
     }
 
     public boolean outputFits(Map<RecipeCapability<?>, List<Content>> contents) {

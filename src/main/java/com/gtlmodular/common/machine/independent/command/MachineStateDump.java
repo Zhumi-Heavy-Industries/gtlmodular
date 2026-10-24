@@ -41,11 +41,24 @@ public final class MachineStateDump {
         }
 
         out.add("--- 输入 ---");
+        out.add("  " + meWiring(machine));
         dumpRow(machine, IO.IN, out);
         dumpRow(machine, IO.BOTH, out);
         out.add("--- 输出 ---");
         dumpRow(machine, IO.OUT, out);
         return out;
+    }
+
+    /**
+     * ME 接线读数：结构里有几个 ME 部件、登记进接线表几个、样板槽里缓存了几条配方。
+     * 「仓里看得到货、配方却 0 候选」时，这三个数能直接分出是接线丢了还是样板槽没被满足。
+     */
+    private static String meWiring(MetaMachine machine) {
+        int parts = com.gtlmodular.common.machine.MeWiringRebuild.mePartCount(machine);
+        if (parts <= 0) return "ME：结构里没有 ME 部件";
+        return "ME：结构部件=" + parts
+                + " 接线=" + com.gtlmodular.common.machine.MeWiringRebuild.registeredWiring(machine)
+                + " 缓存配方=" + com.gtlmodular.common.machine.MeWiringRebuild.cachedRecipes(machine);
     }
 
     private static void dumpRow(MetaMachine machine, IO io, List<String> out) {

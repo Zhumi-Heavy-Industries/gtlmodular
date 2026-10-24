@@ -50,9 +50,6 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
 
     private static final int WAIT_REASON_INTERVAL = 10;
 
-    /** 默认只在接线缺失时尝试重建，并在连续无效后停止，避免反复重建没有收益。 */
-    public static boolean INPUT_WIRING_REBUILD_GATED = true;
-
     public static final String LANG_THREADS = "gtlmodular.nanochip.threads.status";
 
     public static final String LANG_THREADS_RUNS = "gtlmodular.nanochip.threads.runs";

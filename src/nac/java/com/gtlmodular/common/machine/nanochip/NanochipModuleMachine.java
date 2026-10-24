@@ -6,6 +6,8 @@ import com.gtlmodular.common.machine.nanochip.vacuum.NanochipSplitterPanel;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModules;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
+import com.gtlmodular.common.diag.SwallowedErrors;
+import com.gtlmodular.common.machine.MeWiringRebuild;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
@@ -43,6 +45,9 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER = new ManagedFieldHolder(
             NanochipModuleMachine.class,
             WorkableMultiblockMachine.MANAGED_FIELD_HOLDER);
+
+    /** 读档/换仓后 gtlcore 的 ME 接线表可能为空：搜索配方前按需重建（限频限次由该类自己管）。 */
+    private final MeWiringRebuild meWiring = new MeWiringRebuild("ME ");
 
     @Override
     public ManagedFieldHolder getFieldHolder() {
@@ -378,6 +383,10 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             return;
         }
         long now = level.getGameTime();
+        // 读档后 gtlcore 不会重新给 ME 部件接线：先补接线，否则模块会按「没有输入」判 0 候选。
+        if (now % 20L == 0L) {
+            ensureMeWiring();
+        }
         // NH 的排空判断在后处理里每 20 tick 一次；只挂在配方结束上，满含杂度的设备补上输出仓也永远排不掉。
         if (now % 20L == 0L && spec.features().board() && NanochipModuleImpurity.shouldFlush(this)) {
             flushImpurity();
@@ -437,6 +446,8 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
         @Override
         public void findAndHandleRecipe() {
             calibrationBatch.clear();
+            // 接线表为空时上游会把整机当「没有输入」：先补接线，再让父类去搜配方。
+            module.ensureMeWiring();
             if (NanochipModuleImpurity.blocksStart(module)) {
                 // 必须搜之前拦住：MultipleRecipesLogic 的搜索会真的扣输入，先搜再拒会吃掉材料。
                 lastFailedMatches = null;
@@ -516,6 +527,26 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
         return new ModuleRecipeLogic(this);
+    }
+
+    /**
+     * gtlcore 的 ME 接线表只在结构成型时重建一次，读档不重新成型、换仓还会清表。
+     * 表空时模块看起来「没有任何 ME 输入仓」，样板仓/库存总成的料一律匹配不上。
+     */
+    private void ensureMeWiring() {
+        try {
+            var outcome = meWiring.ensure(this);
+            if (outcome == MeWiringRebuild.Outcome.REBUILT) {
+                NanochipModContext.logger().info("[gtlmodular] NAC 模块 ME 接线已重建 @{}：{}",
+                        getPos(), meWiring.describe());
+            } else if (outcome == MeWiringRebuild.Outcome.REBUILD_FAILED
+                    || outcome == MeWiringRebuild.Outcome.GAVE_UP) {
+                NanochipModContext.logger().warn("[gtlmodular] NAC 模块 ME 接线重建停手 @{}：{}",
+                        getPos(), meWiring.describe());
+            }
+        } catch (RuntimeException | LinkageError failure) {
+            SwallowedErrors.report("NanochipModuleMachine#ensureMeWiring", failure);
+        }
     }
 
     public static GTRecipe moduleOverclock(MetaMachine machine, GTRecipe recipe,

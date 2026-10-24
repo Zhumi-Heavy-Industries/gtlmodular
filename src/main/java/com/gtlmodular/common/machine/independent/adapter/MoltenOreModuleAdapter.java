@@ -14,6 +14,7 @@ import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
 import com.gtlmodular.common.machine.MoltenModuleMachineBase;
 import com.gtlmodular.common.machine.MoltenSpaceOreModuleMachine;
+import com.gtlmodular.common.machine.MeWiringRebuild;
 import com.gtlmodular.common.machine.independent.io.BatchContents;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import net.minecraft.resources.ResourceLocation;
@@ -44,6 +45,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     private final Supplier<Map<ResourceLocation, Integer>> activeRecipes;
     private final RecipeFairness fairness = new RecipeFairness();
     private final CandidateCache<GTRecipe> candidateCache = new CandidateCache<>();
+    /** 读档/换仓后 gtlcore 的 ME 接线表可能是空的：派活前按需重建，否则整机按「没有输入」判 0 候选。 */
+    private final MeWiringRebuild meWiring = new MeWiringRebuild("ME ");
 
     MoltenOreModuleAdapter(MultipleRecipesLogic logic, MoltenModuleMachineBase<?> machine,
                            Supplier<Map<ResourceLocation, Integer>> activeRecipes) {
@@ -199,8 +202,29 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     private final java.util.IdentityHashMap<GTRecipe, Long> matchTrueAt = new java.util.IdentityHashMap<>();
     private final java.util.IdentityHashMap<GTRecipe, Long> matchFalseAt = new java.util.IdentityHashMap<>();
 
-    private boolean check(GTRecipe recipe) {
-        long nowTick = now();
+    /**
+     * gtlcore 的 ME 接线表只在结构成型时重建一次；读档不重新成型，换仓还会把表清空。
+     * 表空时整机看起来「没有任何输入仓」，所有配方都被判输入匹配失败——先把接线补回来。
+     * 重建成功要作废本轮候选缓存与匹配结论，否则一次空结果会被缓存到输入签名变化为止。
+     */
+    private void ensureMeWiring() {
+        try {
+            var outcome = meWiring.ensure(machine);
+            if (outcome == MeWiringRebuild.Outcome.REBUILT) {
+                candidateCache.invalidate();
+                matchTrueAt.clear();
+                matchFalseAt.clear();
+                GTLModular.LOGGER.info("[independent] ME 接线已重建 @{}：{}", machine.getPos(), meWiring.describe());
+            } else if (outcome == MeWiringRebuild.Outcome.REBUILD_FAILED
+                    || outcome == MeWiringRebuild.Outcome.GAVE_UP) {
+                GTLModular.LOGGER.warn("[independent] ME 接线重建停手 @{}：{}", machine.getPos(), meWiring.describe());
+            }
+        } catch (RuntimeException | LinkageError failure) {
+            SwallowedErrors.report("MoltenOreModuleAdapter#ensureMeWiring", failure);
+        }
+    }
+
+    private boolean check(GTRecipe recipe) {        long nowTick = now();
         Long fresh = matchTrueAt.get(recipe);
         if (fresh != null && nowTick - fresh < 20L) return true;
         Long stale = matchFalseAt.get(recipe);
@@ -251,8 +275,19 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         rejectedReasonHash.put(recipe.id, hash);
         rejectedLoggedAt.put(recipe.id, nowTick);
         if (probe.contains("输入匹配失败")) logInputTrace(recipe);
-        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}]",
-                recipe.id, machine.getPos(), probe, inputHandlersSummary());
+        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}] | {}",
+                recipe.id, machine.getPos(), probe, inputHandlersSummary(), meWiringSummary());
+    }
+
+    /**
+     * ME 部件 / 已登记接线 / 样板槽缓存配方三件读数。
+     * 「0 候选」到底是接线表为空（读档没重建）还是样板槽没被成功匹配过，靠这一行区分；
+     * 只看能力代理里的仓型会把「没接线」误读成「库存快照为空」。
+     */
+    private String meWiringSummary() {
+        return "ME[结构部件=" + MeWiringRebuild.mePartCount(machine)
+                + " 接线=" + MeWiringRebuild.registeredWiring(machine)
+                + " 缓存配方=" + MeWiringRebuild.cachedRecipes(machine) + "]";
     }
 
     /** 把机器 IN/BOTH 行里的处理器类名打出来：确认创造仓之类的特殊仓到底有没有进匹配口径。 */
@@ -342,9 +377,16 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                     if (remaining.isEmpty()) break;
                 }
                 if (remaining.size() == start.size() && sawStocking) {
-                    // 所有处理器都原样返回，且这机器用的是 ME 补给总线：
-                    // 总线内部是 syncStock() 刷新的库存快照，快照为空时它一律说「没有」。
-                    line.append("[提示:ME补给总线库存快照为空]");
+                    // 所有处理器都原样返回，而机器装的是 ME 补给/库存总成：这类仓只能按「已登记的样板槽」供料，
+                    // 接线表为空时它根本不在匹配口径里；接线在、缓存为空说明样板槽还没被成功匹配过。
+                    line.append("[提示:").append(meWiringSummary());
+                    if (MeWiringRebuild.mePartCount(machine) > 0 && MeWiringRebuild.registeredWiring(machine) <= 0) {
+                        line.append(" 接线为空⇒读档后未重建，见「ME 接线已重建」日志");
+                    } else if (MeWiringRebuild.registeredWiring(machine) > 0
+                            && MeWiringRebuild.cachedRecipes(machine) <= 0) {
+                        line.append(" 样板槽无缓存配方⇒先把编码样板放进去并让它跑过一次");
+                    }
+                    line.append(']');
                 }
                 line.append(" 余=").append(remaining.size()).append(" 处理器=").append(asked).append("; ");
             }
@@ -642,6 +684,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     @Override
     public List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget, long availablePower) {
+        ensureMeWiring();
         if (availableSlots <= 0) {
             diag("槽位不足 slots=" + availableSlots);
             return List.of();
