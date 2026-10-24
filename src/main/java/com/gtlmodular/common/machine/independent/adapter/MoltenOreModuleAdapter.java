@@ -328,7 +328,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         }
     }
 
-    private long inputTraceAt = Long.MIN_VALUE;
+    private long inputTraceAt = -10_000L;
 
     private static String shortName(Object handler) {
         String n = handler.getClass().getSimpleName();
@@ -431,7 +431,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         }
     }
 
-    private long lastDiagTick = Long.MIN_VALUE;
+    private long lastDiagTick = -10_000L;
 
     /**
      * 配方的「族」= 第一条非电路物品输入（黑奴挖矿机就是各种世界碎片）。
