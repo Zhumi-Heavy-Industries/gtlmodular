@@ -65,10 +65,22 @@ public final class MachineStateDump {
     }
 
     private static void describeHandler(Object handler, List<String> out) {
+        // GTCEu 的库存处理器不是 Forge 的 IItemHandler：先按 LDLib 的 transfer 走，
+        // 再退回 IRecipeHandler#getContents()（ME 总线、代理仓都走这一条）。
+        if (handler instanceof com.lowdragmc.lowdraglib.side.item.IItemTransfer items) {
+            for (int slot = 0; slot < items.getSlots(); slot++) {
+                var stack = items.getStackInSlot(slot);
+                if (stack != null && !stack.isEmpty()) {
+                    out.add("  物品 " + net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .getKey(stack.getItem()) + " ×" + stack.getCount() + "（槽 " + slot + "）");
+                }
+            }
+            return;
+        }
         if (handler instanceof net.minecraftforge.items.IItemHandler items) {
             for (int slot = 0; slot < items.getSlots(); slot++) {
                 var stack = items.getStackInSlot(slot);
-                if (!stack.isEmpty()) {
+                if (stack != null && !stack.isEmpty()) {
                     out.add("  物品 " + net.minecraft.core.registries.BuiltInRegistries.ITEM
                             .getKey(stack.getItem()) + " ×" + stack.getCount() + "（槽 " + slot + "）");
                 }
@@ -85,7 +97,22 @@ public final class MachineStateDump {
             }
             return;
         }
-        out.add("  处理器 " + handler.getClass().getSimpleName() + "（非物品/流体的库存，如 ME 总线）");
+        if (handler instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler<?> recipeHandler) {
+            int shown = 0;
+            for (Object content : recipeHandler.getContents()) {
+                if (shown++ >= 12) {
+                    out.add("  …（更多内容省略）");
+                    break;
+                }
+                out.add("  内容 " + com.gtlmodular.common.machine.independent.io.BatchContents
+                        .describe(recipeHandler.getCapability(), content)
+                        + " ×" + com.gtlmodular.common.machine.independent.io.BatchContents
+                        .amount(recipeHandler.getCapability(), content)
+                        + "（" + handler.getClass().getSimpleName() + "）");
+            }
+            return;
+        }
+        out.add("  处理器 " + handler.getClass().getSimpleName() + "（读不到内容）");
     }
 
     private static String id(MetaMachine machine) {

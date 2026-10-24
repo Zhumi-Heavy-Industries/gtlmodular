@@ -234,21 +234,11 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             if (entry.getKey() != ItemRecipeCapability.CAP && entry.getKey() != FluidRecipeCapability.CAP) continue;
             for (var content : entry.getValue()) {
                 if (need.length() > 0) need.append(", ");
-                need.append(contentId(content.content))
+                need.append(BatchContents.describe(entry.getKey(), content.content))
                         .append('×').append(BatchContents.amount(entry.getKey(), content.content));
             }
         }
         return need.length() == 0 ? "配方没有物品/流体输入" : need.toString();
-    }
-
-    private static String contentId(Object content) {
-        if (content instanceof ItemStack stack && !stack.isEmpty()) {
-            return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-        }
-        if (content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack stack) {
-            return net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(stack.getFluid()).toString();
-        }
-        return String.valueOf(content);
     }
 
     private String rejectReason(GTRecipe recipe) {

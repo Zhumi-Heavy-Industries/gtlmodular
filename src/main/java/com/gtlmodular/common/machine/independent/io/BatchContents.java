@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.api.recipe.ingredient.IntProviderIngredient;
 import com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
 
@@ -57,6 +58,36 @@ public final class BatchContents {
         else if (cap == FluidRecipeCapability.CAP) ((FluidIngredient) content.content).setAmount(remaining);
         else if (content.content instanceof LongIngredient ingredient) ingredient.setActualAmount(remaining);
         else content.content = LongIngredient.create((Ingredient) content.content, remaining);
+    }
+
+    /**
+     * 人能看懂的内容描述（用于「配方被排除」诊断）：
+     * SizedIngredient 解包到真正的 Ingredient，物品给注册 id、电路标注 [电路]、流体给流体 id。
+     */
+    public static String describe(RecipeCapability<?> cap, Object value) {
+        Object current = value;
+        while (current instanceof SizedIngredient sized) current = sized.getInner();
+        boolean circuit = isCircuit(value);
+        if (current instanceof Ingredient ingredient) {
+            ItemStack[] stacks = ingredient.getItems();
+            if (stacks.length == 0) return circuit ? "programmed_circuit[电路]" : "空标签";
+            String id = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(stacks[0].getItem()).toString();
+            return circuit ? id + "[电路]" : id;
+        }
+        if (current instanceof FluidIngredient fluid) {
+            try {
+                var stacks = fluid.getStacks();
+                if (stacks != null && stacks.length > 0 && !stacks[0].isEmpty()) {
+                    return net.minecraft.core.registries.BuiltInRegistries.FLUID
+                            .getKey(stacks[0].getFluid()).toString();
+                }
+            } catch (RuntimeException ignored) {
+                // 某些流体原料只有标签没有具体流体，退回占位名。
+            }
+            return "流体(标签)";
+        }
+        return String.valueOf(current);
     }
 
     public static boolean empty(Map<RecipeCapability<?>, List<Content>> contents) {
