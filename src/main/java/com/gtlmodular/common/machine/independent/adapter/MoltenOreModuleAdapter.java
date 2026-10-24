@@ -308,6 +308,25 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private long lastDiagTick = Long.MIN_VALUE;
 
+    /**
+     * 配方的「族」= 第一条非电路物品输入（黑奴挖矿机就是各种世界碎片）。
+     * 调度按族轮转，保证每种碎片都能轮到线程，而不是按配方 id 字典序先跑完 {@code _1_*}。
+     */
+    private String familyOf(GTRecipe recipe) {
+        try {
+            for (var entry : recipe.inputs.entrySet()) {
+                if (entry.getKey() != ItemRecipeCapability.CAP) continue;
+                for (var content : entry.getValue()) {
+                    if (BatchContents.isCircuit(content.content)) continue;
+                    return BatchContents.describe(entry.getKey(), content.content);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // 读不出主原料就不分族，退回全局老化排序。
+        }
+        return null;
+    }
+
     /** 逐轮增量枚举：游标跨轮保留，每轮最多 check 16 条，避免一次 45 ms。 */
     private final java.util.List<GTRecipe> enumFound = new ArrayList<>();
     private final java.util.Set<GTRecipe> enumSeen =
@@ -514,7 +533,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         Map<ResourceLocation, Integer> active = activeRecipes.get();
         // 直接用缓存里的配方做排序，不再每 tick 复制 16 份；真正要开批时才按索引缩放。
         List<GTRecipe> origins = cached;
-        var order = fairness.orderIndices(origins, recipe -> recipe.id, maxPerRecipe,
+        var order = fairness.orderIndices(origins, recipe -> recipe.id, this::familyOf, maxPerRecipe,
                 active == null ? Map.of() : active);
         if (now - lastDiagTick >= 200L) {
             diag("管线 cached=" + cached.size() + " active=" + (active == null ? 0 : active.size())
