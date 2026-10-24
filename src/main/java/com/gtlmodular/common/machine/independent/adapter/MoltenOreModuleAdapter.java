@@ -218,22 +218,41 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
     }
 
     private final java.util.Map<ResourceLocation, Long> rejectedLoggedAt = new java.util.HashMap<>();
+    private final java.util.Map<ResourceLocation, Integer> rejectedReasonHash = new java.util.HashMap<>();
+    private long rejectionBudgetAt = -10_000L;
+    private int rejectionBudgetLeft = 3;
 
     /**
-     * 候选被排除时把「为什么」写日志：同一配方 200 tick 内只写一次，
-     * 原料变化后能重新看到新原因（之前按配方永久去重，改了输入就再也不会打日志）。
+     * 候选被排除时把「为什么」写日志。限流规则：
+     * 同一配方、同一原因 2 分钟内不重复；原因变了立刻打；每 100 tick 全局最多 3 条。
+     * （之前只按配方 200 tick 去重，60+ 条候选每 10 秒能刷出 1000+ 行日志。）
      */
     private void logRejectionOnce(GTRecipe recipe) {
         if (recipe.id == null) return;
         long nowTick = now();
-        Long last = rejectedLoggedAt.get(recipe.id);
-        if (last != null && nowTick - last < 200L) return;
-        if (rejectedLoggedAt.size() > 256) rejectedLoggedAt.clear();
+        String probe = rejectReason(recipe);
+        if (probe == null) return;
+        int hash = probe.hashCode();
+        Integer lastHash = rejectedReasonHash.get(recipe.id);
+        Long lastTick = rejectedLoggedAt.get(recipe.id);
+        boolean sameReasonRecently = lastHash != null && lastHash == hash
+                && lastTick != null && nowTick - lastTick < 2400L;
+        if (sameReasonRecently) return;
+        if (nowTick - rejectionBudgetAt >= 100L) {
+            rejectionBudgetAt = nowTick;
+            rejectionBudgetLeft = 3;
+        }
+        if (rejectionBudgetLeft <= 0) return;
+        rejectionBudgetLeft--;
+        if (rejectedReasonHash.size() > 256) {
+            rejectedReasonHash.clear();
+            rejectedLoggedAt.clear();
+        }
+        rejectedReasonHash.put(recipe.id, hash);
         rejectedLoggedAt.put(recipe.id, nowTick);
-        String reason = rejectReason(recipe);
-        if (reason != null && reason.contains("输入匹配失败")) logInputTrace(recipe);
+        if (probe.contains("输入匹配失败")) logInputTrace(recipe);
         GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}]",
-                recipe.id, machine.getPos(), reason, inputHandlersSummary());
+                recipe.id, machine.getPos(), probe, inputHandlersSummary());
     }
 
     /** 把机器 IN/BOTH 行里的处理器类名打出来：确认创造仓之类的特殊仓到底有没有进匹配口径。 */
