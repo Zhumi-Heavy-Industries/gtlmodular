@@ -54,13 +54,34 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      */
     @Override
     public int threads() {
+        int value;
         if (machine instanceof MoltenBlastModuleMachine blast) {
             var part = blast.getThreadPartMachine();
-            if (part != null && part.getThreadCount() > 0) return part.getThreadCount();
-            return Math.max(1, blast.totalThreads());
+            value = part != null && part.getThreadCount() > 0 ? part.getThreadCount()
+                    : Math.max(1, blast.totalThreads());
+        } else if (machine instanceof MoltenSpaceOreModuleMachine ore) {
+            value = Math.max(1, ore.totalThreads());
+        } else {
+            value = 1;
         }
-        if (machine instanceof MoltenSpaceOreModuleMachine ore) return Math.max(1, ore.totalThreads());
-        return 1;
+        logThreadSourceOnce(value);
+        return value;
+    }
+
+    private int loggedThreads = -1;
+    private long loggedThreadsAt = Long.MIN_VALUE / 2;
+
+    /** 线程数变了就写一次来源：线程仓条数 / 机器总线程数 / 无仓回退，便于玩家对着面板核对。 */
+    private void logThreadSourceOnce(int value) {
+        long now = now();
+        if (value == loggedThreads && now - loggedThreadsAt < 1200L) return;
+        loggedThreads = value;
+        loggedThreadsAt = now;
+        var blast = machine instanceof MoltenBlastModuleMachine b ? b : null;
+        var part = blast == null ? null : blast.getThreadPartMachine();
+        GTLModular.LOGGER.info("[independent] 线程数 {} @{}: 线程仓={} 机器总线程={}",
+                value, machine.getPos(), part == null ? "无" : String.valueOf(part.getThreadCount()),
+                blast == null ? "不适用" : String.valueOf(blast.totalThreads()));
     }
 
     /** 保留接口口径（上游「最大并行 × 线程数」）；模块的候选阶段不再用它分摊，见 candidates 里的独立并行口径。 */
@@ -295,19 +316,29 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      * 只在 lookup 一条都给不出时调用（EBF 这类按输入索引的配方表在输入为空时会返回空）。
      */
     private List<GTRecipe> enumerateAll(GTRecipeType type) {
+        List<GTRecipe> found = new ArrayList<>();
+        for (GTRecipe recipe : allRecipes(type)) {
+            if (recipe == null || recipe.recipeType != type || !check(recipe)) continue;
+            found.add(recipe);
+        }
+        return found;
+    }
+
+    /** 该配方类型的整表（不 check），拿不到时返回空表。 */
+    private List<GTRecipe> allRecipes(GTRecipeType type) {
         var level = machine.getLevel();
         if (type == null || level == null) return List.of();
-        List<GTRecipe> found = new ArrayList<>();
+        List<GTRecipe> all = new ArrayList<>();
         try {
             // 1.20.1 的 RecipeManager.getAllRecipesFor 直接返回配方本体（1.20.2 起才包 RecipeHolder）。
             for (GTRecipe recipe : level.getRecipeManager().getAllRecipesFor(type)) {
-                if (recipe == null || recipe.recipeType != type || !check(recipe)) continue;
-                found.add(recipe);
+                if (recipe != null) all.add(recipe);
             }
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException failure) {
+            SwallowedErrors.reportDebug("MoltenOreModuleAdapter.allRecipes", failure);
             return List.of();
         }
-        return found;
+        return all;
     }
 
     @Override
@@ -352,9 +383,18 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 if (recipe != null) found.add(recipe);
             }
             // 有些配方类型（EBF 这类巨量配方表）的 lookup 是按「机器当前输入」索引的：
-            // 输入总线暂时空着时一条都枚举不出来，日志会报「配方表本身就是空的」。这时退回到
-            // 「整表枚举 + 我们自己逐条 check」，口径和炼矿模块一致，料一到就能看到候选。
-            if (found.isEmpty()) found.addAll(enumerateAll(machine.getRecipeType()));
+            // 输入总线暂时空着时一条都枚举不出来；更坑的是它可能**漏掉**某些仓型里的原料，
+            // 表现为「玩家放了 6 种碎片，只匹配到 4 种」。所以小配方表直接整表枚举再合并。
+            var all = allRecipes(machine.getRecipeType());
+            if (!all.isEmpty() && all.size() <= 256) {
+                java.util.Set<GTRecipe> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                seen.addAll(found);
+                for (GTRecipe recipe : all) {
+                    if (seen.add(recipe) && check(recipe)) found.add(recipe);
+                }
+            } else if (found.isEmpty()) {
+                found.addAll(enumerateAll(machine.getRecipeType()));
+            }
             if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
             else logCandidateCount(found);
             return found;

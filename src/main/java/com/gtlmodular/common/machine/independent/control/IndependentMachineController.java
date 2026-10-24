@@ -542,30 +542,44 @@ public final class IndependentMachineController {
         }
     }
 
-    /** 产物名 + 数量（已按并行缩放），比贴一长串配方 id 好读。 */
+    /** 产物名 + 数量（已按并行缩放），比贴一长串配方 id 好读；配方有多条产物时全部列出（最多 8 条）。 */
     private static void appendProduct(net.minecraft.network.chat.MutableComponent line,
                                       com.gregtechceu.gtceu.api.recipe.GTRecipe recipe) {
         try {
             var items = recipe.outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
             if (!items.isEmpty()) {
-                var content = items.get(0);
-                long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
-                Component name = content.content instanceof ItemStack stack
-                        ? stack.getHoverName() : Component.literal("物品");
-                line.append(name.copy().withStyle(ChatFormatting.WHITE))
-                        .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
-                                .withStyle(ChatFormatting.GREEN));
+                int shown = 0;
+                for (var content : items) {
+                    if (shown++ >= 8) {
+                        line.append(Component.literal(" …"));
+                        break;
+                    }
+                    if (shown > 1) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
+                    long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
+                    Component name = content.content instanceof ItemStack stack
+                            ? stack.getHoverName() : Component.literal("物品");
+                    line.append(name.copy().withStyle(ChatFormatting.WHITE))
+                            .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
+                                    .withStyle(ChatFormatting.GREEN));
+                }
                 return;
             }
             var fluids = recipe.outputs.getOrDefault(FluidRecipeCapability.CAP, List.of());
             if (!fluids.isEmpty()) {
-                var content = fluids.get(0);
-                long amount = BatchContents.amount(FluidRecipeCapability.CAP, content.content);
-                String name = content.content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack stack
-                        ? stack.getDisplayName().getString() : "流体";
-                line.append(Component.literal(name).withStyle(ChatFormatting.WHITE))
-                        .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
-                                .withStyle(ChatFormatting.AQUA));
+                int shown = 0;
+                for (var content : fluids) {
+                    if (shown++ >= 8) {
+                        line.append(Component.literal(" …"));
+                        break;
+                    }
+                    if (shown > 1) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
+                    long amount = BatchContents.amount(FluidRecipeCapability.CAP, content.content);
+                    String name = content.content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack stack
+                            ? stack.getDisplayName().getString() : "流体";
+                    line.append(Component.literal(name).withStyle(ChatFormatting.WHITE))
+                            .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
+                                    .withStyle(ChatFormatting.AQUA));
+                }
             }
         } catch (RuntimeException ignored) {
             line.append(Component.literal("产物").withStyle(ChatFormatting.GRAY));
