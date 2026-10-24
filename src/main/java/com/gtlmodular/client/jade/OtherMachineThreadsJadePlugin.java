@@ -174,17 +174,36 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
             for (ThreadDisplaySnapshot.Thread thread : snapshot.threads()) {
                 if (listed >= OUTPUT_LINES) break;
                 Component label = ThreadDisplayText.number(thread.label());
+                if (listed > 0) tooltip.add(Component.literal(DIVIDER));   // 线程之间用分割线隔开
                 if (thread.outputId() == null) {
                     tooltip.add(Component.translatable("gtlmodular.nanochip.jade.thread_outputs.none", label));
                 } else {
-                    IElement icon = iconOf(tooltip, thread.outputId());
-                    Component line = Component.translatable("gtlmodular.nanochip.jade.thread_outputs.line",
-                            label, ThreadDisplayText.number(thread.outputCount()), displayNameOf(thread.outputId()));
-                    if (icon != null) {
-                        tooltip.add(icon);
-                        tooltip.append(line);
-                    } else {
-                        tooltip.add(line);
+                    String encoded = thread.outputId();
+                    boolean any = false;
+                    for (String part : encoded.split(";")) {
+                        String[] bits = part.split(":");
+                        if (bits.length < 3) continue;
+                        boolean fluid = "fluid".equals(bits[0]);
+                        String id = bits[1];
+                        long amount;
+                        try {
+                            amount = Long.parseLong(bits[2]);
+                        } catch (NumberFormatException ignored) {
+                            continue;
+                        }
+                        IElement icon = fluid ? fluidIconOf(tooltip, id, amount) : iconOf(tooltip, id);
+                        Component line = Component.translatable("gtlmodular.nanochip.jade.thread_outputs.line",
+                                label, ThreadDisplayText.number(amount), displayNameOf(fluid ? "fluid:" + id : id));
+                        if (icon != null) {
+                            tooltip.add(icon);
+                            tooltip.append(line);
+                        } else {
+                            tooltip.add(line);
+                        }
+                        any = true;
+                    }
+                    if (!any) {
+                        tooltip.add(Component.translatable("gtlmodular.nanochip.jade.thread_outputs.none", label));
                     }
                 }
                 listed++;
@@ -261,6 +280,19 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
                 ItemStack stack = new ItemStack(item);
                 if (stack.isEmpty()) return null;
                 return helper == null ? null : helper.item(stack);
+            } catch (RuntimeException ignored) {
+                return null;
+            }
+        }
+
+        /** 流体产物图标：Jade 原生支持流体元素，直接用产物本身的贴图。 */
+        private static IElement fluidIconOf(ITooltip tooltip, String id, long amount) {
+            try {
+                var fluid = BuiltInRegistries.FLUID.get(ResourceLocation.tryParse(id));
+                if (fluid == null) return null;
+                IElementHelper helper = tooltip.getElementHelper();
+                if (helper == null) return null;
+                return helper.fluid(snownee.jade.api.fluid.JadeFluidObject.of(fluid, Math.max(1L, amount)));
             } catch (RuntimeException ignored) {
                 return null;
             }

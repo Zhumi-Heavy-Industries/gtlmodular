@@ -437,23 +437,14 @@ public final class IndependentMachineController {
             long outputCount = 0L;
             boolean outputFluid = false;
             try {
-                boolean[] isFluid = new boolean[1];
-                var product = primaryOutput(batch.payload(), isFluid);
-                if (product != null) {
-                    if (isFluid[0]) {
-                        String id = fluidIdOf(product.content);
-                        if (id != null) {
-                            // 用前缀标记流体：Jade 侧据此按流体解析名字/图标，不需要改 nac 的 Thread record。
-                            outputId = "fluid:" + id;
-                            outputCount = BatchContents.amount(FluidRecipeCapability.CAP, product.content);
-                            outputFluid = true;
-                        }
-                    } else {
-                        ItemStack stack = stackOf(product.content);
-                        if (!stack.isEmpty()) {
-                            outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                            outputCount = BatchContents.amount(ItemRecipeCapability.CAP, product.content);
-                        }
+                outputId = encodedOutputs(batch.payload(), Math.max(1, batch.payload().runs()));
+                if (outputId != null) {
+                    boolean[] isFluid = new boolean[1];
+                    var first = primaryOutput(batch.payload(), isFluid);
+                    if (first != null) {
+                        var cap = isFluid[0] ? FluidRecipeCapability.CAP : ItemRecipeCapability.CAP;
+                        outputCount = BatchContents.amount(cap, first.content);
+                        outputFluid = isFluid[0];
                     }
                 }
             } catch (RuntimeException ignored) {
@@ -472,6 +463,41 @@ public final class IndependentMachineController {
      * 主产物：优先用批次真正结算的产物表（概率已经抽定），否则用配方的产物表；
      * 多项产物里取**数量最大**的那一项——配方里第一条不一定是玩家眼里的产物（显示对不上的主因）。
      */
+    /**
+     * 一条批次「全部产物」的编码：`item:<id>:<count>;fluid:<id>:<count>`，Jade 侧逐个画。
+     * 数量已乘份数（长批次），最多 6 项，溢出饱和。
+     */
+    private static String encodedOutputs(IndependentRecipePayload payload, int runs) {
+        var outputs = payload.resolvedOutputs() != null ? payload.resolvedOutputs() : payload.recipe().outputs;
+        StringBuilder sb = new StringBuilder();
+        int limit = 6;
+        int listed = 0;
+        for (var content : outputs.getOrDefault(ItemRecipeCapability.CAP, List.of())) {
+            if (listed >= limit) break;
+            ItemStack stack = stackOf(content.content);
+            if (stack.isEmpty()) continue;
+            long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
+            if (amount <= 0) continue;
+            if (sb.length() > 0) sb.append(';');
+            sb.append("item:")
+                    .append(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()))
+                    .append(':').append(runs > 1 ? saturatingMultiply(amount, runs) : amount);
+            listed++;
+        }
+        for (var content : outputs.getOrDefault(FluidRecipeCapability.CAP, List.of())) {
+            if (listed >= limit) break;
+            String id = fluidIdOf(content.content);
+            if (id == null) continue;
+            long amount = BatchContents.amount(FluidRecipeCapability.CAP, content.content);
+            if (amount <= 0) continue;
+            if (sb.length() > 0) sb.append(';');
+            sb.append("fluid:").append(id).append(':')
+                    .append(runs > 1 ? saturatingMultiply(amount, runs) : amount);
+            listed++;
+        }
+        return sb.length() == 0 ? null : sb.toString();
+    }
+
     /** 产物展示用：先找数量最大的物品产出，没有就退回数量最大的流体产出（浮游选矿只产泡沫流体）。 */
     private static com.gregtechceu.gtceu.api.recipe.content.Content primaryOutput(
             IndependentRecipePayload payload, boolean[] isFluid) {
