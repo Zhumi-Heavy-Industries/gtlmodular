@@ -45,18 +45,17 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                     WorkableMultiblockMachine.MANAGED_FIELD_HOLDER);
 
     /**
-     * 机器 UI 右侧加一个开关：「允许同一种配方同时占多条线程」。
-     * 默认关闭 = 同配方最多 1 条（全局配置 independentThreadsMaxBatchesPerRecipe 的默认值）。
+     * 机器 UI 右侧「独立线程」页：显示代码固定的线程数，并提供「允许同一种配方占多条线程」开关。
+     * 线程数由 {@link #independentThreads()} 写死，不在 UI 里改。
      */
     @Override
     public void attachConfigurators(com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel panel) {
         super.attachConfigurators(panel);
         try {
-            panel.attachConfigurators(new com.gregtechceu.gtceu.api.gui.fancy.IFancyConfiguratorButton.Toggle(
-                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0, 1, 0.5),
-                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0.5, 1, 0.5),
+            panel.attachConfigurators(new com.gtlmodular.common.machine.independent.control.IndependentThreadsConfigurator(
+                    this::independentThreads,
                     this::allowsSameRecipeMultipleThreads,
-                    (clickData, pressed) -> setAllowSameRecipeMultipleThreads(Boolean.TRUE.equals(pressed))));
+                    this::setAllowSameRecipeMultipleThreads));
         } catch (RuntimeException failure) {
             com.gtlmodular.common.diag.SwallowedErrors.report(
                     "MoltenModuleMachineBase#attachConfigurators.independentThreads", failure);
