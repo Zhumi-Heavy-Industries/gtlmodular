@@ -1,6 +1,7 @@
 package com.gtlmodular.common.machine.independent.adapter;
 
 import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
+import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
@@ -259,7 +260,10 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return "没有配方仓代理";
     }
 
-    /** 把配方要的物品/流体逐条写成人能看懂的形式：只有「缺原料」四个字根本看不出缺哪一样。 */
+    /**
+     * 把配方要的物品/流体逐条写出来，并**逐条标注机器是否认到**（[缺]）。
+     * 只写「输入匹配失败」看不出是哪一样，尤其 ME 补给总线满库存却匹配不过的时候。
+     */
     private String describeInputs(GTRecipe recipe) {
         StringBuilder need = new StringBuilder();
         for (var entry : recipe.inputs.entrySet()) {
@@ -267,10 +271,41 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             for (var content : entry.getValue()) {
                 if (need.length() > 0) need.append(", ");
                 need.append(BatchContents.describe(entry.getKey(), content.content))
-                        .append('×').append(BatchContents.amount(entry.getKey(), content.content));
+                        .append('×').append(BatchContents.amount(entry.getKey(), content.content))
+                        .append(inputSatisfied(entry.getKey(), content.content) ? "" : "[缺]");
             }
         }
         return need.length() == 0 ? "配方没有物品/流体输入" : need.toString();
+    }
+
+    /** 单独问一遍机器的每个 IN/BOTH 处理器：这一样原料它认不认。认就返回 true。 */
+    @SuppressWarnings("unchecked")
+    private boolean inputSatisfied(RecipeCapability<?> cap, Object content) {
+        try {
+            if (!(machine instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder)) return false;
+            var holder = (com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) machine;
+            var rows = new com.gregtechceu.gtceu.api.capability.recipe.IO[]{
+                    com.gregtechceu.gtceu.api.capability.recipe.IO.IN,
+                    com.gregtechceu.gtceu.api.capability.recipe.IO.BOTH};
+            for (var io : rows) {
+                var handlers = holder.getCapabilitiesProxy().get(io, cap);
+                if (handlers == null) continue;
+                for (var handler : handlers) {
+                    try {
+                        Object copy = cap.copyContent(content);
+                        var input = new java.util.ArrayList<Object>();
+                        input.add(copy);
+                        var left = ((com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler<Object>) handler)
+                                .handleRecipeInner(io, null, input, null, true);
+                        if (left == null || left.isEmpty()) return true;
+                    } catch (RuntimeException ignored) {
+                        // 单个处理器读失败不影响其它处理器判断
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return false;
     }
 
     private String rejectReason(GTRecipe recipe) {
@@ -548,7 +583,13 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             // 表现为「玩家放了 6 种碎片，只匹配到 4 种」。所以小配方表整表枚举再合并，
             // 但**每轮只 check 16 条**（单条 matchRecipe ~170 µs，全量一次 45 ms 会卡三 tick）。
             enumerateIncrementally(machine.getRecipeType(), signature, found);
-            if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
+            if (found.isEmpty()) {
+                logWhyNoCandidates(machine.getRecipeType());
+                // 长时间没有候选：可能是主机被拆掉重放后模块还连着旧实例，触发一次主机自愈。
+                if (machine instanceof MoltenModuleMachineBase) {
+                    ((MoltenModuleMachineBase<?>) machine).refreshHostIfStale();
+                }
+            }
             else logCandidateCount(found);
             return found;
         });

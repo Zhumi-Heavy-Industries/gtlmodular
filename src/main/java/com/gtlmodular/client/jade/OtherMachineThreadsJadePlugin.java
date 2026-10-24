@@ -181,13 +181,16 @@ public final class OtherMachineThreadsJadePlugin implements IWailaPlugin {
                     String encoded = thread.outputId();
                     boolean any = false;
                     for (String part : encoded.split(";")) {
-                        String[] bits = part.split(":");
-                        if (bits.length < 3) continue;
-                        boolean fluid = "fluid".equals(bits[0]);
-                        String id = bits[1];
+                        // 格式 `<kind>:<namespace:path>:<count>`；物品 id 自带冒号，必须从两端切。
+                        int head = part.indexOf(':');
+                        int tail = part.lastIndexOf(':');
+                        if (head <= 0 || tail <= head) continue;
+                        String kind = part.substring(0, head);
+                        String id = part.substring(head + 1, tail);
+                        boolean fluid = "fluid".equals(kind);
                         long amount;
                         try {
-                            amount = Long.parseLong(bits[2]);
+                            amount = Long.parseLong(part.substring(tail + 1));
                         } catch (NumberFormatException ignored) {
                             continue;
                         }

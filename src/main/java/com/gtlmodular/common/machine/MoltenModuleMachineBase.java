@@ -422,6 +422,27 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         this.host = host;
     }
 
+    /**
+     * 主机被拆掉重放后，缓存的 {@link #host} 实例会过期（位置还在，对象已经换了），
+     * 表现为模块一直认为「没有材料」。这里按位置重新解析一次，必要时重新扫描连接。
+     */
+    public void refreshHostIfStale() {
+        try {
+            MoltenModuleHostMachine cached = host;
+            if (cached == null) return;
+            Level lv = getLevel();
+            if (!(lv instanceof ServerLevel)) return;
+            if (MetaMachine.getMachine(lv, cached.getPos()) != cached) {
+                host = null;
+                findAndConnectToHost();
+                // 连接关系变了：让上游重新订阅一次（逻辑侧缓存跟着失效）。
+                getRecipeLogic().updateTickSubscription();
+            }
+        } catch (RuntimeException ignored) {
+            // 自愈失败不影响正常 tick，下一次再试。
+        }
+    }
+
     @Override
     public Class<MoltenModuleHostMachine> getHostType() {
         return MoltenModuleHostMachine.class;
