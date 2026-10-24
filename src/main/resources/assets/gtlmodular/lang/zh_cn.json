@@ -1327,5 +1327,5 @@
   "gtlmodular.independent.jade.coil_reduction": "§7线圈减免（按当前线圈温度）：§b能耗 −%s§7 · §b时长 −%s",
   "gtlmodular.independent.jade.details_hint": "§7按住 §fShift§7 查看线程明细与产物",
   "gtlmodular.independent.more": "另有 %s 个批次",
-  "gtlmodular.independent.runs": "长批次：本批 %s 次配方（每 %s tick 一次），第 %s 次进行中",
+  "gtlmodular.independent.runs": "长批次：本批 %s 次配方（每 %s tick 一次），第 %s 次进行中"
 }
