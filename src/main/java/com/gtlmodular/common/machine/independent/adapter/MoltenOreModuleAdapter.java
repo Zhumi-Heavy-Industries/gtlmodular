@@ -1,5 +1,7 @@
 package com.gtlmodular.common.machine.independent.adapter;
 
+import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
+import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
@@ -11,8 +13,10 @@ import com.gtlmodular.common.machine.MoltenBlastModuleMachine;
 import com.gtlmodular.common.machine.MoltenModuleHostMachine;
 import com.gtlmodular.common.machine.MoltenModuleMachineBase;
 import com.gtlmodular.common.machine.MoltenSpaceOreModuleMachine;
+import com.gtlmodular.common.machine.independent.io.BatchContents;
 import com.gtlmodular.common.machine.independent.recipe.*;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import org.gtlcore.gtlcore.api.machine.trait.ILockRecipe;
 import org.gtlcore.gtlcore.api.recipe.IGTRecipe;
 import org.gtlcore.gtlcore.api.recipe.IParallelLogic;
@@ -223,9 +227,35 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {}", recipe.id, machine.getPos(), rejectReason(recipe));
     }
 
+    /** 把配方要的物品/流体逐条写成人能看懂的形式：只有「缺原料」四个字根本看不出缺哪一样。 */
+    private String describeInputs(GTRecipe recipe) {
+        StringBuilder need = new StringBuilder();
+        for (var entry : recipe.inputs.entrySet()) {
+            if (entry.getKey() != ItemRecipeCapability.CAP && entry.getKey() != FluidRecipeCapability.CAP) continue;
+            for (var content : entry.getValue()) {
+                if (need.length() > 0) need.append(", ");
+                need.append(contentId(content.content))
+                        .append('×').append(BatchContents.amount(entry.getKey(), content.content));
+            }
+        }
+        return need.length() == 0 ? "配方没有物品/流体输入" : need.toString();
+    }
+
+    private static String contentId(Object content) {
+        if (content instanceof ItemStack stack && !stack.isEmpty()) {
+            return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        }
+        if (content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack stack) {
+            return net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(stack.getFluid()).toString();
+        }
+        return String.valueOf(content);
+    }
+
     private String rejectReason(GTRecipe recipe) {
         try {
-            if (!RecipeRunnerHelper.matchRecipe(machine, recipe)) return "输入匹配失败（缺原料或电路）";
+            if (!RecipeRunnerHelper.matchRecipe(machine, recipe)) {
+                return "输入匹配失败：" + describeInputs(recipe);
+            }
             if (IGTRecipe.of(recipe).getEuTier() > machine.getTier()) {
                 return "配方电压等级 " + IGTRecipe.of(recipe).getEuTier() + " 高于机器 " + machine.getTier();
             }
