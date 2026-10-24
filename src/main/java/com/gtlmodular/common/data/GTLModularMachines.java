@@ -336,9 +336,15 @@ public final class GTLModularMachines {
 
     private static void registerModuleA() {
         ModuleKind kind = ModuleKind.BLAST;
+        // 配方表按 ModuleKind 解析（模块A 现在是浮游选矿），解析不到才退回高炉表并告警。
+        GTRecipeType recipeType = GTRegistries.RECIPE_TYPES.get(kind.recipeTypeId());
+        if (recipeType == null) {
+            GTLModular.LOGGER.warn("[gtlmodular] 模块A 配方表 {} 未注册，退回电力高炉", kind.recipeTypeId());
+            recipeType = GTRecipeTypes.BLAST_RECIPES;
+        }
         MOLTEN_BLAST_MODULE = REGISTRATE.multiblock(kind.machineId(), MoltenBlastModuleMachine::new)
                 .rotationState(RotationState.ALL)
-                .recipeType(GTRecipeTypes.BLAST_RECIPES)
+                .recipeType(recipeType)
                 .recipeModifier(GTLModularMachines::moltenEbfOverclock)
                 .appearanceBlock(GTBlocks.CASING_INVAR_HEATPROOF)
                 .pattern(GTLModularMachines::blastShellPattern)
