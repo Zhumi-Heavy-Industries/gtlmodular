@@ -5,11 +5,18 @@ import net.minecraft.resources.ResourceLocation;
 /** 用注册 ID 延迟解析配方表，避免枚举初始化时读取尚未注册的对象。 */
 public enum ModuleKind {
 
+    /**
+     * 模块A：浮游选矿。
+     * <p>
+     * 原来沿用电力高炉配方表（{@code gtceu:electric_blast_furnace}），改成 gtlcore 注册的
+     * 浮游选矿（{@code gtceu:flotating_beneficiation}）。机器 ID 保持不变，
+     * 否则已摆放的方块会因为注册名变化而失效。
+     */
     BLAST(
             "molten_blast_module",
-            "猪咪愤怒烧矿机",
+            "猪咪浮游选矿机",
             new ResourceLocation("gtceu", "electric_blast_furnace"),
-            new ResourceLocation("gtceu", "electric_blast_furnace")),
+            new ResourceLocation("gtceu", "flotating_beneficiation")),
 
     STAR_CORE_STRIPPER(
             "molten_stripper_module",
