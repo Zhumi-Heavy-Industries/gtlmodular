@@ -17,6 +17,9 @@ public interface IndependentRecipeAdapter {
     /** 会话真正接下一条候选后回调，用于公平游标/老化；预分配阶段不能算作已服务。 */
     default void admitted(GTRecipe recipe) {}
 
+    /** 这条配方当前是否已有批次在跑：补位时优先挑没在跑的，别让同一种配方占掉第二条线程。 */
+    default boolean isRunning(net.minecraft.resources.ResourceLocation recipeId) { return false; }
+
     /** 机器自身 IO 或配置改变后丢弃候选缓存；外部输入变化仍由短 TTL 兜底。 */
     default void invalidateCandidates() {}
 

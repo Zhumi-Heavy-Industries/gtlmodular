@@ -8,6 +8,7 @@ import it.unimi.dsi.fastutil.objects.ObjectSet;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEFilterIOPartMachine;
 import org.gtlcore.gtlcore.api.machine.trait.MEPatternRecipeHandlePart;
+import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferPartMachineBase;
 
 import java.util.List;
 
@@ -109,6 +110,37 @@ public final class MeWiringRebuild {
     public static int mePartCount(Object machine) {
         if (!(machine instanceof MultiblockControllerMachine controller)) return 0;
         return countMeParts(controller);
+    }
+
+    /**
+     * 逐个 ME 部件打出「样板数 / 槽内物品 / 槽内流体」：0 候选时能立刻分清
+     * 是样板槽空着、还是样板在但槽内缓冲空（库存型只认库存配置）。
+     */
+    public static String describeMeParts(Object machine) {
+        if (!(machine instanceof MultiblockControllerMachine controller)) return "";
+        List<IMultiPart> parts = controller.getParts();
+        if (parts == null || parts.isEmpty()) return "";
+        StringBuilder text = new StringBuilder();
+        for (IMultiPart part : parts) {
+            if (!(part instanceof IMEFilterIOPartMachine)) continue;
+            text.append(' ').append(part.getClass().getSimpleName());
+            if (part instanceof MEPatternBufferPartMachineBase buffer) {
+                try {
+                    text.append("[样板=").append(buffer.getAvailablePatterns().size());
+                } catch (RuntimeException | LinkageError failure) {
+                    text.append("[样板=读不到");
+                }
+                try {
+                    var contents = buffer.getMergedInternalSlot();
+                    text.append(" 槽内物品=").append(contents.left().size())
+                            .append(" 槽内流体=").append(contents.right().size());
+                } catch (RuntimeException | LinkageError failure) {
+                    text.append(" 槽内=读不到");
+                }
+                text.append(']');
+            }
+        }
+        return text.toString();
     }
 
     /** 已登记的 ME 接线数（样板部件 + 输出部件）。 */

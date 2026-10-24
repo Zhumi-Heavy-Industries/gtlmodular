@@ -131,6 +131,31 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         // 集合只按 TTL 与配置/材料变化失效；准入本身仍逐条重新校验输入。
     }
 
+    /**
+     * 这条配方现在有没有批次在跑。补位时先用这个把「同配方再占一条」排到最后：
+     * 一条矿的 4 种电路处理应该各占一条线程，而不是某一种结算后又抢回一条。
+     */
+    @Override
+    public boolean isRunning(ResourceLocation recipeId) {
+        var active = activeRecipes.get();
+        return active != null && active.getOrDefault(recipeId, 0) > 0;
+    }
+
+    /** 刚结算（上一轮在跑、这一轮不在了）的配方：下一轮优先补回它自己那条线程。 */
+    private final java.util.Map<ResourceLocation, Long> settledAt = new java.util.HashMap<>();
+    private java.util.Map<ResourceLocation, Integer> lastActive = java.util.Map.of();
+
+    private void trackSettled(long now, java.util.Map<ResourceLocation, Integer> active) {
+        if (!lastActive.isEmpty()) {
+            for (var entry : lastActive.entrySet()) {
+                if (!active.containsKey(entry.getKey())) settledAt.put(entry.getKey(), now);
+            }
+        }
+        for (var id : active.keySet()) settledAt.remove(id);
+        if (settledAt.size() > 256) settledAt.clear();
+        lastActive = new java.util.HashMap<>(active);
+    }
+
     @Override
     public void invalidateCandidates() {
         candidateCache.invalidate();
@@ -217,7 +242,8 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 GTLModular.LOGGER.info("[independent] ME 接线已重建 @{}：{}", machine.getPos(), meWiring.describe());
             } else if (outcome == MeWiringRebuild.Outcome.REBUILD_FAILED
                     || outcome == MeWiringRebuild.Outcome.GAVE_UP) {
-                GTLModular.LOGGER.warn("[independent] ME 接线重建停手 @{}：{}", machine.getPos(), meWiring.describe());
+                GTLModular.LOGGER.warn("[independent] ME 接线重建停手 @{}：{} | ME 部件[{}]",
+                        machine.getPos(), meWiring.describe(), MeWiringRebuild.describeMeParts(machine));
             }
         } catch (RuntimeException | LinkageError failure) {
             SwallowedErrors.report("MoltenOreModuleAdapter#ensureMeWiring", failure);
@@ -752,10 +778,12 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess.controller(logic);
         if (controller != null && controller.allowSameRecipeMultiple()) maxPerRecipe = 0;
         Map<ResourceLocation, Integer> active = activeRecipes.get();
+        if (active == null) active = Map.of();
+        trackSettled(now, active);
         // 直接用缓存里的配方做排序，不再每 tick 复制 16 份；真正要开批时才按索引缩放。
         List<GTRecipe> origins = cached;
         var order = fairness.orderIndices(origins, recipe -> recipe.id, this::familyOf, maxPerRecipe,
-                active == null ? Map.of() : active);
+                active, settledAt);
         if (now - lastDiagTick >= 200L) {
             diag("管线 cached=" + cached.size() + " active=" + (active == null ? 0 : active.size())
                     + " maxPerRecipe=" + maxPerRecipe + " order=" + order.size()

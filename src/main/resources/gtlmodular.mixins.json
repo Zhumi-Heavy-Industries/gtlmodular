@@ -9,6 +9,7 @@
         "gtlcore.NanochipCalibrationLookupMixin",
         "gtlcore.NanochipCalibrationInputMixin",
         "gtlcore.NanochipLocalBatchEnergyMixin",
+        "gtlcore.StockingPatternBufferStockActiveMixin",
         "ldlib.LDLibAsyncStaleLogicGuardMixin",
         "independent.MultipleRecipeLogicInvoker",
         "independent.MultipleRecipeEnergyInvoker",

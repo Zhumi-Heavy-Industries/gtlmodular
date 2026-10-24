@@ -61,4 +61,56 @@ class RecipeFairnessTest {
 
         assertEquals(2, order.get(0));
     }
+
+    @Test
+    void settledRecipeComesFirstSoItReclaimsItsOwnThread() {
+        List<ResourceLocation> recipes = List.of(
+                new ResourceLocation("gtlmodular", "space_ore_1"),
+                new ResourceLocation("gtlmodular", "space_ore_2"),
+                new ResourceLocation("gtlmodular", "space_ore_3"),
+                new ResourceLocation("gtlmodular", "space_ore_4"));
+        RecipeFairness fairness = new RecipeFairness();
+        // 四种处理同族、按老化顺序本来会先跑第 1 种。
+        var settled = Map.of(recipes.get(3), 500L);
+
+        var order = fairness.orderIndices(recipes, id -> id, id -> "同一种矿", 0,
+                Map.of(recipes.get(0), 1), settled);
+
+        assertEquals(3, order.get(0), "刚结算的第 4 种要排最前，回到自己那条线程");
+    }
+
+    @Test
+    void runningRecipeGoesLastSoItCannotTakeASecondThread() {
+        List<ResourceLocation> recipes = List.of(
+                new ResourceLocation("gtlmodular", "space_ore_1"),
+                new ResourceLocation("gtlmodular", "space_ore_2"));
+        RecipeFairness fairness = new RecipeFairness();
+
+        var order = fairness.orderIndices(recipes, id -> id, id -> "同一种矿", 0,
+                Map.of(recipes.get(0), 1), Map.of());
+
+        assertEquals(1, order.get(0), "正在跑的第 1 种要排到最后，先让没在跑的第 2 种占线程");
+        assertEquals(0, order.get(order.size() - 1));
+    }
+
+    @Test
+    void pickPreferredIndexSkipsRecipesThatAreAlreadyRunning() {
+        ResourceLocation running = new ResourceLocation("gtlmodular", "space_ore_1");
+        ResourceLocation idle = new ResourceLocation("gtlmodular", "space_ore_2");
+
+        int index = RecipeFairness.pickPreferredIndex(List.of(running, idle), id -> id.equals(running));
+
+        assertEquals(1, index);
+    }
+
+    @Test
+    void pickPreferredIndexFallsBackToDuplicateWhenEverythingRuns() {
+        ResourceLocation a = new ResourceLocation("gtlmodular", "space_ore_1");
+        ResourceLocation b = new ResourceLocation("gtlmodular", "space_ore_2");
+
+        int index = RecipeFairness.pickPreferredIndex(List.of(a, b), id -> true);
+
+        assertEquals(0, index, "全都占满时仍要能补位，否则空槽永远补不上");
+        assertEquals(-1, RecipeFairness.pickPreferredIndex(List.of(), id -> false));
+    }
 }

@@ -187,8 +187,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
     }
 
     @Override
-    public Candidate<IndependentRecipePayload> findBatch(int slots, long budget) {
-        if (!canAdmit()) {
+    public Candidate<IndependentRecipePayload> findBatch(int slots, long budget) {        if (!canAdmit()) {
             logAdmitBlocked();
             return null;
         }
@@ -213,7 +212,8 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             candidates.addAll(found);
         }
         while (!candidates.isEmpty()) {
-            var source = candidates.removeFirst();
+            var source = takeCandidate();
+            if (source == null) break;
             if (source.allocation().budget() > budget) continue;
             try {
                 io.requireSupported(source.ingredients());
@@ -236,6 +236,46 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean canAdmit() { return machineReady() && adapter.allowsNewBatches(); }
+
+    /**
+     * 从候选队列里挑下一条：优先挑「没在跑」的配方。
+     * 一种矿石的 4 种电路处理应该各占一条线程；刚结算的那种如果又抢回一条，另一种就会被挤成
+     * 「永远排不上」，玩家看到的就是「线程里的配方来回换」。全都在跑时才允许同配方补位。
+     */
+    private SingleRecipeCandidate takeCandidate() {
+        if (candidates.isEmpty()) return null;
+        List<net.minecraft.resources.ResourceLocation> ids = new java.util.ArrayList<>(candidates.size());
+        for (var candidate : candidates) ids.add(candidate.execution().id);
+        int index = com.gtlmodular.common.machine.independent.adapter.RecipeFairness
+                .pickPreferredIndex(ids, adapter::isRunning);
+        if (index < 0) return null;
+        SingleRecipeCandidate picked = null;
+        int at = 0;
+        for (var candidate : candidates) {
+            if (at++ == index) {
+                picked = candidate;
+                break;
+            }
+        }
+        if (picked == null) return null;
+        candidates.remove(picked);
+        if (adapter.isRunning(picked.execution().id)) logDuplicateAdmission(picked);
+        return picked;
+    }
+
+    private String lastDuplicateLog;
+    private long lastDuplicateAt = Long.MIN_VALUE;
+
+    /** 真的没有别的可跑配方、只能让同一配方再占一条线程时写一行，便于核对「4 条线程各一种」有没有被破坏。 */
+    private void logDuplicateAdmission(SingleRecipeCandidate candidate) {
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        String id = String.valueOf(candidate.execution().id);
+        if (id.equals(lastDuplicateLog) && now - lastDuplicateAt < 200L) return;
+        lastDuplicateLog = id;
+        lastDuplicateAt = now;
+        GTLModular.LOGGER.info("[independent] 同配方补位 {} {}: {}（本轮没有别的可跑配方）",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), id);
+    }
 
     private String lastRunsLog;
     private long lastRunsAt = Long.MIN_VALUE;

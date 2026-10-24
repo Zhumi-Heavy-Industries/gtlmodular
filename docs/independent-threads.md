@@ -73,6 +73,7 @@
 - 候选内容用 `IAdvancedContentModifier.preciseMultiplier` 做 long 精确放大，并按原配方逐项校正数量；超出 `Long.MAX` 的批直接拒绝，不静默饱和。EU/t 不在物料倍率里重复放大，仍由能量层重新计算。
 - `independentThreadsAllowMeIo` 默认 false。开启且机器装了 ME 样板/输出处理器时，非 tick 的物品/流体走上游 ME 的 long 计数路径；模拟通过才真实转移，剩余量写回同一张 Content 表。ME 的 tick 物品/流体尚未适配，遇到会拒绝该批；普通总线机器不受影响。
 - 候选按“最久未服务”轮转，不再从 lookup 的哈希顺序队首截断；`independentThreadsMaxBatchesPerRecipe` 默认 1（一种配方最多占一条批次）。轮转周期约 `ceil(配方种数 / 槽数) × 单批时长`；单批时长仍由 `independentThreadsMaxBatchTicks` 控制。
+- **线程与配方亲和**（地心模块）：补位时先在候选队列里挑「没在跑」的配方，刚结算的配方排最前（优先回到自己那条线程），正在跑的排最后。一种矿石的多种电路处理（例如天基矿石处理的 4 种，各要一张不同的编程电路）因此稳定地各占一条线程、各用自己的电路，而不是每轮换一遍。只有队列里全是正在跑的配方时，才允许同一配方再占一条（此时写一行「同配方补位」日志）。这条规则不改变并行/供电/时长计算，只改补位顺序；其它逻辑族的适配器不实现 `isRunning`，行为不变。
 - `independentThreadsCandidateCacheTicks` 默认 100：候选 lookup 结果短缓存，降低每 tick 重查成本；0 关闭。真实扣料/配置改变会主动失效；外部输入变化没有统一 revision，最多延迟 TTL，但真实扣料仍逐条校验，不会凭空开工。
 - `independentThreadsCandidateScanBudget` 默认 0 = 每轮最多 16 条候选：限制每 tick 试算的候选条数，调低压 TPS 峰值，调高让补位更充分。
 - `independentThreadsStats` 默认 false：开启后机器面板显示候选扫描和批次 tick 的平均/最大耗时，用于调 active 线程数和候选预算。
