@@ -320,6 +320,11 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                     }
                     if (remaining.isEmpty()) break;
                 }
+                if (remaining.size() == start.size() && line.indexOf("Stocking") >= 0) {
+                    // 所有处理器都原样返回，且这机器用的是 ME 补给总线：
+                    // 总线内部是 syncStock() 刷新的库存快照，快照为空时它一律说「没有」。
+                    line.append("[提示:ME补给总线库存快照为空]");
+                }
                 line.append(" 余=").append(remaining.size()).append(" 处理器=").append(asked).append("; ");
             }
             GTLModular.LOGGER.info("[independent] 输入追踪 {} @{}: {}", recipe.id, machine.getPos(), line);
