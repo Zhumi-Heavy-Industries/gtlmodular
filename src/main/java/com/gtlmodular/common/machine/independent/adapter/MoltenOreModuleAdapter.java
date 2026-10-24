@@ -230,8 +230,10 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         if (last != null && nowTick - last < 200L) return;
         if (rejectedLoggedAt.size() > 256) rejectedLoggedAt.clear();
         rejectedLoggedAt.put(recipe.id, nowTick);
+        String reason = rejectReason(recipe);
+        if (reason != null && reason.contains("输入匹配失败")) logInputTrace(recipe);
         GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}]",
-                recipe.id, machine.getPos(), rejectReason(recipe), inputHandlersSummary());
+                recipe.id, machine.getPos(), reason, inputHandlersSummary());
     }
 
     /** 把机器 IN/BOTH 行里的处理器类名打出来：确认创造仓之类的特殊仓到底有没有进匹配口径。 */
@@ -272,15 +274,71 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 if (need.length() > 0) need.append(", ");
                 need.append(BatchContents.describe(entry.getKey(), content.content))
                         .append('×').append(BatchContents.amount(entry.getKey(), content.content))
-                        .append(inputSatisfied(entry.getKey(), content.content) ? "" : "[缺]");
+                        .append(inputSatisfied(entry.getKey(), content.content, recipe) ? "" : "[缺]");
             }
         }
         return need.length() == 0 ? "配方没有物品/流体输入" : need.toString();
     }
 
+    /**
+     * 按 GT 的匹配顺序把整组输入逐个处理器过一遍，并打出每一步的余量：
+     * 哪个处理器在帮忙、哪个原样返回，一眼能看出来（ME 补给总线只有真配方才给数）。
+     */
+    private void logInputTrace(GTRecipe recipe) {
+        long nowTick = now();
+        if (nowTick - inputTraceAt < 200L) return;
+        inputTraceAt = nowTick;
+        try {
+            if (!(machine instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder)) return;
+            var holder = (com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) machine;
+            StringBuilder line = new StringBuilder();
+            var caps = new RecipeCapability<?>[]{ItemRecipeCapability.CAP, FluidRecipeCapability.CAP};
+            for (var cap : caps) {
+                var start = recipe.inputs.getOrDefault(cap, java.util.List.of());
+                if (start.isEmpty()) continue;
+                var remaining = new java.util.ArrayList<Object>();
+                for (var content : start) remaining.add(cap.copyContent(content.content));
+                line.append(cap.name).append(':');
+                int asked = 0;
+                for (var io : new com.gregtechceu.gtceu.api.capability.recipe.IO[]{
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.IN,
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.BOTH}) {
+                    var handlers = holder.getCapabilitiesProxy().get(io, cap);
+                    if (handlers == null) continue;
+                    for (var handler : handlers) {
+                        asked++;
+                        try {
+                            var left = ((com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler<Object>) handler)
+                                    .handleRecipeInner(io, recipe, remaining, null, true);
+                            remaining = left == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(left);
+                        } catch (RuntimeException failure) {
+                            line.append('[').append(handler.getClass().getSimpleName()).append("!=")
+                                    .append(failure.getClass().getSimpleName()).append(']');
+                        }
+                        line.append(' ').append(shortName(handler)).append('→').append(remaining.size());
+                        if (remaining.isEmpty()) break;
+                    }
+                    if (remaining.isEmpty()) break;
+                }
+                line.append(" 余=").append(remaining.size()).append(" 处理器=").append(asked).append("; ");
+            }
+            GTLModular.LOGGER.info("[independent] 输入追踪 {} @{}: {}", recipe.id, machine.getPos(), line);
+        } catch (RuntimeException failure) {
+            GTLModular.LOGGER.info("[independent] 输入追踪失败 {}: {}", recipe.id, failure.toString());
+        }
+    }
+
+    private long inputTraceAt = Long.MIN_VALUE;
+
+    private static String shortName(Object handler) {
+        String n = handler.getClass().getSimpleName();
+        if (n.length() > 18) n = n.substring(0, 18);
+        return n.isEmpty() ? "匿名仓" : n;
+    }
+
     /** 单独问一遍机器的每个 IN/BOTH 处理器：这一样原料它认不认。认就返回 true。 */
     @SuppressWarnings("unchecked")
-    private boolean inputSatisfied(RecipeCapability<?> cap, Object content) {
+    private boolean inputSatisfied(RecipeCapability<?> cap, Object content, GTRecipe recipe) {
         try {
             if (!(machine instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder)) return false;
             var holder = (com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) machine;
@@ -296,7 +354,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                         var input = new java.util.ArrayList<Object>();
                         input.add(copy);
                         var left = ((com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler<Object>) handler)
-                                .handleRecipeInner(io, null, input, null, true);
+                                .handleRecipeInner(io, recipe, input, null, true);
                         if (left == null || left.isEmpty()) return true;
                     } catch (RuntimeException ignored) {
                         // 单个处理器读失败不影响其它处理器判断
