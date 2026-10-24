@@ -119,6 +119,8 @@
   "gtlmodular.pattern_assembly.mode.tooltip": "§7On insert, a pattern's mode is detected from its §boutputs§7; on push the controller is §blocked§7 to that mode (and its last recipe invalidated), so two modes can coexist §awithout mixing§7.\n§7The manual switch is only a fallback when detection is ambiguous.",
   "gtlmodular.pattern_assembly.mode.none": "No controller found or it has a single recipe mode",
   "gtlmodular.pattern_assembly.mode.current": "Current mode: %s (%s/%s)",
+  "gtlmodular.pattern_assembly.mode.resume_auto": "Resume auto",
+  "gtlmodular.pattern_assembly.mode.resume_auto.desc": "Release the manual pick: modes rotate automatically again",
   "gtlmodular.pattern_assembly.mode.manual_slot": "Pattern slot",
   "gtlmodular.pattern_assembly.mode.manual_assign": "Set",
   "gtlmodular.pattern_assembly.mode.manual_clear": "Clear",

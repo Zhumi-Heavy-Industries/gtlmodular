@@ -1716,6 +1716,17 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         modeContext().setRecipeType(index);
     }
 
+    /** 模式页的「恢复自动」：解除手动钉住，让自动切换重新接管，模式游标重新跟随主机。 */
+    public void releaseManualMode() {
+        manualModePinned = false;
+        modeCursorTouched = false;
+        int size = getAvailableRecipeTypes().size();
+        if (size > 0) {
+            modeCursorIndex = Math.max(0, Math.min(size - 1, activeRecipeTypeIndex));
+        }
+    }
+
+
     public int getModeCursorIndex() {
         return modeCursorIndex;
     }
@@ -4222,7 +4233,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         @Override
         public Widget createConfigurator() {
-            WidgetGroup group = new WidgetGroup(0, 0, 240, 96);
+            WidgetGroup group = new WidgetGroup(0, 0, 240, 116);
 
             final int MODEPAGE_BAND = 0x33000000;
             final int MODEPAGE_ACCENT = 0xCC00D5FF;
@@ -4260,6 +4271,17 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                     () -> PatternConfiguratorWidgets.assignStateText(machine.getManualAssignTypeId())));
             group.addWidget(new LabelWidget(4, 64, this::autoDetectStateText));
             group.addWidget(new LabelWidget(4, 78, this::liveModeText));
+            group.addWidget(new ImageWidget(4, 94, 232, 18, new ColorRectTexture(MODEPAGE_BAND)));
+            group.addWidget(new ImageWidget(4, 94, 2, 18, new ColorRectTexture(MODEPAGE_ACCENT)));
+            group.addWidget(new ButtonWidget(6, 95, 228, 16,
+                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
+                            Component.translatable("gtlmodular.pattern_assembly.mode.resume_auto").getString())),
+                    data -> {
+                        if (!machine.isRemote()) {
+                            machine.releaseManualMode();
+                        }
+                    }).setHoverTooltips(Component.translatable(
+                    "gtlmodular.pattern_assembly.mode.resume_auto.desc")));
             return group;
         }
 

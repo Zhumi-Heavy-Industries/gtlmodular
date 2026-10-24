@@ -119,6 +119,8 @@
   "gtlmodular.pattern_assembly.mode.tooltip": "§7样板进槽时自动按§b产物§7识别它属于哪种配方模式，推送时把控制器§b锁§7到该模式（并作废上次配方），所以两种模式的样板放一起也§a不会串§7。\n§7这里的手动模式只在自动识别不出来时兜底。",
   "gtlmodular.pattern_assembly.mode.none": "未检测到控制器或不支持多配方模式",
   "gtlmodular.pattern_assembly.mode.current": "当前模式: %s (%s/%s)",
+  "gtlmodular.pattern_assembly.mode.resume_auto": "恢复自动",
+  "gtlmodular.pattern_assembly.mode.resume_auto.desc": "解除手动指定：模式重新按公平份额自动轮转",
   "gtlmodular.pattern_assembly.mode.manual_slot": "样板槽位",
   "gtlmodular.pattern_assembly.mode.manual_assign": "指定",
   "gtlmodular.pattern_assembly.mode.manual_clear": "清除",

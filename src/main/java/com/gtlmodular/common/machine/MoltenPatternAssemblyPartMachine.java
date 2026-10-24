@@ -753,6 +753,17 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         modeContext().setRecipeType(index);
     }
 
+    /** 模式页的「恢复自动」：解除手动钉住，让自动切换重新接管，模式游标重新跟随主机。 */
+    public void releaseManualMode() {
+        manualModePinned = false;
+        modeCursorTouched = false;
+        int size = getAvailableRecipeTypes().size();
+        if (size > 0) {
+            modeCursorIndex = Math.max(0, Math.min(size - 1, activeRecipeTypeIndex));
+        }
+    }
+
+
     public int getModeCursorIndex() {
         return modeCursorIndex;
     }
@@ -3028,6 +3039,17 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             LabelWidget stateLabel = new LabelWidget(BAND_TEXT_X, BAND_MODE_STATE_Y,
                     () -> PatternConfiguratorWidgets.assignStateText(machine.getManualAssignTypeId()));
             group.addWidget(stateLabel);
+            Widget resumeAuto = new ButtonWidget(BAND_X + BAND_W - 54, BAND_MODE_STATE_Y - 1, 52, 12,
+                    new GuiTextureGroup(GuiTextures.BUTTON, new TextTexture(
+                            Component.translatable("gtlmodular.pattern_assembly.mode.resume_auto").getString())),
+                    data -> {
+                        if (!machine.isRemote()) {
+                            machine.releaseManualMode();
+                        }
+                    });
+            resumeAuto.setHoverTooltips(Component.translatable(
+                    "gtlmodular.pattern_assembly.mode.resume_auto.desc"));
+            group.addWidget(resumeAuto);
 
             group.addWidget(new ImageWidget(BAND_X, BAND_SCALE_Y, BAND_W, BAND_SCALE_H,
                     new ColorRectTexture(BAND_BG)));
