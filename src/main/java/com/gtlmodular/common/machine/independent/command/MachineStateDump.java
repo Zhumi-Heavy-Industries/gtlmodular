@@ -104,11 +104,17 @@ public final class MachineStateDump {
                     out.add("  …（更多内容省略）");
                     break;
                 }
-                out.add("  内容 " + com.gtlmodular.common.machine.independent.io.BatchContents
-                        .describe(recipeHandler.getCapability(), content)
-                        + " ×" + com.gtlmodular.common.machine.independent.io.BatchContents
-                        .amount(recipeHandler.getCapability(), content)
-                        + "（" + handler.getClass().getSimpleName() + "）");
+                // 单条内容读失败不能把整段 dump 打空（之前 null 消息的 NPE 就是这样冒出来的）。
+                try {
+                    out.add("  内容 " + com.gtlmodular.common.machine.independent.io.BatchContents
+                            .describe(recipeHandler.getCapability(), content)
+                            + " ×" + com.gtlmodular.common.machine.independent.io.BatchContents
+                            .amount(recipeHandler.getCapability(), content)
+                            + "（" + handler.getClass().getSimpleName() + "）");
+                } catch (RuntimeException failure) {
+                    out.add("  内容 <" + (content == null ? "null" : content.getClass().getSimpleName())
+                            + ">（读取失败：" + failure.getClass().getSimpleName() + "）");
+                }
             }
             return;
         }
