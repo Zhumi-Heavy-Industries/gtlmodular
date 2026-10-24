@@ -45,23 +45,34 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                     WorkableMultiblockMachine.MANAGED_FIELD_HOLDER);
 
     /**
-     * 机器 UI 右侧加一个开关：「允许同一种配方同时占多条线程」。
-     * 默认关闭 = 同配方最多 1 条（全局配置 independentThreadsMaxBatchesPerRecipe 的默认值）。
-     * 开关状态存在独立线程控制器里，随机器存档保存。
+     * 机器 UI 右侧加「独立线程」页：线程条数（每台机器单独设）+「允许同一种配方占多条线程」开关。
+     * 线程数存在独立线程控制器里、随机器存档保存；0 表示沿用机器自报的总线程数。
      */
     @Override
     public void attachConfigurators(com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel panel) {
         super.attachConfigurators(panel);
         try {
-            panel.attachConfigurators(new com.gregtechceu.gtceu.api.gui.fancy.IFancyConfiguratorButton.Toggle(
-                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0, 1, 0.5),
-                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0.5, 1, 0.5),
-                    this::allowsSameRecipeMultipleThreads,
-                    (clickData, pressed) -> setAllowSameRecipeMultipleThreads(Boolean.TRUE.equals(pressed))));
+            panel.attachConfigurators(new com.gtlmodular.common.machine.independent.control.IndependentThreadsConfigurator(
+                    this::independentThreads, this::setIndependentThreads,
+                    this::allowsSameRecipeMultipleThreads, this::setAllowSameRecipeMultipleThreads));
         } catch (RuntimeException failure) {
             com.gtlmodular.common.diag.SwallowedErrors.report(
                     "MoltenModuleMachineBase#attachConfigurators.independentThreads", failure);
         }
+    }
+
+    /** 引擎给这台机器开几条独立线程（0 = 机器自报值）。 */
+    public int independentThreads() {
+        var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess
+                .controller(getRecipeLogic());
+        return controller == null ? 0 : controller.threadsOverride();
+    }
+
+    public void setIndependentThreads(int value) {
+        var logic = getRecipeLogic();
+        if (!(logic instanceof com.gtlmodular.common.machine.independent.control.IndependentLogicAccess access)) return;
+        access.gtlmodular$controller(true).setThreadsOverride(value);
+        markDirty();
     }
 
     /** 允许同一配方同时占多条独立线程（默认关闭）。 */

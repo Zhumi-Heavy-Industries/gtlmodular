@@ -54,7 +54,13 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      */
     @Override
     public int threads() {
-        // 玩家想统一限流：配置给了固定值就所有机器都按它开批次槽（0 = 由机器自己决定）。
+        var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess.controller(logic);
+        // 玩家在机器 UI 里直接填的线程数优先（每台机器各自保存）。
+        if (controller != null && controller.threadsOverride() > 0) {
+            logThreadSource(value(controller.threadsOverride(), "机器 UI 设置"));
+            return controller.threadsOverride();
+        }
+        // 其次：配置给了固定值就所有机器都按它开批次槽（0 = 不干预）。
         int configured = GTLModularConfig.OTHER_MACHINE_THREADS.slotsPerMachine();
         if (configured > 0) {
             logThreadSource(value(configured, "配置独立线程槽"));

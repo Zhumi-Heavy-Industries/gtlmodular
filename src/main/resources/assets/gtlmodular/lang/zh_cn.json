@@ -1327,5 +1327,12 @@
   "gtlmodular.independent.jade.coil_reduction": "§7线圈减免（按当前线圈温度）：§b能耗 −%s§7 · §b时长 −%s",
   "gtlmodular.independent.jade.details_hint": "§7按住 §fShift§7 查看线程明细与产物",
   "gtlmodular.independent.more": "另有 %s 个批次",
-  "gtlmodular.independent.runs": "长批次：本批 %s 次配方（每 %s tick 一次），第 %s 次进行中"
+  "gtlmodular.independent.runs": "长批次：本批 %s 次配方（每 %s tick 一次），第 %s 次进行中",
+  "gtlmodular.independent.config.title": "独立线程",
+  "gtlmodular.independent.config.threads": "线程数：%s（0 = 机器默认）",
+  "gtlmodular.independent.config.threads.tip": "这台机器最多同时跑几条独立批次；每台机器单独保存。0 = 沿用机器自身线程数。",
+  "gtlmodular.independent.config.multi": "同配方多线程：%s",
+  "gtlmodular.independent.config.multi.tip": "开启后同一种配方可以同时占多条线程；默认关闭（同配方最多 1 条）。",
+  "gtlmodular.independent.config.on": "开",
+  "gtlmodular.independent.config.off": "关"
 }

@@ -1327,5 +1327,12 @@
   "gtlmodular.independent.jade.coil_reduction": "§7Coil discount (current coil temperature): §benergy −%s§7 · §bduration −%s",
   "gtlmodular.independent.jade.details_hint": "§7Hold §fShift§7 for thread details",
   "gtlmodular.independent.more": "%s more batches",
-  "gtlmodular.independent.runs": "Long batch: %s runs of this recipe (%s ticks each), run %s in progress"
+  "gtlmodular.independent.runs": "Long batch: %s runs of this recipe (%s ticks each), run %s in progress",
+  "gtlmodular.independent.config.title": "Independent threads",
+  "gtlmodular.independent.config.threads": "Threads: %s (0 = machine default)",
+  "gtlmodular.independent.config.threads.tip": "How many independent batches this machine may run at once. Stored per machine; 0 = use the machine's own thread count.",
+  "gtlmodular.independent.config.multi": "Same recipe on many threads: %s",
+  "gtlmodular.independent.config.multi.tip": "When enabled one recipe may occupy several threads at once. Off by default (at most one batch per recipe).",
+  "gtlmodular.independent.config.on": "on",
+  "gtlmodular.independent.config.off": "off"
 }
