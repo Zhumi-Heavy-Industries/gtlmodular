@@ -543,6 +543,20 @@ public final class IndependentMachineController {
     }
 
     /** 产物内容可能是 ItemStack、SizedIngredient 或 gtlcore 的 LongIngredient，统一取一个图标样本。 */
+    /** 流体产物的本地化名字：直接从 FluidIngredient 里的流体取，读不到返回 null。 */
+    private static String fluidDisplayName(Object content) {
+        try {
+            if (content instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid) {
+                var stacks = fluid.getStacks();
+                if (stacks != null && stacks.length > 0 && !stacks[0].isEmpty()) {
+                    return stacks[0].getDisplayName().getString();
+                }
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
+    }
+
     private static String fluidIdOf(Object content) {
         try {
             if (content instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid) {
@@ -631,40 +645,34 @@ public final class IndependentMachineController {
     private static void appendProduct(net.minecraft.network.chat.MutableComponent line,
                                       com.gregtechceu.gtceu.api.recipe.GTRecipe recipe) {
         try {
-            var items = recipe.outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
-            if (!items.isEmpty()) {
-                int shown = 0;
-                for (var content : items) {
-                    if (shown++ >= 8) {
-                        line.append(Component.literal(" …"));
-                        break;
-                    }
-                    if (shown > 1) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
-                    long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
-                    Component name = content.content instanceof ItemStack stack
-                            ? stack.getHoverName() : Component.literal("物品");
-                    line.append(name.copy().withStyle(ChatFormatting.WHITE))
-                            .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
-                                    .withStyle(ChatFormatting.GREEN));
+            // 物品产出：解包 SizedBox/LongIngredient 后直接用物品的显示名，不再写「物品」占位字。
+            int shown = 0;
+            for (var content : recipe.outputs.getOrDefault(ItemRecipeCapability.CAP, List.of())) {
+                ItemStack stack = stackOf(content.content);
+                if (stack.isEmpty()) continue;
+                if (shown >= 8) {
+                    line.append(Component.literal(" …"));
+                    break;
                 }
-                return;
+                if (shown++ > 0) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
+                long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
+                line.append(stack.getHoverName().copy().withStyle(ChatFormatting.WHITE))
+                        .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
+                                .withStyle(ChatFormatting.GREEN));
             }
-            var fluids = recipe.outputs.getOrDefault(FluidRecipeCapability.CAP, List.of());
-            if (!fluids.isEmpty()) {
-                int shown = 0;
-                for (var content : fluids) {
-                    if (shown++ >= 8) {
-                        line.append(Component.literal(" …"));
-                        break;
-                    }
-                    if (shown > 1) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
-                    long amount = BatchContents.amount(FluidRecipeCapability.CAP, content.content);
-                    String name = content.content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack stack
-                            ? stack.getDisplayName().getString() : "流体";
-                    line.append(Component.literal(name).withStyle(ChatFormatting.WHITE))
-                            .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
-                                    .withStyle(ChatFormatting.AQUA));
+            // 流体产出：同样用流体自己的显示名。
+            for (var content : recipe.outputs.getOrDefault(FluidRecipeCapability.CAP, List.of())) {
+                String name = fluidDisplayName(content.content);
+                if (name == null) continue;
+                if (shown >= 8) {
+                    line.append(Component.literal(" …"));
+                    break;
                 }
+                if (shown++ > 0) line.append(Component.literal(" + ").withStyle(ChatFormatting.DARK_GRAY));
+                long amount = BatchContents.amount(FluidRecipeCapability.CAP, content.content);
+                line.append(Component.literal(name).withStyle(ChatFormatting.WHITE))
+                        .append(Component.literal(" ×" + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(amount))
+                                .withStyle(ChatFormatting.AQUA));
             }
         } catch (RuntimeException ignored) {
             line.append(Component.literal("产物").withStyle(ChatFormatting.GRAY));
