@@ -60,6 +60,8 @@ public final class IndependentMachineRegistry {
         return SETTINGS.generation();
     }
 
+    private static volatile boolean reportedEligibilityFailure;
+
     public static boolean eligible(RecipeLogic logic) {
         if (!logic.getMachine().isRemote()
                 && GameTestHooks.isOreModule(logic.getMachine().getDefinition().getId().toString())) {
@@ -68,8 +70,20 @@ public final class IndependentMachineRegistry {
         }
         var settings = SETTINGS.current();
         if (!settings.enabled() || logic.getMachine().isRemote()) return false;
-        return StandardRecipeLogicClasses.ELIGIBILITY.evaluate(settings,
-                logic.getMachine().getDefinition().getId().toString(), logic.getClass(), false).eligibleForNewBatches();
+        try {
+            return StandardRecipeLogicClasses.ELIGIBILITY.evaluate(settings,
+                    logic.getMachine().getDefinition().getId().toString(), logic.getClass(), false)
+                    .eligibleForNewBatches();
+        } catch (RuntimeException | LinkageError failure) {
+            // 资格判定的上游类若在异常上下文里加载失败（Mixin 变换期解析不到本模组接口），
+            // 绝不能把整局游戏拖崩：退回「未准入」并只警告一次。
+            if (!reportedEligibilityFailure) {
+                reportedEligibilityFailure = true;
+                com.gtlmodular.GTLModular.LOGGER.warn(
+                        "[independent] 资格判定失败，暂时不接管任何机器（不影响存档加载）", failure);
+            }
+            return false;
+        }
     }
 
 }
