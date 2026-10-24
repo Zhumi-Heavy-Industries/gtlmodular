@@ -29,7 +29,7 @@ public final class MachineStateDump {
             out.add("引擎：这台机器没有独立线程会话");
         } else {
             var threads = controller.threads();
-            out.add("引擎：线程 " + threads.size() + " 条");
+            out.add("引擎：在用批次 " + threads.size() + " 条");
             for (var view : threads) {
                 out.add("  线程#" + view.label() + " 配方=" + view.recipeId()
                         + " 并行=" + view.parallels() + " 份数=" + view.runs()

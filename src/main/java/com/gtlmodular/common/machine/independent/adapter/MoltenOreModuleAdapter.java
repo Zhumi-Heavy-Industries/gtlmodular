@@ -216,15 +216,47 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return result;
     }
 
-    private final java.util.Set<ResourceLocation> rejectedLogged = new java.util.HashSet<>();
+    private final java.util.Map<ResourceLocation, Long> rejectedLoggedAt = new java.util.HashMap<>();
 
     /**
-     * 候选被排除时把「为什么」写一次日志：玩家明明放了 6 种碎片却只跑到 4 条，
-     * 以前只能看到「匹配到 4 种」，看不出另外两条卡在哪一步。
+     * 候选被排除时把「为什么」写日志：同一配方 200 tick 内只写一次，
+     * 原料变化后能重新看到新原因（之前按配方永久去重，改了输入就再也不会打日志）。
      */
     private void logRejectionOnce(GTRecipe recipe) {
-        if (recipe.id == null || rejectedLogged.size() >= 64 || !rejectedLogged.add(recipe.id)) return;
-        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {}", recipe.id, machine.getPos(), rejectReason(recipe));
+        if (recipe.id == null) return;
+        long nowTick = now();
+        Long last = rejectedLoggedAt.get(recipe.id);
+        if (last != null && nowTick - last < 200L) return;
+        if (rejectedLoggedAt.size() > 256) rejectedLoggedAt.clear();
+        rejectedLoggedAt.put(recipe.id, nowTick);
+        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}]",
+                recipe.id, machine.getPos(), rejectReason(recipe), inputHandlersSummary());
+    }
+
+    /** 把机器 IN/BOTH 行里的处理器类名打出来：确认创造仓之类的特殊仓到底有没有进匹配口径。 */
+    private String inputHandlersSummary() {
+        try {
+            if (machine instanceof com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) {
+                var holder = (com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder) machine;
+                StringBuilder sb = new StringBuilder();
+                var rows = new com.gregtechceu.gtceu.api.capability.recipe.IO[]{
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.IN,
+                        com.gregtechceu.gtceu.api.capability.recipe.IO.BOTH};
+                for (var io : rows) {
+                    holder.getCapabilitiesProxy().row(io).forEach((cap, handlers) -> {
+                        if (cap != ItemRecipeCapability.CAP && cap != FluidRecipeCapability.CAP) return;
+                        for (Object handler : handlers) {
+                            if (sb.length() > 0) sb.append(' ');
+                            sb.append(handler.getClass().getSimpleName()).append('/').append(cap.name);
+                        }
+                    });
+                }
+                return sb.toString();
+            }
+        } catch (RuntimeException failure) {
+            return "读不到：" + failure.getClass().getSimpleName();
+        }
+        return "没有配方仓代理";
     }
 
     /** 把配方要的物品/流体逐条写成人能看懂的形式：只有「缺原料」四个字根本看不出缺哪一样。 */
