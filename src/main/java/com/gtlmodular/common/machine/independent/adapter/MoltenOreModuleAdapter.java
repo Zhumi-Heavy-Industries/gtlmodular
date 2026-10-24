@@ -652,6 +652,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 if (machine instanceof MoltenModuleMachineBase) {
                     ((MoltenModuleMachineBase<?>) machine).refreshHostIfStale();
                 }
+
             }
             else logCandidateCount(found);
             return found;
