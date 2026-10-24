@@ -306,6 +306,7 @@ public final class IndependentMachineController {
         // 读档可能早于首个服务端 tick；排空必须由 tick 使用已发布的配置决定。
         session = archive.load(tag);
         ownership.load(tag);
+        sameRecipeMultipleThreads = tag.getBoolean(MULTI_RECIPE_KEY);
         detached = false;
         host = null;
         policy = null;
@@ -315,6 +316,28 @@ public final class IndependentMachineController {
         archive.save(tag, session, forDrop);
         if (ownsWork()) ownership.save(tag);
         else if (session != null) tag.remove(IndependentBatchOwnership.TRANSFER);
+        // 只在开启时写：旧档没有这个键，默认就是「同配方最多 1 条」。
+        if (sameRecipeMultipleThreads) tag.putBoolean(MULTI_RECIPE_KEY, true);
+        else tag.remove(MULTI_RECIPE_KEY);
+    }
+
+    /** 「允许同一种配方同时占多条线程」的存档键。 */
+    private static final String MULTI_RECIPE_KEY = "gtlmodular_independent_multi_recipe";
+
+    private boolean sameRecipeMultipleThreads;
+
+    /** 开启后同一配方的并发上限按「不限」处理（对应全局配置 independentThreadsMaxBatchesPerRecipe = 0）。 */
+    public boolean allowSameRecipeMultiple() {
+        return sameRecipeMultipleThreads;
+    }
+
+    public void setAllowSameRecipeMultiple(boolean value) {
+        if (sameRecipeMultipleThreads == value) return;
+        sameRecipeMultipleThreads = value;
+        // 策略变了：让下一次候选重新排队，无需等缓存过期。
+        if (selection != null && selection.supported()) selection.adapter().invalidateCandidates();
+        var machine = logic.getMachine();
+        if (!machine.isRemote()) machine.markDirty();
     }
 
     public List<Component> recoveryStatus() {
@@ -404,12 +427,12 @@ public final class IndependentMachineController {
             String outputId = null;
             long outputCount = 0L;
             try {
-                var items = recipe.outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
-                if (!items.isEmpty()) {
-                    ItemStack stack = stackOf(items.get(0).content);
+                var item = primaryItemOutput(batch.payload());
+                if (item != null) {
+                    ItemStack stack = stackOf(item.content);
                     if (!stack.isEmpty()) {
                         outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                        outputCount = BatchContents.amount(ItemRecipeCapability.CAP, items.get(0).content);
+                        outputCount = BatchContents.amount(ItemRecipeCapability.CAP, item.content);
                     }
                 }
             } catch (RuntimeException ignored) {
@@ -421,6 +444,26 @@ public final class IndependentMachineController {
                     outputId, runs > 1 ? saturatingMultiply(outputCount, runs) : outputCount, recipe.id, runs));
         }
         return out;
+    }
+
+    /**
+     * 主产物：优先用批次真正结算的产物表（概率已经抽定），否则用配方的产物表；
+     * 多项产物里取**数量最大**的那一项——配方里第一条不一定是玩家眼里的产物（显示对不上的主因）。
+     */
+    private static com.gregtechceu.gtceu.api.recipe.content.Content primaryItemOutput(
+            IndependentRecipePayload payload) {
+        var outputs = payload.resolvedOutputs() != null ? payload.resolvedOutputs() : payload.recipe().outputs;
+        var items = outputs.getOrDefault(ItemRecipeCapability.CAP, List.of());
+        com.gregtechceu.gtceu.api.recipe.content.Content best = null;
+        long bestAmount = -1L;
+        for (var content : items) {
+            long amount = BatchContents.amount(ItemRecipeCapability.CAP, content.content);
+            if (amount > bestAmount) {
+                best = content;
+                bestAmount = amount;
+            }
+        }
+        return best;
     }
 
     /** 长批次把 p×runs 记在一条批次上：显示数量按份数放大，溢出时饱和而不是回绕成负数。 */

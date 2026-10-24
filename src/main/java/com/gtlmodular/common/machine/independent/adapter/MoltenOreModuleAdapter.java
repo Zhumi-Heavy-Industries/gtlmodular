@@ -47,9 +47,18 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         this.activeRecipes = activeRecipes;
     }
 
+    /**
+     * 引擎的「线程数」= 机器上 GTO 线程仓给出的条数（和玩家面板口径一致）。
+     * 以前用 totalThreads()（BASE_THREADS 64 + 线程仓×倍率），玩家把线程仓设成 4 时引擎还是开 64 条。
+     * 没装线程仓时退回机器自报的总线程数，保持原行为。
+     */
     @Override
     public int threads() {
-        if (machine instanceof MoltenBlastModuleMachine blast) return Math.max(1, blast.totalThreads());
+        if (machine instanceof MoltenBlastModuleMachine blast) {
+            var part = blast.getThreadPartMachine();
+            if (part != null && part.getThreadCount() > 0) return part.getThreadCount();
+            return Math.max(1, blast.totalThreads());
+        }
         if (machine instanceof MoltenSpaceOreModuleMachine ore) return Math.max(1, ore.totalThreads());
         return 1;
     }
@@ -254,6 +263,26 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         return type.getLookup().getRecipeIterator(machine, this::check);
     }
 
+    /**
+     * 退路：把该配方类型的整表枚举出来逐条 check。
+     * 只在 lookup 一条都给不出时调用（EBF 这类按输入索引的配方表在输入为空时会返回空）。
+     */
+    private List<GTRecipe> enumerateAll(GTRecipeType type) {
+        var level = machine.getLevel();
+        if (type == null || level == null) return List.of();
+        List<GTRecipe> found = new ArrayList<>();
+        try {
+            // 1.20.1 的 RecipeManager.getAllRecipesFor 直接返回配方本体（1.20.2 起才包 RecipeHolder）。
+            for (GTRecipe recipe : level.getRecipeManager().getAllRecipesFor(type)) {
+                if (recipe == null || recipe.recipeType != type || !check(recipe)) continue;
+                found.add(recipe);
+            }
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+        return found;
+    }
+
     @Override
     public List<SingleRecipeCandidate> candidates(int availableSlots, long availableBudget, long availablePower) {
         if (availableSlots <= 0) {
@@ -295,6 +324,10 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 // 只收引用，快照留到真正进入本轮窗口时再复制（见 snapshot()）。
                 if (recipe != null) found.add(recipe);
             }
+            // 有些配方类型（EBF 这类巨量配方表）的 lookup 是按「机器当前输入」索引的：
+            // 输入总线暂时空着时一条都枚举不出来，日志会报「配方表本身就是空的」。这时退回到
+            // 「整表枚举 + 我们自己逐条 check」，口径和炼矿模块一致，料一到就能看到候选。
+            if (found.isEmpty()) found.addAll(enumerateAll(machine.getRecipeType()));
             if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
             else logCandidateCount(found);
             return found;
@@ -306,6 +339,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         }
         emptyStreak = 0;
         int maxPerRecipe = GTLModularConfig.OTHER_MACHINE_THREADS.maxBatchesPerRecipe();
+        // 机器 UI 上的「允许同配方占多条线程」开关：开启后同配方并发不限（0 = 不限）。
+        var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess.controller(logic);
+        if (controller != null && controller.allowSameRecipeMultiple()) maxPerRecipe = 0;
         Map<ResourceLocation, Integer> active = activeRecipes.get();
         // 直接用缓存里的配方做排序，不再每 tick 复制 16 份；真正要开批时才按索引缩放。
         List<GTRecipe> origins = cached;

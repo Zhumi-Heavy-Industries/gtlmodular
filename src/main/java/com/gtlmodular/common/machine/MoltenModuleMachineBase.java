@@ -44,6 +44,40 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             new ManagedFieldHolder(MoltenModuleMachineBase.class,
                     WorkableMultiblockMachine.MANAGED_FIELD_HOLDER);
 
+    /**
+     * 机器 UI 右侧加一个开关：「允许同一种配方同时占多条线程」。
+     * 默认关闭 = 同配方最多 1 条（全局配置 independentThreadsMaxBatchesPerRecipe 的默认值）。
+     * 开关状态存在独立线程控制器里，随机器存档保存。
+     */
+    @Override
+    public void attachConfigurators(com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel panel) {
+        super.attachConfigurators(panel);
+        try {
+            panel.attachConfigurators(new com.gregtechceu.gtceu.api.gui.fancy.IFancyConfiguratorButton.Toggle(
+                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0, 1, 0.5),
+                    com.gregtechceu.gtceu.api.gui.GuiTextures.TOGGLE_BUTTON_BACK.getSubTexture(0, 0.5, 1, 0.5),
+                    this::allowsSameRecipeMultipleThreads,
+                    (clickData, pressed) -> setAllowSameRecipeMultipleThreads(Boolean.TRUE.equals(pressed))));
+        } catch (RuntimeException failure) {
+            com.gtlmodular.common.diag.SwallowedErrors.report(
+                    "MoltenModuleMachineBase#attachConfigurators.independentThreads", failure);
+        }
+    }
+
+    /** 允许同一配方同时占多条独立线程（默认关闭）。 */
+    public boolean allowsSameRecipeMultipleThreads() {
+        var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess
+                .controller(getRecipeLogic());
+        return controller != null && controller.allowSameRecipeMultiple();
+    }
+
+    public void setAllowSameRecipeMultipleThreads(boolean value) {
+        var logic = getRecipeLogic();
+        if (!(logic instanceof com.gtlmodular.common.machine.independent.control.IndependentLogicAccess access)) return;
+        access.gtlmodular$controller(true).setAllowSameRecipeMultiple(value);
+        markDirty();
+    }
+
     @Override
     public ManagedFieldHolder getFieldHolder() {
         return MANAGED_FIELD_HOLDER;
