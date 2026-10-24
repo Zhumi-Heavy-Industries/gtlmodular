@@ -185,8 +185,35 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         } else {
             matchTrueAt.remove(recipe);
             matchFalseAt.put(recipe, nowTick);
+            logRejectionOnce(recipe);
         }
         return result;
+    }
+
+    private final java.util.Set<ResourceLocation> rejectedLogged = new java.util.HashSet<>();
+
+    /**
+     * 候选被排除时把「为什么」写一次日志：玩家明明放了 6 种碎片却只跑到 4 条，
+     * 以前只能看到「匹配到 4 种」，看不出另外两条卡在哪一步。
+     */
+    private void logRejectionOnce(GTRecipe recipe) {
+        if (recipe.id == null || rejectedLogged.size() >= 64 || !rejectedLogged.add(recipe.id)) return;
+        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {}", recipe.id, machine.getPos(), rejectReason(recipe));
+    }
+
+    private String rejectReason(GTRecipe recipe) {
+        try {
+            if (!RecipeRunnerHelper.matchRecipe(machine, recipe)) return "输入匹配失败（缺原料或电路）";
+            if (IGTRecipe.of(recipe).getEuTier() > machine.getTier()) {
+                return "配方电压等级 " + IGTRecipe.of(recipe).getEuTier() + " 高于机器 " + machine.getTier();
+            }
+            var conditions = recipe.checkConditions(logic);
+            if (!conditions.isSuccess()) return "条件不满足：" + conditions;
+            if (logic.getDataCheck() != null && !logic.getDataCheck().test(recipe.data, machine)) return "数据校验不通过";
+            return "未知原因";
+        } catch (RuntimeException failure) {
+            return "检查抛异常：" + failure.getClass().getSimpleName() + ": " + failure.getMessage();
+        }
     }
 
     private boolean checkUncached(GTRecipe recipe) {
