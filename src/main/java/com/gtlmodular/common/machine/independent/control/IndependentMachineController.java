@@ -307,7 +307,6 @@ public final class IndependentMachineController {
         session = archive.load(tag);
         ownership.load(tag);
         sameRecipeMultipleThreads = tag.getBoolean(MULTI_RECIPE_KEY);
-        threadsOverride = tag.getInt(THREADS_KEY);
         detached = false;
         host = null;
         policy = null;
@@ -320,31 +319,12 @@ public final class IndependentMachineController {
         // 只在开启时写：旧档没有这个键，默认就是「同配方最多 1 条」。
         if (sameRecipeMultipleThreads) tag.putBoolean(MULTI_RECIPE_KEY, true);
         else tag.remove(MULTI_RECIPE_KEY);
-        if (threadsOverride > 0) tag.putInt(THREADS_KEY, threadsOverride);
-        else tag.remove(THREADS_KEY);
     }
 
     /** 「允许同一种配方同时占多条线程」的存档键。 */
     private static final String MULTI_RECIPE_KEY = "gtlmodular_independent_multi_recipe";
 
-    /** 每台机器自己的线程条数存档键（0 / 缺省 = 沿用机器自报值）。 */
-    private static final String THREADS_KEY = "gtlmodular_independent_threads";
-
     private boolean sameRecipeMultipleThreads;
-    private int threadsOverride;
-
-    /** 这台机器要开几条独立线程；0 = 沿用机器自报的总线程数。 */
-    public int threadsOverride() {
-        return threadsOverride;
-    }
-
-    public void setThreadsOverride(int value) {
-        int clamped = Math.max(0, Math.min(4096, value));
-        if (threadsOverride == clamped) return;
-        threadsOverride = clamped;
-        var machine = logic.getMachine();
-        if (!machine.isRemote()) machine.markDirty();
-    }
 
     /** 开启后同一配方的并发上限按「不限」处理（对应全局配置 independentThreadsMaxBatchesPerRecipe = 0）。 */
     public boolean allowSameRecipeMultiple() {

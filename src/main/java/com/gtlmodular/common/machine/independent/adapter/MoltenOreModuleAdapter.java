@@ -54,30 +54,14 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
      */
     @Override
     public int threads() {
-        var controller = com.gtlmodular.common.machine.independent.control.IndependentLogicAccess.controller(logic);
-        // 玩家在机器 UI 里直接填的线程数优先（每台机器各自保存）。
-        if (controller != null && controller.threadsOverride() > 0) {
-            logThreadSource(value(controller.threadsOverride(), "机器 UI 设置"));
-            return controller.threadsOverride();
+        // 线程数由机器代码写死（MoltenModuleMachineBase.independentThreads），不读配置、不给玩家改。
+        if (machine instanceof MoltenModuleMachineBase) {
+            int value = Math.max(1, ((MoltenModuleMachineBase<?>) machine).independentThreads());
+            logThreadSource(value(value, "机器代码固定值"));
+            return value;
         }
-        // 其次：配置给了固定值就所有机器都按它开批次槽（0 = 不干预）。
-        int configured = GTLModularConfig.OTHER_MACHINE_THREADS.slotsPerMachine();
-        if (configured > 0) {
-            logThreadSource(value(configured, "配置独立线程槽"));
-            return configured;
-        }
-        int value;
-        if (machine instanceof MoltenBlastModuleMachine blast) {
-            var part = blast.getThreadPartMachine();
-            value = part != null && part.getThreadCount() > 0 ? part.getThreadCount()
-                    : Math.max(1, blast.totalThreads());
-        } else if (machine instanceof MoltenSpaceOreModuleMachine ore) {
-            value = Math.max(1, ore.totalThreads());
-        } else {
-            value = 1;
-        }
-        logThreadSource(value(configured, "机器自报"));
-        return value;
+        logThreadSource(value(1, "非模块机"));
+        return 1;
     }
 
     private record ThreadSource(int count, String from) {}

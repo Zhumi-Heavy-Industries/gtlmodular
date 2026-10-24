@@ -17,7 +17,6 @@ public final class OtherMachineThreadsConfig {
     private final ForgeConfigSpec.IntValue candidateCacheTicks;
     private final ForgeConfigSpec.IntValue candidateScanBudget;
     private final ForgeConfigSpec.IntValue longBatchTicks;
-    private final ForgeConfigSpec.IntValue slotsPerMachine;
     private final ForgeConfigSpec.BooleanValue statsEnabled;
 
     public OtherMachineThreadsConfig(ForgeConfigSpec.Builder builder) {
@@ -83,11 +82,6 @@ public final class OtherMachineThreadsConfig {
                         "Longer batches run the recipe N times per batch: inputs p×N at admission, power still p per tick,",
                         "outputs p×N at settlement. Fewer admission/settlement events per second. Stock still caps N.")
                 .defineInRange("independentThreadsLongBatchTicks", 200, 0, 100_000);
-        slotsPerMachine = builder.comment(
-                        "每台机器最多同时跑几条独立线程，默认 0 = 由机器自己决定（线程仓条数 / 机器总线程数）。",
-                        "设成固定值时所有走独立线程的机器都按这个数开批次槽，例如 4 = 每台最多 4 条批次。",
-                        "Hard cap on concurrent independent batches per machine; 0 = use the machine's own thread count.")
-                .defineInRange("independentThreadsSlotsPerMachine", 0, 0, 4096);
         statsEnabled = builder.comment(
                         "在机器面板显示候选扫描/批次 tick 的耗时统计，默认关闭。",
                         "用于调 maxActiveThreads、maxBatchTicks 和候选预算；开启只多一次 nanoTime，不写日志。",
@@ -148,14 +142,6 @@ public final class OtherMachineThreadsConfig {
             return longBatchTicks.get();
         } catch (IllegalStateException unloaded) {
             return longBatchTicks.getDefault();
-        }
-    }
-
-    public int slotsPerMachine() {
-        try {
-            return slotsPerMachine.get();
-        } catch (IllegalStateException unloaded) {
-            return slotsPerMachine.getDefault();
         }
     }
 
