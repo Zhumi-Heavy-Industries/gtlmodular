@@ -354,6 +354,15 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private long inputTraceAt = -10_000L;
 
+    private void traceFirstRecipe(GTRecipeType type) {
+        try {
+            var all = allRecipes(type);
+            if (all.isEmpty()) return;
+            logInputTrace(all.get(0));
+        } catch (RuntimeException ignored) {
+        }
+    }
+
     private static String shortName(Object handler) {
         String n = handler.getClass().getSimpleName();
         if (n.length() > 18) n = n.substring(0, 18);
