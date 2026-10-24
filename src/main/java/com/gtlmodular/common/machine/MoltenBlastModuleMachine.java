@@ -116,12 +116,29 @@ public class MoltenBlastModuleMachine extends MoltenModuleMachineBase<MoltenBlas
     public void onStructureFormed() {
         super.onStructureFormed();
         applyCoilDiscount();
+        refreshThreadPart();
     }
 
     @Override
     public void onStructureInvalid() {
         super.onStructureInvalid();
+        threadPart = null;
         getRecipeLogic().setReduction(1.0, 1.0);
+    }
+
+    /**
+     * 结构成型后把「线程仓」找出来：GT 的线程仓只是多方块里的一个 part，
+     * 以前没有任何代码把 {@link IThreadModifierPart} 登记回本机，threadPart 恒为 null，
+     * 于是 {@link #totalThreads()} 永远是 BASE_THREADS(64)——玩家把线程仓设成 4 也不生效。
+     */
+    private void refreshThreadPart() {
+        threadPart = null;
+        for (var part : getParts()) {
+            if (part instanceof IThreadModifierPart thread) {
+                threadPart = thread;
+                break;
+            }
+        }
     }
 
     private void applyCoilDiscount() {
