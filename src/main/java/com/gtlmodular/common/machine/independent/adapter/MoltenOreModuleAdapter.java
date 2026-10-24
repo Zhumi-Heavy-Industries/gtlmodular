@@ -319,6 +319,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                 for (var content : start) remaining.add(cap.copyContent(content.content));
                 line.append(cap.name).append(':');
                 int asked = 0;
+                boolean sawStocking = false;
                 for (var io : new com.gregtechceu.gtceu.api.capability.recipe.IO[]{
                         com.gregtechceu.gtceu.api.capability.recipe.IO.IN,
                         com.gregtechceu.gtceu.api.capability.recipe.IO.BOTH}) {
@@ -326,6 +327,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                     if (handlers == null) continue;
                     for (var handler : handlers) {
                         asked++;
+                        if (handler.getClass().getSimpleName().contains("Stocking")) sawStocking = true;
                         try {
                             var left = ((com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler<Object>) handler)
                                     .handleRecipeInner(io, recipe, remaining, null, true);
@@ -339,7 +341,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                     }
                     if (remaining.isEmpty()) break;
                 }
-                if (remaining.size() == start.size() && line.indexOf("Stocking") >= 0) {
+                if (remaining.size() == start.size() && sawStocking) {
                     // 所有处理器都原样返回，且这机器用的是 ME 补给总线：
                     // 总线内部是 syncStock() 刷新的库存快照，快照为空时它一律说「没有」。
                     line.append("[提示:ME补给总线库存快照为空]");
@@ -365,8 +367,19 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private static String shortName(Object handler) {
         String n = handler.getClass().getSimpleName();
-        if (n.length() > 18) n = n.substring(0, 18);
-        return n.isEmpty() ? "匿名仓" : n;
+        if (n.isEmpty()) return "匿名仓";
+        // 常见仓型给出短别名，剩下的才截断：截断后的 ExportOnlyAEStocki 看不出是补给总线还是输出仓。
+        if (n.contains("Stocking") && n.contains("Fluid")) return "AE补给(流体)";
+        if (n.contains("Stocking")) return "AE补给(物品)";
+        if (n.contains("AEItemList") || n.contains("AEFluidList")) return "AE输出";
+        if (n.contains("ItemHandlerProxyRecipeTrait")) return "代理仓";
+        if (n.contains("CircuitItemStackHandler")) return "电路仓";
+        if (n.contains("CircuitEncoder")) return "电路编码仓";
+        if (n.contains("NotifiableItemStackHandler")) return "物品总线";
+        if (n.contains("NotifiableFluidTank")) return "流体罐";
+        if (n.contains("NotifiableEnergyContainer")) return "能源仓";
+        if (n.contains("EnergyContainer") || n.contains("ModuleEnergyHandler")) return "模块供电";
+        return n.length() > 18 ? n.substring(0, 18) : n;
     }
 
     /** 单独问一遍机器的每个 IN/BOTH 处理器：这一样原料它认不认。认就返回 true。 */
