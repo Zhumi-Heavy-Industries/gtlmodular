@@ -42,6 +42,8 @@ public final class MachineStateDump {
 
         out.add("--- 输入 ---");
         out.add("  " + meWiring(machine));
+        String hatch = com.gtlmodular.common.machine.independent.io.MeStockHatchDiagnostics.describe(machine);
+        if (!hatch.isEmpty()) out.add("  " + hatch);
         dumpRow(machine, IO.IN, out);
         dumpRow(machine, IO.BOTH, out);
         out.add("--- 输出 ---");

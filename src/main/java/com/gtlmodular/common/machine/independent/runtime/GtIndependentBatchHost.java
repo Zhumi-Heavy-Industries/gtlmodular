@@ -2,6 +2,8 @@ package com.gtlmodular.common.machine.independent.runtime;
 
 import com.gregtechceu.gtceu.api.capability.recipe.EURecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
+import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
+import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
@@ -26,6 +28,7 @@ import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -214,7 +217,10 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         while (!candidates.isEmpty()) {
             var source = takeCandidate();
             if (source == null) break;
-            if (source.allocation().budget() > budget) continue;
+            if (source.allocation().budget() > budget) {
+                logBudgetSkip(source, budget);
+                continue;
+            }
             try {
                 io.requireSupported(source.ingredients());
                 io.requireSupported(source.execution());
@@ -236,6 +242,21 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
 
     @Override
     public boolean canAdmit() { return machineReady() && adapter.allowsNewBatches(); }
+
+    private String lastBudgetSkip;
+    private long lastBudgetSkipAt = Long.MIN_VALUE;
+
+    /** 候选被「并行预算不足」丢掉时写一行：有空槽却补不上，多半就是这里。 */
+    private void logBudgetSkip(SingleRecipeCandidate candidate, long available) {
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        String recipe = String.valueOf(candidate.execution().id);
+        if (recipe.equals(lastBudgetSkip) && now - lastBudgetSkipAt < 200L) return;
+        lastBudgetSkip = recipe;
+        lastBudgetSkipAt = now;
+        GTLModular.LOGGER.info("[independent] 候选被并行预算挡住 {} {}: 配方={} 需要={} 剩余={}",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(),
+                recipe, candidate.allocation().budget(), available);
+    }
 
     /**
      * 从候选队列里挑下一条：优先挑「没在跑」的配方。
@@ -523,6 +544,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
                     }
                 }
             }
+            logConsumeFailure(payload, remaining);
             return false;
         }
         payload.remainders().remove(INPUT);
@@ -530,6 +552,36 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         runtime.consumed(payload);
         adapter.admitted(payload.recipe());
         return true;
+    }
+
+    private String lastConsumeFail;
+    private long lastConsumeFailAt = Long.MIN_VALUE;
+
+    /**
+     * 扣料失败只写一行（限频）：说明是哪条配方、还差哪些东西、这一批要多少份。
+     * 「有空槽但一直补不上」时，这行是唯一能看出是料不够还是并行太大的地方。
+     */
+    private void logConsumeFailure(IndependentRecipePayload payload, Map<RecipeCapability<?>, List<Content>> remaining) {
+        long now = logic.getMachine().getLevel() == null ? 0L : logic.getMachine().getLevel().getGameTime();
+        String recipe = String.valueOf(payload.recipe() == null ? "?" : payload.recipe().id);
+        if (recipe.equals(lastConsumeFail) && now - lastConsumeFailAt < 200L) return;
+        lastConsumeFail = recipe;
+        lastConsumeFailAt = now;
+        StringBuilder need = new StringBuilder();
+        for (var entry : remaining.entrySet()) {
+            for (Content content : entry.getValue()) {
+                if (need.length() > 0) need.append(", ");
+                need.append(entry.getKey().name).append('=')
+                        .append(com.gtlmodular.common.machine.independent.io.BatchContents
+                                .describe(entry.getKey(), content.content))
+                        .append('×').append(com.gtlmodular.common.machine.independent.io.BatchContents
+                                .amount(entry.getKey(), content.content));
+            }
+        }
+        GTLModular.LOGGER.info("[independent] 扣料失败 {} {}: 配方={} 并行={} 份数={} 余量=[{}]",
+                logic.getMachine().getClass().getSimpleName(), logic.getMachine().getPos(), recipe,
+                payload.recipe() == null ? "?" : String.valueOf(payload.recipe().parallels),
+                payload.runs(), need);
     }
 
     private long profPrep, profPay, profIn, profOut, profCalls, profFirst, profFirstCalls;

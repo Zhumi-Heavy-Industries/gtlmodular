@@ -301,8 +301,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
         rejectedReasonHash.put(recipe.id, hash);
         rejectedLoggedAt.put(recipe.id, nowTick);
         if (probe.contains("输入匹配失败")) logInputTrace(recipe);
-        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}] | {}",
-                recipe.id, machine.getPos(), probe, inputHandlersSummary(), meWiringSummary());
+        GTLModular.LOGGER.info("[independent] 配方被排除 {} @{}: {} | 机器输入仓=[{}] | {} | {}",
+                recipe.id, machine.getPos(), probe, inputHandlersSummary(), meWiringSummary(),
+                com.gtlmodular.common.machine.independent.io.MeStockHatchDiagnostics.describe(machine));
     }
 
     /**
