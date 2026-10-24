@@ -14,7 +14,7 @@ public enum ModuleKind {
      */
     BLAST(
             "molten_blast_module",
-            "猪咪浮游选矿机",
+            "猪咪愤怒选矿机",
             new ResourceLocation("gtceu", "electric_blast_furnace"),
             new ResourceLocation("gtceu", "flotating_beneficiation")),
 

@@ -6,7 +6,7 @@
   "block.gtlmodular.buffered_me_output_buffer": "ME 聚合输出总成",
   "block.gtlmodular.molten_module_host_test": "炼矿测试主机",
   "block.gtlmodular.molten_space_ore_module_real": "炼矿真实外壳测试机",
-  "block.gtlmodular.molten_blast_module": "猪咪浮游选矿机",
+  "block.gtlmodular.molten_blast_module": "猪咪愤怒选矿机",
   "block.gtlmodular.molten_blast_module.desc": "§7模块A：沿用§f浮游选矿§7配方。",
   "gtlmodular.blast.tooltip.duration": "§7耗时倍率§r %s",
   "gtlmodular.blast.tooltip.temperature": "§7超过 MV 后每级电压 §r+%sK",

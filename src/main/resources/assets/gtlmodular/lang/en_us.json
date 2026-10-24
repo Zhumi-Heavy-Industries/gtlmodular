@@ -6,7 +6,7 @@
   "block.gtlmodular.buffered_me_output_buffer": "ME Buffered Export Buffer",
   "block.gtlmodular.molten_module_host_test": "Test Molten Ore Host",
   "block.gtlmodular.molten_space_ore_module_real": "Test Real Space Ore Module",
-  "block.gtlmodular.molten_blast_module": "Piggy Flotation Module",
+  "block.gtlmodular.molten_blast_module": "Piggy Angry Ore Washer",
   "block.gtlmodular.molten_blast_module.desc": "§7Module A: uses §fFlotation Beneficiation§7 recipes.",
   "gtlmodular.blast.tooltip.duration": "§7Duration multiplier§r %s",
   "gtlmodular.blast.tooltip.temperature": "§7+%sK per voltage tier above MV",
