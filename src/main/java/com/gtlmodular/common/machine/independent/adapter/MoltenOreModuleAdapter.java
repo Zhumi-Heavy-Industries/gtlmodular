@@ -308,6 +308,40 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
 
     private long lastDiagTick = Long.MIN_VALUE;
 
+    /** 逐轮增量枚举：游标跨轮保留，每轮最多 check 16 条，避免一次 45 ms。 */
+    private final java.util.List<GTRecipe> enumFound = new ArrayList<>();
+    private final java.util.Set<GTRecipe> enumSeen =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private int enumCursor;
+    private long enumSignature = Long.MIN_VALUE;
+    private static final int ENUM_CHECKS_PER_SCAN = 16;
+
+    private void enumerateIncrementally(GTRecipeType type, long signature, List<GTRecipe> found) {
+        if (signature != enumSignature) {
+            enumFound.clear();
+            enumSeen.clear();
+            enumCursor = 0;
+            enumSignature = signature;
+        }
+        var all = allRecipes(type);
+        if (all.isEmpty() || all.size() > 256) {
+            // 巨量配方表不整表扫；lookup 也空了才做一次全量兜底。
+            if (found.isEmpty()) found.addAll(enumerateAll(type));
+            return;
+        }
+        int checks = 0;
+        while (enumCursor < all.size() && checks < ENUM_CHECKS_PER_SCAN) {
+            GTRecipe recipe = all.get(enumCursor++);
+            checks++;
+            if (recipe == null || !enumSeen.add(recipe)) continue;
+            if (check(recipe)) enumFound.add(recipe);
+        }
+        if (enumCursor >= all.size()) enumCursor = 0;
+        for (GTRecipe recipe : enumFound) {
+            if (!found.contains(recipe)) found.add(recipe);
+        }
+    }
+
     private long signatureAt = Long.MIN_VALUE;
     private long signatureValue = Long.MIN_VALUE;
 
@@ -332,7 +366,7 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                         for (Object handler : entry.getValue()) {
                             String name = handler.getClass().getSimpleName();
                             if (name.contains("Proxy")) continue;   // 代理仓，内容由被代理的仓已经统计过
-                            if (name.contains("Stocking") || name.contains("AEItemList")) {
+                            if (name.contains("Stocking")) {
                                 volatileStock = true;               // ME 补给：内容随网络变化
                                 continue;
                             }
@@ -345,7 +379,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
                                             .getKey(stack.getItem()).hashCode();
                                 }
                             } else {
-                                volatileStock = true;
+                                // 读不到内容的仓（电路编码仓等）：只把类型和容量计入签名，
+                                // 不再当成「易变」，否则签名恒变、每次都整表重扫（实测 46 ms 一跳）。
+                                hash = hash * 31L + name.hashCode() + handler.hashCode();
                             }
                         }
                     }
@@ -458,17 +494,9 @@ final class MoltenOreModuleAdapter implements IndependentRecipeAdapter {
             }
             // 有些配方类型（EBF 这类巨量配方表）的 lookup 是按「机器当前输入」索引的：
             // 输入总线暂时空着时一条都枚举不出来；更坑的是它可能**漏掉**某些仓型里的原料，
-            // 表现为「玩家放了 6 种碎片，只匹配到 4 种」。所以小配方表直接整表枚举再合并。
-            var all = allRecipes(machine.getRecipeType());
-            if (!all.isEmpty() && all.size() <= 256) {
-                java.util.Set<GTRecipe> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-                seen.addAll(found);
-                for (GTRecipe recipe : all) {
-                    if (seen.add(recipe) && check(recipe)) found.add(recipe);
-                }
-            } else if (found.isEmpty()) {
-                found.addAll(enumerateAll(machine.getRecipeType()));
-            }
+            // 表现为「玩家放了 6 种碎片，只匹配到 4 种」。所以小配方表整表枚举再合并，
+            // 但**每轮只 check 16 条**（单条 matchRecipe ~170 µs，全量一次 45 ms 会卡三 tick）。
+            enumerateIncrementally(machine.getRecipeType(), signature, found);
             if (found.isEmpty()) logWhyNoCandidates(machine.getRecipeType());
             else logCandidateCount(found);
             return found;
