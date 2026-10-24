@@ -56,6 +56,8 @@ public final class IndependentRecipeScale {
             List<Content> scaled = entry.getValue();
             if (original == null || scaled == null || original.size() != scaled.size()) continue;
             for (int i = 0; i < scaled.size(); i++) {
+                // 电路是配置不是材料：并行不能把「1 份编程电路」放大成 p 份，否则永远凑不齐。
+                if (BatchContents.isCircuit(original.get(i).content)) continue;
                 long per = BatchContents.amount(entry.getKey(), original.get(i).content);
                 if (per <= 0L) continue;
                 BatchContents.amount(entry.getKey(), scaled.get(i), multiplyExact(per, parallels));

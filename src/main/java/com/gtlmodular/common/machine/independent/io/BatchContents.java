@@ -64,6 +64,16 @@ public final class BatchContents {
     }
 
     /**
+     * 电路（编程电路）是「配置」不是「材料」：并行和长批次都不能放大它的数量。
+     * 上游配方里它永远是 1 份；一旦被放大成 p 份，任何仓都凑不出来（黑奴挖矿机就是这样卡住的）。
+     */
+    public static boolean isCircuit(Object value) {
+        Object current = value;
+        while (current instanceof SizedIngredient sized) current = sized.getInner();
+        return current instanceof com.gregtechceu.gtceu.api.recipe.ingredient.IntCircuitIngredient;
+    }
+
+    /**
      * 长批次：把一整份物料按次数放大（开批一次扣 p×N、结算一次出 p×N）。
      * EU/t 由能量层单独计算，不在这里乘；超出 long 直接拒绝，不能静默饱和成假数量。
      */
@@ -72,6 +82,7 @@ public final class BatchContents {
         for (var entry : contents.entrySet()) {
             if (entry.getKey() == EURecipeCapability.CAP) continue;
             for (Content content : entry.getValue()) {
+                if (isCircuit(content.content)) continue;
                 long per = amount(entry.getKey(), content.content);
                 if (per <= 0L) continue;
                 long scaled;
