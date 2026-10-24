@@ -57,22 +57,30 @@ public final class IndependentRecipeIo {
         if (MeIo.enabled(machine) && !parts().getMEPatternRecipeHandleParts().isEmpty()) {
             return new MeInputRoute(recipe);
         }
-        for (var route : inputRoutes()) if (route.fits(contents, IO.IN)) return route;
+        for (var route : inputRoutes()) if (route.fits(contents, IO.IN, recipe)) return route;
         return null;
     }
 
     public boolean outputFits(Map<RecipeCapability<?>, List<Content>> contents) {
+        return outputFits(contents, null);
+    }
+
+    public boolean outputFits(Map<RecipeCapability<?>, List<Content>> contents, GTRecipe recipe) {
         if (MeIo.enabled(machine) && !parts().getMEOutputRecipeHandleParts().isEmpty()) {
             return MeIo.outputFits(machine, contents);
         }
-        return outputRoute().fits(contents, IO.OUT);
+        return outputRoute().fits(contents, IO.OUT, recipe);
     }
 
     public boolean transferOutput(Map<RecipeCapability<?>, List<Content>> contents, boolean simulate) {
+        return transferOutput(contents, simulate, null);
+    }
+
+    public boolean transferOutput(Map<RecipeCapability<?>, List<Content>> contents, boolean simulate, GTRecipe recipe) {
         if (MeIo.enabled(machine) && !parts().getMEOutputRecipeHandleParts().isEmpty()) {
             return MeIo.transferOutput(machine, contents, simulate);
         }
-        return outputRoute().transfer(contents, IO.OUT, simulate);
+        return outputRoute().transfer(contents, IO.OUT, simulate, recipe);
     }
 
     public Route outputRoute() {
@@ -126,7 +134,18 @@ public final class IndependentRecipeIo {
 
     public interface InputRoute {
         boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io);
+
         boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate);
+
+        /** 带配方对象的变体：GTCEu 处理长数量原料（LongIngredient）时要读 recipe.ingredientActions。 */
+        default boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io, GTRecipe recipe) {
+            return fits(contents, io);
+        }
+
+        default boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate,
+                                 GTRecipe recipe) {
+            return transfer(remaining, io, simulate);
+        }
     }
 
     private final class MeInputRoute implements InputRoute {
@@ -178,10 +197,16 @@ public final class IndependentRecipeIo {
         }
 
         public boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io) {
-            return transfer(BatchContents.copy(contents), io, true);
+            return transfer(BatchContents.copy(contents), io, true, (SharedTickPower) null, null);
         }
 
-        public boolean fitsTickInput(Map<RecipeCapability<?>, List<Content>> contents, SharedTickPower power) {
+        /** 带配方对象的模拟：GTCEu 的 handleRecipeInner 处理长数量原料时需要 recipe.ingredientActions。 */
+        public boolean fits(Map<RecipeCapability<?>, List<Content>> contents, IO io, GTRecipe recipe) {
+            return transfer(BatchContents.copy(contents), io, true, (SharedTickPower) null, recipe);
+        }
+
+        public boolean fitsTickInput(Map<RecipeCapability<?>, List<Content>> contents, SharedTickPower power,
+                                     GTRecipe recipe) {
             var copy = BatchContents.copy(contents);
             var remaining = power.remaining();
             boolean needsPower = false;
@@ -193,14 +218,24 @@ public final class IndependentRecipeIo {
                 remaining = remaining.subtract(java.math.BigInteger.valueOf(offered));
             }
             if (needsPower && power.remaining().signum() == 0) return false;
-            return transfer(copy, IO.IN, true);
+            return transfer(copy, IO.IN, true, (SharedTickPower) null, recipe);
         }
 
         public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate) {
-            return transfer(remaining, io, simulate, null);
+            return transfer(remaining, io, simulate, null, null);
         }
 
-        public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate, SharedTickPower power) {
+        public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate, GTRecipe recipe) {
+            return transfer(remaining, io, simulate, null, recipe);
+        }
+
+        public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate,
+                                SharedTickPower power) {
+            return transfer(remaining, io, simulate, power, null);
+        }
+
+        public boolean transfer(Map<RecipeCapability<?>, List<Content>> remaining, IO io, boolean simulate,
+                                SharedTickPower power, GTRecipe recipe) {
             validate(remaining);
             var transfers = new StorageTransfers(simulate, power);
             try {
@@ -208,7 +243,7 @@ public final class IndependentRecipeIo {
                     for (Content content : entry.getValue()) {
                         for (var handler : handlers.getOrDefault(entry.getKey(), List.of())) {
                             if (BatchContents.amount(entry.getKey(), content.content) == 0) break;
-                            transfers.move(handler, io, content);
+                            transfers.move(handler, io, content, recipe);
                         }
                     }
                 }

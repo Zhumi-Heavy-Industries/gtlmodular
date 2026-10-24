@@ -7,6 +7,7 @@ import com.gregtechceu.gtceu.api.machine.trait.NotifiableEnergyContainer;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableFluidTank;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableItemStackHandler;
 import com.gregtechceu.gtceu.api.misc.FluidRecipeHandler;
+import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.lowdragmc.lowdraglib.misc.FluidStorage;
@@ -87,10 +88,15 @@ final class StorageTransfers {
     }
 
     void move(IRecipeHandler<?> handler, IO io, Content content) {
+        move(handler, io, content, null);
+    }
+
+    /** recipe 会原样传给 handleRecipeInner：GTCEu 处理长数量原料时要读 recipe.ingredientActions。 */
+    void move(IRecipeHandler<?> handler, IO io, Content content, GTRecipe recipe) {
         requireSupported(handler);
         if (handler instanceof ExportOnlyAEItemList || handler instanceof ExportOnlyAEFluidList
                 || handler instanceof ModuleEnergyHandler) {
-            moveViaHandler(handler, io, content);
+            moveViaHandler(handler, io, content, recipe);
             return;
         }
         if (handler instanceof InfinityEnergyContainer) {
@@ -114,7 +120,7 @@ final class StorageTransfers {
         }
         if (isCreativeInput(handler)) {
             // 创造输入总线：内部存储是无限料，交给上游 handleRecipeInner 计数（它按配置的无限库存返回余量）。
-            moveViaHandler(handler, io, content);
+            moveViaHandler(handler, io, content, recipe);
             return;
         }
         if (handler instanceof NotifiableItemStackHandler items) {
@@ -139,7 +145,7 @@ final class StorageTransfers {
      * 这里直接用上游的 handleRecipeInner 计数：它消费多少、返回多少余量，我们都按返回值回写。
      */
     @SuppressWarnings("unchecked")
-    private void moveViaHandler(IRecipeHandler<?> handler, IO io, Content content) {
+    private void moveViaHandler(IRecipeHandler<?> handler, IO io, Content content, GTRecipe recipe) {
         // 输入方向也要走这里：标签过滤 ME 库存输入总线是 ExportOnlyAEStockingItemList
         // （ExportOnlyAEItemList 的子类），它只能靠 handleRecipeInner 从 ME 库存里取料。
         // 纯输出的 ExportOnlyAE*List 对 IO.IN 会原样返回，等于正确地报告"没取到"。
@@ -148,7 +154,7 @@ final class StorageTransfers {
         var input = new java.util.ArrayList<Object>();
         input.add(content.content);
         IRecipeHandler<Object> raw = (IRecipeHandler<Object>) handler;
-        List<Object> left = raw.handleRecipeInner(io, null, input, null, simulate);
+        List<Object> left = raw.handleRecipeInner(io, recipe, input, null, simulate);
         long remaining = left == null || left.isEmpty() ? 0 : BatchContents.amount(cap, left.get(0));
         BatchContents.amount(cap, content, remaining);
     }

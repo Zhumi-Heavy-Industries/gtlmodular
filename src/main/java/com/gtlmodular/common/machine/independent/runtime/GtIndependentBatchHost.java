@@ -434,7 +434,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         }
         prepared.beforeInputs = BatchContents.copy(payload.remainders().get(INPUT));
         boolean outputFits = io.outputFits(payload.resolvedOutputs());
-        boolean inputFits = prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN);
+        boolean inputFits = prepared.inputs.fits(payload.remainders().get(INPUT), IO.IN, payload.recipe());
         return outputFits && inputFits
                 || waitFor(payload, "开工输入或输出容量不足: out=" + outputFits + " in=" + inputFits);
     }
@@ -472,7 +472,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         var prepared = runtime.prepared(payload);
         var before = prepared.beforeInputs;
         var route = prepared.inputs;
-        if (!route.transfer(remaining, IO.IN, false)) {
+        if (!route.transfer(remaining, IO.IN, false, payload.recipe())) {
             // 比较序列化内容之外的数量即可判断是否已有真实扣料；未知异常由会话保留。
             for (var entry : before.entrySet()) {
                 var after = remaining.get(entry.getKey());
@@ -584,9 +584,9 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             long p1 = stats.enabled() ? System.nanoTime() : 0L;
             if (!IndependentWirelessPower.pay(machine, payload, wirelessPower)) return runtime.waitFor(payload, "等待整机无线功率或账户/终端实际扣电");
             long p2 = stats.enabled() ? System.nanoTime() : 0L;
-            if (!routes.input().transfer(payload.remainders().get(TICK_INPUT), IO.IN, false, wiredPower)) return runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
+            if (!routes.input().transfer(payload.remainders().get(TICK_INPUT), IO.IN, false, wiredPower, payload.recipe())) return runtime.waitFor(payload, "等待整机功率或本 tick 剩余输入");
             long p3 = stats.enabled() ? System.nanoTime() : 0L;
-            if (!routes.output().transfer(payload.remainders().get(TICK_OUTPUT), IO.OUT, false)) return runtime.waitFor(payload, "tick 输出部分完成");
+            if (!routes.output().transfer(payload.remainders().get(TICK_OUTPUT), IO.OUT, false, payload.recipe())) return runtime.waitFor(payload, "tick 输出部分完成");
             long p4 = stats.enabled() ? System.nanoTime() : 0L;
             profPrep += p1 - p0;
             profPay += p2 - p1;
@@ -629,8 +629,8 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
         if (!payload.remainders().containsKey(TICK_INPUT)) {
             var tickInputs = scaledTickInputs(payload.recipe().tickInputs);
             // 纯 EU tick 不走 Route 模拟：tickIo 的快路径会按主机电池复核并实际扣电。
-            boolean tickIn = euOnlyTickInput(tickInputs) || in.fitsTickInput(tickInputs, wiredPower);
-            boolean tickOut = out.fits(payload.recipe().tickOutputs, IO.OUT);
+            boolean tickIn = euOnlyTickInput(tickInputs) || in.fitsTickInput(tickInputs, wiredPower, payload.recipe());
+            boolean tickOut = out.fits(payload.recipe().tickOutputs, IO.OUT, payload.recipe());
             boolean wireless = IndependentWirelessPower.ready(machine, payload);
             if (!tickIn || !tickOut || !wireless) {
                 logTickMissOnce(payload, tickIn, tickOut, wireless, tickInputs);
@@ -659,7 +659,7 @@ public final class GtIndependentBatchHost implements IndependentBatchHost<Indepe
             // 纯 EU：交给 tickIo 的快路径直接扣电池，不再做一次 Route 模拟。
             return new TickRoutes(in, out);
         }
-        if (!in.fitsTickInput(input, wiredPower) || !out.fits(output, IO.OUT) || !IndependentWirelessPower.ready(machine, payload)) {
+        if (!in.fitsTickInput(input, wiredPower, payload.recipe()) || !out.fits(output, IO.OUT, payload.recipe()) || !IndependentWirelessPower.ready(machine, payload)) {
             runtime.waitFor(payload, "等待完成本 tick 的剩余 IO");
             return null;
         }
