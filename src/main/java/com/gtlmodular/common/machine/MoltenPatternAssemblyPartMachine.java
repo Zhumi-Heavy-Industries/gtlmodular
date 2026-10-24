@@ -19,6 +19,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient;
 import com.gregtechceu.gtceu.integration.ae2.gui.widget.AETextInputButtonWidget;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.compat.EnhancedcoreIvModeCompat;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.diag.SwallowedErrors;
 import com.gtlmodular.common.machine.pattern.PatternArchiveSnapshots;
@@ -282,6 +283,20 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
 
         @Override
         public void pinManualMode() { manualModePinned = true; }
+
+        @Override
+        public boolean pausesAutoSwitchForExternalScheduler() {
+            Level level = getLevel();
+            boolean paused = EnhancedcoreIvModeCompat.suppressesModeSwitch(firstRecipeLogicController(),
+                    level == null ? 0L : level.getGameTime());
+            if (paused != enhancedcoreYieldLogged) {
+                enhancedcoreYieldLogged = paused;
+                GTLModular.LOGGER.info(paused
+                        ? "[gtlmodular] 增强版跨配方/隔离 IV 模式：自动切换与推料锁模式停手 pos={}"
+                        : "[gtlmodular] 已退出增强版跨配方模式：自动切换恢复 pos={}", getPos());
+            }
+            return paused;
+        }
     }
 
     private void logAutoSwitchCheck(List<GTRecipeType> types, RecipeLogic logic, int active, int target, long now) {
@@ -298,6 +313,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     }
 
     private String lastAutoSwitchSignature;
+
+    private boolean enhancedcoreYieldLogged;
 
     private long lastAutoSwitchWarnTick;
 

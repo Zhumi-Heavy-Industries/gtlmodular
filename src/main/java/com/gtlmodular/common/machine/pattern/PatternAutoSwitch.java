@@ -41,6 +41,8 @@ public final class PatternAutoSwitch {
         /** 玩家在模式页手动选过模式；此后自动切换与推料都不得改回来。 */
         boolean manualModePinned();
         void pinManualMode();
+        /** 宿主已被外部调度接管（增强版跨配方/隔离 IV 模式）时不切模式：那里没有"当前模式"。 */
+        boolean pausesAutoSwitchForExternalScheduler();
     }
 
     /** 两个模式都有活时，各自至少拿到的连续加工时长；避免积压模式永远霸占机器。 */
@@ -89,6 +91,13 @@ public final class PatternAutoSwitch {
         }
         List<GTRecipeType> types = host.availableRecipeTypes();
         if (types.size() <= 1 || controller == null) {
+            return;
+        }
+        if (host.pausesAutoSwitchForExternalScheduler()) {
+            // 外部调度按订单派工，切换只会重置它的配方逻辑；顺手清掉待切换，
+            // 否则恢复那一刻会按早已过期的宽限期立刻切走并把目标模式拉黑。
+            pendingAutoSwitchType = -1;
+            activeModeBusySince = -1L;
             return;
         }
         if (host.manualModePinned()) {
@@ -153,6 +162,10 @@ public final class PatternAutoSwitch {
         }
         if (controller.getActiveRecipeType() == index) {
             host.setActiveRecipeTypeIndex(index);
+            return;
+        }
+        if (host.pausesAutoSwitchForExternalScheduler()) {
+            // 同模式只同步下标那一段仍要放行：外部调度下这个下标是诊断与名字表的唯一锚点。
             return;
         }
         if (host.manualModePinned()) {

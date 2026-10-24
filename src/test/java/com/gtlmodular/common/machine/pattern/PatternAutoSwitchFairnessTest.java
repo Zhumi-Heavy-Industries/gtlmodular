@@ -124,5 +124,6 @@ class PatternAutoSwitchFairnessTest {
         @Override public boolean modeHasWaitingStock(int modeIndex) { return false; }
         @Override public boolean manualModePinned() { return pinned; }
         @Override public void pinManualMode() { pinned = true; }
+        @Override public boolean pausesAutoSwitchForExternalScheduler() { return false; }
     }
 }
