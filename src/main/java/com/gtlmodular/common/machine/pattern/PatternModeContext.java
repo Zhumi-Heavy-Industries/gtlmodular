@@ -40,6 +40,7 @@ public final class PatternModeContext {
         void clearAutoSwitchBlocked();
         void refreshManualAssignDisplay();
         void syncCustomNameToMode(int index);
+        void pinManualMode();
     }
 
     private final Host host;
@@ -101,6 +102,8 @@ public final class PatternModeContext {
         if (index >= 0 && index < host.availableRecipeTypes().size()) {
             host.selectModeCursor(index);
             host.rememberBoundModeType();
+            // 这是玩家在模式页上的明确选择；自动切换必须让位，否则"手动指定"等于没有。
+            host.pinManualMode();
         }
     }
 

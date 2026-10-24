@@ -36,7 +36,15 @@ public final class PatternAutoSwitch {
         void onAutoSwitched(int previous, int target);
         boolean blocksPushModeSwitch(RecipeLogic logic);
         void clearPushModeSwitchCaches(int slot, int index);
+        /** 该模式下是否有料在等：用来防止推料把正在干活的模式拽走。 */
+        boolean modeHasWaitingStock(int modeIndex);
+        /** 玩家在模式页手动选过模式；此后自动切换与推料都不得改回来。 */
+        boolean manualModePinned();
+        void pinManualMode();
     }
+
+    /** 两个模式都有活时，各自至少拿到的连续加工时长；避免积压模式永远霸占机器。 */
+    private static final long FAIR_SHARE_TICKS = 100L;
 
     private final Host host;
     private final int intervalTicks;
@@ -49,6 +57,7 @@ public final class PatternAutoSwitch {
     private long pendingAutoSwitchDeadline;
     private final Map<Integer, Long> autoSwitchBlockedUntil = new HashMap<>();
     private long activeModeBusySince = -1L;
+    private long lastSwitchTick = Long.MIN_VALUE;
     private int diagActivePatterns;
     private int diagActiveStock;
     private int diagActiveCold;
@@ -80,6 +89,12 @@ public final class PatternAutoSwitch {
         }
         List<GTRecipeType> types = host.availableRecipeTypes();
         if (types.size() <= 1 || controller == null) {
+            return;
+        }
+        if (host.manualModePinned()) {
+            // 玩家点了模式页就以他的选择为准；自动切换再切走会让"手动指定"看起来完全没用。
+            pendingAutoSwitchType = -1;
+            activeModeBusySince = -1L;
             return;
         }
         RecipeLogic logic = controller.getRecipeLogic();
@@ -124,6 +139,7 @@ public final class PatternAutoSwitch {
         host.syncCustomNameToMode(target);
         pendingAutoSwitchType = target;
         pendingAutoSwitchDeadline = now + graceTicks;
+        lastSwitchTick = now;
         host.onAutoSwitched(active, target);
     }
 
@@ -139,6 +155,13 @@ public final class PatternAutoSwitch {
             host.setActiveRecipeTypeIndex(index);
             return;
         }
+        if (host.manualModePinned()) {
+            return;
+        }
+        if (host.modeHasWaitingStock(controller.getActiveRecipeType())) {
+            // 当前模式还有活：先让它干完，之后由自动切换按公平份额轮转，推料不能直接拽走。
+            return;
+        }
         RecipeLogic logic = controller.getRecipeLogic();
         if (logic.isWorking() || host.blocksPushModeSwitch(logic)) {
             return;
@@ -148,6 +171,10 @@ public final class PatternAutoSwitch {
         logic.resetRecipeLogic();
         host.clearPushModeSwitchCaches(slot, index);
         host.setActiveRecipeTypeIndex(index);
+        Level level = host.level();
+        if (level != null) {
+            lastSwitchTick = level.getGameTime();
+        }
     }
 
     public int findModeWithWaitingStock(List<GTRecipeType> types, int active, long now,
@@ -155,7 +182,7 @@ public final class PatternAutoSwitch {
         diagActivePatterns = 0;
         diagActiveStock = 0;
         diagActiveCold = 0;
-        boolean hasWaitingStock = false;
+        boolean activeHasWaitingStock = false;
         for (int slot = 0; slot < slots; slot++) {
             if (patternEmpty.test(slot) || host.recipeTypeOfSlot(slot) != active) {
                 continue;
@@ -166,13 +193,36 @@ public final class PatternAutoSwitch {
             }
             if (host.hasSlotWaitingStock(slot)) {
                 diagActiveStock++;
-                hasWaitingStock = true;
+                activeHasWaitingStock = true;
                 break;
             }
         }
-        if (hasWaitingStock) {
+        int candidate = -1;
+        for (int slot = 0; slot < slots && candidate < 0; slot++) {
+            if (patternEmpty.test(slot)) {
+                continue;
+            }
+            int type = host.recipeTypeOfSlot(slot);
+            if (type < 0 || type >= types.size() || type == active) {
+                continue;
+            }
+            Long blocked = autoSwitchBlockedUntil.get(type);
+            if (blocked != null && now < blocked) {
+                continue;
+            }
+            if (host.hasSlotWaitingStock(slot)) {
+                candidate = type;
+            }
+        }
+        if (candidate < 0) {
             activeModeBusySince = -1L;
             return -1;
+        }
+        if (activeHasWaitingStock) {
+            // 两个模式都有料：按公平份额轮流，否则积压的那个会一直霸占机器、另一个永远等不到。
+            activeModeBusySince = -1L;
+            boolean due = lastSwitchTick == Long.MIN_VALUE || now - lastSwitchTick >= FAIR_SHARE_TICKS;
+            return due ? candidate : -1;
         }
         if (diagActivePatterns > 0) {
             // 宽限期容纳 AE 在途来料；尚未认出配方只能用于诊断，不能挡住其他模式。
@@ -186,23 +236,7 @@ public final class PatternAutoSwitch {
         } else {
             activeModeBusySince = -1L;
         }
-        for (int slot = 0; slot < slots; slot++) {
-            if (patternEmpty.test(slot)) {
-                continue;
-            }
-            int type = host.recipeTypeOfSlot(slot);
-            if (type < 0 || type >= types.size() || type == active) {
-                continue;
-            }
-            Long blocked = autoSwitchBlockedUntil.get(type);
-            if (blocked != null && now < blocked) {
-                continue;
-            }
-            if (host.hasSlotWaitingStock(slot)) {
-                return type;
-            }
-        }
-        return -1;
+        return candidate;
     }
 
     public static <T> boolean hasWaitingStock(Supplier<T> readSlot, Predicate<T> hasItems, Predicate<T> hasFluids) {
@@ -216,6 +250,9 @@ public final class PatternAutoSwitch {
     }
 
     public void clearBlocked() { autoSwitchBlockedUntil.clear(); }
+
+    /** 单测注入切换时刻用；正式路径由 tick 与推料锁模式两处写入。 */
+    void noteSwitchForTest(long tick) { lastSwitchTick = tick; }
 
     public long idleTicks(long now) { return activeModeBusySince < 0L ? 0L : now - activeModeBusySince; }
 

@@ -285,6 +285,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
     private boolean modeCursorTouched = false;
 
+    /** 玩家在模式页点过模式：自动切换与推料都不再改他的选择，直到重进存档。 */
+    private boolean manualModePinned = false;
+
     /** 按注册 ID 持久化绑定，避免类型表重排后绑定到错误模式。 */
     private ResourceLocation boundModeType;
 
@@ -391,6 +394,23 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         @Override
         public void clearPushModeSwitchCaches(int slot, int index) { clearAllSlotRecipeCaches(index); }
+
+        @Override
+        public boolean modeHasWaitingStock(int modeIndex) {
+            int slots = getPatternSlotCount();
+            for (int slot = 0; slot < slots; slot++) {
+                if (recipeTypeOfSlot(slot) == modeIndex && hasSlotWaitingStock(slot)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean manualModePinned() { return manualModePinned; }
+
+        @Override
+        public void pinManualMode() { manualModePinned = true; }
     }
 
     private void logAutoSwitchCheck(List<GTRecipeType> types, RecipeLogic logic, int active, int target, long now) {
@@ -501,6 +521,9 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         @Override
         public void syncCustomNameToMode(int index) { LazyPatternAssemblyPartMachine.this.syncCustomNameToMode(index); }
+
+        @Override
+        public void pinManualMode() { manualModePinned = true; }
     }
 
     private String lastAutoSwitchSignature;
