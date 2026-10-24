@@ -3497,15 +3497,6 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 slot -> {
                     setManualAssignSlot(slot + 1);
                     assignManualType(slot + 1, false);
-                }, slot -> {
-                    setManualAssignSlot(slot + 1);
-                    CatalystAccessConfigurator page = activeCatalystPage;
-                    if (page != null) {
-                        page.openSlotFromPattern(slot);
-                    } else {
-                        setCatalystViewSlot(slot + 1);
-                        setCatalystPageOpen(true);
-                    }
                 }));
         return group;
     }
@@ -3544,18 +3535,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：神锻样板模式页挂载失败 pos={} 原因={}",
                     getPos(), failure.toString());
         }
-        try {
-            CatalystAccessConfigurator catalystPage = new CatalystAccessConfigurator(this);
-            this.activeCatalystPage = catalystPage;
-            int before = panel.getTabs().size();
-            panel.attachConfigurators(catalystPage);
-            List<ConfiguratorPanel.Tab> tabs = panel.getTabs();
-            catalystPage.bindPanel(panel, tabs.size() > before ? tabs.get(before) : null);
-        } catch (Throwable failure) {
-            SwallowedErrors.report("LazyPatternAssemblyPartMachine#attachConfigurators.catalystPage", failure);
-            GTLModular.LOGGER.warn("[gtlmodular] 惰性猪咪：专属催化剂槽页挂载失败 pos={} 原因={}",
-                    getPos(), failure.toString());
-        }
+        // 专属催化剂槽不再由本模组提供：催化剂改在上游「超级样板总成」上配置。
         try {
             panel.attachConfigurators(new PatternCircuitConfigurator(
                     this::getEmbeddedCircuitConfig,
