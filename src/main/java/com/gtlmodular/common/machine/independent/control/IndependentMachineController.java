@@ -468,7 +468,32 @@ public final class IndependentMachineController {
      * 数量已乘份数（长批次），最多 6 项，溢出饱和。
      */
     private static String encodedOutputs(IndependentRecipePayload payload, int runs) {
-        var outputs = payload.resolvedOutputs() != null ? payload.resolvedOutputs() : payload.recipe().outputs;
+        // 批次运行中 resolvedOutputs 可能还是空表（概率还没抽定/尚未结算），此时用配方原始产物表。
+        String encoded = encodeOutputs(payload.resolvedOutputs(), runs);
+        if (encoded == null) encoded = encodeOutputs(payload.recipe().outputs, runs);
+        if (encoded == null) logUnknownOutputs(payload);
+        return encoded;
+    }
+
+    private static final java.util.Set<ResourceLocation> UNKNOWN_OUTPUTS_LOGGED = java.util.Collections.newSetFromMap(
+            new java.util.IdentityHashMap<>());
+
+    /** 产物表里既没有物品也没有流体时记一条：能看出到底产的是什么能力类型。 */
+    private static void logUnknownOutputs(IndependentRecipePayload payload) {
+        try {
+            ResourceLocation id = payload.recipe() == null ? null : payload.recipe().id;
+            if (id == null || UNKNOWN_OUTPUTS_LOGGED.size() >= 32 || !UNKNOWN_OUTPUTS_LOGGED.add(id)) return;
+            StringBuilder caps = new StringBuilder();
+            payload.recipe().outputs.forEach((cap, list) -> caps.append(cap.name).append('×').append(list.size()).append(' '));
+            com.gtlmodular.GTLModular.LOGGER.info("[independent] 产物无法识别 {} outputs=[{}]", id, caps);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static String encodeOutputs(
+            java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+                    List<com.gregtechceu.gtceu.api.recipe.content.Content>> outputs, int runs) {
+        if (outputs == null) return null;
         StringBuilder sb = new StringBuilder();
         int limit = 6;
         int listed = 0;
