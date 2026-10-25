@@ -2718,8 +2718,16 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 .setText(getCustomName())
                 .setOnConfirm(this::onPlayerConfirmedCustomName)
                 .setButtonTooltips(Component.translatable("gui.gtceu.rename.desc")));
-        group.addWidget(paginationUIManager.createPaginationUI(slot -> {
-        }));
+        // 与上游「超级样板总成」一致：催化剂面板贴在样板格右侧，中键点样板槽就地切换。
+        MEPatternCatalystUIManager catalystUI = new MEPatternCatalystUIManager(
+                group.getSizeWidth() + 4, catalystItems, catalystFluids, cacheRecipeCount,
+                slot -> {
+                    if (!isRemote()) {
+                        clearSlotRecipeCache(slot);
+                    }
+                });
+        group.waitToAdded(catalystUI);
+        group.addWidget(paginationUIManager.createPaginationUI(catalystUI::toggleFor));
         // LDLib 从末尾开始派发点击，覆盖层须放在分页控件之后；现在只负责 Shift+中键/右键指定模式。
         group.addWidget(new PatternSlotRightClickOverlay(group, width, height,
                 slot -> {
