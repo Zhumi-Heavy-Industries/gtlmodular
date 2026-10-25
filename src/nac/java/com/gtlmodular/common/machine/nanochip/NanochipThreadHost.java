@@ -15,4 +15,12 @@ public interface NanochipThreadHost {
 
     /** 机器持有可变游标，逻辑重建后仍可延续该机器的轮转位置。 */
     String[] nanochipThreadCursors();
+
+    /** 机器 UI 的「允许同一条配方占多条线程」开关（默认关，与全局配置取或）。 */
+    default boolean allowsSameRecipeMultiple() {
+        return false;
+    }
+
+    default void setAllowsSameRecipeMultiple(boolean value) {}
+
 }

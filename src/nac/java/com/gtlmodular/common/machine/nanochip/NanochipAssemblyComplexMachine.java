@@ -5,11 +5,10 @@ import com.gtlmodular.common.machine.nanochip.vacuum.NanochipHostVacuum;
 import com.gtlmodular.common.machine.nanochip.display.NanochipHostDisplay;
 import com.gtlmodular.common.machine.nanochip.display.NanochipModuleBonusSnapshot;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gtlmodular.common.machine.nanochip.structure.NanochipHostStructure;
 import com.gtlmodular.common.machine.nanochip.structure.NanochipHostStructureIndex;
-import com.gtlmodular.common.machine.nanochip.structure.NanochipLoadRecovery;
 import com.gtlmodular.common.machine.nanochip.structure.NanochipStructureDiagnostics;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
+import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
 import com.gregtechceu.gtceu.api.machine.feature.IInteractedMachine;
@@ -88,22 +87,26 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
 
     @Override
     public void asyncCheckPattern(long periodID) {
-        hostStructure.asyncCheckPattern(periodID);
+        // 成型/结构检查完全交回上游：本模组不再插入自己的预检、闸门与相位。
+        super.asyncCheckPattern(periodID);
     }
 
     @Override
     public boolean checkPatternWithTryLock() {
-        return hostStructure.checkPatternWithTryLock();
+        return super.checkPatternWithTryLock();
     }
 
     @Override
     public boolean checkPatternWithLock() {
-        return hostStructure.checkPatternWithLock();
+        return super.checkPatternWithLock();
     }
 
     @Override
     public void requestStructureRefresh(ServerPlayer requester) {
-        hostStructure.requestStructureRefresh(requester);
+        // 只要把本机重新排进上游的异步检查队列，重判交给上游自己完成。
+        if (getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            com.gregtechceu.gtceu.api.pattern.MultiblockWorldSavedData.getOrCreate(serverLevel).addAsyncLogic(this);
+        }
     }
 
     /** 数量错误的候选名只是标签；必须清点全部 F 位才能区分哪种控制器超额。 */
@@ -148,11 +151,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             this, structureLogGate, moduleLinks::summarizeModuleSlots, () -> moduleLinks.getModuleSet().size());
 
     // 回调只在结构检查时执行，避免组件构造期间读取尚未初始化的上游状态。
-    private final NanochipHostStructure hostStructure = new NanochipHostStructure(
-            this, super::asyncCheckPattern, structureDiagnostics);
-
-    private final NanochipLoadRecovery loadRecovery = new NanochipLoadRecovery(this, () -> this.tier);
-
     private final NanochipHostStructureIndex hostStructureIndex = new NanochipHostStructureIndex(
             this, structureLogGate);
 
@@ -806,7 +804,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         } else {
             moduleLinks.cancelDisconnect();
         }
-        hostStructure.tickRefreshReport(lv);
     }
 
     void nanochipTickSync() {
@@ -975,14 +972,9 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         }
     }
 
-    /** 默认关闭主动读档恢复，避免自动发起昂贵的结构失效与重建。 */
-    private static final boolean LOAD_PARTS_RECOVERY_ENABLED = false;
-
-    /** 启用恢复时默认先失效再交上游重建；单纯重判可能保留已成形但零件为空的状态。 */
-    private static final boolean LOAD_PARTS_INVALIDATE_RECOVERY_ENABLED = true;
-
     private boolean hasRegisteredParts() {
-        return NanochipLoadRecovery.hasRegisteredParts(this);
+        List<IMultiPart> parts = getParts();
+        return parts != null && !parts.isEmpty();
     }
 
     public void noteCachedBlockRemoved(BlockPos pos) {
@@ -995,10 +987,8 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             return;
         }
         long now = level.getGameTime();
-        loadRecovery.recoverLoadPartsIfNeeded(LOAD_PARTS_RECOVERY_ENABLED, LOAD_PARTS_INVALIDATE_RECOVERY_ENABLED);
         // 镜像恢复依赖零件表，因此必须排在部件恢复之后。
         mirrorBindGuard.tick(this);
-        hostStructure.confirmFoldedPattern();
         hostStructureIndex.syncStructurePosIndex();
         hostStructureIndex.invalidateOnCachedRemoval();
         slotPublisher.tickNacSlotHeartbeat();
@@ -1058,6 +1048,10 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     @Override
     public void onStructureFormed() {
         super.onStructureFormed();
+        // 上游只在「异步检查成形」那条路里把控制器登记进 MultiblockWorldSavedData；
+        // 走「方块变化 → checkPatternWithLock → onStructureFormed」成形时不会登记，
+        // 之后结构里再被拆一格就不会有人通知本机 ⇒ 破了方块仍然显示成形。这里补上同一条登记。
+        registerToUpstreamStructureMapping();
         slotPublisher.publishNacSlots();
         slotPublisher.recordFormedParts();
         // Jade 读取结构错误状态；成形时清除残留错误，避免外部显示仍为不完整。
@@ -1094,7 +1088,20 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
                 NanochipModContext.logger().debug(FORMED_LINE_FORMAT, formedArgs);
             }
         }
-        hostStructure.reportRefreshResult();
+    }
+
+    /** 把本机登记进上游的结构映射表（与 asyncCheckPattern 成形时做的是同一件事，幂等）。 */
+    private void registerToUpstreamStructureMapping() {
+        if (!(getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel)) {
+            return;
+        }
+        var state = getMultiblockState();
+        if (state == null) {
+            return;
+        }
+        var mwsd = com.gregtechceu.gtceu.api.pattern.MultiblockWorldSavedData.getOrCreate(serverLevel);
+        mwsd.addMapping(state);
+        mwsd.removeAsyncLogic(this);
     }
 
     @Override
@@ -1132,7 +1139,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
             }
         }
         // 失效意味着结构证据变化，重置变化闸才能及时检查玩家补齐后的结构。
-        hostStructure.resetCheckGate();
     }
 
     @Override
@@ -1185,11 +1191,31 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         return null;
     }
 
+    /** 机器 UI 的「允许同一条配方占多条线程」开关（默认关，与全局配置取或）。 */
+    @DescSynced
+    private boolean syncedSameRecipeMultiple;
+
+    @Override
+    public boolean allowsSameRecipeMultiple() {
+        return syncedSameRecipeMultiple;
+    }
+
+    @Override
+    public void setAllowsSameRecipeMultiple(boolean value) {
+        if (syncedSameRecipeMultiple == value) {
+            return;
+        }
+        syncedSameRecipeMultiple = value;
+        markDirty();
+    }
+
     /** 附加配置页保留父类机器界面，避免覆盖主页面的进度与模式控件。 */
     @Override
     public void attachConfigurators(ConfiguratorPanel panel) {
         super.attachConfigurators(panel);
         display.attachConfigurators(panel);
+        panel.attachConfigurators(new NanochipThreadsConfigurator(
+                this::nanochipThreadCount, this::allowsSameRecipeMultiple, this::setAllowsSameRecipeMultiple));
     }
 
     /** 默认隐藏主机手动刷新按钮，避免面板出现额外结构操作。 */
@@ -1198,7 +1224,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     @Override
     public void addDisplayText(List<Component> textList) {
         super.addDisplayText(textList);
-        display.addDisplayText(textList, LOAD_PARTS_RECOVERY_ENABLED);
+        display.addDisplayText(textList);
     }
 
     @Override

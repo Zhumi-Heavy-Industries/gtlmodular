@@ -248,7 +248,7 @@ public final class NanochipHostDisplay {
         }
     }
 
-    public void addDisplayText(List<Component> textList, boolean loadPartsRecoveryEnabled) {
+    public void addDisplayText(List<Component> textList) {
         NanochipLogisticsText.appendMode(textList, false);
         // 零件尚未恢复时电压快照不可靠，暂不展示等级与功率，避免误报降级。
         if (host.isFormed() && !hasRegisteredParts.getAsBoolean()) {
@@ -258,10 +258,7 @@ public final class NanochipHostDisplay {
             textList.add(Component.literal("  · 结构部件未就绪（能源仓 / 样板总成尚未重新连接）")
                     .withStyle(ChatFormatting.YELLOW));
             textList.add(Component.literal("    最大配方等级 / 最大功率暂不显示（避免误读成降级）；"
-                            + (loadPartsRecoveryEnabled
-                            ? "已让结构失效并交回上游重新成形，无需拆放控制器"
-                            : "本版已停用读档自动恢复（B 开关）：请拆放一次控制器，"
-                            + "或点左侧「立即更新结构」按钮"))
+                            + "请点左侧「立即更新结构」按钮，或拆放一次控制器")
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
         if (!host.isFormed()) {

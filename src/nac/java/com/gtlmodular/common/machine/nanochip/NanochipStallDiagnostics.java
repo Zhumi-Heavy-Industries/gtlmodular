@@ -107,11 +107,13 @@ final class NanochipStallDiagnostics {
             NanochipModContext.logger().info("[gtlmodular] NAC 主机停工诊断 @{} {} tick={}：观察到输入后 {} tick 未开出新批次；"
                             + "等待[{}；最近运行等待={}]；调度[最近配方tick={}，{}]；候选[最近真实搜索tick={}，原始={}，资格通过={}，轮转选中={}，"
                             + "搜索异常={}，逐候选结果={}，省略记录次数={}]；槽缓存[{}]；输入数量[{}；完整={}，"
-                            + "合计最多256个槽侧/普通库存项、每个ME槽侧64项；分面读数不可跨槽合批，tag值仅区分物料]；主机/模块[{}]",
+                            + "合计最多256个槽侧/普通库存项、每个ME槽侧64项；分面读数不可跨槽合批，tag值仅区分物料]；"
+                            + "样板仓[{}]；主机/模块[{}]",
                     host.getLevel().dimension().location(), host.getPos(), now, watch.waitingTicks(now),
                     read(this::waiting), clip(runningWaits.toString()), logicTick, scheduling, searchTick, raw, usable, selected,
                     searchFailure, clip(outcomes.toString()), omitted, clip(stock.caches()), clip(stock.materials()),
-                    stock.complete(), read(this::connections));
+                    stock.complete(), read(() -> com.gtlmodular.common.machine.MeWiringRebuild.describeMeParts(host)),
+                    read(this::connections));
         } catch (RuntimeException | LinkageError e) {
             // 诊断异常不能取消机器工作；沿用同一限频器，避免坏输入面刷屏。
             if (watch.reportDue(now)) NanochipModContext.logger().info(
