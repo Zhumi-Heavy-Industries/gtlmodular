@@ -12,6 +12,7 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTRecipeTypes;
 import com.gtlmodular.common.machine.nanochip.NanochipCalibration;
+import com.gtlmodular.common.machine.nanochip.NanochipModuleUpkeep;
 import com.gtlmodular.common.machine.nanochip.NanochipSplitterRules;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -281,12 +282,14 @@ public final class NanochipSelfCheck {
             out.add((present ? "✓" : "✗") + " 模块耗材流体存在: " + id);
         }
         int grades = 0;
-        for (int i = 1; i <= 16; i++) {
-            if (ForgeRegistries.FLUIDS.containsKey(new ResourceLocation("gtceu", "grade_" + i + "_purified_water"))) {
+        for (String id : NanochipModuleUpkeep.PURIFIED_WATER_TIERS) {
+            if (ForgeRegistries.FLUIDS.containsKey(new ResourceLocation(id))) {
                 grades++;
             }
         }
-        out.add((grades == 16 ? "✓" : "✗") + " 净化水等级 1~16: " + grades + "/16（光学整理器按等级给加成）");
+        int tierCount = NanochipModuleUpkeep.PURIFIED_WATER_TIERS.size();
+        out.add((grades == tierCount ? "✓" : "✗") + " 净化水等级 1~" + tierCount + ": "
+                + grades + "/" + tierCount + "（光学整理器按等级给加成）");
     }
 
     private static void configChecks(List<String> out) {

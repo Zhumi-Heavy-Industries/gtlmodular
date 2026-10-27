@@ -455,11 +455,15 @@ public class NanochipModuleMachine extends WorkableElectricMultipleRecipesMachin
             return module.processing.calibratedTotalEu(recipe, super.getTotalEuOfRecipe(recipe));
         }
 
-        /** 在实际批次的 setupRecipe 应用简单模式产出策略，确保进入上游结算的是同一份配方。 */
+        /**
+         * 批次开始时只做校准记账。产出策略（简单物流倍率）已收进 {@code moduleFlexibleOverclock}
+         * 这个配方修饰器 —— 上游 {@code RecipeLogic.checkMatchedRecipeAvailable} 会把修饰结果原样交给
+         * setupRecipe，没有必要在结算入口再开一条旁路。
+         */
         @Override
         public void setupRecipe(GTRecipe recipe) {
             calibrationBatch.attach(recipe);
-            super.setupRecipe(scaleOutputsForSimpleLogistics(module, recipe));
+            super.setupRecipe(recipe);
         }
 
         @Override

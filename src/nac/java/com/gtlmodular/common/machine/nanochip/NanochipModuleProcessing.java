@@ -30,9 +30,6 @@ final class NanochipModuleProcessing {
     private final DoubleConsumer writeImpurity;
     private final IntSupplier readFlushThreshold;
 
-    private static final java.util.regex.Pattern PURIFIED_WATER =
-            java.util.regex.Pattern.compile("grade_(\\d+)_purified_water");
-
     NanochipModuleProcessing(NanochipModuleMachine module, NanochipModuleSpec kind,
                              NanochipModulePower power, DoubleSupplier readImpurity,
                              DoubleConsumer writeImpurity, IntSupplier readFlushThreshold) {
@@ -78,10 +75,8 @@ final class NanochipModuleProcessing {
             if (id == null) {
                 continue;
             }
-            java.util.regex.Matcher m = PURIFIED_WATER.matcher(id.getPath());
-            if (m.matches()) {
-                best = Math.max(best, Integer.parseInt(m.group(1)));
-            }
+            // 档位只认一张表：正则会把 grade_99 之类不存在的流体也算进来，和耗材检测的口径对不上。
+            best = Math.max(best, NanochipModuleUpkeep.purifiedWaterTierOf(id.toString()));
         }
         return best;
     }
@@ -205,6 +200,10 @@ final class NanochipModuleProcessing {
                 && module.getModuleSpec().features().assembly()
                 && NanochipAssemblyMatrixTier.gatedRecipeTier(module, recipe) < 0) {
             // NH 的 insufficientMachineTier：这台矩阵不给这条配方，不能靠通用超频蒙混过关。
+            if (NanochipModContext.config().isNanochipDebugLogsEnabled()) {
+                NanochipModContext.logger().debug("[gtlmodular] NAC 矩阵档位不足 ⇒ 拒绝配方（模块 @{}，配方 {}）",
+                        module.getPos(), recipe.getId());
+            }
             return null;
         }
         GTRecipe direct = NanochipModuleMachine.moduleOverclock(machine, recipe, params, result);
@@ -216,7 +215,9 @@ final class NanochipModuleProcessing {
                     .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK_SUBTICK)
                     .apply(machine, recipe, params, result);
         }
-        return modified != null ? modified : recipe;
+        // 产出策略也在这里做完：上游拿修饰结果当结算配方，行为与「改 outputs 再返回」完全一致，
+        // 少一条 setupRecipe 旁路就少一处会和上游玩法脱节的地方。
+        return scaleOutputsForSimpleLogistics(machine, modified != null ? modified : recipe);
     }
 
     static GTRecipe scaleOutputsForSimpleLogistics(MetaMachine machine, GTRecipe recipe) {
