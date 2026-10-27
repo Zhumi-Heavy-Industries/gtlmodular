@@ -1385,6 +1385,9 @@ public final class NanochipComplexPattern {
         return local;
     }
 
+    /** 8 种朝向（水平 4 × 对角 4），结构格逐元素展开时用。 */
+    public static final int ELEMENTS = 8;
+
     public static void elementOffset(int element, int wx, int wy, int wz, int[] out) {
         int dx, dz;
         switch (element) {

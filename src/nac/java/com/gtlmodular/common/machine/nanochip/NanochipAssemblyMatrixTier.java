@@ -155,7 +155,7 @@ final class NanochipAssemblyMatrixTier {
         int[] counts = new int[MAX_CASING_TIER + 1];
         int[] offset = new int[3];
         BlockPos origin = module.getPos();
-        for (int element = 0; element < NanochipExactPrecheck.ELEMENTS; element++) {
+        for (int element = 0; element < NanochipComplexPattern.ELEMENTS; element++) {
             java.util.Arrays.fill(counts, 0);
             boolean complete = true;
             for (int i = 0; i < cellCount; i++) {
@@ -204,7 +204,7 @@ final class NanochipAssemblyMatrixTier {
                 if (now - lastMismatchLogTick >= LOG_INTERVAL_TICKS) {
                     lastMismatchLogTick = now;
                     NanochipModContext.logger().warn("[gtlmodular] NAC 组装矩阵 @{} 的 20 格部装外壳不同级（{}）"
-                            + "⇒ 不成形；请把 20 格换成同一档外壳", origin, need.tally);
+                            + "⇒ 本机不接该档配方；请把 20 格换成同一档外壳", origin, need.tally);
                 }
                 return false;
             }

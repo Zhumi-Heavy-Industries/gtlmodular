@@ -2,22 +2,28 @@ package com.gtlmodular.common.machine.nanochip;
 
 import com.gtlmodular.common.machine.nanochip.registration.NanochipModuleSpec;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gregtechceu.gtceu.api.block.ActiveBlock;
-import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import net.minecraft.ChatFormatting;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
 
 import static com.gtlmodular.common.machine.nanochip.NanochipModuleMachine.NAC_MODULE_ACTIVE_CONNECT;
-import static com.gtlmodular.common.machine.nanochip.NanochipModuleMachine.NAC_MODULE_FORMATION_BY_UPSTREAM;
 
+/**
+ * 模块结构层：成型判定完全交上游。
+ *
+ * <p>本类只做三件事：把三个 {@code checkPattern} 入口原样转给上游、状态翻转时打一行日志、
+ * 把「还没成型」的逐格原因按限流报出来。它<b>不参与</b>成形/失效判定 ——
+ * 结构定义（{@code NanochipComplexPattern}）是成形判据的唯一来源；
+ * 运行条件（复合体在不在、外壳档够不够）走配方修饰器与运行前检查。
+ *
+ * <p>为什么不再自己判：结构预检/节流/变化闸会在上游真正匹配之前就 {@code return false}，
+ * 表现是「结构摆对了机器也不成形」，而且玩家只能看到我们打的一行原因。
+ */
 final class NanochipModuleStructure {
 
     private final NanochipModuleMachine module;
@@ -25,22 +31,6 @@ final class NanochipModuleStructure {
     private final BooleanSupplier upstreamTryLock;
     private final BooleanSupplier upstreamLock;
     private final LongConsumer upstreamAsyncCheck;
-
-    private final NanochipStructureCheckThrottle structureCheckThrottle = new NanochipStructureCheckThrottle();
-
-    private final NanochipStructureCheckGate structureCheckGate = new NanochipStructureCheckGate();
-
-    private NanochipExactPrecheck exactPrecheck;
-
-    private volatile long foldTick = FOLD_NO_TICK;
-
-    private volatile boolean foldValue;
-
-    private volatile boolean foldDebt;
-
-    private static final long FOLD_NO_TICK = Long.MIN_VALUE;
-
-    private ServerPlayer pendingRefreshRequester;
 
     private static final long UNFORMED_LOG_INTERVAL_TICKS = 200L;
 
@@ -57,6 +47,8 @@ final class NanochipModuleStructure {
 
     private boolean loggedFormed;
 
+    private ServerPlayer pendingRefreshRequester;
+
     NanochipModuleStructure(NanochipModuleMachine module, NanochipModuleSpec kind,
                             BooleanSupplier upstreamTryLock, BooleanSupplier upstreamLock,
                             LongConsumer upstreamAsyncCheck) {
@@ -67,164 +59,27 @@ final class NanochipModuleStructure {
         this.upstreamAsyncCheck = upstreamAsyncCheck;
     }
 
-    private NanochipExactPrecheck exactPrecheck() {
-        NanochipExactPrecheck local = this.exactPrecheck;
-        if (local == null) {
-            net.minecraft.resources.ResourceLocation id =
-                    module.getDefinition() == null ? null : module.getDefinition().getId();
-            if (id == null) {
-                return null;
-            }
-            local = NanochipExactPrecheck.forModule(id.toString());
-            if (local == null) {
-                return null;                       // 缺少预检信息不等于结构错误，仍需交上游判定。
-            }
-            this.exactPrecheck = local;
-        }
-        return local;
-    }
-
     boolean checkPatternWithTryLock() {
-        if (kind.features().assembly() && !NanochipAssemblyMatrixTier.checkPattern(module)) {
-            return false;
-        }
-        if (!NAC_MODULE_FORMATION_BY_UPSTREAM) {
-            Level level = module.getLevel();
-            if (level != null && !level.isClientSide) {
-                NanochipExactPrecheck pre = exactPrecheck();
-                if (pre != null
-                        && !pre.scan(level, module.getPos(), module.getFrontFacing(), module.getUpwardsFacing()).mayForm()) {
-                    return false;
-                }
-            }
-        }
         return upstreamTryLock.getAsBoolean();
     }
 
     boolean checkPatternWithLock() {
-        if (NAC_MODULE_FORMATION_BY_UPSTREAM) {
-            return upstreamLock.getAsBoolean();
-        }
-        Level level = module.getLevel();
-        if (level == null || level.isClientSide) {
-            return upstreamLock.getAsBoolean();
-        }
-        final long tick = level.getGameTime();
-        if (tick == this.foldTick) {
-            final boolean cached = this.foldValue;            // 先读发布用的 volatile tick，再读对应结果。
-            if (cached) {
-                this.foldDebt = true;
-            }
-            return cached;
-        }
-        final boolean result = upstreamLock.getAsBoolean();
-        this.foldValue = result;
-        this.foldTick = tick;                                 // 结果先写，volatile tick 后写以发布缓存。
-        this.foldDebt = false;
-        return result;
-    }
-
-    /** 折叠成功结果后必须补判；拿不到锁时延后，避免阻塞服务端。 */
-    void confirmFoldedPattern() {
-        if (!this.foldDebt) {
-            return;
-        }
-        Level level = module.getLevel();
-        if (level == null || level.isClientSide || !module.isFormed()) {
-            this.foldDebt = false;
-            return;
-        }
-        MultiblockState state = module.getMultiblockState();
-        if (state == null) {
-            this.foldDebt = false;
-            return;
-        }
-        if (!module.getPatternLock().tryLock()) {
-            return;
-        }
-        try {
-            // MultiblockState#getCache 直接遍历 cache，须先检查底层字段是否为空。
-            if (state.cache == null) {
-                this.foldDebt = false;
-                return;
-            }
-            var cacheIterator = state.cache.longIterator();
-            while (cacheIterator.hasNext()) {
-                BlockPos pos = BlockPos.of(cacheIterator.nextLong());
-                if (pos.equals(module.getPos())) {
-                    continue;                                // 控制器位置会触发拆机分支，不能作为普通结构重检的触发格。
-                }
-                BlockState bs = level.getBlockState(pos);
-                if (bs.getBlock() instanceof ActiveBlock
-                        || level.getBlockEntity(pos) instanceof IMachineBlockEntity) {
-                    continue;
-                }
-                this.foldDebt = false;
-                state.onBlockStateChanged(pos, bs);
-                return;
-            }
-        } finally {
-            module.getPatternLock().unlock();
-        }
-        this.foldDebt = false;
+        return upstreamLock.getAsBoolean();
     }
 
     void asyncCheckPattern(long periodID) {
-        final long startNanos = System.nanoTime();
-        boolean attemptedUnformed = false;
-        MultiblockState gateState = null;
-        if (module.isFormed()) {
-            if (!this.structureCheckThrottle.shouldRun(true)) {
-                return;
-            }
-        } else {
-            if (NAC_MODULE_FORMATION_BY_UPSTREAM) {
-                upstreamAsyncCheck.accept(periodID);
-                return;
-            }
-            if (asyncCheckPatternUnformed(periodID, startNanos)) {
-                gateState = module.getMultiblockState();
-                attemptedUnformed = true;
-            } else {
-                return;
-            }
-        }
         upstreamAsyncCheck.accept(periodID);
-        if (attemptedUnformed) {
-            this.structureCheckGate.recordOutcome(NanochipStructureCheckGate.UNKNOWN_SIGNATURE,
-                    startNanos, System.nanoTime(), !module.isFormed(), gateState);
-        }
-        // 从未成形的模块不会触发失效日志，需另提供限流的失败原因。
-        if (!module.isFormed() && (attemptedUnformed || NAC_MODULE_FORMATION_BY_UPSTREAM)) {
+        if (!module.isFormed()) {
             logUnformedReason();
         }
-        if (attemptedUnformed
-                || (NAC_MODULE_FORMATION_BY_UPSTREAM && !loggedFormed)) {
-            reportRefreshResult();
-        }
     }
 
-    private boolean asyncCheckPatternUnformed(long periodID, long startNanos) {
-        Level unformedLevel = module.getLevel();
-        if (unformedLevel == null) {
-            return false;
-        }
-        this.structureCheckGate.noteUnformedPoll(module.getPos(),
-                NanochipStructureCheckGate.gtceuReachesFullMatchThisPoll(module.getHolder().getOffset(), periodID));
-        if (!this.structureCheckGate.shouldRunFullMatch(unformedLevel,
-                NanochipStructureCheckGate.UNKNOWN_SIGNATURE, startNanos)) {
-            return false;
-        }
-        return this.structureCheckThrottle.shouldRun(false);
-    }
-
+    /** 手动刷新按钮：只把本机排回上游异步检查队列，成形与否仍由上游判。 */
     void requestStructureRefresh(ServerPlayer requester) {
-        NanochipAssemblyMatrixTier.forget(module);
         this.pendingRefreshRequester = requester;
-        this.structureCheckGate.reset();
-        this.structureCheckThrottle.reset();
         this.lastUnformedLogTick = -10_000L;
-        if (module.isFormed() && !module.getMultiblockState().hasError()) {
+        MultiblockState state = module.getMultiblockState();
+        if (module.isFormed() && (state == null || !state.hasError())) {
             reportRefreshResult();
             return;
         }
@@ -317,7 +172,6 @@ final class NanochipModuleStructure {
     }
 
     void onStructureInvalid() {
-        NanochipAssemblyMatrixTier.forget(module);
         if (loggedFormed) {
             loggedFormed = false;
             String detail = NanochipAssemblyComplexMachine.describeStructureFailure(module.getMultiblockState());
@@ -332,6 +186,5 @@ final class NanochipModuleStructure {
                         detail == null ? "" : "；GTCEu 首个不符处：" + detail);
             }
         }
-        this.structureCheckGate.reset();
     }
 }

@@ -163,23 +163,25 @@ public final class NanochipConfig {
                     .define("nanochipComplex.hideOrphanItems", true);
 
         NANOCHIP_ORIGINAL_MODE =
-            builder.comment("NAC「原初模式」总开关（默认 true = 开）：把我们所有自定义的「结构 / 成型 / 连接」层变透明，完全交回 gtceu/gtlcore 原本的方式",
-                            "NAC 'original mode' master switch (default true = ON): make ALL of our own structure / formation / connection layers transparent and hand everything back to stock gtceu / gtlcore",
-                            "true （默认=原初）：A+ 精确预检与便宜预检一律视为「可能成型」（不再有『必然不成形 ⇒ 裸 return』）；",
-                            "                 结构检查节流与变化闸一律放行（只留统计读数）；结构位置缓存/索引/『方块移除⇒定点失效』整条链不接管；",
-                            "                 onStructureFormed 不做『先清后扫』、不做 20 tick 补登记、不做周期重扫、不做同 tick 折叠。",
-                            "                 日志里的『裸 return（必然不成形，直接挡掉）』应当降到 0。",
-                            "true  (default): our exact/cheap prechecks always answer 'may form' (no more 'certainly unformed -> bare return');",
-                            "                 throttle and change-gate always pass (stats are still recorded); the structure position cache/index and the",
-                            "                 block-break invalidation chain stay out of the loop; onStructureFormed does no clear-then-scan, no 20-tick",
-                            "                 re-registration, no periodic rescan and no same-tick folding. The 'bare return' counter should drop to 0.",
-                            "false：逐字恢复本模组自己那几层（= 打开本开关之前的行为）。",
-                            "false: restore our own layers verbatim (the behaviour from before this switch existed).",
-                            "刻意不关：结构匹配锁加固（唯一一条『删了可能让整个存档停摆』的改动；正常路径与上游逐字节等价）、全部诊断日志、界面/Jade/预览/能量分配/扣电与配方。",
-                            "Deliberately NOT disabled: the pattern-lock hardening (the only change whose removal can stall the whole save; byte-identical on the normal path),",
-                            "                 all diagnostics, GUI / Jade / preview / energy distribution / power draw and recipe logic.",
-                            "零存档影响：不改结构图案、不新增持久化字段、不改 NBT、不改方块 id。每次判定现读，不用重启。",
-                            "Zero save impact: no pattern change, no new persisted field, no NBT change, no block id change. Read live, no restart needed.")
+            builder.comment("NAC「原初模式」开关（默认 true）：结构/成型层已经**整条交给上游**，本项现在只剩「模块连接怎么重算」这一处",
+                            "NAC 'original mode' (default true): structure/formation are now fully upstream; this flag only picks how module links are re-scanned",
+                            "true （默认）：模块连接由复合体按结构 F 位自行重算（原初行为）。",
+                            "false：沿用本模组此前的“催促 + 合并重算”路径（保留，便于对比排查）。",
+                            "",
+                            "变迁说明：早在 2026-10-28，A+ 精确预检、结构检查节流/变化闸、拆块位置索引整条链已从代码里删除，",
+                            "不再由本开关控制 —— 那时起「机器无法成型」的成因（预检在上游匹配之前 return false）也一并消失。",
+                            "如果日志里还出现『裸 return（必然不成形，直接挡掉）』，说明跑的是旧 jar。",
+                            "",
+                            "true  (default): module links re-scanned by the complex from structure F slots (stock behaviour).",
+                            "false: keep our older 'prompt + coalesced rescan' path, for A/B diagnostics only.",
+                            "",
+                            "History: on 2026-10-28 the A+ exact precheck, the structure-check throttle/change-gate and the block-break position index",
+                            "were deleted outright and are no longer toggled by this flag; that also removed the cause of 'machine never forms'",
+                            "(the precheck answered 'certainly unformed' before upstream ever ran a real match).",
+                            "If the log still shows 'bare return', the running jar is old.",
+                            "",
+                            "零存档影响：不改结构图案、不新增持久化字段、不改 NBT、不改方块 id。",
+                            "Zero save impact: no pattern change, no persisted field, no NBT change, no block id change.")
                     .define("nanochipComplex.originalMode", true);
 
         NANOCHIP_CALIBRATION_RECIPE_WHITELIST =
