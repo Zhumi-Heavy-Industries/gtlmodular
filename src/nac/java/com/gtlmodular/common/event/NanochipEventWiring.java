@@ -19,7 +19,7 @@ public final class NanochipEventWiring {
     public static synchronized void register(IEventBus modBus) {
         if (registered) return;
         modBus.register(NanochipPreviewSelfCheck.class);
-        MinecraftForge.EVENT_BUS.register(NanochipBlockRemovalHandler.class);
+        // 拆块失效不自己接管：上游 ChunkMixin → MultiblockState.onBlockStateChanged 已经覆盖。
         MinecraftForge.EVENT_BUS.register(NanochipSprayCanHandler.class);
         MinecraftForge.EVENT_BUS.register(NanochipProxyTableByTypeAlias.class);
         MinecraftForge.EVENT_BUS.register(SwallowedErrorsEvents.class);

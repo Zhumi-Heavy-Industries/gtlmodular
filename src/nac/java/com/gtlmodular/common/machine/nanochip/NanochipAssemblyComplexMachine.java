@@ -5,7 +5,6 @@ import com.gtlmodular.common.machine.nanochip.vacuum.NanochipHostVacuum;
 import com.gtlmodular.common.machine.nanochip.display.NanochipHostDisplay;
 import com.gtlmodular.common.machine.nanochip.display.NanochipModuleBonusSnapshot;
 import com.gtlmodular.common.data.nanochip.NanochipModContext;
-import com.gtlmodular.common.machine.nanochip.structure.NanochipHostStructureIndex;
 import com.gtlmodular.common.machine.nanochip.structure.NanochipStructureDiagnostics;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
@@ -150,9 +149,7 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     private final NanochipStructureDiagnostics structureDiagnostics = new NanochipStructureDiagnostics(
             this, structureLogGate, moduleLinks::summarizeModuleSlots, () -> moduleLinks.getModuleSet().size());
 
-    // 回调只在结构检查时执行，避免组件构造期间读取尚未初始化的上游状态。
-    private final NanochipHostStructureIndex hostStructureIndex = new NanochipHostStructureIndex(
-            this, structureLogGate);
+    // 拆块失效交给上游（ChunkMixin → MultiblockState.onBlockStateChanged），本机不再维护位置索引。
 
     private static final String FORMED_CONCLUSION = "复合体已成形";
 
@@ -960,8 +957,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     @Override
     public void onUnload() {
         unsubscribeModuleRefresh();
-        hostStructureIndex.unregisterFromStructureIndex();
-        hostStructureIndex.dropPendingRemoval();
         super.onUnload();
     }
 
@@ -977,10 +972,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         return parts != null && !parts.isEmpty();
     }
 
-    public void noteCachedBlockRemoved(BlockPos pos) {
-        hostStructureIndex.noteCachedBlockRemoved(pos);
-    }
-
     private void tickModuleRefresh() {
         Level level = getLevel();
         if (level == null) {
@@ -989,8 +980,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         long now = level.getGameTime();
         // 镜像恢复依赖零件表，因此必须排在部件恢复之后。
         mirrorBindGuard.tick(this);
-        hostStructureIndex.syncStructurePosIndex();
-        hostStructureIndex.invalidateOnCachedRemoval();
         slotPublisher.tickNacSlotHeartbeat();
         powerDistribution.distributeModuleEnergy(now);
         moduleLinks.tickModuleRefresh(now);
@@ -1062,7 +1051,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         // 成形后能力代理已经建立，此时注册电网处理器才能接入配方扣电。
         gridPower.registerGridPowerHandler(this::gridEnergyContainer);
         moduleLinks.snapshotModuleSlots();
-        hostStructureIndex.onStructureFormed();
         vacuum.markTopologyDirty();
         reconcileRoutingMode();
         Level formedLevel = getLevel();
@@ -1109,8 +1097,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
         super.onStructureInvalid();
         clearThreadPart();
         slotPublisher.clearNacSlots();
-        hostStructureIndex.unregisterFromStructureIndex();
-        hostStructureIndex.dropPendingRemoval();
         gridPower.unregisterGridPowerHandler(this::gridEnergyContainer);
         // 清空后重置计数基线，避免相同零件数掩盖下一次应补发的清单。
         slotPublisher.resetPartCount();
@@ -1144,8 +1130,6 @@ public class NanochipAssemblyComplexMachine extends GTLAddWorkableElectricMultip
     @Override
     public void onMachineRemoved() {
         safeClearModules();
-        hostStructureIndex.unregisterFromStructureIndex();
-        hostStructureIndex.dropPendingRemoval();
     }
 
     @Override
