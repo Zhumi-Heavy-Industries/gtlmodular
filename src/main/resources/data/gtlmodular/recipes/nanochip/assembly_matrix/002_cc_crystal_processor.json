@@ -1,0 +1,74 @@
+{
+  "type": "gtlmodular:nanochip_assembly_matrix",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 100,
+  "data": {
+    "nanochip_assembly_matrix_tier": 5,
+    "circuit-calibration": "CRYSTAL"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_board_multifiberglass_elite"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_chip_crystal_so_c"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_wire_niobium_titanium"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_bolt_yttrium_barium_cuprate"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_crystal_processor"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 7680
+      }
+    ]
+  }
+}

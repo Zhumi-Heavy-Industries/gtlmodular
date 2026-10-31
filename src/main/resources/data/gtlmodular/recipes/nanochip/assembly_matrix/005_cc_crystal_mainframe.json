@@ -1,0 +1,120 @@
+{
+  "type": "gtlmodular:nanochip_assembly_matrix",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 800,
+  "data": {
+    "nanochip_assembly_matrix_tier": 6,
+    "circuit-calibration": "CRYSTAL"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_hsse_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_crystal_computer"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_chip_ram"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_hpic_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_niobium_titanium_single_wire"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_adv_smd_inductor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_adv_smd_capacitor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_adv_smd_diode"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1440,
+          "value": {
+            "fluid": "gtceu:soldering_alloy"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_crystal_mainframe"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 30720
+      }
+    ]
+  }
+}

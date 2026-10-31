@@ -1,0 +1,92 @@
+{
+  "type": "gtlmodular:nanochip_assembly_complex",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 300,
+  "data": {
+    "nanochip_assembly_matrix_tier": 11,
+    "circuit-calibration": "TEMPORAL"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_supracausal_processing_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_supracausal_ram_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_processing_unit_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_microwormhole_generator"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_manifold_oscillatory_power_cell"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_crystalmatrix_plate"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_supracausal_processor"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 31457280
+      }
+    ]
+  }
+}

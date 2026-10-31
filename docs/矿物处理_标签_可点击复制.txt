@@ -1,0 +1,51 @@
+&f在增强版中 熔炼的速度被魔改过 所有物品均为秒烧
+
+&6&l» 主网把矿物丢给子网
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:raw_materials|forge:crushed_ores|forge:purified_ores|forge:refined_ores|forge:refined_ores/naquadah"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:raw_materials/certus_quartz|forge:raw_materials/nether_quartz"}}
+
+&6&l» 第一个研磨
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:raw_materials|forge:ores"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:raw_materials/coal|forge:raw_materials/diamond|*netherite_scrap"}}
+
+&6&l» 洗矿
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:crushed_ores"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:crushed_ores/uraninite"}}
+
+&6&l» 热离
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:purified_ores"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:purified_ores/bornite|forge:purified_ores/cooperite|forge:purified_ores/tetrahedrite|forge:purified_ores/chalcocite|forge:purified_ores/sphalerite|forge:purified_ores/galena|forge:purified_ores/naquadah"}}
+
+&6&l» 二次研磨（只有一个白名单）
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:refined_ores|forge:crushed_ores/uraninite|forge:purified_ores/naquadah"}}
+
+&6&l» 后期
+&fZPM阶段可以制作集成矿石处理（小OP），此时矿物需求量变大，可以选择升级散装OP的并行继续使用，直到进阶集成矿石处理（大OP）。
+&f后续OP使用标签ME库存输入总线；由于能挖矿石以及前期无法直接获取的矿，矿处标签需要修改，下面给出一个示例，可以参照自行修改。
+
+&6&l» 2号电路（一般矿石、粗矿）
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"forge:ores|forge:raw_materials"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"|*cooperite*|*bornite*|*quartz*|*diamond*|*garnet*|*sapphire*|*ruby*|*netherite_scrap*|*jasper*"}}
+
+&6&l» 4号电路（宝石类）
+&f白名单：
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"*ores(*quartz*|*diamond*|*garnet*)*"}}
+&f黑名单：
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"|*dust*|*gems*|*sapphire*|*ruby*|"}}
+
+&6&l» 需要单独处理
+&f- &c碧玉&f（24号电路）
+&f- &c辉钼矿&f（铼）
+&f- &c晶质铀
+&f- &c三铜 + 谢尔顿&f（铂系矿泥）

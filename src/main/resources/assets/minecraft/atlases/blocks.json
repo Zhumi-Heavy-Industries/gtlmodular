@@ -1,0 +1,14 @@
+{
+  "sources": [
+    {
+      "type": "minecraft:directory",
+      "source": "block/casings/ctm",
+      "prefix": "block/casings/ctm/"
+    },
+    {
+      "type": "minecraft:directory",
+      "source": "block/ctm",
+      "prefix": "block/ctm/"
+    }
+  ]
+}

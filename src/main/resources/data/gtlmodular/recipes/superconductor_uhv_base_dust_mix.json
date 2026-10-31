@@ -1,0 +1,77 @@
+{
+  "type": "gtceu:mixer",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 200,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 6,
+          "ingredient": {
+            "item": "gtceu:draconium_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 7,
+          "ingredient": {
+            "item": "gtceu:aluminium_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 5,
+          "ingredient": {
+            "item": "gtceu:tritanium_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 6,
+          "ingredient": {
+            "item": "gtceu:americium_dust"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 2
+        },
+        "chance": 0
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 24,
+          "ingredient": {
+            "item": "gtceu:superconductor_uhv_base_dust"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 2097152
+      }
+    ]
+  }
+}

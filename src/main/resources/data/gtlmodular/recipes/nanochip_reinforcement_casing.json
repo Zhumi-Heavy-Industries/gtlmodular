@@ -1,0 +1,71 @@
+{
+  "type": "gtceu:forming_press",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 150,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:neutronium_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 48,
+          "ingredient": {
+            "item": "gtceu:naquadah_foil"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:double_naquadria_plate"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1520,
+          "value": {
+            "fluid": "gtceu:neutronium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_reinforcement_casing"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 1966080
+      }
+    ]
+  }
+}

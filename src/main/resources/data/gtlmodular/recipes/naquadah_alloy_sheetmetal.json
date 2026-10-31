@@ -1,0 +1,53 @@
+{
+  "type": "gtceu:assembler",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 200,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:naquadah_alloy_plate"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:soldering_alloy"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:naquadah_alloy_sheetmetal"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 480
+      }
+    ]
+  }
+}

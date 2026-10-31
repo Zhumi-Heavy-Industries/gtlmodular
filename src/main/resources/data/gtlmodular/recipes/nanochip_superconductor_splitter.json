@@ -1,0 +1,101 @@
+{
+  "type": "gtceu:assembly_line",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtlcore"
+    }
+  ],
+  "duration": 2400,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "tag": "gtceu:circuits/uhv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_computational_matrix_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_mesh_interface_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 7,
+          "ingredient": {
+            "item": "gtceu:naquadah_coil_block"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtceu:assembly_line_casing"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1440,
+          "value": {
+            "fluid": "gtceu:soldering_alloy"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 720,
+          "value": {
+            "fluid": "gtceu:polyetheretherketone"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_superconductor_splitter"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 524288
+      }
+    ]
+  }
+}

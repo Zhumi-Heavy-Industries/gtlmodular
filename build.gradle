@@ -1,0 +1,123 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+group = 'com.gtlmodular'
+// ★ 2026-09-19（队长：「你记得改版本号呀，我这边版本号显示的还是 0.1.13」）：
+//   每次部署前都要动这一行 —— mods.toml 用 `mod_version: project.version` 注入，
+//   jar 名也是 `gtlmodular-<version>.jar`（换版本号 ⇒ mods 目录里**必须删掉旧 jar**，
+//   否则同一个 modId 两份 jar，Forge 会以"Duplicate mod"拒绝加载）。
+version = '0.3.254'
+archivesBaseName = 'gtlmodular'
+
+// [2026-09-20] 编译 JDK 提到 21：整合包里的 gtladditions 3.2.8Custom_SubSpace-fix2 是 Java 21
+//   字节码（major 65），源代码真的 import 了它的 IThreadModifierPart / CommonUtils；
+//   javac 17 读 major-65 的类会直接报 "class file has wrong version 65.0, should be 61.0"。
+//   注意：编译用 21，产物目标仍锁 17（下面 options.release），jar 在 JVM 17/21 都能跑。
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// 不设这一行，源码里的中文会被 javac 按 GBK 读坏（本文件必须按 UTF-8 保存）
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // JDK 21 编译、字节码目标 17（等价于 javac --release 17）：产物 class 仍是 major 61
+    options.release = 17
+}
+tasks.withType(JavaExec).configureEach {
+    systemProperty 'file.encoding', 'UTF-8'
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                gtlmodular {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                gtlmodular {
+                    source sourceSets.main
+                }
+            }
+        }
+        data {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            args '--mod', 'gtlmodular', '--all',
+                 '--output', file('src/generated/resources/'),
+                 '--existing', file('src/main/resources/')
+            mods {
+                gtlmodular {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    // LDLib 需要 maven，TM 也一样；两个 maven 都留着
+    maven { name = 'FirstDarkDev'; url = 'https://maven.firstdark.dev/snapshots' }
+    maven { name = 'SapsDev'; url = 'https://maven.saps.dev/minecraft' }
+    // 依赖 jar 由 scripts/copy-libs.ps1 拷到 libs/ 下
+    flatDir { dirs 'libs' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.3.7'
+
+    // 依赖版本与 GTCEu 1.4.4 / LDLib 1.0.33.b 对齐（GTM 的传递依赖见下）
+    // transitive=false：ldlib 会拖 ae2/kubejs/jei，本项目不需要 → 直接用 libs/ 下的本地 jar
+    // [2026-09-15] ldlib 改用 libs/ 里的 jar：走 maven + fg.deobf 时，mapped 阶段取不到 DeobfuscatingRepo（null@pom）
+    // [2026-09-20] libs/ 已同步实例当前一套：gtladditions fix2(Java21) / gtlcore 1.2.3.2-fix2 / ldlib 1.0.33.b
+    // implementation fg.deobf('com.lowdragmc.ldlib:ldlib-forge-1.20.1:1.0.33.b') { transitive = false }
+
+    // 其余依赖全部来自 libs/ 下的本地 jar（含 gtceu-1.20.1-1.4.4 及其依赖）
+    implementation fg.deobf(fileTree(dir: 'libs', include: ['*.jar']))
+}
+
+tasks.named('processResources') {
+    // processResources 会把 mods.toml / pack.mcmeta 里的占位符展开；展开用的字符集必须显式给 UTF-8，
+    // 否则 Windows 上会按平台默认字符集（GBK）写坏文件里的中文
+    filteringCharset = 'UTF-8'
+    var replaceProperties = [
+            mod_id: 'gtlmodular',
+            // 显示名用 \u 转义：build.gradle 在 GBK 环境下写中文会坏
+            mod_name: 'GTL\u66f4\u591a\u5b9e\u7528\u8bbe\u5907',
+            mod_license: 'MIT', mod_version: project.version,
+            // 作者名同样用 \u 转义，避免编码问题
+            mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c', forge_version: '47.3.7',
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'     : 'gtlmodular',
+                'Specification-Vendor'    : 'gtlmodular',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : 'gtlmodular',
+                'MixinConfigs'            : 'gtlmodular.mixins.json'
+        ])
+    }
+}

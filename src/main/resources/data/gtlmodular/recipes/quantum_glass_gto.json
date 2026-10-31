@@ -1,0 +1,70 @@
+{
+  "type": "gtceu:assembler",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtlcore"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtladditions"
+    }
+  ],
+  "duration": 400,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:laminated_glass"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlcore:molecular_casing"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:trinium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtladditions:quantum_glass"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 524288
+      }
+    ]
+  }
+}

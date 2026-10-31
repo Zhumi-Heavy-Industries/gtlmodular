@@ -1,0 +1,8 @@
+# GTL·更多实用设备 —— JEI 隐藏清单：eco（neoecoae）专属材料
+#
+# 只隐藏 eco 自己添加的铁粉/钨粉/铝粉，避免与 GTCEu 的同名粉在 JEI 里重复。
+# 不影响 GTCEu 或其它模组的同名物品；物品本身仍注册、仍可被配方/指令/创造拿到。
+
+neoecoae:iron_dust
+neoecoae:tungsten_dust
+neoecoae:aluminum_dust

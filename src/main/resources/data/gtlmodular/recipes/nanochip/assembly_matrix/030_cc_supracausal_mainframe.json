@@ -1,0 +1,173 @@
+{
+  "type": "gtlmodular:nanochip_assembly_matrix",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 6000,
+  "data": {
+    "nanochip_assembly_matrix_tier": 12,
+    "circuit-calibration": "TEMPORAL"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_framebox_celestial_tungsten"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_supracausal_computer"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_capacitor_supracausal"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_diode_supracausal"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_resistor_supracausal"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_transistor_supracausal"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_inductor_supracausal"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_radox_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_draconiumawakened_double_wire"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_fabric"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_processing_unit_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_ultrashort_pulse_laser"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_nuclear_star"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_ctc_computational_unit"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_quantumchromodynamically_confined_matter_plate"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_supracausal_mainframe"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 503316480
+      }
+    ]
+  }
+}

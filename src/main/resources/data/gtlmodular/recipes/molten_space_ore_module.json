@@ -1,0 +1,145 @@
+{
+  "type": "gtceu:assembly_line",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtlcore"
+    }
+  ],
+  "duration": 4800,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "tag": "gtceu:circuits/uhv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:integrated_ore_processor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtceu:space_elevator"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtceu:tritanium_coil_block"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:fusion_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:fusion_glass"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:uhv_robot_arm"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:uhv_field_generator"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:hpca_advanced_computation_component"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 5760,
+          "value": {
+            "fluid": "gtceu:pcb_coolant"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2880,
+          "value": {
+            "fluid": "gtceu:soldering_alloy"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2880,
+          "value": {
+            "fluid": "gtceu:polyetheretherketone"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:molten_space_ore_module"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 2097152
+      }
+    ]
+  }
+}

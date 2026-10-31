@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PMP",
+    "GHG",
+    "PPP"
+  ],
+  "key": {
+    "P": {
+      "item": "gtceu:aluminium_plate"
+    },
+    "M": {
+      "item": "gtceu:mv_electric_motor"
+    },
+    "G": {
+      "item": "gtceu:tempered_glass"
+    },
+    "H": {
+      "item": "gtceu:mv_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:mv_disposable_tool_printer",
+    "count": 1
+  }
+}

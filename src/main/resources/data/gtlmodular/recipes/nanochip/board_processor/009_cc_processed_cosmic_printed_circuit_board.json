@@ -1,0 +1,43 @@
+{
+  "type": "gtlmodular:nanochip_board_processor",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 200,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_cosmic_printed_circuit_board"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_printed_circuit_board"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 31457280
+      }
+    ]
+  }
+}

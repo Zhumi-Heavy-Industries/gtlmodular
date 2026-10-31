@@ -1,0 +1,176 @@
+{
+  "type": "gtceu:assembly_line",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 400,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:naquadah_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:enriched_naquadah_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:naquadria_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtceu:vibranium_frame"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:heavy_quark_degenerate_matter_tiny_fluid_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:fullerene_polymer_matrix_pulp_tiny_fluid_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:neutronium_tiny_fluid_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:enderium_tiny_fluid_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtceu:uiv_electric_pump"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "tag": "gtceu:circuits/uev"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "tag": "gtceu:circuits/uiv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:laminated_glass"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1152,
+          "value": {
+            "fluid": "gtceu:mutated_living_solder"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1152,
+          "value": {
+            "fluid": "gtceu:super_mutated_living_solder"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:mithril"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:uruium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:quark_pipe"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 7864320
+      }
+    ]
+  }
+}

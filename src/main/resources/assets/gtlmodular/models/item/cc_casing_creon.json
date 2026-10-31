@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtlmodular:item/missing/creon_item_casing",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}

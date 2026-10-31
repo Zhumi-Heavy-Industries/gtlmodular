@@ -1,0 +1,173 @@
+{
+  "type": "gtlmodular:nanochip_assembly_matrix",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 4000,
+  "data": {
+    "nanochip_assembly_matrix_tier": 11,
+    "circuit-calibration": "COSMIC"
+  },
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_printed_circuit_board"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_cosmic_assembly"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_capacitor_cosmic"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_diode_cosmic"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_resistor_cosmic"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_transistor_cosmic"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_smd_inductor_cosmic"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_superconductor_uiv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_cosmic_ram_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_exotic_ram_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_chip_nor"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_fm_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 12,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_fullerene_polymer_matrix_pulp_foil"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_unstable_star"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_double_trinium_titanium_plate"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_cosmic_computer"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 31457280
+      }
+    ]
+  }
+}

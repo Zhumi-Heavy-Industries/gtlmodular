@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "gtlcore:ultimate_terminal"
+    },
+    {
+      "item": "gtceu:bronze_ingot"
+    },
+    {
+      "item": "gtceu:bronze_ingot"
+    },
+    {
+      "item": "gtceu:steel_ingot"
+    }
+  ],
+  "result": {
+    "item": "gtlmodular:whale_terminal",
+    "count": 1
+  }
+}

@@ -1,0 +1,35 @@
+# gradle / idea / eclipse
+.gradle/
+build/
+out/
+run/
+idea/
+*.iml
+*.ipr
+*.iws
+eclipse/
+
+# 本地依赖 jar（由 scripts/copy-libs.ps1 生成）
+libs/*.jar
+
+# 运行产物
+logs/
+crash-reports/
+screenshots/
+
+# datagen 产物（提交前确认是否保留）
+src/generated/
+
+# OS
+Thumbs.db
+.DS_Store
+# 本地备份/调试产物
+_backup_*/
+_scratch_*/
+*.bak*
+hs_err_pid*.log
+replay_pid*.log
+*.zip
+
+# 本地依赖（编译用，不提交）
+libs/

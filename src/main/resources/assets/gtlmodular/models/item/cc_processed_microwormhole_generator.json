@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "kubejs:item/microwormhole_generator",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}

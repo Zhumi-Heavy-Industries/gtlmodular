@@ -1,0 +1,7 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtceu:block/pipe/pipe_optical_in",
+    "layer1": "gtlmodular:item/cc/circuit_component_overlay"
+  }
+}

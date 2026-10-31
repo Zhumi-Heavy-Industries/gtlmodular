@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "gtlmodular:block/casings/naquadria_reinforced_water_plant_casing"
+  }
+}

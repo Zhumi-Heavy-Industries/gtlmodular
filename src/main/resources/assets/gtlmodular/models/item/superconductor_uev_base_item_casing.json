@@ -1,0 +1,6 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtlmodular:item/missing/superconductor_uev_base_item_casing"
+  }
+}

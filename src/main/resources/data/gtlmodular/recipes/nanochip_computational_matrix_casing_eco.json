@@ -1,0 +1,112 @@
+{
+  "type": "gtceu:assembly_line",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtlcore"
+    },
+    {
+      "type": "forge:mod_loaded",
+      "modid": "neoecoae"
+    }
+  ],
+  "duration": 1200,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 4,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_mesh_interface_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "neoecoae:eco_computation_cell_l9"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "kubejs:optical_soc"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:normal_optical_pipe"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:mutated_living_solder"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:lumiium"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:soldering_alloy"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2304,
+          "value": {
+            "fluid": "gtceu:helium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:nanochip_computational_matrix_casing"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 1966080
+      }
+    ]
+  }
+}

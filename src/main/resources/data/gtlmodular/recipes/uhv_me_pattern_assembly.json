@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "expatternprovider"
+    }
+  ],
+  "pattern": [
+    "HHH",
+    "HCH",
+    "HHH"
+  ],
+  "key": {
+    "H": {
+      "tag": "gtceu:circuits/uhv"
+    },
+    "C": {
+      "item": "expatternprovider:ex_pattern_provider"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:uhv_me_pattern_assembly"
+  }
+}
