@@ -52,13 +52,6 @@
             "item": "gtceu:normal_optical_pipe"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:circuit",
-          "configuration": 30
-        },
-        "chance": 0
       }
     ],
     "fluid": [
@@ -82,7 +75,7 @@
         "content": {
           "amount": 2304,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       },

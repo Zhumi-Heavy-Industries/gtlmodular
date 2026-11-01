@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 16,
           "ingredient": {
-            "item": "gtceu:super_blast_smelter"
+            "item": "gtceu:flotation_cell_regulator"
           }
         }
       },
@@ -160,7 +160,7 @@
         "content": {
           "amount": 5760,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

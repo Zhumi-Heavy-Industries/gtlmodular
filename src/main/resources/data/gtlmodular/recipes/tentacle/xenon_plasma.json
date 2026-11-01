@@ -1,0 +1,52 @@
+{
+  "type": "gtceu:fusion_reactor",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 72,
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 72,
+          "value": {
+            "fluid": "gtceu:americium"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 72,
+          "value": {
+            "fluid": "gtceu:curium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:xenon_plasma"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 30720
+      }
+    ]
+  },
+  "data": {
+    "eu_to_start": 200000000
+  }
+}

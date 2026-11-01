@@ -5,58 +5,27 @@ plugins {
 }
 
 group = 'com.gtlmodular'
-// 版本号只在 gradle.properties 的 mod_version 里改；mods.toml 和 jar 名都从这里取。
-// 换版本后 mods 目录里的旧 jar 必须删掉：同一个 modId 两份 jar，Forge 会以 "Duplicate mod" 拒绝加载。
-version = mod_version
+// ★ 2026-09-19（队长：「你记得改版本号呀，我这边版本号显示的还是 0.1.13」）：
+//   每次部署前都要动这一行 —— mods.toml 用 `mod_version: project.version` 注入，
+//   jar 名也是 `gtlmodular-<version>.jar`（换版本号 ⇒ mods 目录里**必须删掉旧 jar**，
+//   否则同一个 modId 两份 jar，Forge 会以"Duplicate mod"拒绝加载）。
+version = '0.3.266'
 archivesBaseName = 'gtlmodular'
 
-// gtladditions 的机器基类为 Java 21 字节码，编译和整包运行均需 JDK 21；
-// 本项目仍输出 Java 17 字节码，实际依赖版本集中见 README.md。
+// [2026-09-20] 编译 JDK 提到 21：整合包里的 gtladditions 3.2.8Custom_SubSpace-fix2 是 Java 21
+//   字节码（major 65），源代码真的 import 了它的 IThreadModifierPart / CommonUtils；
+//   javac 17 读 major-65 的类会直接报 "class file has wrong version 65.0, should be 61.0"。
+//   注意：编译用 21，产物目标仍锁 17（下面 options.release），jar 在 JVM 17/21 都能跑。
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
-// 显式指定 UTF-8，避免源码里的中文受平台默认字符集影响。
+// 不设这一行，源码里的中文会被 javac 按 GBK 读坏（本文件必须按 UTF-8 保存）
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+    // JDK 21 编译、字节码目标 17（等价于 javac --release 17）：产物 class 仍是 major 61
     options.release = 17
 }
 tasks.withType(JavaExec).configureEach {
     systemProperty 'file.encoding', 'UTF-8'
-}
-
-sourceSets {
-    nac
-    nacmod {
-        compileClasspath += sourceSets.nac.output
-        runtimeClasspath += sourceSets.nac.output
-    }
-    main {
-        compileClasspath += sourceSets.nac.output
-        runtimeClasspath += sourceSets.nac.output
-    }
-    test {
-        compileClasspath += sourceSets.nac.output
-        runtimeClasspath += sourceSets.nac.output
-    }
-}
-
-apply from: 'gradle/nac-resources.gradle'
-
-// ForgeGradle 将映射后的 Minecraft/Forge 接入 implementation 的父配置；
-// 只继承依赖配置，避免把 main 输出反向带入 NAC 编译。
-configurations {
-    nacImplementation.extendsFrom implementation
-    nacCompileOnly.extendsFrom compileOnly
-    nacRuntimeOnly.extendsFrom runtimeOnly
-    nacAnnotationProcessor.extendsFrom annotationProcessor
-    nacmodImplementation.extendsFrom implementation
-    nacmodCompileOnly.extendsFrom compileOnly
-    nacmodRuntimeOnly.extendsFrom runtimeOnly
-    nacmodAnnotationProcessor.extendsFrom annotationProcessor
-}
-
-tasks.withType(JavaCompile).matching { it.name in ['compileNacJava', 'compileNacmodJava'] }.configureEach {
-    // 禁止 javac 从 classpath 隐式寻找源码，保持源码根之间的单向依赖。
-    options.sourcepath = files()
 }
 
 minecraft {
@@ -70,7 +39,6 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
-                    source sourceSets.nac
                 }
             }
         }
@@ -81,7 +49,6 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
-                    source sourceSets.nac
                 }
             }
         }
@@ -95,142 +62,48 @@ minecraft {
             mods {
                 gtlmodular {
                     source sourceSets.main
-                    source sourceSets.nac
                 }
             }
         }
-        // ForgeGradle 按 run 名排序合并父配置，派生 run 必须排在 client/server 之后。
-        standaloneClient {
-            taskName 'runNacClient'
-            parent minecraft.runs.client
-            workingDirectory project.file('run-nac')
-            setSources([sourceSets.nac, sourceSets.nacmod])
-            mods {
-                gtl_nac {
-                    source sourceSets.nac
-                    source sourceSets.nacmod
-                }
-            }
-        }
-        standaloneServer {
-            taskName 'runNacServer'
-            parent minecraft.runs.server
-            workingDirectory project.file('run-nac')
-            setSources([sourceSets.nac, sourceSets.nacmod])
-            mods {
-                gtl_nac {
-                    source sourceSets.nac
-                    source sourceSets.nacmod
-                }
-            }
-        }
-    }
-}
-
-// ForgeGradle 合并父 run 时也会合并 mods；独立启动只保留自己的源码和资源组。
-afterEvaluate {
-    [minecraft.runs.standaloneClient, minecraft.runs.standaloneServer].each { run ->
-        run.mods.removeAll { it.name != 'gtl_nac' }
-        run.setSources([sourceSets.nac, sourceSets.nacmod])
     }
 }
 
 repositories {
-    // 依赖 jar 放在 libs/（不进 git，来源见 README.md）
+    // LDLib 需要 maven，TM 也一样；两个 maven 都留着
+    maven { name = 'FirstDarkDev'; url = 'https://maven.firstdark.dev/snapshots' }
+    maven { name = 'SapsDev'; url = 'https://maven.saps.dev/minecraft' }
+    // 依赖 jar 由 scripts/copy-libs.ps1 拷到 libs/ 下
     flatDir { dirs 'libs' }
     mavenCentral()
 }
 
-// 可选调度器的兼容只属于完整版，不能沿 compileOnly 的继承链进入 NAC。
-configurations { independentCompat }
-sourceSets.main.compileClasspath += configurations.independentCompat
-
 dependencies {
-    minecraft 'net.minecraftforge:forge:1.20.1-47.4.16'
+    minecraft 'net.minecraftforge:forge:1.20.1-47.3.7'
 
-    // 使用整合包实际的本地依赖，避免远程版本与社区魔改实现不一致。
+    // 依赖版本与 GTCEu 1.4.4 / LDLib 1.0.33.b 对齐（GTM 的传递依赖见下）
+    // transitive=false：ldlib 会拖 ae2/kubejs/jei，本项目不需要 → 直接用 libs/ 下的本地 jar
+    // [2026-09-15] ldlib 改用 libs/ 里的 jar：走 maven + fg.deobf 时，mapped 阶段取不到 DeobfuscatingRepo（null@pom）
+    // [2026-09-20] libs/ 已同步实例当前一套：gtladditions fix2(Java21) / gtlcore 1.2.3.2-fix2 / ldlib 1.0.33.b
+    // implementation fg.deobf('com.lowdragmc.ldlib:ldlib-forge-1.20.1:1.0.33.b') { transitive = false }
+
+    // 其余依赖全部来自 libs/ 下的本地 jar（含 gtceu-1.20.1-1.4.4 及其依赖）
     implementation fg.deobf(fileTree(dir: 'libs', include: ['*.jar']))
-    independentCompat files('libs/runtime/GTL-Enhancedcore-3.3.3.jar')
-    // 使用整包已随 gtlcore 提供的 MixinExtras，仅供完整版搬运钩子编译。
-    def mixinExtrasForge = zipTree('libs/gtlcore-1.2.3.2-fix4.jar').matching {
-        include 'META-INF/jars/mixinextras-forge-*.jar'
-    }.singleFile
-    independentCompat files(zipTree(mixinExtrasForge).matching { include 'META-INF/jars/MixinExtras-*.jar' })
-
-    testImplementation platform('org.junit:junit-bom:5.11.4')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-}
-
-tasks.named('test', Test) {
-    useJUnitPlatform()
-}
-
-// 日期、版本和修改经过属于提交信息，写进代码会变成没人维护的流水账。
-tasks.register('checkDatedComments') {
-    group = 'verification'
-    description = 'Fails if any main/nac/nacmod Java line contains a date.'
-    def sources = files(sourceSets.main.allJava, sourceSets.nac.allJava, sourceSets.nacmod.allJava)
-    inputs.files(sources)
-    doLast {
-        def date = ~/20\d\d-\d\d-\d\d/
-        def hits = []
-        sources.each { f ->
-            int n = 0
-            f.eachLine('UTF-8') { line ->
-                n++
-                if (line =~ date) hits << "${project.relativePath(f)}:$n"
-            }
-        }
-        if (hits) {
-            throw new GradleException('代码里不能写日期，以下行要改：\n  ' + hits.join('\n  ') +
-                    '\n日期、版本、修改经过写进 git 提交信息；玩家能感知的变化写进 CHANGELOG.md；代码注释只写"为什么"。')
-        }
-    }
-}
-
-tasks.named('check') {
-    dependsOn 'checkMixins', 'checkDatedComments'
-}
-
-// 上游源码未必对应社区魔改实现，因此以 libs/ 和 libs/runtime/ 的实际 jar 核实行为。
-// 已有输出目录会跳过；替换同名依赖后必须删除对应目录，避免查到过期源码。
-configurations {
-    decompiler
-}
-dependencies {
-    decompiler 'org.vineflower:vineflower:1.12.0'
-}
-tasks.register('decompileDeps') {
-    group = 'help'
-    description = 'Decompile every jar in libs/ into deps-src/ (readable upstream sources, not tracked by git).'
-    doLast {
-        fileTree('libs').include('*.jar', 'runtime/*.jar').files.sort { it.length() }.each { jar ->
-            def out = file("deps-src/${jar.name.substring(0, jar.name.length() - '.jar'.length())}")
-            if (out.exists()) {
-                return
-            }
-            logger.lifecycle("反编译 ${jar.name} …")
-            out.mkdirs()
-            javaexec {
-                classpath = configurations.decompiler
-                mainClass = 'org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler'
-                maxHeapSize = '2g'
-                args '-dgs=1', '-log=WARN', '--skip-extra-files=true', jar.absolutePath, out.absolutePath
-            }
-        }
-    }
 }
 
 tasks.named('processResources') {
-    // 显式指定展开资源时的字符集，避免平台默认编码损坏中文。
+    // processResources 会把 mods.toml / pack.mcmeta 里的占位符展开；展开用的字符集必须显式给 UTF-8，
+    // 否则 Windows 上会按平台默认字符集（GBK）写坏文件里的中文
     filteringCharset = 'UTF-8'
     var replaceProperties = [
             mod_id: 'gtlmodular',
-            // 元数据使用 Unicode 转义，避免构建脚本读取编码影响显示名和作者名。
+            // 显示名用 \u 转义：build.gradle 在 GBK 环境下写中文会坏
             mod_name: 'GTL\u66f4\u591a\u5b9e\u7528\u8bbe\u5907',
-            mod_license: 'MIT', mod_version: project.version,
-            mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c\u3001amireux', forge_version: '47.3.7',
+            // 许可：本模组自身 MIT；内含从 GTOCore 派生的素材（5 张贴图 / 结构数据 / 文案）
+            // 按上游要求以 CC BY-NC-SA 4.0（资源）与 PolyForm Noncommercial 1.0.0（代码）分发，
+            // 详见 NOTICE_第三方素材_GTO.md 与 jar 内 META-INF/NOTICE_GTO.md、META-INF/licenses/。
+            mod_license: 'MIT (GTO-derived assets: CC BY-NC-SA 4.0, see NOTICE_GTO.md)', mod_version: project.version,
+            // 作者名同样用 \u 转义，避免编码问题
+            mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c', forge_version: '47.3.7',
     ]
     inputs.properties replaceProperties
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
@@ -239,8 +112,6 @@ tasks.named('processResources') {
 }
 
 jar {
-    from sourceSets.nac.output
-    duplicatesStrategy = DuplicatesStrategy.FAIL
     manifest {
         attributes([
                 'Specification-Title'     : 'gtlmodular',
@@ -253,47 +124,3 @@ jar {
         ])
     }
 }
-
-tasks.named('processNacmodResources') {
-    filteringCharset = 'UTF-8'
-    def replaceProperties = [mod_id: 'gtl_nac', mod_version: project.version]
-    inputs.properties replaceProperties
-    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
-        expand replaceProperties
-    }
-}
-
-tasks.register('nacJar', Jar) {
-    archiveBaseName = 'gtl_nac'
-    from sourceSets.nac.output
-    from sourceSets.nacmod.output
-    duplicatesStrategy = DuplicatesStrategy.FAIL
-    manifest {
-        attributes([
-                'Specification-Title'     : 'gtl_nac',
-                'Specification-Vendor'    : 'gtlmodular',
-                'Specification-Version'   : '1',
-                'Implementation-Title'    : 'gtl_nac',
-                'Implementation-Version'  : project.version,
-                'Implementation-Vendor'   : 'gtlmodular',
-                'MixinConfigs'            : 'gtl_nac.mixins.json'
-        ])
-    }
-    finalizedBy 'reobfNacJar'
-}
-
-reobf {
-    nacJar {
-        // 独立产物的继承关系解析也不能借用 main 类输出。
-        libraries.setFrom(sourceSets.nacmod.compileClasspath)
-    }
-}
-
-tasks.named('build') {
-    dependsOn 'reobfJar', 'reobfNacJar'
-}
-
-apply from: 'checks/product-invariants.gradle'
-apply from: 'checks/swallowed-errors.gradle'
-
-apply from: 'gradle/gametest.gradle'

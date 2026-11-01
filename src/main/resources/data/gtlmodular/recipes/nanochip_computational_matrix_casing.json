@@ -42,15 +42,6 @@
             "item": "gtceu:epoxy_circuit_board"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:iv_polarizer"
-          }
-        }
       }
     ],
     "fluid": [
@@ -58,7 +49,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

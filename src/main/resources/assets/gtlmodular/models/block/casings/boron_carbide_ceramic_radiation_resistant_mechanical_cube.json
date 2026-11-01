@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "gtlmodular:block/casings/boron_carbide_ceramic_radiation_resistant_mechanical_cube"
+  }
+}

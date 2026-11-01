@@ -91,7 +91,7 @@
         "content": {
           "amount": 1440,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

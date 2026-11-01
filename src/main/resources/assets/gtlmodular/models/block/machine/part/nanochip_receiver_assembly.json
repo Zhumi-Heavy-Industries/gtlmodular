@@ -1,0 +1,70 @@
+{
+  "parent": "block/block",
+  "textures": {
+    "particle": "gtceu:block/overlay/machine/overlay_hatch",
+    "front": "gtceu:block/overlay/appeng/me_buffer_hatch",
+    "tint": "gtlmodular:block/overlay/nanochip_port_tint"
+  },
+  "elements": [
+    {
+      "from": [-0.001, -0.001, -0.002],
+      "to": [16.001, 16.001, 0],
+      "faces": {
+        "north": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#front",
+          "cullface": "north",
+          "emissivity": 15
+        }
+      }
+    },
+    {
+      "from": [0, 15, -0.003],
+      "to": [16, 16, -0.002],
+      "faces": {
+        "north": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#tint",
+          "cullface": "north",
+          "tintindex": 2
+        }
+      }
+    },
+    {
+      "from": [0, 0, -0.003],
+      "to": [16, 1, -0.002],
+      "faces": {
+        "north": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#tint",
+          "cullface": "north",
+          "tintindex": 2
+        }
+      }
+    },
+    {
+      "from": [0, 1, -0.003],
+      "to": [1, 15, -0.002],
+      "faces": {
+        "north": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#tint",
+          "cullface": "north",
+          "tintindex": 2
+        }
+      }
+    },
+    {
+      "from": [15, 1, -0.003],
+      "to": [16, 15, -0.002],
+      "faces": {
+        "north": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#tint",
+          "cullface": "north",
+          "tintindex": 2
+        }
+      }
+    }
+  ]
+}

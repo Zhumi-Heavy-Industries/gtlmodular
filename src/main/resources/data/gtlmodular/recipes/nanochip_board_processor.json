@@ -52,15 +52,6 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtlmodular:nanochip_core_board_processor"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
             "item": "gtceu:advanced_smd_capacitor"
@@ -82,7 +73,7 @@
         "content": {
           "amount": 2880,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       },

@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtceu:naquadah_alloy_plate"
+            "item": "gtceu:tungsten_steel_plate"
           }
         }
       },
@@ -26,15 +26,6 @@
             "item": "gtceu:advanced_smd_capacitor"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:iv_electrolyzer"
-          }
-        }
       }
     ],
     "fluid": [
@@ -42,7 +33,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

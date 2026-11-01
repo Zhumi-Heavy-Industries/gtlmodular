@@ -17,13 +17,6 @@
             "item": "gtceu:naquadria_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:circuit",
-          "configuration": 32
-        },
-        "chance": 0
       }
     ],
     "fluid": [
@@ -31,7 +24,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

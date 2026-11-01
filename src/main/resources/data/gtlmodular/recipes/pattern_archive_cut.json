@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtceu:dense_tungsten_steel_plate"
+            "item": "gtceu:tungsten_steel_plate"
           }
         }
       },
@@ -48,15 +48,6 @@
             "tag": "gtceu:circuits/hv"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:iv_forge_hammer"
-          }
-        }
       }
     ],
     "fluid": [
@@ -64,7 +55,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

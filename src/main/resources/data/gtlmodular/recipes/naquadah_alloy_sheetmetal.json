@@ -17,15 +17,6 @@
             "item": "gtceu:naquadah_alloy_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:iv_alloy_smelter"
-          }
-        }
       }
     ],
     "fluid": [
@@ -33,7 +24,7 @@
         "content": {
           "amount": 144,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       }

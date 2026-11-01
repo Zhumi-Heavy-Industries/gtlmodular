@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "tag": "gtceu:circuits/uxv"
+            "tag": "gtceu:circuits/uhv"
           }
         }
       },
@@ -52,15 +52,6 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtlmodular:nanochip_core_supracausal_organizer"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
             "item": "gtceu:assembly_line_casing"
@@ -73,7 +64,7 @@
         "content": {
           "amount": 1440,
           "value": {
-            "fluid": "gtceu:indalloy_140"
+            "fluid": "gtceu:soldering_alloy"
           }
         }
       },
@@ -103,7 +94,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 134217728
+        "content": 524288
       }
     ]
   }

@@ -1,0 +1,52 @@
+{
+  "type": "gtceu:fusion_reactor",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 640,
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 288,
+          "value": {
+            "fluid": "gtceu:glass"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:xenon_plasma"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 288,
+          "value": {
+            "fluid": "gtceu:chromatic_glass_plasma"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 122880
+      }
+    ]
+  },
+  "data": {
+    "eu_to_start": 2000000000
+  }
+}
