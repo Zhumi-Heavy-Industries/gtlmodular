@@ -321,7 +321,7 @@ public final class WhaleTerminalReportScreen extends Screen {
         }
         if (report.omitted() > 0) {
             graphics.drawString(font, tr("report.omitted", report.omitted()),
-                    left + 16, listBottom - 12, EcoStyle.TEXT_DIM, false);
+                    left + 16, listBottom + 2, EcoStyle.TEXT_DIM, false);
         }
     }
 

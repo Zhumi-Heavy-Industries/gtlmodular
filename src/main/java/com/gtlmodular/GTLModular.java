@@ -36,6 +36,12 @@ public final class GTLModular {
                 ConfigScreenHandler.ConfigScreenFactory.class,
                 () -> new ConfigScreenHandler.ConfigScreenFactory(GTLModularConfigScreen::create)));
 
+        // ★ 2026-10-31：恒星炎炀锻炉「漩涡特效」（GTO StellarForgeVortexFX 的移植）——纯客户端接线：
+        //   shader 注册 + RenderLevelStage / ClientTick / LevelUnload 三个 game 事件。渲染器挂载在
+        //   StellarForgeDefinitionSetup（FMLLoadComplete，机器已注册）里做。
+        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
+                com.gtlmodular.client.renderer.stellar.StellarForgeFxClient.init());
+
         // 本模组 Registrate 的注册事件挂到 mod 总线（deferred 条目在 RegisterEvent 时落库），
         // 同时订阅 GTM 的机器注册窗口（GTCEuAPI.RegisterEvent<RL, MachineDefinition>）。
         GTLModularMachines.registerEventListeners(modBus);
@@ -88,6 +94,11 @@ public final class GTLModular {
         //   "Registering addon Materials" 之后是 `ModLoader.postEvent(new MaterialEvent())`，
         //   根本不调用 IGTAddon.registerMaterials()（javap -c 实测；本包 gtlcore 也是这么接的）。
         modBus.addListener(com.gtlmodular.common.data.GTLModularAddon::onMaterialEvent);
+
+        // ★ 2026-10-31：恒星炎炀锻炉「换机 + 换描述」—— 在 FMLLoadComplete（机器注册已结束、世界未加载）里
+        //   把 gtceu:stellar_forge 的机器工厂换成 StellarForgeMachine（GTO 连续运行/等级/掉电爆炸），
+        //   并把 GTO 原版机器描述追加到 tooltip。
+        modBus.addListener(com.gtlmodular.common.data.stellar.StellarForgeDefinitionSetup::onLoadComplete);
         com.gtlmodular.common.data.GTLModularAddon.registrate =
                 com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate.create(MOD_ID);
 

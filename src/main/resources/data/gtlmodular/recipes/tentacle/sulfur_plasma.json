@@ -1,0 +1,52 @@
+{
+  "type": "gtceu:fusion_reactor",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 120,
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:aluminium"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:lithium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:sulfur_plasma"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 10240
+      }
+    ]
+  },
+  "data": {
+    "eu_to_start": 240000000
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "type": "gtceu:plasma_condenser",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 600,
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:chromatic_glass_plasma"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 100000,
+          "value": {
+            "fluid": "gtceu:liquid_helium"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:chromatic_glass"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 100000,
+          "value": {
+            "fluid": "gtceu:helium"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 1966080
+      }
+    ]
+  }
+}

@@ -215,8 +215,16 @@ public final class NanochipMissingMaterials {
         // BoltChromaticGlass(1904) → bolt
         //   NH 侧是 GT++ MaterialsElements$STANDALONE.CHRONOMATIC_GLASS（不在 GT5U MaterialsInit 里）；
         //   色值 0x9397A1 取自 NH processedboltchromaticglass.png 的高亮区均色（推断，见类注释）。
+        // ★ 2026-10-31（奈亚拉托提普之触）：补 GENERATE_PLATE + 流体 + 等离子体 ——
+        //   彩色玻璃板走 GTO 的三步链：
+        //     核聚变反应堆：288mB 玻璃 + 144mB 氩等离子体 → 288mB 彩色玻璃等离子体
+        //     真空冷冻（替代 GTO 的等离子冷凝）：1B 彩色玻璃等离子体 + 100B 液态氦 → 1B 液态彩色玻璃 + 100B 氦
+        //     流体固化器：144mB 液态彩色玻璃 + 模具（板）→ 1× 彩色玻璃板
+        //   前两步的配方在 kubejs/server_scripts/gtlmodular_tentacle_research.js（本工程不发 runData）。
         newMaterial("chromatic_glass", 0x9397A1, MaterialIconSet.METALLIC)
-                .flags(MaterialFlags.GENERATE_BOLT_SCREW)
+                .flags(MaterialFlags.GENERATE_BOLT_SCREW, MaterialFlags.GENERATE_PLATE)
+                .fluid()
+                .plasma()
                 .buildAndRegister();
 
         // ScrewSixPhasedCopper(1909) → screw
@@ -252,6 +260,31 @@ public final class NanochipMissingMaterials {
         new Material.Builder(GTCEu.id("super_coolant"))
                 .color(0x4FC3F7)
                 .secondaryColor(lighten(0x4FC3F7, 0.55F))
+                .iconSet(MaterialIconSet.FLUID)
+                .fluid()
+                .buildAndRegister();
+
+        // ★ 2026-10-31（奈亚拉托提普之触 / 彩色玻璃板链）：补「氙等离子体」`gtceu:xenon_plasma`。
+        //   取证：GTCEu 1.4.4 的 Xenon 材料只有 `.gas()`（ElementMaterials 字节码偏移 7612）⇒ 没有等离子体形态；
+        //   而 GTO 的彩色玻璃等离子体配方要「液态玻璃 + 氙等离子体」，氙等离子体本身又来自
+        //   核聚变「液态镅 72mB + 液态锔 72mB → 氙等离子体 144mB」（GTO 截图：30,720 EU/t / 72t / 启动 200MEU MKII）。
+        //   ⇒ 本模组注册这一味**纯流体材料**（与 super_coolant / dimensionally_offset_superfluid 同款做法），
+        //     注册进 gtceu 命名空间，流体 id 与 GTO 逐字一致：`gtceu:xenon_plasma`。
+        new Material.Builder(GTCEu.id("xenon_plasma"))
+                .color(0x9FE7E7)
+                .secondaryColor(lighten(0x9FE7E7, 0.55F))
+                .iconSet(MaterialIconSet.FLUID)
+                .fluid()
+                .buildAndRegister();
+
+        // ★ 2026-10-31（奈亚拉托提普之触 / 电子渗透玻璃链）：补「硫等离子体」`gtceu:sulfur_plasma`。
+        //   GTCEu 1.4.4 的 Sulfur 材料没有等离子体形态；而 GTO 的电子渗透安普洛涂层玻璃配方要
+        //   288mB 硫等离子体，GTO 的硫等离子体来自核聚变「液态铝 144mB + 液态锂 144mB → 硫等离子体 144mB」
+        //   （GTO Fusion.class 偏移 63–121：EUt 10,240 / 120t / 启动 240MEU）。
+        //   ⇒ 与 xenon_plasma 同款：注册纯流体材料，注册进 gtceu 命名空间，流体 id 与 GTO 一致。
+        new Material.Builder(GTCEu.id("sulfur_plasma"))
+                .color(0xF2E36B)
+                .secondaryColor(lighten(0xF2E36B, 0.55F))
                 .iconSet(MaterialIconSet.FLUID)
                 .fluid()
                 .buildAndRegister();

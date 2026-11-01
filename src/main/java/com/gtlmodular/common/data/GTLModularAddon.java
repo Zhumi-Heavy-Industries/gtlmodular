@@ -374,6 +374,12 @@ public class GTLModularAddon implements IGTAddon {
         //   `<材料>_single_wire`）、chromatic_glass / six_phased_copper / universium / hexanite
         //   （只给配方要的最小形态：bolt / screw / plate）。数值与依据见该类注释。
         com.gtlmodular.common.data.nanochip.NanochipMissingMaterials.registerMissingMaterials();
+
+        // ★ 2026-10-31：恒星炎炀锻炉（GTO 结构）材料链 —— 本包缺 5 味材料
+        //   （babbitt_alloy / depleted_uranium_alloy / trinaquadalloy / boron_carbide_ceramics /
+        //   magnesium_oxide_ceramic）。同样必须在 MaterialEvent 窗口里注册，否则 GTCEu 不会为它们
+        //   生成 dust / ingot / plate / frame 等形态物品（结构里要用的 frame 就出自这里）。
+        com.gtlmodular.common.data.stellar.StellarForgeMaterials.register();
     }
 
     /**

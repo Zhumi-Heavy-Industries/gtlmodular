@@ -113,7 +113,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:laminated_glass"
+            "item": "gtceu:chromatic_glass_plate"
           }
         }
       }

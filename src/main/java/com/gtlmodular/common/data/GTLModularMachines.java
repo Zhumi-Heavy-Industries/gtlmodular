@@ -218,6 +218,9 @@ public final class GTLModularMachines {
         // 电子渗透安普洛涂层玻璃 / 夸克管道）。★ 必须在这里（RegisterEvent<Block> 之前）建条目，
         // 不能等到机器注册窗口。
         com.gtlmodular.common.data.tentacle.TentacleBlocks.init();
+        // ★ 2026-10-31：GTO 恒星炎炀锻炉（gtceu:stellar_forge 换壳）结构里我方缺的 6 件机壳
+        //   （辐射吸收 / 碳化硼陶瓷 / 氧化镁陶瓷 / 磁力 / 等离子加热 / 中子稳定）—— 时序要求同上。
+        com.gtlmodular.common.data.stellar.StellarForgeBlocks.init();
         // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
         // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
         // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。
@@ -229,6 +232,9 @@ public final class GTLModularMachines {
         //   （量子/阿米/仄米/幺米/普朗克功率IC晶圆）—— 时序要求同上，且必须与缺件物品层同一个窗口。
         //   独立成类的原因见 NanochipMissingWafers 的 javadoc（缺件表 14 行/10 件被两处体检钉死）。
         com.gtlmodular.common.data.nanochip.NanochipMissingWafers.init();
+        // ★ 2026-10-31：恒星炎炀锻炉材料链的 8 件陶瓷中间品（粗坯/块/砖/薄片 × 碳化硼、氧化镁）——
+        //   时序要求同上（必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目）。
+        com.gtlmodular.common.data.stellar.StellarForgeCeramicItems.init();
         // ★ P2：样板仓「归档」工具物品（gtlmodular:pattern_archive）—— 时序要求同上：
         //   必须在 Forge 的 RegisterEvent<Item> **之前**建好 Registrate 条目，否则它永远进不了物品注册表。
         com.gtlmodular.common.item.PatternArchiveItem.register();

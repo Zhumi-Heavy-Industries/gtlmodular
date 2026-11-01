@@ -6,6 +6,7 @@
     "mixins": [
         "enhancedcore.SuperBufferChineseNamesMixin",
         "eco.EcoCpuNameMixin",
+        "gtceu.StellarForgePatternMixin",
         "order.TerminalTempPatternMixin",
         "order.TerminalOrderCpuMixin"
     ],

@@ -6,7 +6,7 @@
       "modid": "gtceu"
     }
   ],
-  "duration": 100,
+  "duration": 200,
   "inputs": {
     "item": [
       {
@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:fusion_glass"
+            "item": "gtceu:hsla_steel_frame"
           }
         }
       },
@@ -23,17 +23,16 @@
           "type": "gtceu:sized",
           "count": 2,
           "ingredient": {
-            "item": "gtceu:double_neutronium_plate"
+            "item": "gtceu:tungsten_carbide_plate"
           }
         }
-      }
-    ],
-    "fluid": [
+      },
       {
         "content": {
-          "amount": 288,
-          "value": {
-            "fluid": "gtceu:argon_plasma"
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtlmodular:magnesium_oxide_ceramic_flake"
           }
         }
       }
@@ -46,7 +45,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:electron_permeable_amprosium_coated_glass"
+            "item": "gtlmodular:magnesium_oxide_ceramic_high_temperature_insulation_mechanical_block"
           }
         }
       }
@@ -55,7 +54,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 122880
+        "content": 30
       }
     ]
   }

@@ -65,6 +65,16 @@ public final class TentacleBlocks {
     public static final BlockEntry<NanochipComplexGlassBlock> ELECTRON_PERMEABLE_AMPROSIUM_COATED_GLASS =
             glass("electron_permeable_amprosium_coated_glass");
 
+    /**
+     * 安普洛强化硼玻璃（GTO {@code amprosium_borosilicate_glass}，贴图
+     * {@code gtocore:block/casings/neutronium_borosilicate_glass}）—— 电子渗透涂层玻璃的<b>前体</b>。
+     *
+     * <p>GTO 原链：{@code 硼硅玻璃块 + 1152mB 液态中子素 →（流体固化）本方块 →
+     * +288mB 硫等离子体 →（PVD）电子渗透安普洛涂层玻璃}。前体不在奈亚结构里，但它是 S 方的必经中间体。
+     */
+    public static final BlockEntry<NanochipComplexGlassBlock> AMPROSIUM_BOROSILICATE_GLASS =
+            glass("amprosium_borosilicate_glass");
+
     /** 夸克管道（GTO {@code quark_pipe}）—— 结构符号 {@code ]}，10 帧动画（{@code frametime: 2}）。 */
     public static final BlockEntry<Block> QUARK_PIPE =
             casing("quark_pipe");

@@ -27,8 +27,8 @@ import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
  *       表间切换走 GTCEu 原生的 {@code getActiveRecipeType()/setActiveRecipeType(int)}。</li>
  *   <li><b>并行只看线圈温度</b>（GTO 的 {@code coilParallel}）：GTO 的文案是
  *       「线圈温度每高出 900K，并行 ×2」，基准取第一档线圈 1800K ⇒
- *       {@code 并行 = 2^((温度-1800)/900)}，封顶 {@link #MAX_PARALLEL}。
- *       本机 {@link #usesParallelHatch()} 返回 {@code false} ⇒ 结构里即使放并行仓也不乘。</li>
+ *       {@code 并行 = 2^((温度-1800)/900)}，**再乘结构里并行仓的并行数**，
+ *       乘积钳到 int 上限 21 亿（{@link #MAX_PARALLEL}）。</li>
  *   <li><b>多条配方并发</b>：走本模组独立线程引擎 {@link ThreadedRecipeLogic}，
  *       {@link #THREADS} 条线程同时推进不同配方（GTO 的 {@code multipleRecipes}）。</li>
  *   <li><b>激光 / 光学</b>：结构里开放 {@code INPUT_LASER}（激光仓）与
@@ -53,8 +53,8 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
     /** 每高出 900K，并行 ×2（GTO 文案原文：「线圈温度每高出 900K，并行 x2」）。 */
     public static final int TEMPERATURE_STEP = 900;
 
-    /** 并行封顶（防止高登记线圈把 int 乘爆）。 */
-    public static final int MAX_PARALLEL = 4096;
+    /** 并行封顶：int 上限 2,147,483,647（21 亿）。线圈倍率与并行仓的乘积累加后由引擎钳到 int 上限。 */
+    public static final int MAX_PARALLEL = Integer.MAX_VALUE;
 
     /**
      * GTCEu 1.4.4 的 {@code CoilWorkableElectricMultiblockMachine} 只有
@@ -75,10 +75,15 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
         return THREADS;
     }
 
-    /** 只看线圈温度，不乘结构里的并行仓。 */
+    /**
+     * 线圈并行 <b>× 结构里并行仓的并行数</b>（2026-10-31 队长口径：「让它会 × 结构内的并行仓」）。
+     *
+     * <p>乘积由 {@code ThreadedRecipeLogic} 用 long 乘完再钳到 {@link Integer#MAX_VALUE}（21 亿），
+     * 不会乘爆成负数；实际并行数仍由 {@code accurateParallel} 按原料量算，这里只是上限。
+     */
     @Override
     public boolean usesParallelHatch() {
-        return false;
+        return true;
     }
 
     /**

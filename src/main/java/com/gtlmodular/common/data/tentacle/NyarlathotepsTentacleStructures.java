@@ -2559,7 +2559,8 @@ final class NyarlathotepsTentacleStructures {
                 .or(Predicates.abilities(PartAbility.INPUT_ENERGY).setMaxGlobalLimited(8, 2))
                 .or(Predicates.abilities(PartAbility.INPUT_LASER).setMaxGlobalLimited(4, 1))
                 .or(Predicates.abilities(PartAbility.OPTICAL_DATA_RECEPTION).setExactLimit(1))
-                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1));
+                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))
+                .or(Predicates.abilities(PartAbility.PARALLEL_HATCH));   // ★ 2026-10-31：吃结构内的并行仓
 
         return pattern
                 .where('A', molecularCasing)
