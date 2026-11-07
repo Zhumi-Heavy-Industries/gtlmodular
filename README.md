@@ -44,6 +44,11 @@ GTNH 2.9.0 同名多方块的移植版：一台巨型主机 + 14 种外围模块
 > LGPL 明确允许第三方代码链接 / 继承它们，本模组因此可以保持自己的 MIT 许可。
 > 我们**没有** `jarJar` 打包（一直是 SKIPPED）、也没有复制它们的源码；
 > 机器结构、材质与配方表的版权归各自作者所有（见 `mods.toml` 的 `credits` 段）。
+>
+> **GTNH 派生素材（单独许可）**：从 GTNH 2.9.0 NAC 搬入的模块文本/机制按 **LGPL-3.0-or-later**；
+> NAC 配方数值来自 NewHorizonsCoreMod，按 **GPL-3.0**。见 `NOTICE_第三方素材_GT5U.md`
+> + `licenses/LGPL-3.0.txt` + `licenses/GPL-3.0.txt`；jar 内对应 `META-INF/NOTICE_GT5U.md` 与
+> `META-INF/licenses/{LGPL-3.0,GPL-3.0}.txt`。**再分发时必须原样附带这些文件。**
 
 ---
 
