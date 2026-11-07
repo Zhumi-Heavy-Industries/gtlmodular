@@ -101,7 +101,7 @@ tasks.named('processResources') {
             // 许可：本模组自身 MIT；内含从 GTOCore 派生的素材（5 张贴图 / 结构数据 / 文案）
             // 按上游要求以 CC BY-NC-SA 4.0（资源）与 PolyForm Noncommercial 1.0.0（代码）分发，
             // 详见 NOTICE_第三方素材_GTO.md 与 jar 内 META-INF/NOTICE_GTO.md、META-INF/licenses/。
-            mod_license: 'MIT (GTO-derived assets: CC BY-NC-SA 4.0, see NOTICE_GTO.md)', mod_version: project.version,
+            mod_license: 'MIT (GTO-derived assets: CC BY-NC-SA 4.0; GTNH-derived text/data: LGPL-3.0-or-later; NAC recipe values: GPL-3.0; see NOTICE_GTO.md / NOTICE_GT5U.md)', mod_version: project.version,
             // 作者名同样用 \u 转义，避免编码问题
             mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c', forge_version: '47.3.7',
     ]
