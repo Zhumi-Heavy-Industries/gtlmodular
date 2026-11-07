@@ -87,6 +87,28 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
     /** 单位模型视图矩阵（顶点已是「世界坐标 - 相机坐标」，所以模型视图必须是单位阵）。 */
     private static final Matrix4f IDENTITY = new Matrix4f();
 
+    /** 本帧 RenderLevelStageEvent 给的投影矩阵（AFTER_LEVEL 时 RenderSystem 里的可能已被重置）。 */
+    private static Matrix4f frameProjection;
+
+    /** 由 {@code StellarFxManager.dispatch} 每帧设置一次。 */
+    public static void setFrameProjection(Matrix4f projection) {
+        frameProjection = projection == null ? null : new Matrix4f(projection);
+    }
+
+    /**
+     * 帧相机变换（在 {@code AFTER_CUTOUT_BLOCKS} 抓下来的 PoseStack 矩阵 + 相机世界坐标）。
+     * <p>★ AFTER_LEVEL 时 {@code camera.rotation()} 可能已被重置成单位矩阵 ⇒ 特效会「钉在屏幕上跟着视角」，
+     * 所以必须在世界渲染阶段先把它抓下来。
+     */
+    private static Matrix4f frameCameraMatrix;
+    private static Vec3 frameCameraPos;
+
+    /** 由 {@code StellarFxManager.dispatch} 在 {@code AFTER_CUTOUT_BLOCKS} 每帧设置一次。 */
+    public static void setFrameCamera(Matrix4f poseMatrix, Vec3 cameraPos) {
+        frameCameraMatrix = poseMatrix == null ? null : new Matrix4f(poseMatrix);
+        frameCameraPos = cameraPos;
+    }
+
     /** 复用的动态顶点缓冲（一帧一次 upload + 一次 draw）。 */
     private static VertexBuffer batchBuffer;
 
@@ -138,8 +160,9 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
             return true;
         }
         MetaMachine machine = machineBlockEntity.getMetaMachine();
+        // 2026-11-06: also discard while the machine is not running -- effect only shows while working.
         // GTO 此处是 `!(machine instanceof StellarForgeMachine) || !machine.isFormed()`
-        return !isStellarForge(machine) || !isFormed(machine);
+        return !isStellarForge(machine) || !isFormed(machine) || !isRunning(machine);
     }
 
     /** 清空批队列（每帧 {@code AFTER_CUTOUT_BLOCKS} 起点）。 */
@@ -192,7 +215,8 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
             batchBuffer.bind();
             batchBuffer.upload(bufferBuilder.end());
-            batchBuffer.drawWithShader(IDENTITY, RenderSystem.getProjectionMatrix(), shader);
+            Matrix4f projection = frameProjection != null ? frameProjection : RenderSystem.getProjectionMatrix();
+        batchBuffer.drawWithShader(IDENTITY, projection, shader);
         } finally {
             VertexBuffer.unbind();
             RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, 1.0F);
@@ -207,7 +231,7 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
     @Override
     public void render(RenderLevelStageEvent.Stage stage, LevelRenderer levelRenderer, PoseStack poseStack,
                        Matrix4f projectionMatrix, float partialTick, Camera camera, Frustum frustum) {
-        if (stage != RenderLevelStageEvent.Stage.AFTER_CUTOUT_BLOCKS || this.center == null || this.facing == null) {
+        if (stage != RenderLevelStageEvent.Stage.AFTER_LEVEL || this.center == null || this.facing == null) {
             return;
         }
         if (this.disappearRadius <= MIN_VISIBLE_RADIUS) {
@@ -222,9 +246,16 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
                 this.center.z + (double) this.disappearRadius))) {
             return;
         }
+        // ★ 2026-11-02：舞台在 AFTER_LEVEL（Iris 合成之后），但 AFTER_LEVEL 的
+        //   camera.rotation() / 事件 PoseStack 都可能已被重置 ⇒ 用 AFTER_CUTOUT_BLOCKS 抓下来的
+        //   帧相机矩阵 + 相机坐标；没有时退回 camera.rotation()。
         PoseStack worldStack = new PoseStack();
-        worldStack.mulPoseMatrix(poseStack.last().pose());
-        Vec3 cameraPos = camera.getPosition();
+        if (frameCameraMatrix != null) {
+            worldStack.mulPoseMatrix(frameCameraMatrix);
+        } else {
+            worldStack.mulPose(camera.rotation());
+        }
+        Vec3 cameraPos = frameCameraPos != null ? frameCameraPos : camera.getPosition();
         worldStack.translate(
                 this.center.x - cameraPos.x,
                 this.center.y - cameraPos.y,
@@ -279,6 +310,15 @@ public class StellarForgeVortexFX extends AbstractStellarFx {
     private static boolean isFormed(MetaMachine machine) {
         return machine instanceof MultiblockControllerMachine controller && controller.isFormed();
     }
+
+    /** Whether the machine is currently running a recipe ({@link RecipeLogic#isWorking()}). */
+    private static boolean isRunning(MetaMachine machine) {
+        if (!(machine instanceof com.gtlmodular.common.machine.stellar.StellarForgeMachine forge)) {
+            return false;
+        }
+        return forge.getRecipeLogic() != null && forge.getRecipeLogic().isWorking();
+    }
+
 
     /** 去重键：同一维度 + 同一机器方块坐标 ⇒ 同一个漩涡。 */
     public record Key(ResourceKey<Level> dimension, BlockPos machinePos) {

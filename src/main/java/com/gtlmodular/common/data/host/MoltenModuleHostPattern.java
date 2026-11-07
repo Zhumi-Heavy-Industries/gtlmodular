@@ -149,6 +149,28 @@ public final class MoltenModuleHostPattern {
                 .addTooltips(Component.translatable("gtceu.multiblock.pattern.error.coils"));
     }
 
+    /**
+     * ★ 2026-11-04 队长口径：奈亚的线圈位「只能一种线圈，混搭不成形」（按原版语义）。
+     * 与 {@link #modularHeatingCoils()} 的区别：这里**不允许混放**——首个线圈格把类型写进
+     * 判定上下文 {@code CoilType}，之后任何一格类型不同 ⇒ 直接返回 false ⇒ 结构不成形。
+     */
+    public static TraceabilityPredicate singleTypeHeatingCoils() {
+        return new TraceabilityPredicate((MultiblockState state) -> {
+            ICoilType coil = coilOf(state.getBlockState());
+            if (coil == null) {
+                return false;
+            }
+            var ctx = state.getMatchContext();
+            ICoilType prev = ctx.get("CoilType");
+            if (prev == null) {
+                ctx.set("CoilType", coil);
+                return true;
+            }
+            return prev == coil;   // GTCEuAPI.HEATING_COILS 的键就是同一实例 ⇒ 身份比较即可
+        }, MoltenModuleHostPattern::coilPreview)
+                .addTooltips(Component.translatable("gtceu.multiblock.pattern.error.coils"));
+    }
+
     /** 结构预览用的候选方块（JEI/投影里显示所有加热线圈）。 */
     private static BlockInfo[] coilPreview() {
         return GTCEuAPI.HEATING_COILS.values().stream()

@@ -87,6 +87,15 @@ public final class GTLModularJeiPlugin implements IModPlugin {
     /** eco 专属隐藏清单：只隐藏 neoecoae 自己添加的铁粉/钨粉/铝粉，不碰 GTCEu 同名粉。 */
     private static final String ECO_LIST_RESOURCE = "/assets/gtlmodular/jei/hidden_eco_materials.txt";
 
+    /** 本包用不到、始终从 JEI 隐藏的机器（注册和旧存档保留）。 */
+    private static final List<String> ALWAYS_HIDDEN_MODULES = List.of(
+            "gtlmodular:nanochip_splitter",
+            "gtlmodular:nanochip_vacuum_input_hatch",
+            "gtlmodular:nanochip_vacuum_output_hatch",
+            "gtlmodular:nanochip_vacuum_pipe",
+            "gtlmodular:nanochip_receiver_assembly",
+            "gtlmodular:nanochip_sender_assembly");
+
     /**
      * ★ 2026-10-14（代理剪断）：<b>「把电路组装机那批配方手工灌进主机 JEI 分类」这个钩子的开关，现为 {@code false} = 停用</b>。
      *
@@ -218,6 +227,7 @@ public final class GTLModularJeiPlugin implements IModPlugin {
         }
         apply(rt, GTLModularConfig.isHideOrphanItemsEnabled());
         apply(rt, true, loadEcoIds(), "eco 材料");
+        apply(rt, true, ALWAYS_HIDDEN_MODULES, "隐藏模块");
     }
 
     /** 隐藏清单（只读；供体检/日志用）。 */

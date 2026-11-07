@@ -426,7 +426,7 @@ public final class NanochipThreadedRecipeLogic extends com.gtladd.gtladditions.a
     private static final int CANDIDATE_DIAG_INTERVAL = 100;
 
     /** 见 {@link #CANDIDATE_DIAG_INTERVAL}。 */
-    private static final int CANDIDATE_DIAG_BUDGET = 12;
+    private static final int CANDIDATE_DIAG_BUDGET = 0;
 
     /**
      * ★ 2026-11-01【输入侧接线 · 修复】「把样板仓内部槽 → 机器能力」那条接线<b>重新建一次</b>的最小间隔（tick）。

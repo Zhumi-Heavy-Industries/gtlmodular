@@ -192,11 +192,18 @@ public final class DisposableToolPrintMachines {
     // ------------------------------------------------------------------ 公共
 
     /**
-     * 机壳格：钛稳定机壳 + 配方 IO 能力 + 维护仓/并行仓（并行仓最多 1 个）。
+     * 机壳格：钛稳定机壳 + 配方 IO 能力 + 维护仓/并行仓（并行仓最多 1 个）+ 线程仓（最多 1 个）。
+     *
+     * <p>★ 2026-11-05：线程仓是本模组的自定义 {@code PartAbility}，{@code autoAbilities} 不会带它，
+     * 所以这里显式补一条；装仓后引擎线程数 = 仓的当前设定值（见
+     * {@link DisposableToolPrinterMultiblockMachine#baseThreads()}）。
      */
     private static TraceabilityPredicate casing(MultiblockMachineDefinition definition) {
         return Predicates.blocks(GTBlocks.CASING_TITANIUM_STABLE.get())
                 .or(Predicates.autoAbilities(definition.getRecipeTypes()))
-                .or(Predicates.autoAbilities(true, false, true));
+                .or(Predicates.autoAbilities(true, false, true))
+                .or(Predicates.abilities(
+                        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                        .setMaxGlobalLimited(1));
     }
 }

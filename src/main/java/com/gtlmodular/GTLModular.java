@@ -42,6 +42,12 @@ public final class GTLModular {
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
                 com.gtlmodular.client.renderer.stellar.StellarForgeFxClient.init());
 
+        // ★ 2026-11-02（0.3.328）：奈亚拉托提普之触「正中心黑日」——纯客户端接线：
+        //   自己扫控制器 + RenderLevelStage.AFTER_BLOCK_ENTITIES 直接画；无自定义 shader，
+        //   不替换机器外观渲染器。上一版的五层不稳定特效与五个面相已全部移除。
+        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
+                com.gtlmodular.client.renderer.nyarlathotep.BlackSunClient.init());
+
         // 本模组 Registrate 的注册事件挂到 mod 总线（deferred 条目在 RegisterEvent 时落库），
         // 同时订阅 GTM 的机器注册窗口（GTCEuAPI.RegisterEvent<RL, MachineDefinition>）。
         GTLModularMachines.registerEventListeners(modBus);
@@ -105,6 +111,12 @@ public final class GTLModular {
         // NAC 自检：进世界自动跑一次写日志 + /gtlmodular_nac 随时重跑
         // （用来验证「注册表里真的有 / 数据包真的加载了 / 引用的流体真的存在」这类只有跑起来才知道的事）
         com.gtlmodular.common.command.GTLModularCommands.register();
+
+        // ★ 2026-11-01：奈亚拉托提普之触里「JSON 表达不了」的两族配方（提取机 + 任意生物蛋、
+        //   装配线夸克管道 + 研究门）改成**模组本体运行期注入**，不再依赖 KubeJS 脚本：
+        //   照 print 包 / SpaceOreRecipeMirror 的老套路，挂 Forge 事件总线的 ServerStartedEvent，
+        //   在配方管理器就绪后同时写 lookup（机器用）与 RecipeManager.byType（JEI 用）。
+        com.gtlmodular.common.data.tentacle.TentacleRecipes.register();
 
         // ★ 2026-09-27：GTL-Enhancedcore 兼容 mixin 的**条件注册**（见 registerEnhancedcoreMixins）。
         // [2026-10-01 停用：反射+ignoreRequired 方案不采用，见 _enhcore/实施.md] registerEnhancedcoreMixins();

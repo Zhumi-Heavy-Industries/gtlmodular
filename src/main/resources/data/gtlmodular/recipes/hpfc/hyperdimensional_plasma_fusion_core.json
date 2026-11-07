@@ -6,87 +6,15 @@
       "modid": "gtceu"
     }
   ],
-  "duration": 400,
+  "duration": 4000,
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "item": "gtceu:naquadah_frame"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "item": "gtceu:enriched_naquadah_frame"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "item": "gtceu:naquadria_frame"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "item": "gtceu:vibranium_frame"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
           "count": 16,
           "ingredient": {
-            "item": "gtceu:heavy_quark_degenerate_matter_tiny_fluid_pipe"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 16,
-          "ingredient": {
-            "item": "gtceu:fullerene_polymer_matrix_pulp_tiny_fluid_pipe"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 16,
-          "ingredient": {
-            "item": "gtceu:neutronium_tiny_fluid_pipe"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 16,
-          "ingredient": {
-            "item": "gtceu:enderium_tiny_fluid_pipe"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtceu:uiv_electric_pump"
+            "item": "gtceu:black_titanium_frame"
           }
         }
       },
@@ -95,7 +23,16 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "tag": "gtceu:circuits/uev"
+            "item": "kubejs:dimensional_bridge_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:super_blast_smelter"
           }
         }
       },
@@ -103,6 +40,24 @@
         "content": {
           "type": "gtceu:sized",
           "count": 4,
+          "ingredient": {
+            "item": "gtceu:uiv_energy_input_hatch"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:echoite_hex_wire"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
           "ingredient": {
             "tag": "gtceu:circuits/uiv"
           }
@@ -111,9 +66,90 @@
       {
         "content": {
           "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:zpm_quantum_chest"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:zpm_quantum_tank"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:uiv_field_generator"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:chromatic_glass_plate"
+            "item": "gtceu:uiv_electric_pump"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlcore:extremely_max_battery"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:uruium_nanoswarm"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtceu:astraltitanium_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 64,
+          "ingredient": {
+            "item": "gtceu:arceusalloy2b_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtceu:double_hassium_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtceu:double_hastelloyx_78_plate"
           }
         }
       }
@@ -121,7 +157,7 @@
     "fluid": [
       {
         "content": {
-          "amount": 1152,
+          "amount": 12960,
           "value": {
             "fluid": "gtceu:mutated_living_solder"
           }
@@ -129,25 +165,25 @@
       },
       {
         "content": {
-          "amount": 1152,
+          "amount": 5760,
           "value": {
-            "fluid": "gtceu:super_mutated_living_solder"
+            "fluid": "gtceu:transition"
           }
         }
       },
       {
         "content": {
-          "amount": 2304,
+          "amount": 5760,
           "value": {
-            "fluid": "gtceu:mithril"
+            "fluid": "gtceu:hastelloyx_78"
           }
         }
       },
       {
         "content": {
-          "amount": 2304,
+          "amount": 5760,
           "value": {
-            "fluid": "gtceu:uruium"
+            "fluid": "gtceu:hastelloyk_243"
           }
         }
       }
@@ -160,7 +196,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:quark_pipe"
+            "item": "gtlmodular:hyperdimensional_plasma_fusion_core"
           }
         }
       }
@@ -169,7 +205,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 7864320
+        "content": 33554432
       }
     ]
   }

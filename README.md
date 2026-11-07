@@ -22,7 +22,7 @@ GTNH 2.9.0 同名多方块的移植版：一台巨型主机 + 14 种外围模块
 | 项 | 值 | 出处 |
 |---|---|---|
 | modid | `gtlmodular` | `GTLModular.java:25` |
-| 当前版本 | `0.3.132` | `build.gradle:12`（唯一来源；`processResources` 注入 `mods.toml:8` 的 `${mod_version}`） |
+| 当前版本 | `0.3.346` | `build.gradle:12`（唯一来源；`processResources` 注入 `mods.toml:8` 的 `${mod_version}`） |
 | 显示名 | `GTL更多实用设备` | `build.gradle:100`（`\u` 转义） |
 | 作者 / 许可 | 小爱与太肥鱼 / 本模组自身 **MIT** | `build.gradle:101-103` |
 | Java | **编译 JDK 21**，产物字节码目标 **17** | `build.gradle:19-25` |
@@ -44,6 +44,19 @@ GTNH 2.9.0 同名多方块的移植版：一台巨型主机 + 14 种外围模块
 > LGPL 明确允许第三方代码链接 / 继承它们，本模组因此可以保持自己的 MIT 许可。
 > 我们**没有** `jarJar` 打包（一直是 SKIPPED）、也没有复制它们的源码；
 > 机器结构、材质与配方表的版权归各自作者所有（见 `mods.toml` 的 `credits` 段）。
+>
+> **GTO 派生素材（单独许可）**：从 GregTech Odyssey（GTOCore）移植的结构 / 贴图 / 文本 / 配方数值
+> 不受本模组 MIT 覆盖，按上游要求走 **PolyForm Noncommercial 1.0.0 + CC BY-NC-SA 4.0**：
+> `NOTICE_第三方素材_GTO.md`（逐项清单、Required Notice、许可 URL）+ `licenses/GTOCore-LICENSE.md`
+> + `licenses/CC-BY-NC-SA-4.0.txt`；jar 内对应 `META-INF/NOTICE_GTO.md` 与
+> `META-INF/licenses/{GTOCore-LICENSE,CC-BY-NC-SA-4.0}.txt`。**再分发时必须原样附带这些文件。**
+> 以后每次 GTO 移植都必须按 [`_规则_GTO移植许可清单.md`](../_规则_GTO移植许可清单.md) 补逐项清单并跑
+> `scripts/gto_license_audit.py`（第五验），不再有例外。
+>
+> **GTNH 派生素材（单独许可）**：从 GTNH 2.9.0 NAC 搬入的模块文本/机制按 **LGPL-3.0-or-later**；
+> NAC 配方数值来自 NewHorizonsCoreMod，按 **GPL-3.0**。见 `NOTICE_第三方素材_GT5U.md`
+> + `licenses/LGPL-3.0.txt` + `licenses/GPL-3.0.txt`；jar 内对应 `META-INF/NOTICE_GT5U.md` 与
+> `META-INF/licenses/{LGPL-3.0,GPL-3.0}.txt`。**再分发时必须原样附带这些文件。**
 
 ---
 
@@ -118,6 +131,16 @@ Get-ChildItem 'E:\大鲸鱼工作区\gtl-modular\build\libs\gtlmodular-*.jar' |
 ```
 
 实例 `mods\` 目录（本工程既有书面记录）：`D:\Prism Launcher\sl\GTL猪咪整合包\.minecraft\mods`。
+
+**⑤ GTO 许可自检（第五验，凡搬了 GTO 结构 / 贴图 / 文本 / 配方数值必须跑）**：
+
+```bash
+python scripts/gto_license_audit.py      # 期望：RESULT: ALL CHECKS PASSED（GTO 许可包完整）
+```
+
+检查 Required Notice / 两个许可 URL / `META-INF/licenses/` 两份全文 / jar 内打包 /
+**每一张与 GTO 逐字节相同的贴图是否都在 `NOTICE_第三方素材_GTO.md` 里被点名**。
+规则与补录格式见 [`_规则_GTO移植许可清单.md`](../_规则_GTO移植许可清单.md)。
 
 **⚠ 关键开关改完必须用 `javap` 读实例 jar 里的常量值**（`static final` 会被 javac **内联**进每个使用点）：
 
@@ -354,3 +377,84 @@ datagen 用 `runData`（`:55-67`，输出到 `src/generated/resources/`）——
 **授权与协议**：终端逻辑移植自 **GT-Shanhai**（作者：山海恒长在 / dishanhai，
 https://github.com/dishanhai/gtl_shanhai-dishanhai ，LGPL-3.0），**已获作者授权**。
 移植文件均保留原始版权头；按 LGPL-3.0，这些文件的修改版需继续以 LGPL-3.0 提供源码。
+
+## 10 · 奈亚拉托提普之触 · 中央黑日（0.3.328）
+
+> 2026-11-02 0.3.306 的「五层不稳定特效 + 五个千面相」已**全部移除**：
+> 源码文件、配置项、F9 换面相键、对应 lang 一并清掉。
+> 现在整台机器只有一个特效：**结构正中心的一个不透明黑日**。
+> 它不是加性几何，而是与恒星炎炀锻炉同一套「抓屏 + 自定义 shader」的屏幕空间特效。
+
+### 10.1 位置与大小
+
+| 项 | 值 | 依据 |
+|---|---|---|
+| 中心 | 控制器局部 `(0, 0, -24)` | 165×48×49 的几何中心；GTO `.mbs` 逐格核对，正好是中央菱形核心的中心 |
+| 默认核心半径 | 6.5 格 | 配置 `nyarlathotepFx.coreRadius`（3 ~ 10） |
+| 实际黑核（shader 视界） | 约 6.2 格 | 方片半边 = 2.2R，shader 内视界占 0.43 |
+| 吸积盘外缘 | 约 11 格 | 最近机壳在 11.36 格（`(-11,-2,-26)` 相对控制器），正好收在腔体内 |
+| 深度 | `NO_DEPTH_TEST`（与恒星锻炉的屏幕空间特效同口径） | 画在 Iris 合成之后，保证开光影也能看见；从外面看会「透」过机壳，这是屏幕空间特效的既有取舍 |
+
+### 10.2 渲染管线（为什么「不是几何」）
+
+1. **扫描**（`ClientTick`，每 `scanIntervalTicks` 一轮）：以玩家 16³ 区段为基准，
+   扫 `scanRadius` 格内**已加载**区段，命中控制器就缓存 `{pos, front, upwards, flipped, formed, active}`；
+2. **抄相机**（`AFTER_CUTOUT_BLOCKS`）：此时 `PoseStack/Camera` 仍有效，把本帧相机基向量、位置、
+   3D 投影抄成快照（0.3.329 修「AFTER_LEVEL 相机被重置」）；
+3. **抓屏 + 画**（`AFTER_LEVEL`，Iris 合成之后）：`BlackSunCapture` 抓当前真正绑定的帧缓冲
+   （只 `blit` 颜色，失败退回主目标），每台机器一个视空间方片（`POSITION_TEX_COLOR`），
+   所有黑日合成一个 `VertexBuffer`、一次 `drawWithShader`；
+4. **shader**（`nyarlathotep_black_sun.fsh`）：
+   - 视界内纯黑、完全不透明；
+   - 视界边缘光子环（白紫）；
+   - 视界外吸积盘（螺旋臂 + 两层湍流 + 内亮外暗）；
+   - 采样抓屏纹理做引力透镜/背景折光；最外圈低透明度紫雾；
+   - **边缘羽化 + 背景模糊 + 颜色循环**（0.3.331）：黑核约 2 格羽化 + 半影；
+     吸积盘从 35% 半径就淡出；外圈额外 5 采样背景模糊；总 alpha 从 18% 半径开始长淡出，
+     到方片边缘严格归零；调色板相位加 `Time*0.09`（≈11 秒一圈）。
+   - **星云色（0.3.334，单遍）**：0.3.332/333 试过 core+glow 两遍/两个 shader，实机都只剩黑球；
+     0.3.334 回到 0.3.331 验证过能出图的**单遍普通 alpha**，只保留有效改动 ——
+     调色板换成 GTO 星云常数 + 1.65 饱和 + 纤维脉络，黑核 alpha 固定 1，彩色 alpha 提高；
+     颜色是亮紫/品红/青/金并持续循环；0.3.335 再把外缘淡出提前（0.72 半径起）并降一点饱和，边界更像雾；0.3.336 修掉 atan 在 -X 轴的接缝
+     （噪声改笛卡尔坐标、纤维频率改周期整数倍）。
+     详见 `_部署记录_20261102_0.3.336_奈亚黑日_atan接缝修复.md`。
+5. 失败只记一次 error，本会话不再画，机器逻辑不受影响。
+
+### 10.3 配置（`config/gtlmodular-common.toml`）
+
+| 键 | 默认 | 说明 |
+|---|---|---|
+| `nyarlathotepFx.enable` | `false` | 总开关；游戏内 F10 切换并写回文件 |
+| `nyarlathotepFx.coreRadius` | `6.5` | 黑核半径（3 ~ 10），光环/吸积盘同比缩放 |
+| `nyarlathotepFx.intensity` | `1.0` | 发光层亮度（0 ~ 4） |
+| `nyarlathotepFx.scanRadius` | `48` | 控制器扫描半径（16 ~ 128） |
+| `nyarlathotepFx.scanIntervalTicks` | `10` | 扫描间隔（tick） |
+| `nyarlathotepFx.drawDistance` | `384` | 绘制距离（64 ~ 1024） |
+
+> 旧版的 `layerBlackCore / layerCorona / layerSurface / layerArcs / layerCipher / layerFace`
+> 与 `face.*` 已从代码里删除；旧 toml 里残留的键会被 Forge 忽略。
+
+### 10.4 按键
+
+| 键 | 行为 |
+|---|---|
+| F10（可改） | 黑日总开关；写回配置，重进保持 |
+| ~~F9~~ | **已删除**（五个面相没了） |
+
+### 10.5 与恒星炎炀锻炉的关系 / 光影
+
+- 同一套思路：`ScreenSpaceSceneCapture` 式的「抓当前 FBO + 自定义 shader」；
+  黑日有**自己的一份** `BlackSunCapture` 缓冲，不会被恒星特效管理器的 `release()` 顺手回收。
+- 沿用 forge 0.3.313 的光影适配：抓 `GL_DRAW_FRAMEBUFFER_BINDING`、只 blit 颜色、失败回退主目标。
+- 0.3.329 起按 forge 0.3.327 的「cutout 抄相机 → AFTER_LEVEL 画」口径改到 **AFTER_LEVEL**，
+  并改成 `NO_DEPTH_TEST`：Iris 合成之后绘制，开光影也能看见（实测 0.3.328 在光影下不可见）。
+
+### 10.6 文件
+
+| 文件 | 作用 |
+|---|---|
+| `client/renderer/nyarlathotep/BlackSunClient.java` | 扫描 + 事件 + shader 注册 + F10 |
+| `BlackSunRenderer.java` | 视空间方片、一次 `drawWithShader`、位置/尺寸 |
+| `BlackSunCapture.java` | 独立的抓屏缓冲（Iris 适配） |
+| `BlackSunRenderTypes.java` | 自定义 RenderType + shader 槽位 |
+| `assets/gtlmodular/shaders/core/nyarlathotep_black_sun.{vsh,fsh,json}` | 屏幕空间黑日 shader |

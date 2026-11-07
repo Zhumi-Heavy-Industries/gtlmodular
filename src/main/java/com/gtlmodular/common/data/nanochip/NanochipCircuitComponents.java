@@ -139,14 +139,7 @@ public final class NanochipCircuitComponents {
 
         @Override
         public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
-            // 语义照抄 NH CircuitComponentFakeItem.func_77624_a（base + cc.base / pc.base）
-            tooltip.add(Component.translatable("gtlmodular.cc.tooltip.base"));
-            tooltip.add(Component.translatable(entry.processed
-                    ? "gtlmodular.cc.tooltip.pc.base" : "gtlmodular.cc.tooltip.cc.base"));
-            // ★ 2026-09-18 玩家问「真的能生效吗」——补一行**怎么用**（原 tooltip 只说能/不能，没说前置条件：
-            //   仓必须染色、封装在控制室输出侧每 5 秒一次、还原要用输入侧的仓）。
-            tooltip.add(Component.translatable(entry.processed
-                    ? "gtlmodular.cc.tooltip.pc.howto" : "gtlmodular.cc.tooltip.cc.howto"));
+            // CC/PC 件不显示描述；语言键保留（AGENTS 第 13 条不允许改已有语言键）。
             if (flag.isAdvanced()) {
                 tooltip.add(Component.literal("\u00a78" + entry.itemId + " / meta " + entry.metaId
                         + (entry.calibration == null ? "" : " / " + entry.calibration)));

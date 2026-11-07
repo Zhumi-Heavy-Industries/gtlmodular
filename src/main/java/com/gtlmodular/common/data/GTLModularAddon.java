@@ -380,6 +380,12 @@ public class GTLModularAddon implements IGTAddon {
         //   magnesium_oxide_ceramic）。同样必须在 MaterialEvent 窗口里注册，否则 GTCEu 不会为它们
         //   生成 dust / ingot / plate / frame 等形态物品（结构里要用的 frame 就出自这里）。
         com.gtlmodular.common.data.stellar.StellarForgeMaterials.register();
+
+        // ★ 2026-11-02：GTO 高维等离子聚变核心材料链 —— 本包缺 5 味材料
+        //   （abs / polystyrene / strontium_sulfate / cobalt_oxide_ceramic /
+        //   strontium_carbonate_ceramic）。ABS 机壳链要先有 abs_plate + polystyrene_foil，
+        //   所以必须在这个窗口注册；陶瓷只出粉（粗坯/块/砖/薄片是普通物品，见 HpfcItems）。
+        com.gtlmodular.common.data.hpfc.HpfcMaterials.register();
     }
 
     /**

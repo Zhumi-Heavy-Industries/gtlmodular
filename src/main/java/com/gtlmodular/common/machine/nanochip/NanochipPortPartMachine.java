@@ -6,7 +6,6 @@ import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.gui.widget.IntInputWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
-import com.gregtechceu.gtceu.api.machine.TickableSubscription;
 import com.gregtechceu.gtceu.api.machine.feature.IInteractedMachine;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableItemStackHandler;
 import com.gregtechceu.gtceu.common.data.GTItems;
@@ -170,7 +169,6 @@ public abstract class NanochipPortPartMachine extends ItemBusPartMachine impleme
     @DescSynced
     private boolean casingFromStructure;
 
-    private TickableSubscription portTickSub;
     private long lastConflictLogTick = Long.MIN_VALUE;
 
     protected NanochipPortPartMachine(IMachineBlockEntity holder, int tier, IO io) {
@@ -190,18 +188,11 @@ public abstract class NanochipPortPartMachine extends ItemBusPartMachine impleme
         if (level != null && !level.isClientSide) {
             // 上线即登记到它现在的线（未染色则不进表）；区块重新加载后也靠这一步自愈。
             NanochipPortNetwork.refresh(this);
-            if (portTickSub == null) {
-                portTickSub = subscribeServerTick(this::tickPort);
-            }
         }
     }
 
     @Override
     public void onUnload() {
-        if (portTickSub != null) {
-            portTickSub.unsubscribe();
-            portTickSub = null;
-        }
         NanochipPortNetwork.unregister(this);
         super.onUnload();
     }
@@ -226,46 +217,6 @@ public abstract class NanochipPortPartMachine extends ItemBusPartMachine impleme
      *   <li>最后重算「挂起」三笔账。</li>
      * </ol>
      */
-    private void tickPort() {
-        Level level = getLevel();
-        if (level == null || level.isClientSide) {
-            return;
-        }
-        // 外壳两态兜底：除了 added/removedFromController，每拍再校一次（与真空仓的 tick 兜底同理由）。
-        refreshCasingState();
-        // P2 回退开关：关掉路由后连冲突判定与账目重算都停（方块/界面/存档照常）。
-        if (!GTLModularConfig.isNanochipPortRoutingEnabled()) {
-            return;
-        }
-        long gameTime = level.getGameTime();
-        if (Math.floorMod(gameTime + getPos().asLong(), NanochipPortNetwork.TRANSFER_INTERVAL) != 0) {
-            return;
-        }
-        NanochipPortNetwork.ChannelKey key = channelKey();
-        NanochipPortNetwork.Line line = NanochipPortNetwork.resolve(key);
-        int senders = line.senders().size();
-        if (senders != lineSenderCount) {
-            lineSenderCount = senders;
-        }
-        if (line.conflict()) {
-            if (gameTime - lastConflictLogTick >= NanochipPortNetwork.CONFLICT_LOG_INTERVAL) {
-                lastConflictLogTick = gameTime;
-                GTLModular.LOGGER.warn(
-                        "[gtlmodular] NAC 线路冲突：{} 上有 {} 个发件总成（一条线只允许 1 个），整线罢工。"
-                                + "涉及方块位置 {}",
-                        key, senders, getPos());
-            }
-            refreshPending();
-            return;
-        }
-        onLineTick(line);
-        refreshPending();
-    }
-
-    /** 子类钩子：发件总成覆写它做平摊投递；收件总成不需要（它是被投递方）。 */
-    protected void onLineTick(NanochipPortNetwork.Line line) {
-    }
-
     // ---------- 外壳两态（与真空仓同口径） ----------
 
     /** 本机是否"已被收进成形的多方块"（客户端读这个同步字段，不要读服务端的 {@code isFormed()}）。 */
@@ -295,22 +246,6 @@ public abstract class NanochipPortPartMachine extends ItemBusPartMachine impleme
     public void removedFromController(com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController controller) {
         super.removedFromController(controller);
         refreshCasingState();
-    }
-
-    /** 把「挂起」重算成发件总成 16 格缓冲里的实际余量（收件总成恒 0）。 */
-    private void refreshPending() {
-        long total = 0;
-        if (io == IO.OUT) {
-            NotifiableItemStackHandler inventory = getInventory();
-            if (inventory != null) {
-                for (int i = 0; i < inventory.getSlots(); i++) {
-                    total += inventory.getStackInSlot(i).getCount();
-                }
-            }
-        }
-        if (total != pendingItems) {
-            pendingItems = total;
-        }
     }
 
     // ---------- P2：三笔账 ----------

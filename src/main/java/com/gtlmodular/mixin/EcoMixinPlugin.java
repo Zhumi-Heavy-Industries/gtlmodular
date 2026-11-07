@@ -51,6 +51,9 @@ public final class EcoMixinPlugin implements IMixinConfigPlugin {
         if (mixinClassName != null && mixinClassName.endsWith("EcoCraftDebugMixin")) {
             return ecoPresent;
         }
+        if (mixinClassName != null && mixinClassName.endsWith("TerminalOrderEcoCpuMixin")) {
+            return ecoPresent;
+        }
         if (mixinClassName != null && mixinClassName.contains(".eco.")) {
             // 2026-10-27 临时停用：先确认 AE 下单卡住是否由我们的 eco mixin 引起
             return false;

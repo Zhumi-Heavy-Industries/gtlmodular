@@ -7,12 +7,16 @@ import com.gregtechceu.gtceu.api.pattern.FactoryBlockPattern;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.api.pattern.Predicates;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
+import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
 import com.gtlmodular.GTLModular;
 import com.lowdragmc.lowdraglib.utils.BlockInfo;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.Collection;
 
 /**
  * 奈亚拉托提普之触（{@code gtlmodular:nyarlathoteps_tentacle}）的结构 —— GTO
@@ -28,6 +32,14 @@ import net.minecraftforge.registries.ForgeRegistries;
  *       {@code _scratch/tentacle/parse_mbs.py} / {@code verify_aisles.py}（0 差异）。</li>
  *   <li>谓词绑定：{@code _gto_src/.../machines/MultiBlockD.java:420} 的 {@code NYARLATHOTEPS_TENTACLE}
  *       （与 jar 字节码 {@code lambda$static$22} 逐条一致）。</li>
+ *   <li>★ 0.3.285 <b>线圈核对</b>（用户怀疑 'B' 绑错）：GTO 给 {@code 'B'} 绑的是
+ *       {@code GTOBlocks.ADVANCED_FUSION_COIL}（{@code MultiBlockD.java:432}；
+ *       {@code GTOBlocks.java:258} 定义为 {@code createActiveCasing("advanced_fusion_coil",
+ *       "进阶聚变线圈方块", ...)} ⇒ {@code gtocore:advanced_fusion_coil}；
+ *       jar 内 {@code MultiBlockD.class} 字节码 {@code bipush 66 → getstatic ADVANCED_FUSION_COIL} 同证）。
+ *       <b>不是</b>通用加热线圈（那是 {@code 'Q'} = {@code heatingCoils()}），<b>也不是</b>超级热熔线圈
+ *       （那是 {@code 'D'} = {@code GTOBlocks.URUIUM_COIL_BLOCK}，{@code MultiBlockD.java:434}）。
+ *       本包没装 GTOCore，用 GTLcore 的镜像块（同 id、同配方）⇒ 绑定不变。</li>
  *   <li>朝向：<b>直转，不做任何轴颠倒</b> —— 第 1 片 = 最背面（z=0），第 49 片 = 正面（z=48，控制器所在）；
  *       每片第 1 行 = 最低层（y=0）；每行第 1 个字符 = 机器左手边（x 最小侧）。
  *       依据见 {@code _scratch/tentacle/struct_报告.md}（mbs 的 RelativeDirection 序号 +
@@ -42,8 +54,8 @@ import net.minecraftforge.registries.ForgeRegistries;
  * <table border="1">
  *   <caption>符号表（GTO 方块 → 我方方块；缺的 4 件见 {@link TentacleBlocks}）</caption>
  *   <tr><th>符号</th><th>GTO</th><th>我方</th><th>格数</th></tr>
- *   <tr><td>A / O</td><td>分子机械方块 + IO/能源/激光 + 光口</td><td>{@code gtlcore:molecular_casing}</td><td>62 / 4952</td></tr>
- *   <tr><td>B</td><td>进阶聚变线圈方块</td><td>{@code gtlcore:advanced_fusion_coil}</td><td>336</td></tr>
+ *   <tr><td>A / O</td><td>分子机械方块 + IO/能源/激光/线程/并行/光口/维护</td><td>{@code gtlcore:molecular_casing}</td><td>62 / 4952</td></tr>
+ *   <tr><td>B</td><td>进阶聚变线圈方块</td><td>{@code gtlcore:advanced_fusion_coil}（GTO 原 id {@code gtocore:advanced_fusion_coil} 的本包镜像）</td><td>336</td></tr>
  *   <tr><td>C</td><td>激光机械方块</td><td><b>{@code gtlmodular:laser_casing}（新造）</b></td><td>800</td></tr>
  *   <tr><td>D</td><td>超级热熔线圈方块</td><td>{@code kubejs:uruium_coil_block}</td><td>373</td></tr>
  *   <tr><td>E</td><td>超能核心</td><td>{@code gtlcore:hyper_core}</td><td>154</td></tr>
@@ -77,17 +89,32 @@ import net.minecraftforge.registries.ForgeRegistries;
  *   <tr><td>a</td><td>控制器</td><td>{@code gtlmodular:nyarlathoteps_tentacle}</td><td>1</td></tr>
  * </table>
  *
- * <p><b>方块解析是「按 id 惰性解析」</b>（{@link #lazy(String)}）：KubeJS 方块在本模组注册之后才进
- * 方块注册表，若在注册期就去取会拿到 {@code null}；惰性谓词把解析推迟到第一次结构判定/预览，
- * 那时所有模组的方块都已就位。取不到时记 error 日志并退回「不判定」，不会崩服。
+ * <p><b>方块解析时机</b>：{@code .pattern(...)} 在注册期只登记一个 memoize 的 supplier，{@link #build}
+ * 到<b>第一次结构判定 / 首次打开 JEI 预览</b>才执行 —— 那时所有模组的方块（含 KubeJS）都已就位。
+ * 因此 0.3.286 起每个符号都直接用 GTCEu 原生的 {@link Predicates#blocks(Block...)}
+ * （经 {@link #blocksOf(String, String)} 解析），不再走自定义谓词：预览才能把「这一格允许什么」画对。
+ * 只有「按 id 取不到方块」时（注册顺序异常）才退回 {@link #lazy(String)} 兜底并记 error，
+ * 不会崩服、也不会把方块表退化成屏障方块。
  */
-final class NyarlathotepsTentacleStructures {
+public final class NyarlathotepsTentacleStructures {
 
     static final int WIDTH = 165;
     static final int HEIGHT = 48;
     static final int LENGTH = 49;
 
     private NyarlathotepsTentacleStructures() {
+    }
+
+    /**
+     * 结构层数据本体（{@code slices[z][y]}，每格一整行 165 字符，{@code z=0} 最背面、{@code z=48} 正面）。
+     *
+     * <p><b>为什么公开</b>：客户端「奈亚不稳定特效」（{@code client.renderer.preview}）需要从<b>同一份</b>
+     * 结构数据反推表面锚点（{@code ShanhaiInstabilityGeometry#fromSlices}），
+     * 避免再往 jar 里塞一份 {@code .mb} 资源造成两份真值。
+     * 直接返回内部数组、不做防御性拷贝（2352 个字符串，只读；不在热路径上调用）。
+     */
+    public static String[][] slices() {
+        return SLICES;
     }
 
     /** 49 片 Z 层，每层 48 行（Y=0 在前），行宽 165。数据来自 GTO 的 .mbs，直转无颠倒。 */
@@ -2550,59 +2577,276 @@ final class NyarlathotepsTentacleStructures {
             pattern.aisle(slice);
         }
 
-        // A/O：分子机械方块（外壳）—— 同时承担 IO 仓、能源输入、激光仓、1 个光口、1 个维护仓。
-        TraceabilityPredicate molecularCasing = lazy("gtlcore", "molecular_casing")
-                .or(Predicates.abilities(PartAbility.IMPORT_ITEMS))
-                .or(Predicates.abilities(PartAbility.EXPORT_ITEMS))
-                .or(Predicates.abilities(PartAbility.IMPORT_FLUIDS))
-                .or(Predicates.abilities(PartAbility.EXPORT_FLUIDS))
-                .or(Predicates.abilities(PartAbility.INPUT_ENERGY).setMaxGlobalLimited(8, 2))
-                .or(Predicates.abilities(PartAbility.INPUT_LASER).setMaxGlobalLimited(4, 1))
-                .or(Predicates.abilities(PartAbility.OPTICAL_DATA_RECEPTION).setExactLimit(1))
-                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))
-                .or(Predicates.abilities(PartAbility.PARALLEL_HATCH));   // ★ 2026-10-31：吃结构内的并行仓
+        // A/O：分子机械方块（外壳）—— 同时承担 IO 仓、能源输入、激光仓、线程仓、并行仓、
+        // 1 个光口、1 个维护仓。
+        //
+        // ★ 0.3.286（用户：「可他多方块预览里面显示的却是全部限权的」）：
+        //   上一版这里把**每一种能力**都 `Predicates.abilities(...)` 一条条 OR 进 common，而且
+        //   除了能源/激光都没给 `previewCount` ⇒ GTCEu 1.4.4 的 `BlockPattern.getPreview` 里
+        //   （逐指令见 `_scratch/gtceu_dec/BlockPattern.java:414-521`、本工程 `HatchPredicates` 的类注释）：
+        //     · 第 3 趟只画 `common` 里 `previewCount > 0` 的谓词 —— 我们的 IO 能力全是 -1 ⇒ 一格都不画；
+        //     · 第 4 趟退回 `common` 里**第一条** `previewCount == -1` 的谓词 ⇒ 命中的是外壳机壳本身；
+        //   于是预览里每个 A/O 位都只画「分子机械方块」，点开候选又是一整排「该能力下的全部机器」，
+        //   看上去就是「全部（都能放）」—— 这正是用户说的现象。
+        //
+        //   GTO 原文（`_gto_src/src/main/java/com/gtocore/common/data/machines/MultiBlockD.java:429-431`）：
+        //     .where('A', blocks(GTOBlocks.MOLECULAR_CASING.get())
+        //             .or(GTOPredicates.autoThreadLaserAbilities(definition.getRecipeTypes()))
+        //             .or(abilities(OPTICAL_DATA_RECEPTION).setExactLimit(1)))
+        //   `autoThreadLaserAbilities` = `autoLaserAbilities` + THREAD_HATCH(限1) + OVERCLOCK_HATCH(限1)
+        //   + ACCELERATE_HATCH(限1)；`autoLaserAbilities` = `autoAbilities(recipeTypes,false,false,
+        //   true,true,true,true)`（四种常规 IO 仓，**每条都 setPreviewCount(1)**）
+        //   + INPUT_ENERGY(最多 2、previewCount 0) + INPUT_LASER(最多 2、previewCount 1)。
+        //   ⇒ GTO 的预览里 A/O 位会画出「分子机械方块 + 每类仓各一格」。
+        //
+        //   本包**没有**的两条能力（逐处取证后跳过）：
+        //     · GTOPartAbility.OVERCLOCK_HATCH（超频仓）/ ACCELERATE_HATCH（加速仓）来自 GTOCore；
+        //       本包没装 GTOCore（实例 mods 只有它的替代品 GTLcore / GTLAdditions）。
+        //       GTCEu 1.4.4 的 `PartAbility` 常量表里没有这两个（javap 全表见
+        //       `_scratch/gtceu_dec/PartAbility.txt`）；GTLcore 的 `GTLPartAbility` 只有
+        //       NEUTRON_ACCELERATOR / ITEMS_OUTPUT / MOLECULAR_ASSEMBLER_MATRIX / ME_CRAFTING_CPU_INTERFACE，
+        //       GTLAdditions 只有 THREAD_MODIFIER ⇒ 没有对应方块可放，照抄不了。
+        TraceabilityPredicate molecularCasing = blocksOf("gtlcore", "molecular_casing")
+                // —— 常规 IO：对齐 GTO 的 autoAbilities(...)，每条 setPreviewCount(1)（预览各占一格）
+                .or(ability(PartAbility.IMPORT_ITEMS).setPreviewCount(1))
+                .or(ability(PartAbility.EXPORT_ITEMS).setPreviewCount(1))
+                .or(ability(PartAbility.IMPORT_FLUIDS).setPreviewCount(1))
+                .or(ability(PartAbility.EXPORT_FLUIDS).setPreviewCount(1))
+                // —— 能源 / 激光：对齐 GTO 的 autoLaserAbilities —— 能源 previewCount 0
+                //    （GTO 的预览用激光仓代表供电，不画能源仓），激光 previewCount 1。
+                //    数值上限沿用本机既有口径（能源 8 / 激光 4），本次只对齐「允许的能力集合」与预览格。
+                .or(ability(PartAbility.INPUT_ENERGY).setMaxGlobalLimited(8, 0))
+                .or(ability(PartAbility.INPUT_LASER).setMaxGlobalLimited(4, 1))
+                // —— GTO 线程仓（0.3.285 起全局 1 个；GTO 同样是 setMaxGlobalLimited(1)）。
+                //    GTO 这条没有 previewCount ⇒ 预览格不占位，只在点开候选时出现。
+                .or(ability(ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                // —— 并行仓：队长要求保留（GTO 奈亚的谓词里没有它）。
+                //    GTCEu 自己的 `autoAbilities(checkParallel)` 是 max 1 + previewCount(1)；
+                //    本机一直是「不限个数」，本次不改上限，只让它像 GTCEu 那样占一格预览。
+                .or(ability(PartAbility.PARALLEL_HATCH).setPreviewCount(1))
+                // —— 光口 / 维护仓：各恰好 1（GTO 的光口同样是 setExactLimit(1)）。
+                .or(ability(PartAbility.OPTICAL_DATA_RECEPTION).setExactLimit(1))
+                .or(ability(PartAbility.MAINTENANCE).setExactLimit(1));
 
         return pattern
                 .where('A', molecularCasing)
                 .where('O', molecularCasing)
-                .where('B', lazy("gtlcore", "advanced_fusion_coil"))
+                // ★ 0.3.285 线圈核对（用户怀疑我们绑错）——结论：**没绑错，保持 gtlcore:advanced_fusion_coil**。
+                //   GTO 给 'B' 绑的是 `GTOBlocks.ADVANCED_FUSION_COIL`（进阶聚变线圈方块，gtocore 命名空间），
+                //   不是通用线圈，也不是「超级热熔线圈」（后者是 'D' = URUIUM_COIL_BLOCK）。取证：
+                //     - 源码 `_gto_src/.../data/machines/MultiBlockD.java:432`
+                //       `.where('B', blocks(GTOBlocks.ADVANCED_FUSION_COIL.get()))`
+                //     - 字节码 `gtocore-forge-1.20.1-26.10.1.jar` 的 `MultiBlockD.class`（71,382 B，非 native 壳）：
+                //       `bipush 66`（'B'）→ `getstatic GTOBlocks.ADVANCED_FUSION_COIL` → `Predicates.blocks(Block[])`
+                //       → `Symbols.where(C, ...)`；随后 `bipush 67` = 'C' → LASER_CASING、
+                //       `bipush 68` = 'D' → `GTOBlocks.URUIUM_COIL_BLOCK`（超级热熔线圈方块）。
+                //     - `GTOBlocks.java:258`：`createActiveCasing("advanced_fusion_coil", "进阶聚变线圈方块", ...)`
+                //     - 结构文件 `pattern/nyarlathoteps_tentacle.mbs` 解码后与我们的 SLICES **2352 行逐字相同**
+                //       （0 差异）：'B' = 336 格，位置就是 GTO 的 B 位置。
+                //   为什么仍然写 gtlcore：本整合包（实例 mods 94 个 jar）**没有装 GTOCore**，只有 GTLcore；
+                //   GTLcore 的 `GTLBlocks` 用同一个 id 镜像了这个方块（`ldc "advanced_fusion_coil"` →
+                //   `createActiveCasing` ⇒ `gtlcore:advanced_fusion_coil`），且本包 KubeJS
+                //   `server_scripts/ore_processing.js:258` 给它挂了与 GTO 逐项相同的装配机配方
+                //   （改良型超导线圈 + 2x LuV 力场发生器 + IV 泵 + 4x 中子反射板 + hui_circuit_2 +
+                //   4x#gtceu:circuits/luv + 硅岩普通流体管 + 4x 镝板，576 YBCO，100t）
+                //   ⇒ 这就是「GTO 谓词等价物」。若改成 gtocore:advanced_fusion_coil，本包根本没有该方块，
+                //   blocksOf 取不到（退回惰性谓词）⇒ 该符号永远不匹配、机器反而**不能成形**。
+                .where('B', blocksOf("gtlcore", "advanced_fusion_coil"))   // ★ 2026-11-02 队长口径：改回「进阶聚变线圈方块」，不放开了
                 .where('C', Predicates.blocks(TentacleBlocks.LASER_CASING.get()))
-                .where('D', lazy("kubejs", "uruium_coil_block"))
-                .where('E', lazy("gtlcore", "hyper_core"))
-                .where('F', lazy("gtceu", "neutronium_frame"))
-                .where('G', lazy("kubejs", "spacetime_assembly_line_casing"))
-                .where('H', lazy("gtladditions", "extreme_density_casing"))
-                .where('I', lazy("gtceu", "fusion_glass"))
-                .where('J', lazy("kubejs", "laser_cooling_casing"))
-                .where('K', lazy("gtladditions", "quantum_glass"))
-                .where('L', lazy("gtlcore", "naquadah_alloy_casing"))
-                .where('M', lazy("gtlcore", "sps_casing"))
-                .where('N', lazy("kubejs", "spacetime_assembly_line_unit"))
-                .where('P', lazy("kubejs", "containment_field_generator"))
+                .where('D', com.gtlmodular.common.data.host.MoltenModuleHostPattern.singleTypeHeatingCoils())   // ★ 2026-11-04 队长口径：只能一种线圈，混搭不成形   // ★ 2026-11-02 队长口径：
+                //   超级热熔线圈位允许换成任意可替换线圈（与终端可替换线圈一致，按 ICoilType 判定，取最热值作 CoilType）
+                .where('E', blocksOf("gtlcore", "hyper_core"))
+                .where('F', blocksOf("gtceu", "neutronium_frame"))
+                .where('G', blocksOf("kubejs", "spacetime_assembly_line_casing"))
+                .where('H', blocksOf("gtladditions", "extreme_density_casing"))
+                .where('I', blocksOf("gtceu", "fusion_glass"))
+                .where('J', blocksOf("kubejs", "laser_cooling_casing"))
+                .where('K', blocksOf("gtladditions", "quantum_glass"))
+                .where('L', blocksOf("gtlcore", "naquadah_alloy_casing"))
+                .where('M', blocksOf("gtlcore", "sps_casing"))
+                .where('N', blocksOf("kubejs", "spacetime_assembly_line_unit"))
+                .where('P', blocksOf("kubejs", "containment_field_generator"))
                 .where('Q', Predicates.heatingCoils())
-                .where('R', lazy("gtceu", "sterilizing_filter_casing"))
+                .where('R', blocksOf("gtceu", "sterilizing_filter_casing"))
                 .where('S', Predicates.blocks(TentacleBlocks.ELECTRON_PERMEABLE_AMPROSIUM_COATED_GLASS.get()))
-                .where('T', lazy("kubejs", "hollow_casing"))
+                .where('T', blocksOf("kubejs", "hollow_casing"))
                 .where('U', Predicates.blocks(TentacleBlocks.AMPROSIUM_ACTIVE_CASING.get()))
-                .where('V', lazy("gtceu", "mithril_frame"))
-                .where('W', lazy("gtceu", "ruby_block"))
-                .where('X', lazy("gtceu", "electrolytic_cell"))
-                .where('Y', lazy("gtceu", "trinium_frame"))
-                .where('Z', lazy("gtceu", "high_power_casing"))
-                .where('[', lazy("kubejs", "dimensional_bridge_casing"))
+                .where('V', blocksOf("gtceu", "mithril_frame"))
+                .where('W', blocksOf("gtceu", "ruby_block"))
+                .where('X', blocksOf("gtceu", "electrolytic_cell"))
+                .where('Y', blocksOf("gtceu", "trinium_frame"))
+                .where('Z', blocksOf("gtceu", "high_power_casing"))
+                .where('[', blocksOf("kubejs", "dimensional_bridge_casing"))
                 .where(']', Predicates.blocks(TentacleBlocks.QUARK_PIPE.get()))
-                .where('^', lazy("kubejs", "molecular_coil"))
-                .where('_', lazy("gtlcore", "degenerate_rhenium_constrained_casing"))
-                .where('`', lazy("gtlcore", "dimensionally_transcendent_casing"))
-                .where('+', lazy("kubejs", "restraint_device"))
-                .where('~', lazy("kubejs", "restraint_device")) // ★ 26.10.1 的 jar 把 '~' 绑到力场约束装置
+                .where('^', blocksOf("kubejs", "molecular_coil"))
+                .where('_', blocksOf("gtlcore", "degenerate_rhenium_constrained_casing"))
+                .where('`', blocksOf("gtlcore", "dimensionally_transcendent_casing"))
+                .where('+', blocksOf("kubejs", "restraint_device"))
+                .where('~', blocksOf("kubejs", "restraint_device")) // ★ 26.10.1 的 jar 把 '~' 绑到力场约束装置
                 .where('a', Predicates.controller(Predicates.blocks(definition.get())))
                 .where(' ', Predicates.any())
                 .build();
     }
 
+    // ------------------------------------------------------------------
+    // ★ 0.3.286：让结构预览「看得懂」的 方块 / 能力 谓词
+    // ------------------------------------------------------------------
+
+    /** 档位前缀（低 → 高），与 GTCEu {@code GTValues.VN} 的小写形式一致。 */
+    private static final String[] TIER_PREFIXES = {
+            "ulv", "lv", "mv", "hv", "ev", "iv", "luv", "zpm", "uv", "uhv", "uev", "uiv", "uxv", "opv", "max"
+    };
+
+    /**
+     * 方块 id → GTCEu 原生 {@link Predicates#blocks(Block...)} 谓词（内部就是 {@code PredicateBlocks}）。
+     *
+     * <p><b>为什么不再用 {@link #lazy(String)}</b>：{@code lazy(...)} 是自定义
+     * {@code Predicate<MultiblockState>}，GTCEu 的预览虽然也读它的 {@code candidates}，但它不是
+     * GTCEu 认得的 {@code PredicateBlocks} —— 类型、候选表、以及「这一格到底是什么方块」都没法被上游
+     * 统一处理。换成原生 {@code blocks(...)} 后，预览（{@code BlockPattern.getPreview} 的四趟挑选）
+     * 与方块格式检查走的就是 GTCEu 给普通方块用的那条路。
+     *
+     * <p><b>为什么不会重蹈「注册期取不到 KubeJS 方块」</b>：{@code MultiblockMachineBuilder.pattern(...)}
+     * 在注册时只塞一个 {@code SupplierMemoizer.memoize(...)}（见
+     * {@code _scratch/gtceu_dec/MultiblockMachineBuilder.java:366}），{@link #build} 要到
+     * <b>首次结构判定 / 首次打开预览</b>才跑 —— 那时所有模组（含 KubeJS）的方块都已进注册表。
+     * 万一真的提前跑到（取不到方块），退回 {@link #lazy(String)}（行为与 0.3.285 完全一致），
+     * 绝不把「空方块数组」交给 {@code PredicateBlocks}（它会把空数组换成<b>屏障方块</b>，
+     * 那是 GTCEu 用来表示「任意/占位」的方块）。
+     */
+    private static TraceabilityPredicate blocksOf(String namespace, String path) {
+        Block block = blockById(new ResourceLocation(namespace, path));
+        if (block == null) {
+            GTLModular.LOGGER.error(
+                    "[gtlmodular] 奈亚拉托提普之触结构：方块 {}/{} 取不到，退回惰性谓词（预览里该符号不显示具体方块）",
+                    namespace, path);
+            return lazy(namespace, path);
+        }
+        TraceabilityPredicate predicate = Predicates.blocks(block);
+        // 预览候选：缓存一份 BlockInfo，避免每格回调都新建数组（旧 lazy 实现有同样的开销）。
+        BlockInfo[] candidates = {BlockInfo.fromBlockState(block.defaultBlockState())};
+        for (SimplePredicate simple : predicate.common) {
+            simple.candidates = () -> candidates;
+        }
+        return predicate;
+    }
+
+    /**
+     * <b>能力谓词</b>：GTCEu 原生 {@code Predicates.abilities(ability)}（= 该能力下的所有方块），
+     * 但把<b>预览候选</b>换成「该能力的一台代表仓」。
+     *
+     * <p>为什么必须换候选（本工程已有的 40 秒卡死教训，见 {@code HatchPredicates} 的类注释）：
+     * {@code PredicateBlocks.candidates} 是 {@code BlockInfo.fromBlock(block)}，而
+     * {@code BlockInfo.fromBlock} 会真的 {@code newBlockEntity(...)}。{@code IMPORT_ITEMS} 这一条
+     * 能力在本包里挂着 gtlcore / gtladditions 的 ME 样板总成（构造是 O(槽位²)），
+     * 预览一构建就会把它们一台台 new 出来。换成「一台代表仓」后，预览每类能力只实例化 1 台，
+     * 且选的是 GTCEu 自带的标准档位仓（确定性，不随 HashSet 迭代顺序变）。
+     *
+     * <p><b>匹配语义一个字没改</b>：判定仍是 {@code PredicateBlocks}
+     * （{@code ArrayUtils.contains(blocks, state.getBlock())}），候选表只影响
+     * 「JEI / 结构预览画哪台仓、点开候选看到哪台仓」。
+     */
+    private static TraceabilityPredicate ability(PartAbility ability) {
+        if (ability.getAllBlocks().isEmpty()) {
+            GTLModular.LOGGER.error(
+                    "[gtlmodular] 奈亚拉托提普之触结构：PartAbility[{}] 下没有任何方块（该能力退化为永不匹配）",
+                    ability.getName());
+            return new TraceabilityPredicate(state -> false, () -> new BlockInfo[0]);
+        }
+        TraceabilityPredicate predicate = Predicates.abilities(ability);
+        Block representative = representative(ability);
+        BlockInfo candidate = representative == null ? null : blockInfo(representative);
+        if (candidate != null) {
+            BlockInfo[] candidates = {candidate};
+            for (SimplePredicate simple : predicate.common) {
+                simple.candidates = () -> candidates;
+            }
+            for (SimplePredicate simple : predicate.limited) {
+                simple.candidates = () -> candidates;
+            }
+        }
+        return predicate;
+    }
+
+    /**
+     * 方块 → 预览用的 {@link BlockInfo}：优先 {@code fromBlock}（会真的 new 一次方块实体，
+     * 机器渲染才完整），失败则退回 {@code fromBlockState}（只按方块模型画）。
+     *
+     * <p>为什么必须兜底：{@code BlockInfo.fromBlock} 在 LDLib 里对 {@code EntityBlock} 会调
+     * {@code newBlockEntity(...)}，机器构造里若有依赖世界/等级的分支就可能抛异常；
+     * 预览构建绝不能因为「某一台代表仓」而整体炸掉。
+     */
+    private static BlockInfo blockInfo(Block block) {
+        try {
+            return BlockInfo.fromBlock(block);
+        } catch (Exception t) {
+            GTLModular.LOGGER.warn(
+                    "[gtlmodular] 奈亚拉托提普之触结构：预览候选 {} 实例化失败，退回方块状态渲染（{}）",
+                    BuiltInRegistries.BLOCK.getKey(block), t.toString());
+            return BlockInfo.fromBlockState(block.defaultBlockState());
+        }
+    }
+
+    /**
+     * 该能力在预览里的<b>代表仓</b>（确定性选择，不依赖 {@code HashSet} 的迭代顺序）：
+     * <ol>
+     *   <li>先按档位从低到高找 GTCEu 自带的 {@code gtceu:<档位>_<后缀>}（如 {@code gtceu:ulv_input_bus}）；</li>
+     *   <li>再按档位从低到高找 id 以 {@code _<档位>} 结尾的（本模组线程仓是
+     *       {@code gtlmodular:thread_hatch_uv} 这种「前缀_档位」写法）；</li>
+     *   <li>都没有 ⇒ 取「{@code gtceu} 命名空间优先 + id 字典序最小」的那台。</li>
+     * </ol>
+     * 空能力（理论上不会发生，注册顺序错时才会）返回 {@code null}，由调用方保留 GTCEu 原候选。
+     */
+    private static Block representative(PartAbility ability) {
+        Collection<Block> blocks = ability.getAllBlocks();
+        if (blocks == null || blocks.isEmpty()) {
+            return null;
+        }
+        for (String tier : TIER_PREFIXES) {
+            for (Block block : blocks) {
+                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+                if (id != null && "gtceu".equals(id.getNamespace()) && id.getPath().startsWith(tier + "_")) {
+                    return block;
+                }
+            }
+        }
+        for (String tier : TIER_PREFIXES) {
+            for (Block block : blocks) {
+                ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+                if (id != null && id.getPath().endsWith("_" + tier)) {
+                    return block;
+                }
+            }
+        }
+        Block best = null;
+        String bestKey = null;
+        for (Block block : blocks) {
+            ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
+            if (id == null) {
+                continue;
+            }
+            // "0" 前缀 = gtceu 自带（优先），"1" = 其它 addon；同前缀内按 id 字典序
+            String key = ("gtceu".equals(id.getNamespace()) ? "0" : "1") + id;
+            if (bestKey == null || key.compareTo(bestKey) < 0) {
+                bestKey = key;
+                best = block;
+            }
+        }
+        return best;
+    }
+
+    /** 按 id 查方块；查不到或查到空气都返回 {@code null}。 */
+    private static Block blockById(ResourceLocation id) {
+        Block block = ForgeRegistries.BLOCKS.getValue(id);
+        return block == null || block == Blocks.AIR ? null : block;
+    }
+
     /**
      * 按 id <b>惰性</b>解析方块谓词（解析发生在第一次结构判定/预览时，此时 KubeJS 方块也已注册）。
+     *
+     * <p>★ 0.3.286：正常路径已全部改走 {@link #blocksOf(String, String)}（GTCEu 原生
+     * {@code blocks(...)}）—— 本方法只剩两个用途：① {@code blocksOf} 取不到方块时的兜底；
+     * ② 记录「该符号退化为不判定」的 error 日志。
      *
      * <p>取不到时记 error 并退回「不判定」（{@link Predicates#any()} 的等价行为），绝不在注册期抛异常。
      */

@@ -6,12 +6,15 @@
     "mixins": [
         "enhancedcore.SuperBufferChineseNamesMixin",
         "eco.EcoCpuNameMixin",
+        "gtlcore.MERecipePatternHelperMixin",
         "gtceu.StellarForgePatternMixin",
         "order.TerminalTempPatternMixin",
-        "order.TerminalOrderCpuMixin"
+        "order.TerminalOrderCpuMixin",
+        "order.TerminalOrderEcoCpuMixin"
     ],
     "client": [
-        "gtceu.MixinWorkableProgressBar"
+        "gtceu.MixinWorkableProgressBar",
+        "gtceu.MachineModeTooltipMixin"
     ],
     "injectors": {
         "defaultRequire": 0

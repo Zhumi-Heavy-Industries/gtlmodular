@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.machine.MachineDefinition;
 import com.gregtechceu.gtceu.api.machine.MultiblockMachineDefinition;
 import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
+import com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate;
 import com.gregtechceu.gtceu.client.renderer.machine.MachineRenderer;
 import com.gregtechceu.gtceu.client.renderer.machine.OverlayTieredActiveMachineRenderer;
 import com.gtlmodular.GTLModular;
@@ -17,10 +18,14 @@ import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleUpkeep;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumHatchMachine;
+import com.tterrag.registrate.util.entry.RegistryEntry;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -180,6 +185,15 @@ public final class NanochipMachines {
         registerVacuumHatches();
         registerVacuumPipe();
         registerPortAssemblies();
+        // 真空网络已停用；方块保留给旧存档，但不再出现在创造模式列表里。
+        for (String id : new String[]{
+                "nanochip_vacuum_input_hatch",
+                "nanochip_vacuum_output_hatch",
+                "nanochip_vacuum_pipe",
+                "nanochip_receiver_assembly",
+                "nanochip_sender_assembly"}) {
+            hideFromCreativeTab(id);
+        }
     }
 
     /**
@@ -625,21 +639,31 @@ public final class NanochipMachines {
                     // （overlayPrefix()），它在那边由构造器不变量与贴图目录名锁死（见 moduleOverlayTex 注释）。
                     .workableCasingRenderer(MODULE_CASING_TEX, moduleOverlayTex(kind))
                     .langValue(kind.nameZh())
-                    .tooltips(
-                            Component.literal("§7NAC 模块 · §f" + kind.nameEn()).withStyle(ChatFormatting.GRAY),
-                            Component.translatable(kind.langKey("role")),
-                            Component.translatable(kind.langKey("desc")),
-                            kind.unlocksFullMode()
-                                    ? Component.translatable("gtlmodular.nanochip.module.gate")
-                                    : Component.translatable("gtlmodular.nanochip.module.stack"),
-                            Component.translatable("gtlmodular.nanochip.module.innate"),
-                            // ★ 2026-09-19：简单物流模式怎么给本模块供料（插样板总成 / 镜像仓 → 写样板 → 下单）。
-                            //   惰性（translatable），注册期无重活 —— check_registration_path.js ② 的门槛。
-                            Component.translatable("gtlmodular.nanochip.module.simple_logistics"))
+                    // 与 GTNH 中文维基的模块 tooltip 同构：机器类型 → 模块行 → 动作 → 正文 → 风味。
+                    // 文本放 lang 的 gtnh_tooltip 键里，避免注册期拼字符串。
+                    .tooltips(Component.translatable(kind.langKey("gtnh_tooltip")))
                     .register();
             NANOCHIP_MODULES.put(kind, def);
+            if ("nanochip_splitter".equals(kind.machineId())) {
+                hideFromCreativeTab(kind.machineId());
+            }
             GTLModular.LOGGER.info("[gtlmodular] NAC 模块已注册: {} ({})",
                     def.getId(), kind.nameZh());
+        }
+    }
+
+    /** 分流器本包用不到；只从创造模式列表隐藏，注册和旧存档方块保留。 */
+    private static void hideFromCreativeTab(String path) {
+        GTRegistrate registrate = GTLModularMachines.REGISTRATE;
+        for (RegistryEntry<Block> entry : registrate.getAll(Registries.BLOCK)) {
+            if (entry.getId().getPath().equals(path)) {
+                registrate.setCreativeTab(entry, null);
+            }
+        }
+        for (RegistryEntry<Item> entry : registrate.getAll(Registries.ITEM)) {
+            if (entry.getId().getPath().equals(path)) {
+                registrate.setCreativeTab(entry, null);
+            }
         }
     }
 }

@@ -1,8 +1,10 @@
 package com.gtlmodular.common.machine;
 
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
+import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gtladd.gtladditions.utils.CommonUtils;
 import com.gtlmodular.common.data.module.SpaceOreModulePattern;
+import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -43,10 +45,16 @@ import java.util.List;
  * {@link SpaceOreModulePattern#threadsForTier(int)}）。
  * 换模块立即生效：判定时记下的槽位坐标在运行时实时回读，不需要拆结构。
  *
+ * <p><b>线程仓（0.3.291 起结构限装 1 个）</b>：★ 2026-11-05 玩家口径 ——
+ * <b>装了线程仓，独立线程引擎的线程数就完全等于仓的当前设定值</b>（仓设 4 = 4 条），
+ * 不再叠加/压制动力模块线程。动力模块仍决定结构能否成形、以及
+ * <b>没装线程仓时</b>旧合并路径的跨配方线程预算（MK1 = {@value #GTLCORE_THREADS}，每级 ×4）。
+ * 旧口径（动力模块 + min(仓, 动力模块) 压制）只保留在没装仓的合并路径里。
+ *
  * <p><b>界面显示与「天基无尽集成矿石处理厂」大致一致</b>：
  * <ul>
  *   <li>并行行（{@code 同时处理至多 N 个配方}）由基类按<b>并行仓的真实数值</b>画出（装了并行仓才显示）；</li>
- *   <li>线程行按本机真实的跨配方线程数写数字（动力模块等级决定）；</li>
+ *   <li>线程行：装了线程仓写仓值，没装写动力模块线程数（与旧版一致）；</li>
  *   <li>不显示热容行（该参考机没有这一行）。</li>
  * </ul>
  *
@@ -247,28 +255,97 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
 
     // ---------- 线程 / 并行 ----------
 
+    // ---- 线程仓（受动力模块等级压制，0.3.293）----
+
+    /**
+     * 结构里<b>线程仓</b>的当前设定值（{@code gtlmodular:thread_hatch_*}，本结构
+     * {@code setMaxGlobalLimited(1)}，口径 A：只取单仓）。没装线程仓 ⇒ 0。
+     */
+    private int rawThreadHatchThreads() {
+        for (IMultiPart part : getParts()) {
+            if (part instanceof IThreadHatchPart hatch) {
+                return Math.max(0, hatch.getThreads());
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * <b>线程仓实际能贡献的线程数</b> = {@code min(线程仓设定值, 动力模块等级对应的线程数)}。
+     *
+     * <p>口径来源（本机既有映射，0.3.291 之前就在用）：动力模块等级 → 线程数
+     * 见 {@link SpaceOreModulePattern#threadsForTier(int)}，即
+     * <b>MK1 64 / MK2 256 / MK3 1024 / MK4 4096 / MK5 16384 / MK6 65536 / MKΩ 262144</b>；
+     * 类注释里「动力模块线程数 − 64」说的就是同一张表（减掉的 64 是 gtlcore 的基线线程）。
+     *
+     * <p><b>压制规则</b>（队长口径：天基模块受动力模块等级压制）：
+     * <ul>
+     *   <li>线程仓是 GTO 口径的 1~256 线程（UV=4 … MAX=256），本机只允许装 1 个；</li>
+     *   <li>它<b>不能突破</b>当前动力模块档位的线程数：动力模块 MK3（1024）时装 MAX 仓，
+     *       仓最多仍给 256；动力模块只到 MK1（64）时，仓最多只给 64；</li>
+     *   <li><b>没有动力模块</b>（结构里一块动力模块都没有 / 未成形）⇒ 返回 0，
+     *       线程仓<b>完全不生效</b>，线程数回到基础 {@value #GTLCORE_THREADS}；</li>
+     *   <li>换动力模块立即生效：等级每次都是实时回读的（{@link #readPowerModuleTier(Level)}），
+     *       不需要重判结构。</li>
+     * </ul>
+     *
+     * @return 线程仓可追加的线程数；没装仓 / 没动力模块 / 未成形都返回 0
+     */
+    public int threadsFromHatchCappedByPowerModule() {
+        int hatch = rawThreadHatchThreads();
+        if (hatch <= 0) {
+            return 0;
+        }
+        if (powerModuleCount() <= 0) {
+            // 没有动力模块：线程仓完全不生效（按基础线程走）
+            return 0;
+        }
+        return Math.min(hatch, powerModuleThreads());
+    }
+
     /**
      * 额外线程数（gtladditions 的口径）：<b>外部 Jade/TOP 显示的「拥有 N 个跨配方线程」= 64 + 本方法</b>
      * （见 gtladditions 的 {@code ParallelProviderMixin}）。所以这里返回
-     * 「动力模块线程数 − 64 + 天球分歧引擎额外线程」，让外面显示的数字与机器界面里的
+     * 「动力模块线程数 − 64 + 线程仓（已按动力模块压制）」，让外面显示的数字与机器界面里的
      * {@link #totalThreads()} 完全一致。
      *
-     * <p>本机结构不允许放天球分歧引擎仓，后半段通常为 0；这个改动只影响显示口径，
-     * 不改变合并预算（预算仍是 {@code getMaxParallel() = 并行仓 × totalThreads / 64}）。
+     * <p>线程仓（0.3.291 起本机也可装）：有仓时<b>不走</b>基类那段（基类会原样返回仓的设定值，
+     * 不做动力模块压制）；没仓时仍沿用基类口径（天球分歧引擎，本机结构通常为 0）。
      */
     @Override
     public int getAdditionalThread() {
-        long bonus = (long) powerModuleThreads() - GTLCORE_THREADS + super.getAdditionalThread();
+        boolean hasHatch = rawThreadHatchThreads() > 0;
+        int hatchThreads = hasHatch ? threadsFromHatchCappedByPowerModule() : super.getAdditionalThread();
+        long bonus = (long) powerModuleThreads() - GTLCORE_THREADS + Math.max(0, hatchThreads);
         return (int) Math.max(0L, Math.min(Integer.MAX_VALUE, bonus));
     }
 
     /**
-     * 本机跨配方线程 = 基础 64 + 额外线程 = 动力模块给的线程数（MK1 64、每级 ×4）。
+     * 本机跨配方线程 = 基础 64 + 额外线程 =
+     * <b>动力模块线程数 + 线程仓（min(仓值, 动力模块线程数)）</b>。
+     * 动力模块：MK1 64、每级 ×4（见 {@link SpaceOreModulePattern#threadsForTier(int)}）。
      * 与模块A同口径折进 gtlcore 的合并预算：预算 = {@code getMaxParallel() × 64}。
      */
     @Override
     public int totalThreads() {
-        return (int) Math.min(Integer.MAX_VALUE, (long) GTLCORE_THREADS + getAdditionalThread());
+        // ★ 2026-11-02 队长口径：天基模块无论如何线程总数不超过 256。
+        return (int) Math.min(256, Math.min(Integer.MAX_VALUE, (long) GTLCORE_THREADS + getAdditionalThread()));
+    }
+
+    // ---------- 独立线程引擎（★ 2026-11-05）----------
+
+    /**
+     * 每条线程的并行数 = 结构并行仓的当前并行（与模块 A 同口径）。
+     *
+     * <p>线程数/开关由基座统一从线程仓现读；热容隐性联动（≥ {@value #HIDDEN_PARALLEL_TEMP} K）
+     * 照旧把每条线程的并行拉满。
+     */
+    @Override
+    public int engineParallelPerBatch() {
+        if (isHiddenParallelActive()) {
+            return Integer.MAX_VALUE;
+        }
+        return super.engineParallelPerBatch();
     }
 
     /** 线程行由本机自己画（数字取 {@link #totalThreads()}），不让模块A 的界面逻辑重复画一遍。 */
@@ -342,10 +419,21 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
                 }
             }
         }
-        // 跨配方线程行：按结构里的动力模块等级显示真实线程数
+        // 跨配方线程行：
+        //   · 装了线程仓 ⇒ 独立线程引擎的线程数就是仓的设定值（2026-11-05 玩家口径）；
+        //   · 没装线程仓 ⇒ 旧合并路径仍按「动力模块线程」走。
+        int hatchThreads = rawThreadHatchThreads();
+        int shownThreads = hatchThreads > 0 ? hatchThreads : totalThreads();
         textList.add(Component.translatable("gtladditions.multiblock.threads",
-                Component.literal(String.valueOf(powerModuleThreads())).withStyle(ChatFormatting.GOLD))
+                Component.literal(String.valueOf(shownThreads)).withStyle(ChatFormatting.GOLD))
                 .withStyle(ChatFormatting.GRAY));
+        // 线程仓行：只在真装了仓时出现（没装 ⇒ 界面与原来完全一致）
+        if (hatchThreads > 0) {
+            textList.add(Component.literal("线程仓: ")
+                    .append(Component.literal(hatchThreads + " 线程（独立线程按此数）")
+                            .withStyle(ChatFormatting.GOLD))
+                    .withStyle(ChatFormatting.GRAY));
+        }
     }
 
     /**

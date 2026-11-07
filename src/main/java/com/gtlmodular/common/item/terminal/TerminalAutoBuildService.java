@@ -50,6 +50,44 @@ public final class TerminalAutoBuildService {
                 plan.target(), plan.fingerprint(), plan));
     }
 
+    /** CPU 订单收尾后直接触发；不再等 preflight 全齐，缺的材料由执行器跳过并写进报告。 */
+    public static void completeOrder(appeng.api.stacks.GenericStack output) {
+        if (!TerminalOrderMarker.isMarker(output)) return;
+        long target = TerminalOrderMarker.targetPos(output);
+        String fingerprint = TerminalOrderMarker.fingerprint(output);
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return;
+        for (Map.Entry<UUID, Request> entry : REQUESTS.entrySet()) {
+            Request request = entry.getValue();
+            if (request.target().pos().asLong() != target
+                    || !request.fingerprint().equals(fingerprint)) continue;
+            ServerPlayer player = server.getPlayerList().getPlayer(request.playerId());
+            if (player == null) continue;
+            ItemStack terminal = findTerminal(player, request.terminalId());
+            if (terminal.isEmpty()) continue;
+            var ae = ShanhaiTerminalAeBinding.resolve(player, terminal);
+            if (ae == null) continue;
+            ServerLevel level = server.getLevel(request.target().dimension());
+            if (level == null) continue;
+            BlockPos pos = request.target().pos();
+            int cx = pos.getX() >> 4;
+            int cz = pos.getZ() >> 4;
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) level.getChunk(cx + dx, cz + dz);
+            }
+            REQUESTS.remove(entry.getKey(), request);
+            ShanhaiStructurePlan plan = request.plan();
+            ShanhaiStructureExecutor.Result result = player.isCreative()
+                    ? EXECUTOR.executeCreative(player, plan, ae)
+                    : EXECUTOR.execute(player, plan, ae);
+            player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    (result.success() ? "§a" : "§c") + "[哦鲸鲸终端·订单完成] " + result.message()
+                            + "，变更 " + result.changed() + " 处"));
+            ShanhaiUltimateTerminalBehavior.sendBuildReport(player, plan, result);
+            return;
+        }
+    }
+
     public static void cancel(ItemStack terminal) {
         if (terminal == null || terminal.isEmpty()) return;
         REQUESTS.remove(ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal));

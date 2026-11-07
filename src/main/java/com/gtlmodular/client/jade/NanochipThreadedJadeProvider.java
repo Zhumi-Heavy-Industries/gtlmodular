@@ -360,8 +360,12 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             NanochipThreadedRecipeLogic logic = threadedLogic(accessor);
             if (logic == null) {
                 // ★ 2026-10-31：通用线程引擎（3D 打印阵列 / 部件组装机）也走同一套 Jade 显示。
-                ThreadedRecipeLogic generic = genericThreadedLogic(accessor);
-                if (generic != null) {
+                // ★ 2026-11-05：改用公共读口 IThreadBatchLogic —— 通用引擎与地心三模块的线程逻辑
+                //   都实现它；不再只认 ThreadedRecipeLogic 这个具体类。
+                com.gtlmodular.common.machine.engine.IThreadBatchLogic generic = genericThreadedLogic(accessor);
+                // ★ 2026-11-05：地心三模块「没装线程仓」时不写任何键（Jade 完全回到旧版），
+                //   装了仓 / 有批次在跑才接管（否则 limit=1 的空表会给旧玩法凭空多出几行）。
+                if (generic != null && (generic.threadLimit() > 1 || generic.runningBatches() > 0)) {
                     writeGenericThreadData(data, generic);
                 }
                 return;
@@ -1176,15 +1180,19 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * 旧逻辑机器（{@code NAC_INDEPENDENT_THREADS = false} 时的 gtladditions 配方逻辑）不是它
      * ⇒ 本 provider 全程不介入，原生进度条照旧。
      */
-    /** 通用线程引擎的机器（3D 打印阵列 / 部件组装机）：{@link ThreadedRecipeLogic}。 */
-    private static ThreadedRecipeLogic genericThreadedLogic(BlockAccessor accessor) {
+    /**
+     * 通用线程引擎的机器（3D 打印阵列 / 部件组装机 / 地心三模块）：实现
+     * {@link com.gtlmodular.common.machine.engine.IThreadBatchLogic} 的配方逻辑。
+     */
+    private static com.gtlmodular.common.machine.engine.IThreadBatchLogic genericThreadedLogic(BlockAccessor accessor) {
         if (!(accessor.getBlockEntity() instanceof MetaMachineBlockEntity mbe)) {
             return null;
         }
         if (!(mbe.getMetaMachine() instanceof com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine machine)) {
             return null;
         }
-        return machine.getRecipeLogic() instanceof ThreadedRecipeLogic logic ? logic : null;
+        return machine.getRecipeLogic() instanceof com.gtlmodular.common.machine.engine.IThreadBatchLogic logic
+                ? logic : null;
     }
 
     /**
@@ -1192,7 +1200,8 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * （{@code KEY_THREAD_LIMIT/RUNNING/RUNS/LIST + 每条 slot/progress/duration/parallels}），
      * 不写校准、K 种、NAC 镜像等专属键 ⇒ 客户端那套「上限/在用/逐条进度条」原样复用。
      */
-    private static void writeGenericThreadData(CompoundTag data, ThreadedRecipeLogic logic) {
+    private static void writeGenericThreadData(CompoundTag data,
+                                               com.gtlmodular.common.machine.engine.IThreadBatchLogic logic) {
         data.putInt(NanochipJadeKeys.KEY_THREAD_LIMIT, logic.threadLimit());
         int running = logic.runningBatches();
         data.putInt(NanochipJadeKeys.KEY_THREAD_RUNNING, running);

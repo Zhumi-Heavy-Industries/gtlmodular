@@ -7,12 +7,17 @@ import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.networking.crafting.CalculationStrategy;
 import appeng.api.networking.crafting.ICraftingPlan;
+import appeng.api.networking.crafting.ICraftingCPU;
 import appeng.api.networking.crafting.ICraftingService;
 import appeng.api.networking.crafting.ICraftingSubmitResult;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
@@ -42,18 +47,20 @@ public final class TerminalOrderService {
         final ShanhaiStructurePlan plan;
         final ShanhaiTerminalAeBinding.Context ae;
         final ICraftingService service;
+        final ICraftingCPU cpu;
         final TerminalTempPatternHolder holder;
         final Future<ICraftingPlan> future;
         int ticks;
 
         Session(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
-                ShanhaiTerminalAeBinding.Context ae, ICraftingService service,
+                ShanhaiTerminalAeBinding.Context ae, ICraftingService service, ICraftingCPU cpu,
                 TerminalTempPatternHolder holder, Future<ICraftingPlan> future) {
             this.player = player;
             this.terminal = terminal.copy();
             this.plan = plan;
             this.ae = ae;
             this.service = service;
+            this.cpu = cpu;
             this.holder = holder;
             this.future = future;
         }
@@ -71,6 +78,13 @@ public final class TerminalOrderService {
                     "§e[哦鲸鲸终端] 缺口种类过多（" + shortages.size() + " 种），订单已跳过；请分批施工"));
             return false;
         }
+        ICraftingService service = ae.grid().getCraftingService();
+        ICraftingCPU orderCpu = selectOrderCpu(service);
+        if (orderCpu == null) {
+            player.sendSystemMessage(Component.literal(
+                    "§e[哦鲸鲸终端] 没有可用的合成 CPU，已回退普通下单"));
+            return false;
+        }
         List<GenericStack> inputs = new ArrayList<>(shortages.size());
         long totalAmount = 0L;
         for (Map.Entry<AEKey, Long> entry : shortages.entrySet()) {
@@ -85,7 +99,6 @@ public final class TerminalOrderService {
         IPatternDetails details = PatternDetailsHelper.decodePattern(encoded, player.level());
         if (details == null) return false;
 
-        ICraftingService service = ae.grid().getCraftingService();
         if (!(service instanceof TerminalTempPatternHolder holder)) return false;
         AEItemKey markerKey = AEItemKey.of(marker);
         if (markerKey == null) return false;
@@ -94,7 +107,7 @@ public final class TerminalOrderService {
             Future<ICraftingPlan> future = service.beginCraftingCalculation(
                     player.level(), ae::source, markerKey, 1, CalculationStrategy.REPORT_MISSING_ITEMS);
             UUID id = ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal);
-            Session session = new Session(player, terminal, plan, ae, service, holder, future);
+            Session session = new Session(player, terminal, plan, ae, service, orderCpu, holder, future);
             Session previous = SESSIONS.put(id, session);
             if (previous != null && previous.holder != holder) {
                 previous.holder.gtlmodular$setTempPattern(null);
@@ -135,13 +148,22 @@ public final class TerminalOrderService {
                 plan = null;
             }
             cleanup(entry.getKey(), session, false);
-            if (plan == null || plan.simulation()) {
+            if (plan == null) {
                 session.player.sendSystemMessage(Component.literal(
-                        "§c[哦鲸鲸终端] 订单材料无法通过 AE 合成"));
+                        "§c[哦鲸鲸终端] 订单样板未被 AE 识别：没有找到订单标记的合成路径"));
                 continue;
             }
+            if (plan.simulation() || !plan.missingItems().isEmpty()) {
+                Component missing = describeMissing(plan);
+                GTLModular.LOGGER.info("终端订单计算不完整，缺少: {}", missing.getString());
+                session.player.sendSystemMessage(Component.literal(
+                        "§c[哦鲸鲸终端] 订单材料无法通过 AE 合成：§f").append(missing));
+                continue;
+            }
+            GTLModular.LOGGER.info("终端订单提交前: simulation={}, missing={}, bytes={}",
+                    plan.simulation(), plan.missingItems().size(), plan.bytes());
             ICraftingSubmitResult result = session.service.submitJob(
-                    plan, null, null, true, session.ae.source());
+                    plan, null, session.cpu, true, session.ae.source());
             if (result.successful()) {
                 session.player.sendSystemMessage(Component.literal(
                         "§a[哦鲸鲸终端] 单个 AE 订单已提交；完成后自动施工"));
@@ -150,6 +172,48 @@ public final class TerminalOrderService {
                         "§c[哦鲸鲸终端] 订单提交失败: " + result.errorCode()));
             }
         }
+    }
+
+    /** 标准 AE CPU 优先；没有时使用 ECO CPU（由 ECO 专用 mixin 收尾）。 */
+    private static ICraftingCPU selectOrderCpu(ICraftingService service) {
+        ICraftingCPU eco = null;
+        for (ICraftingCPU cpu : service.getCpus()) {
+            String name = cpu.getClass().getName();
+            if (name.startsWith("appeng.me.cluster.implementations.CraftingCPUCluster")) {
+                return cpu;
+            }
+            if (name.contains("neoecoae") && name.contains("ECOCraftingCPU")) {
+                eco = cpu;
+            }
+        }
+        return eco;
+    }
+
+    private static Component describeMissing(ICraftingPlan plan) {
+        var missing = plan.missingItems();
+        if (missing.isEmpty()) {
+            return Component.literal("AE 没有给出具体缺失项（可能是样板未注册或计算被中断）");
+        }
+        MutableComponent text = Component.empty();
+        int shown = 0;
+        for (AEKey key : missing.keySet()) {
+            if (shown >= 8) {
+                text.append(Component.literal(" 等"));
+                break;
+            }
+            if (shown > 0) text.append(Component.literal("、"));
+            String name = key.getDisplayName().getString();
+            MutableComponent item = Component.literal(name).withStyle(style -> style
+                    .withColor(ChatFormatting.AQUA)
+                    .withUnderlined(true)
+                    .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, name))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                            Component.literal("点击复制物品名称"))));
+            text.append(item).append(Component.literal(" ×" + missing.get(key))
+                    .withStyle(ChatFormatting.GRAY));
+            shown++;
+        }
+        return text;
     }
 
     private static void cleanup(UUID id, Session session, boolean submitted) {
