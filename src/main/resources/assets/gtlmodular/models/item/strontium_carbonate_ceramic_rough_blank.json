@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "gtlmodular:item/hpfc/strontium_carbonate_ceramic_rough_blank"
+  }
+}

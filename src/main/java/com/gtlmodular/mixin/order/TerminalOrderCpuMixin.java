@@ -1,5 +1,6 @@
 package com.gtlmodular.mixin.order;
 
+import com.gtlmodular.common.item.terminal.TerminalAutoBuildService;
 import com.gtlmodular.common.item.terminal.TerminalOrderMarker;
 
 import appeng.api.networking.energy.IEnergyService;
@@ -43,6 +44,7 @@ public abstract class TerminalOrderCpuMixin {
         getAllWaitingFor(waiting);
         if (waiting.isEmpty()) {
             finishJob(true);
+            TerminalAutoBuildService.completeOrder(output);
         }
     }
 }

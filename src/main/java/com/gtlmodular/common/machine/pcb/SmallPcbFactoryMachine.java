@@ -31,7 +31,14 @@ import org.jetbrains.annotations.Nullable;
  * 会让引擎跳过这条候选；放在 {@code beforeWorking} 会让超档配方每 tick 被选中又被拒。
  */
 public class SmallPcbFactoryMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine {
+
+
+    @Override
+    public int getMaxParallel() {
+        return 1;
+    }
+
 
     /** 两条独立线程（跨配方并行）。 */
     public static final int THREADS = 2;
@@ -56,6 +63,7 @@ public class SmallPcbFactoryMachine extends WorkableElectricMultiblockMachine
 
     @Override
     public int baseThreads() {
+        // 没装线程仓时的固定值；装了线程仓时引擎统一读仓（effectiveThreads()），机器类不再适配。
         return THREADS;
     }
 

@@ -5,7 +5,6 @@ import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
 import com.gregtechceu.gtceu.api.gui.widget.IntInputWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
-import com.gregtechceu.gtceu.api.machine.TickableSubscription;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.trait.NotifiableItemStackHandler;
 import com.gregtechceu.gtceu.common.machine.multiblock.part.ItemBusPartMachine;
@@ -148,6 +147,9 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
      */
     public static final int SLOTS = 16;
 
+    /** 真空网络已停用：方块与存档保留，但不再搬运任何物品；NAC 只走样板总成。 */
+    public static final boolean TRANSPORT_ENABLED = false;
+
     /**
      * 当前颜色序号；{@link NanochipColor#INDEX_UNPAINTED}（= -1）= <b>未染色</b>，且它就是默认值。
      *
@@ -254,8 +256,6 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
         return level != null && lastWorkTick != Long.MIN_VALUE
                 && level.getGameTime() - lastWorkTick < WORK_ANIM_WINDOW;
     }
-
-    private TickableSubscription vacuumTickSub;
 
     public NanochipVacuumHatchMachine(IMachineBlockEntity holder, int tier, IO io) {
         super(holder, tier, io);
@@ -617,27 +617,16 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
             // 与我们的 colorIndex 不一定一致）。只写一个字段，不查注册表/邻居 ⇒ 加载期安全。
             // 历史上这里曾是"清成未喷漆"（为了不显示那行），玩家现在要求那行显示真实颜色。
             syncPaintingColor();
-            unsubscribeTick();
-            vacuumTickSub = subscribeServerTick(this::tickVacuum);
         }
     }
 
     @Override
     public void onUnload() {
-        unsubscribeTick();
         // ★【2026-09-16 双模式路由】端口消失/区块卸载 ⇒ 同色管网的"节点集"可能变了，让 NAC 重算
         //   （与 NanochipPipeMachine.onUnload 同一个理由：MetaMachine 没有 setRemoved()，
         //    `MetaMachineBlockEntity.setRemoved()` 会调 onUnload ⇒ 拆掉方块一定走到这里）。
         NanochipPipeGraph.bumpTopologyEpoch();
         super.onUnload();
-    }
-
-    /** 显式回收订阅：不保存引用的话，区块卸载后订阅还会留着，一直在空跑。 */
-    private void unsubscribeTick() {
-        if (vacuumTickSub != null) {
-            vacuumTickSub.unsubscribe();
-            vacuumTickSub = null;
-        }
     }
 
     /**
@@ -725,6 +714,9 @@ public class NanochipVacuumHatchMachine extends ItemBusPartMachine {
     // ---------- 真空搬运 ----------
 
     private void tickVacuum() {
+        if (!TRANSPORT_ENABLED) {
+            return;
+        }
         Level level = getLevel();
         if (level == null || level.isClientSide) {
             return;

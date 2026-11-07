@@ -123,6 +123,16 @@ public final class NanochipCandidateSearch {
         }
         Set<GTRecipe> candidates = new LinkedHashSet<>();
         int raw = 0;
+        // gtlcore「ME配方类型统合样板总成」：自动展开的配方不在普通样板槽缓存里，
+        // 这里补进候选；只读，失败由兼容取数吞掉。
+        if (machine instanceof com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController controller) {
+            for (GTRecipe recipe : com.gtlmodular.common.machine.engine.AutoRecipePatternCompat.expandedRecipes(controller)) {
+                raw++;
+                if (eligibility.isUsable(recipe)) {
+                    candidates.add(recipe);
+                }
+            }
+        }
         if (types != null && types.length > 0) {
             for (GTRecipeType type : types) {
                 if (type == null) {

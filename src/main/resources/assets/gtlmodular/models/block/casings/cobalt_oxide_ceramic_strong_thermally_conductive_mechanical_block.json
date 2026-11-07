@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/cube_all",
+  "textures": {
+    "all": "gtlmodular:block/casings/cobalt_oxide_ceramic_strong_thermally_conductive_mechanical_block"
+  }
+}

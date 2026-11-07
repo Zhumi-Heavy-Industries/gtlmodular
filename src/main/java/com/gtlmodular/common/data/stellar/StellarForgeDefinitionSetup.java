@@ -52,27 +52,54 @@ public final class StellarForgeDefinitionSetup {
             "gtlmodular.machine.stellar_forge.tooltip.laser",
             "gtlmodular.machine.stellar_forge.tooltip.laser_desc",
             "gtlmodular.machine.stellar_forge.tooltip.recipe",
+            // 结尾一行：结构来源（玩家 2026-11-02 要求；GTO 原版这行是「结构来源：%s」，我们结构就是 GTO 的）
+            "gtlmodular.machine.stellar_forge.tooltip.source",
     };
+
+    /** 幂等闸门：早窗口（机器注册）配置成功后，FMLLoadComplete 的兜底不再重复执行。 */
+    private static boolean configured;
 
     private StellarForgeDefinitionSetup() {
     }
 
-    /** 由 {@link GTLModular} 在 mod 总线上注册。 */
-    @SubscribeEvent
-    public static void onLoadComplete(FMLLoadCompleteEvent event) {
-        event.enqueueWork(StellarForgeDefinitionSetup::configure);
-    }
-
-    private static void configure() {
+    /**
+     * ★ <b>主入口</b>：由 {@code GTLModularMachines.init()}（GTM 的机器注册窗口内）调用。
+     *
+     * <p><b>为什么必须这么早</b>（2026-11-01 实机日志取证）：FMLLoadComplete 在本包**晚于客户端第一次资源加载**
+     * （日志：21:24:55 资源重载开始 → 21:25:23 才到 FMLLoadComplete）。渲染器的覆层贴图（overlay_front…）
+     * 是在资源重载的 **贴图集拼接**阶段由 {@code WorkableCasingMachineRenderer#onPrepareTextureAtlas} 注册的；
+     * 若在资源重载之后才 {@code setRenderer}，新渲染器的 overlay 精灵表是**空的** ⇒ 控制器正面只剩外壳
+     * （玩家看到的「主方块没脸」就是这个：日志里 attach 在 21:25:23，晚于 21:24:55 的贴图集）。
+     * 机器注册窗口（21:24:52）早于资源重载 ⇒ 在这里换渲染器，贴图集与模型烘焙都会用新实例。
+     *
+     * @param attachRenderer 是否顺带挂客户端渲染器（只有早窗口才允许；晚兜底传 false，避免贴图集已烘焙后
+     *                       换上一个精灵表为空的新渲染器，反而把正面弄没）
+     */
+    public static void configureNow(boolean attachRenderer) {
+        if (configured) {
+            return;
+        }
         MachineDefinition definition = GTRegistries.MACHINES.get(GTCEu.id("stellar_forge"));
         if (!(definition instanceof MultiblockMachineDefinition stellarForge)) {
             GTLModular.LOGGER.error(
                     "[gtlmodular] 找不到 gtceu:stellar_forge（gtlcore 未加载？）⇒ 恒星炎炀锻炉换机/换描述跳过");
             return;
         }
+        configured = true;
 
         // 1) 换机器类：结构/配方表/仓室全部沿用 gtlcore 的定义，只换 MetaMachine 实现。
         stellarForge.setMachineSupplier(StellarForgeMachine::new);
+
+        // 1.5) ★ 2026-11-06：加第二张配方表（「魔力生成」= 魔法制造机同一张表）。
+        //   走 GTCEu 标准做法：definition.setRecipeTypes(多张) ⇒
+        //   IFancyUIMachine#getSubTabs() 自动挂标准「机器模式」子页（MachineModeFancyConfigurator），
+        //   切换走 setActiveRecipeType(int)（@Persisted 存盘）。
+        //   结构 C 位的 autoAbilities 用的是 definition.getRecipeTypes()，图案是惰性构建的
+        //   ⇒ 这里先换掉，图案第一次判定时两张表的仓室都会放行。
+        stellarForge.setRecipeTypes(new com.gregtechceu.gtceu.api.recipe.GTRecipeType[]{
+                org.gtlcore.gtlcore.common.data.GTLRecipeTypes.STELLAR_FORGE_RECIPES,
+                org.gtlcore.gtlcore.common.data.GTLRecipeTypes.MAGIC_MANUFACTURER_RECIPES,
+        });
 
         // 2) 换掉机器描述：整套换成 GTO 的（删掉模块/超频受损三节），不再保留 gtlcore 旧 tooltip。
         stellarForge.setTooltipBuilder((stack, tooltip) -> {
@@ -82,12 +109,28 @@ public final class StellarForgeDefinitionSetup {
         });
 
         // 3) 客户端：挂 GTO 漩涡特效的 TESR（客户端类只在 Dist.CLIENT 分支加载）。
-        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
-                com.gtlmodular.client.renderer.stellar.StellarForgeFxClient.attachRenderer());
+        if (attachRenderer) {
+            DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
+                    com.gtlmodular.client.renderer.stellar.StellarForgeFxClient.attachRenderer());
+        }
 
         GTLModular.LOGGER.info(
                 "[gtlmodular] 恒星炎炀锻炉：机器类已换成 StellarForgeMachine（连续运行 -50% / 等级按 SCTier / 掉电爆炸），"
-                        + "并追加 GTO 机器描述 {} 行",
-                TOOLTIP_KEYS.length);
+                        + "并追加 GTO 机器描述 {} 行（渲染器：{}）",
+                TOOLTIP_KEYS.length, attachRenderer ? "早窗口挂载" : "未挂载(晚兜底)");
+    }
+
+    /**
+     * 兜底：若机器注册窗口里没找到定义（极端加载顺序），在 FMLLoadComplete 再试一次。
+     * <b>只换机器类/描述，不挂渲染器</b> —— 此时贴图集已烘焙，换渲染器会让覆层精灵表为空。
+     */
+    @SubscribeEvent
+    public static void onLoadComplete(FMLLoadCompleteEvent event) {
+        if (configured) {
+            return;
+        }
+        GTLModular.LOGGER.warn(
+                "[gtlmodular] 恒星炎炀锻炉：机器注册窗口没配上，改在 FMLLoadComplete 兜底（不挂漩涡渲染器，避免主方块没脸）");
+        event.enqueueWork(() -> StellarForgeDefinitionSetup.configureNow(false));
     }
 }

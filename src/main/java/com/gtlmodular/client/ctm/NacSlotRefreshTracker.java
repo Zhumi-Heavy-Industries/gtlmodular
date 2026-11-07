@@ -122,7 +122,7 @@ public final class NacSlotRefreshTracker {
     public static final int MAX_WINDOW_ENTRIES = 512;
 
     /** 诊断日志总条数上限（渲染/tick 路径绝不刷屏；到点后静默）。 */
-    public static final int MAX_DIAG_LINES = 200;
+    public static final int MAX_DIAG_LINES = 0;
 
     // ------------------------------------------------------------------
     // 状态（只在客户端主线程读写）

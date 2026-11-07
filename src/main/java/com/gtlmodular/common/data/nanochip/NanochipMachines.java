@@ -185,6 +185,15 @@ public final class NanochipMachines {
         registerVacuumHatches();
         registerVacuumPipe();
         registerPortAssemblies();
+        // 真空网络已停用；方块保留给旧存档，但不再出现在创造模式列表里。
+        for (String id : new String[]{
+                "nanochip_vacuum_input_hatch",
+                "nanochip_vacuum_output_hatch",
+                "nanochip_vacuum_pipe",
+                "nanochip_receiver_assembly",
+                "nanochip_sender_assembly"}) {
+            hideFromCreativeTab(id);
+        }
     }
 
     /**

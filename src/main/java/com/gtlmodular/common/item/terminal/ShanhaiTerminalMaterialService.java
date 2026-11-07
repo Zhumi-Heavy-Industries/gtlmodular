@@ -472,6 +472,15 @@ public final class ShanhaiTerminalMaterialService {
         return amounts;
     }
 
+    /** 替换/回收旧方块：AE 优先，AE 满了才回背包。 */
+    public boolean refundDismantled(ServerPlayer player, Context ae, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return true;
+        ItemStack remainder = stack.copy();
+        if (ae != null) remainder = returnToAe(ae, remainder);
+        remainder = returnToPlayer(player, remainder);
+        return remainder.isEmpty();
+    }
+
     public boolean refund(ServerPlayer player, Context ae, ItemStack stack) {
         ItemStack remainder = returnToPlayer(player, stack);
         remainder = returnToAe(ae, remainder);

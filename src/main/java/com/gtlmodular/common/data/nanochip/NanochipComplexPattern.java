@@ -1083,8 +1083,9 @@ public final class NanochipComplexPattern {
                         // 上限由 4 收到 1。同样受上面那条"全局 + F/H 共用实例"的代价约束。
                         // 注：原版 GT5U 的 H 元素写的是 ExoticEnergy:1（"至少 1 个"），我们按用户指示取"可选"。
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1))
+                // 线程仓：主机 H 位可选，最多 1 台；引擎会按仓内设定值取线程数。
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.MAINTENANCE)
+                                com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1));
     }
 
@@ -1128,17 +1129,8 @@ public final class NanochipComplexPattern {
                         .setMinGlobalLimited(0))
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
                                 com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.EXPORT_FLUIDS)
-                        .setMinGlobalLimited(0))
-                // ★ 能源仓：**min 0**（NH 模块根本没有这一项；模块吃主机的电）。
-                .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_ENERGY)
-                        .setMinGlobalLimited(0).setMaxGlobalLimited(2))
-                .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.INPUT_LASER)
-                        .setMinGlobalLimited(0).setMaxGlobalLimited(1))
-                .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gregtechceu.gtceu.api.machine.multiblock.PartAbility.MAINTENANCE)
-                        .setMinGlobalLimited(0).setMaxGlobalLimited(1));
+                        .setMinGlobalLimited(0));
+        // 原版模块结构没有能源仓/激光仓/维护仓：模块耗电由主机负责。
     }
 
     // ---------- 逐字符判定 ----------
@@ -2397,6 +2389,11 @@ public final class NanochipComplexPattern {
      * 本表现在只剩 <b>5 件</b>纯追加方块。
      */
     private static Block[] extraCandidatesFor(TowerCell cell) {
+        // 结构成型完全交给上游：不再给任何角色追加替代方块，
+        // 非光子物质排斥玻璃等缺失件因此不会出现在预览候选里。
+        if (cell != null) {
+            return NO_EXTRA_CANDIDATES;
+        }
         if (cell == null) {
             return NO_EXTRA_CANDIDATES;
         }

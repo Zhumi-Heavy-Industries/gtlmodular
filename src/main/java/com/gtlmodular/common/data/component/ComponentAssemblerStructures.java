@@ -70,7 +70,12 @@ final class ComponentAssemblerStructures {
         TraceabilityPredicate io = Predicates.autoAbilities(definition.getRecipeTypes());
         TraceabilityPredicate laserHatch = Predicates.abilities(PartAbility.INPUT_LASER).setMaxGlobalLimited(2);
         TraceabilityPredicate extra = Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1)
-                .or(Predicates.abilities(PartAbility.PARALLEL_HATCH).setMaxGlobalLimited(1));
+                .or(Predicates.abilities(PartAbility.PARALLEL_HATCH).setMaxGlobalLimited(1))
+                // ★ 2026-11-05：线程仓（自定义 PartAbility，autoAbilities 不带它）。
+                //   装仓后引擎线程数 = 仓的当前设定值；没装时保持 v1=4 / v2=8（见机器 baseThreads）。
+                .or(Predicates.abilities(
+                        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                        .setMaxGlobalLimited(1));
         // ★ 2026-10-31：激光输入仓只允许放在 l 位（激光安全机械方块），a/q/A/d 都不再接受。
         TraceabilityPredicate hatchable = Predicates.blocks(GTBlocks.CASING_STEEL_SOLID.get()).or(io).or(extra);
         TraceabilityPredicate laserSafe = Predicates.blocks(GCyMBlocks.CASING_LASER_SAFE_ENGRAVING.get());

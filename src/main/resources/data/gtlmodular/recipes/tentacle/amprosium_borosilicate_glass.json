@@ -1,5 +1,5 @@
 {
-  "type": "gtceu:fluid_solidifier",
+  "type": "gtceu:chemical_bath",
   "conditions": [
     {
       "type": "forge:mod_loaded",
@@ -17,18 +17,6 @@
             "item": "gtlcore:hsss_reinforced_borosilicate_glass"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:block_casting_mold"
-          }
-        },
-        "chance": 0,
-        "maxChance": 10000,
-        "tierChanceBoost": 0
       }
     ],
     "fluid": [

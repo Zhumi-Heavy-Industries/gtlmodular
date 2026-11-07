@@ -9,6 +9,7 @@ import java.util.Map;
 
 import appeng.api.stacks.AEFluidKey;
 import appeng.api.stacks.AEItemKey;
+import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.item.terminal.ShanhaiTerminalAeBinding.Context;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 
@@ -118,6 +119,11 @@ public final class ShanhaiStructureExecutor {
         List<Detail> details = new ArrayList<>();
         List<ShanhaiStructurePlan.Entry> changedEntries = new ArrayList<>();
         List<ItemStack> forcedReturns = new ArrayList<>();
+        // ★ 2026-11-01 批量快路径开关：≥256 处施工（恒星炎炀锻炉换 4,346 块恒星热力容器就是这种）
+        boolean bulkReplace = plan.entries().size() >= 256;
+        int bulkChanged = 0;
+        List<ItemStack> bulkReturns = new ArrayList<>();
+        long bulkStartNs = System.nanoTime();
         for (ShanhaiStructurePlan.Entry entry : plan.entries()) {
             if (!entry.requiresBuild()) continue;
             Fluid reservedFluid = Fluids.EMPTY;
@@ -135,6 +141,28 @@ public final class ShanhaiStructureExecutor {
             if (!entry.requiresFluid() && material.isEmpty()) {
                 skippedMissing++;
                 details.add(detail(entry, Outcome.SKIPPED));
+                continue;
+            }
+            // ★ 2026-11-01 大批量替换快路径（玩家实测：换恒星热力容器时服务器线程被按 33 s =
+            //   "Can't keep up ... 33278 ms / 665 ticks"，UI 自然要等它跑完）：
+            //   1) 普通方块（无 BlockEntity）的 REPLACE 不再「先 setBlock(空气) 再 BlockItem 放置」两趟，
+            //      直接一次 setBlock 成目标状态 —— 世界更新减半，也绕开 BlockItem 的放置逻辑；
+            //   2) 拆下来的旧方块不逐块退款（原来每块 1 次背包 36 格扫描 + 2 次 AE 网络调用），
+            //      先攒进 bulkReturns，循环结束后一次性 storeDismantled 聚合入库。
+            if (bulkReplace && entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
+                    && !entry.desiredState().isAir()
+                    && !(entry.desiredState().getBlock() instanceof net.minecraft.world.level.block.EntityBlock)) {
+                ItemStack bulkRemoved = entry.current().isEmpty()
+                        ? ItemStack.EMPTY : entry.current().copyWithCount(1);
+                if (!level.setBlock(entry.pos(), entry.desiredState(), 3)) {
+                    buildBatch.refundRemaining(player, ae);
+                    return new Result(false, changed, "方块放置失败: " + entry.pos().toShortString(), details);
+                }
+                if (!bulkRemoved.isEmpty()) bulkReturns.add(bulkRemoved);
+                changed++;
+                bulkChanged++;
+                changedEntries.add(entry);
+                details.add(detail(entry, placedOutcome(entry)));
                 continue;
             }
             ItemStack removed = ItemStack.EMPTY;
@@ -160,7 +188,7 @@ public final class ShanhaiStructureExecutor {
             if (!removed.isEmpty()) {
                 if (forced) {
                     forcedReturns.add(removed);
-                } else if (!materials.refund(player, ae, removed)) {
+                } else if (!materials.refundDismantled(player, ae, removed)) {
                     buildBatch.refundRemaining(player, ae);
                     if (!materials.storeDismantled(player, ae, forcedReturns)) {
                         return new Result(false, changed + 1, "旧部件与阻挡方块回收失败", details);
@@ -185,8 +213,19 @@ public final class ShanhaiStructureExecutor {
             changedEntries.add(entry);
             details.add(detail(entry, placedOutcome(entry)));
         }
+        if (!bulkReturns.isEmpty()
+                && !materials.storeDismantled(player, ae, bulkReturns)
+                && !(ae != null && materials.storeDismantled(player, null, bulkReturns))) {
+            return new Result(false, changed, "旧部件回收失败（批量）", details);
+        }
         if (!materials.storeDismantled(player, ae, forcedReturns)) {
             return new Result(false, changed, "阻挡方块回收失败", details);
+        }
+        if (bulkReplace) {
+            GTLModular.LOGGER.info(
+                    "[gtlmodular][终端] 大批量施工 {} 项完成：总 {} ms（快路径替换 {} 项，批量退料 {} 件，跳过 {} 项）",
+                    plan.entries().size(), (System.nanoTime() - bulkStartNs) / 1_000_000L,
+                    bulkChanged, bulkReturns.size(), skippedMissing);
         }
         if (!buildBatch.refundRemaining(player, ae)) {
             return new Result(false, changed, "剩余材料回收失败", details);
@@ -232,7 +271,12 @@ public final class ShanhaiStructureExecutor {
                 storeCreativeForcedReturns(player, ae, forcedReturns);
                 return new Result(false, changed, "方块放置失败: " + entry.pos().toShortString(), details);
             }
-            if (forced && !removed.isEmpty()) forcedReturns.add(removed);
+            if (forced && !removed.isEmpty()) {
+                forcedReturns.add(removed);
+            } else if (!removed.isEmpty() && !materials.refundDismantled(player, ae, removed)) {
+                storeCreativeForcedReturns(player, ae, forcedReturns);
+                return new Result(false, changed + 1, "替换旧方块无回收空间", details);
+            }
             if (removedFluid != Fluids.EMPTY) restoreFluid(player, ae, removedFluid, entry.currentFluidAmount());
             changed++;
             changedEntries.add(entry);
@@ -386,6 +430,9 @@ public final class ShanhaiStructureExecutor {
         Direction preferred = controller == null ? Direction.NORTH : controller.getFrontFacing();
         for (ShanhaiStructurePlan.Entry entry : changedEntries) {
             BlockState state = level.getBlockState(entry.pos());
+            // ★ 2026-11-01：机壳类（无 FACING 属性）不必查机器/邻居，省掉几千次 getMachine + getBlockState
+            if (!state.hasProperty(BlockStateProperties.FACING)
+                    && !state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) continue;
             Direction found = null;
             Direction[] candidates = { preferred, Direction.NORTH, Direction.SOUTH,
                     Direction.WEST, Direction.EAST, Direction.UP, Direction.DOWN };

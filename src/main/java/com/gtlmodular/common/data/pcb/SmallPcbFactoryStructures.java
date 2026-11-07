@@ -244,7 +244,12 @@ final class SmallPcbFactoryStructures {
                         PartAbility.IMPORT_FLUIDS,
                         PartAbility.EXPORT_FLUIDS,
                         PartAbility.INPUT_ENERGY))
-                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1));
+                .or(Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1))
+                // ★ 2026-11-05 玩家口径：线程仓单独放行（仍不放开并行仓/激光仓）。
+                //   装仓后引擎线程数 = 仓的当前设定值；没装时保持原来的 2 线程。
+                .or(Predicates.abilities(
+                        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                        .setMaxGlobalLimited(1));
 
         pattern.where('a', Predicates.controller(Predicates.blocks(definition.get())));
         pattern.where('j', shell);

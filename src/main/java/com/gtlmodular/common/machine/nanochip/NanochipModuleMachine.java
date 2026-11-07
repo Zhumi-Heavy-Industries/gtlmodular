@@ -27,6 +27,7 @@ import com.gregtechceu.gtceu.common.data.GTRecipeModifiers;
 import com.gregtechceu.gtceu.utils.GTUtil;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.hepdd.gtmthings.api.misc.WirelessEnergyManager;
 import com.lowdragmc.lowdraglib.gui.modular.ModularUI;
 import com.lowdragmc.lowdraglib.gui.texture.ColorBorderTexture;
 import com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture;
@@ -79,7 +80,7 @@ import java.util.List;
  */
 public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         implements IModularMachineModule<NanochipAssemblyComplexMachine, NanochipModuleMachine>,
-        IMachineLife, IDisplayUIMachine, NanochipStructureRefresh.Refreshable {
+        IMachineLife, IDisplayUIMachine {
 
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER = new ManagedFieldHolder(
             NanochipModuleMachine.class,
@@ -264,68 +265,6 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         if (!isFormed()) {
             logUnformedReason();
         }
-        reportRefreshResult();
-    }
-
-
-    // ---------- 手动「立即更新结构」（★ 2026-09-19 队长需求） ----------
-
-    /** 上一次点「立即更新结构」的人（服务端专用，**不同步**）。 */
-    private ServerPlayer pendingRefreshRequester;
-
-    /**
-     * 「立即更新结构」按钮的服务端入口（{@link NanochipStructureRefresh.Refreshable}）。
-     *
-     * <p>与主机同款：只解开三道门（变化闸 / 计数节流 / 未成形日志限流），自己不跑结构查询 ——
-     * 门一开，GTCEu 的 searchingTask 下一轮必扫到本机。<b>模块侧没有 16 点预检</b>，
-     * 所以本方法之后必然真的跑一次全量匹配（{@link #asyncCheckPattern} 的 {@code attemptedUnformed} 分支
-     * 一定会到）⇒ 请求人最迟约 1 秒就拿到结论，不需要额外兜底。
-     *
-     * <p>★★ 2026-11-12【成型判定交回上游】：{@link #NAC_MODULE_FORMATION_BY_UPSTREAM} 默认开时，
-     * 变化闸与计数节流都<b>不参与</b>判定 ⇒ 上游的 searchingTask 本来就每轮都扫到本机，
-     * 本方法的作用退化成"把限流日志的记忆清零 + 立刻用上游读数回一次结论"（见
-     * {@link #asyncCheckPattern} 里那个 {@code !loggedFormed} 分支）—— 按钮的功能与结论**照旧**，
-     * 只是结构匹配的节奏改由上游自己掌握。上面两句 {@code reset()} 保留不删：一行开关（置 false）
-     * 就要立刻恢复到"由我们放行"的旧行为，删掉会让回退路径不完整。
-     */
-    @Override
-    public void requestStructureRefresh(ServerPlayer requester) {
-        this.pendingRefreshRequester = requester;
-        // ★ 2026-10-29：不再归零我们自己的闸；把本机排回上游异步检查队列。
-        if (getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            com.gregtechceu.gtceu.api.pattern.MultiblockWorldSavedData.getOrCreate(serverLevel)
-                    .addAsyncLogic(this);
-        }
-        this.lastUnformedLogTick = -10_000L;
-        if (isFormed() && !getMultiblockState().hasError()) {
-            reportRefreshResult();
-            return;
-        }
-        if (requester != null) {
-            requester.sendSystemMessage(Component.translatable(NanochipStructureRefresh.LANG_REQUESTED)
-                    .withStyle(ChatFormatting.YELLOW));
-        }
-    }
-
-    /** 把「手动刷新」的结论回给请求人（成形 / GTCEu 报出的首个不符处），并清掉请求人。 */
-    private void reportRefreshResult() {
-        ServerPlayer requester = this.pendingRefreshRequester;
-        if (requester == null) {
-            return;
-        }
-        this.pendingRefreshRequester = null;
-        if (isFormed()) {
-            requester.sendSystemMessage(Component.translatable(NanochipStructureRefresh.LANG_OK)
-                    .withStyle(ChatFormatting.GREEN));
-            return;
-        }
-        requester.sendSystemMessage(Component.translatable(NanochipStructureRefresh.LANG_FAIL)
-                .withStyle(ChatFormatting.RED));
-        String detail = NanochipAssemblyComplexMachine.describeStructureFailure(getMultiblockState());
-        requester.sendSystemMessage(Component.literal("§c· §7" + kind.nameZh() + " @"
-                + getPos().toShortString() + "：" + (detail == null
-                ? "GTCEu 没留下逐格原因：数量类失败 / 区块未加载等路径不写 error"
-                : detail)));
     }
 
     /** 模块"一直没成形"时的限流诊断（每 {@value #UNFORMED_LOG_INTERVAL_TICKS} tick 最多一条）。 */
@@ -506,6 +445,12 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     /** 主机的配方等级（吃复合体电时，界面上的「最大配方等级」用；服务端算）。 */
     @DescSynced
     private int syncedHostTier;
+    @DescSynced
+    private long syncedHostMaxInputVoltage;
+    @DescSynced
+    private long syncedHostStoredEU;
+    @DescSynced
+    private long syncedHostCapacityEU;
 
     // ---------- ★ 2026-09-21 新增：能量缓存（wiki「能量缓存」段逐字实现） ----------
     //
@@ -916,7 +861,12 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     @Override
     public com.gregtechceu.gtceu.api.misc.EnergyContainerList getEnergyContainer() {
         com.gregtechceu.gtceu.api.misc.EnergyContainerList own = super.getEnergyContainer();
-        if (own != null && own.getEnergyCapacity() > 0L) {
+        // 主机无线/免费电模式优先：模块结构里即使插了空能源仓，
+        // 也仍然使用复合体电源，避免“有仓但没电”把主机供电挡掉。
+        boolean hostPower = hostConnected()
+                && (GTLModularConfig.isNanochipFreeEnergyEnabled()
+                    || GTLModularConfig.isNanochipGridPowerEnabled());
+        if (!hostPower && own != null && own.getEnergyCapacity() > 0L) {
             return own;
         }
         NanochipAssemblyComplexMachine host = getHost();
@@ -932,8 +882,15 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     /** 是否正在吃复合体的电（自带能源仓的模块为 false）。 */
     public boolean drawingFromHost() {
+        if (!hostConnected()) {
+            return false;
+        }
+        if (GTLModularConfig.isNanochipFreeEnergyEnabled()
+                || GTLModularConfig.isNanochipGridPowerEnabled()) {
+            return true;
+        }
         var own = super.getEnergyContainer();
-        return (own == null || own.getEnergyCapacity() <= 0L) && hostConnected();
+        return own == null || own.getEnergyCapacity() <= 0L;
     }
 
     /** 等级/电压代理复合体：gtlcore 的并行公式与 GT 的超频都读这两个值。 */
@@ -1108,6 +1065,9 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         syncedHostConnected = connected;
         syncedDrawingFromHost = drawingFromHost();
         syncedHostTier = connected && h != null ? h.getTier() : 0;
+        syncedHostMaxInputVoltage = connected && h != null ? h.getMaxInputVoltage() : 0L;
+        syncedHostStoredEU = connected && h != null ? h.getTotalStoredEU() : 0L;
+        syncedHostCapacityEU = connected && h != null ? h.getTotalCapacityEU() : 0L;
         if (connected && h != null) {
             syncedHostInfo = " · " + (h.fullMode() ? "全流程档" : "直通档")
                     + " · 已识别 " + h.formedModuleCount() + " 个模块";
@@ -1272,6 +1232,44 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
                 return;
             }
             long perTick = Math.max(1L, RecipeHelper.getInputEUt(recipe));
+            if (getProgress() == 0 && module.getLevel() != null && !module.getLevel().isClientSide) {
+                GTLModular.LOGGER.info(
+                        "[gtlmodular] 模块供电诊断 @{} {}：connected={} drawing={} free={} grid={} user={} perTick={}",
+                        module.getPos(), module.getModuleKind(),
+                        module.hostConnected(), module.drawingFromHost(),
+                        GTLModularConfig.isNanochipFreeEnergyEnabled(),
+                        GTLModularConfig.isNanochipGridPowerEnabled(),
+                        host.gridPowerUser(), perTick);
+            }
+
+            // ★ 伪神之锻炉同款：模块本身就是无线电网的消费者，不再经过主机缓存/主机
+            //   EnergyContainerList 的容量汇总。免费电直接放行；电网模式直接扣主机的
+            //   无线电网账户。这条路径优先于下面的缓存/主机无限判定。
+            if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+                setStatus(RecipeLogic.Status.WORKING);
+                if (!machine.onWorking()) {
+                    interruptRecipe();
+                    return;
+                }
+                progress++;
+                totalContinuousRunningTime++;
+                return;
+            }
+            if (GTLModularConfig.isNanochipGridPowerEnabled()) {
+                java.util.UUID user = host.gridPowerUser();
+                if (user != null
+                        && WirelessEnergyManager.addEUToGlobalEnergyMap(user, -perTick, host)) {
+                    setStatus(RecipeLogic.Status.WORKING);
+                    if (!machine.onWorking()) {
+                        interruptRecipe();
+                        return;
+                    }
+                    progress++;
+                    totalContinuousRunningTime++;
+                    return;
+                }
+            }
+
             long full = perTick * (long) Math.max(1, recipe.duration);
             // ★ 2026-10-08【无线电网供电兼容】把「等待复合体蓄电」这道判定从「按**已存**电量」改成
             //   「按主机**可获取能力**」。
@@ -1296,7 +1294,12 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
             //
             //   保守第一 + 真无电仍拦：容量为 0 且存量为 0 ⇒ hostUnlimited == false ⇒ 下面两道判定
             //   与改动前**逐字一致**（照样置等待、照样走 FAIL_NO_ENOUGH_EU_IN）。
-            final boolean hostUnlimited = host.isEnergySourceEffectivelyUnlimited();
+            // 不只看主机那个汇总判定：电网/免费电直接就是“按需现取”。
+            // （主机的 EnergyContainerList 汇总值在电网+能源仓叠加时可能溢出，
+            //  这里用配置 + 取电身份兜底，模块本身已经会直接向无线电网扣电。）
+            final boolean hostUnlimited = host.isEnergySourceEffectivelyUnlimited()
+                    || GTLModularConfig.isNanochipFreeEnergyEnabled()
+                    || (GTLModularConfig.isNanochipGridPowerEnabled() && host.hasGridPowerIdentity());
             if (getProgress() == 0) {
                 module.ensureBufferCovers(full);   // 我方个别配方比 NH 页上的最大配方时间还长 ⇒ 容量至少覆盖它
                 if (module.getBufferEU() < full) {
@@ -1954,26 +1957,76 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     // ---------- 界面 ----------
 
-    /**
-     * ★【2026-09-21 0.1.24】模块塔：<b>既不覆写 {@code createUI(Player)}，也不覆写 {@code createUIWidget()}</b>，
-     * 只往 GTCEu 自己的配置页图标列里加一格「立即更新结构」。
-     *
-     * <p>与主机同一个原因与同一条修法（取证见 {@code NanochipAssemblyComplexMachine.attachConfigurators}
-     * 的注释）：基类 {@code WorkableElectricMultiblockMachine} 自带 fancy 界面
-     * （{@code FancyMachineUIWidget} 画标题栏/左列 tab/背包），0.1.16 我覆写 {@code createUI}
-     * 自绘朴素页把整套顶掉了 ⇒ 队长看到的"模块的UI也不是机器的样子"。
-     *
-     * <p>模块也会"半天不成型"（V/P/Z 位放错一格就整塔不成立，而它没有主机的 16 点预检，
-     * 只能靠变化闸的地板自愈）。按钮的语义与主机完全一致，见 {@link NanochipStructureRefresh}。
-     */
-    @Override
-    public void attachConfigurators(ConfiguratorPanel panel) {
-        super.attachConfigurators(panel);
-        panel.attachConfigurators(new NanochipStructureRefresh.RefreshConfigurator(this));
-    }
-
     @Override
     public void addDisplayText(List<Component> textList) {
+        // 完全回归 GTCEu 基类显示：不刷新自定义 tier/energy 代理，也不追加任何文字。
+        super.addDisplayText(textList);
+        if (textList != null) {
+            return;
+        }
+        // 只刷新 GTCEu 原版界面要读的 tier/energyContainer，不追加任何自定义文字。
+        if (syncedDrawingFromHost) {
+            this.tier = syncedHostTier;
+            if (getLevel() != null && getLevel().isClientSide) {
+                this.energyContainer = new com.gregtechceu.gtceu.api.misc.EnergyContainerList(
+                        List.of(new com.gregtechceu.gtceu.api.capability.IEnergyContainer() {
+                            @Override
+                            public long getEnergyStored() {
+                                return syncedHostStoredEU;
+                            }
+
+                            @Override
+                            public long getEnergyCapacity() {
+                                return syncedHostCapacityEU;
+                            }
+
+                            @Override
+                            public long getInputVoltage() {
+                                return syncedHostMaxInputVoltage;
+                            }
+
+                            @Override
+                            public long getInputAmperage() {
+                                return 1L;
+                            }
+
+                            @Override
+                            public long getOutputVoltage() {
+                                return 0L;
+                            }
+
+                            @Override
+                            public long getOutputAmperage() {
+                                return 0L;
+                            }
+
+                            @Override
+                            public boolean inputsEnergy(net.minecraft.core.Direction side) {
+                                return false;
+                            }
+
+                            @Override
+                            public boolean outputsEnergy(net.minecraft.core.Direction side) {
+                                return false;
+                            }
+
+                            @Override
+                            public long acceptEnergyFromNetwork(net.minecraft.core.Direction side,
+                                                               long voltage, long amperage) {
+                                return 0L;
+                            }
+
+                            @Override
+                            public long changeEnergy(long amount) {
+                                return 0L;
+                            }
+                        }));
+            }
+        }
+        super.addDisplayText(textList);
+        if (textList != null) {
+            return;
+        }
         // 与生态园同款（{@code MoltenModuleMachineBase.addDisplayText}）：
         // gtceu 的「最大功率 / 最大配方等级」两行读的是基类 protected 字段 energyContainer / tier，
         // 而那两个字段只在结构成形时赋一次值 —— 吃复合体电的模块要按主机实况刷新，

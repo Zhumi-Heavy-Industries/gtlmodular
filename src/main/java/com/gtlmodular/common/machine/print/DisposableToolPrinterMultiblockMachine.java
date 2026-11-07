@@ -18,7 +18,14 @@ import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
  * 只使用 GTCEu 自己的 {@code RecipeLogic} / {@code GTRecipe} / {@code GTRecipeModifiers}。
  */
 public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine {
+
+
+    @Override
+    public int getMaxParallel() {
+        return 1;
+    }
+
 
     /** 基础线程数（队长口径：八线程）。 */
     public static final int THREADS = 8;
@@ -47,6 +54,7 @@ public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMult
 
     @Override
     public int baseThreads() {
+        // 没装线程仓时的固定值；装了线程仓时引擎统一读仓（effectiveThreads()），机器类不再适配。
         return THREADS;
     }
 

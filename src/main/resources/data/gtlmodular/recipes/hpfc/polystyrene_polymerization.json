@@ -1,0 +1,58 @@
+{
+  "type": "gtceu:chemical_reactor",
+  "conditions": [
+    {
+      "type": "forge:mod_loaded",
+      "modid": "gtceu"
+    }
+  ],
+  "duration": 160,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 1
+        },
+        "chance": 0
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:oxygen"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 144,
+          "value": {
+            "fluid": "gtceu:styrene"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 216,
+          "value": {
+            "fluid": "gtceu:polystyrene"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 30
+      }
+    ]
+  }
+}

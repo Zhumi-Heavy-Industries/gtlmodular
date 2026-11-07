@@ -139,8 +139,8 @@ public final class ConnectedCtmBakedModel implements BakedModel {
      * <p><b>注意这是实例字段</b>（每个模型各一份）—— 2026-09-16 踩过坑：写成 `static` 时会被**机壳**
      * 那 4 个模型条目把额度用光，玻璃一条都不打 ⇒ 看起来像"玻璃没走这条路"，其实是日志被吃掉了 ✗。
      */
-    private final java.util.concurrent.atomic.AtomicInteger diagGetModelData = new java.util.concurrent.atomic.AtomicInteger(4);
-    private final java.util.concurrent.atomic.AtomicInteger diagGetQuads = new java.util.concurrent.atomic.AtomicInteger(6);
+    private final java.util.concurrent.atomic.AtomicInteger diagGetModelData = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.atomic.AtomicInteger diagGetQuads = new java.util.concurrent.atomic.AtomicInteger(0);
     private volatile int lazyAttempts;
     private volatile long lastLazyAttemptAt;
 

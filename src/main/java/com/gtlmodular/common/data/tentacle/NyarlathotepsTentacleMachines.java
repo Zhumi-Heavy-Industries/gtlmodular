@@ -38,7 +38,9 @@ import java.util.List;
  *       {@code MOLECULAR_CASING} 对应）；正面覆盖层用 {@code gtceu:block/multiblock/fusion_reactor}
  *       （GTO 也是这张，因为它就是台聚变级巨构）；</li>
  *   <li>并行：见 {@link NyarlathotepsTentacleMachine#parallelMultiplier()}（线圈温度口径）；</li>
- *   <li>线程：见 {@link NyarlathotepsTentacleMachine#THREADS}。</li>
+ *   <li>线程：不再固定 —— 结构外壳位接受 {@code gtladditions:thread_modifier_hatch}
+ *       （Ω-天球分歧引擎），线程数由该仓给出；无线程仓时 1 条
+ *       （见 {@link NyarlathotepsTentacleMachine#totalThreads()}）。</li>
  * </ul>
  *
  * <p>注册调用点：{@link GTLModularMachines#init()}。
@@ -53,10 +55,10 @@ public final class NyarlathotepsTentacleMachines {
     };
 
     /** 控制器外壳贴图 = 分子机械方块（与 GTO 的 {@code workableCasingRenderer} 一致）。 */
-    private static final ResourceLocation CASING_TEXTURE =
+    public static final ResourceLocation CASING_TEXTURE =
             new ResourceLocation("gtlcore", "block/molecular_casing");
     /** 正面覆盖层 = 聚变反应堆（GTO 同款）。 */
-    private static final ResourceLocation OVERLAY_TEXTURE =
+    public static final ResourceLocation OVERLAY_TEXTURE =
             new ResourceLocation("gtceu", "block/multiblock/fusion_reactor");
 
     public static MultiblockMachineDefinition NYARLATHOTEPS_TENTACLE;
@@ -88,7 +90,12 @@ public final class NyarlathotepsTentacleMachines {
                 .rotationState(RotationState.ALL)
                 .tier(GTValues.UEV)
                 .recipeTypes(types.toArray(new GTRecipeType[0]))
-                .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK.apply(OverclockingLogic.PERFECT_OVERCLOCK))
+                .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK.apply(
+                        // ★ 2026-11-02 队长口径：改为「无损超频」——EUt 不随超频上涨（电压系数 1.0），
+                        //   只缩短时间（沿用完美超频的 duration 系数 0.25/级）。
+                        //   GTCEu 1.4.4 的 OverclockingLogic(double voltageFactor, double durationFactor, boolean subTick)
+                        //   正好能表达该语义；本包 GTLcore/GTLAdditions/gtmthings 均无现成 Lossless 实现（已全 jar 检索）。
+                        new OverclockingLogic(1.0, OverclockingLogic.PERFECT_DURATION_FACTOR, false)))
                 .appearanceBlock(NyarlathotepsTentacleMachines::appearanceBlock)
                 .pattern(NyarlathotepsTentacleStructures::build)
                 .workableCasingRenderer(CASING_TEXTURE, OVERLAY_TEXTURE)
@@ -96,19 +103,19 @@ public final class NyarlathotepsTentacleMachines {
                 .tooltips(tooltips())
                 .register();
 
+        // ★ 2026-11-02（0.3.328）：不再替换机器外观渲染器 —— 黑日由客户端扫描 +
+        //   RenderLevelStageEvent 绘制，机器本体继续用上面 .workableCasingRenderer(...) 的原样。
         GTLModular.LOGGER.info("[gtlmodular] 已注册奈亚拉托提普之触：{}（165×48×49 / {} 张配方表 / 每张表可切 / "
-                        + "线圈并行 2^((温度-1800)/900) 封顶 4096 / 4 线程）",
+                        + "线圈并行 2^((温度-1800)/900) 封顶 21 亿 / 线程由线程仓驱动，无线程仓 1 条）",
                 NYARLATHOTEPS_TENTACLE.getId(), types.size());
     }
 
     /**
-     * 主机描述：<b>GTO 原机 18 行工具提示逐行照搬</b>，只在两处按队长口径改：
-     * <ul>
-     *   <li>「多线程」段里删掉「允许安装线程仓实现多线程配方并行处理。」一句
-     *       —— 本机线程数固定（{@code THREADS = 4}），不收线程仓；</li>
-     *   <li>末尾补一行「§7结构来源：§bGTO」。</li>
-     * </ul>
-     * 行序：8 行设定文案 → 可特殊并行(2) → 并行数(2) → 激光仓(2) → 多线程(2) → 配方类型(1) → 结构来源(1)。
+     * 主机描述：<b>GTO 原机 19 行工具提示逐行照搬</b>（2026-11-01 把此前删掉的
+     * 「允许安装线程仓实现多线程配方并行处理。」一行补回 —— 本机重新支持线程仓），
+     * 只在末尾补一行「§7结构来源：§bGTO」。
+     *
+     * <p>行序：8 行设定文案 → 可特殊并行(2) → 并行数(2) → 激光仓(2) → 多线程(3) → 配方类型(1) → 结构来源(1)。
      */
     private static Component[] tooltips() {
         Component[] lines = new Component[TOOLTIP_LINES];
@@ -119,7 +126,7 @@ public final class NyarlathotepsTentacleMachines {
     }
 
     /** 工具提示行数（与 lang 里的 {@code gtlmodular.nyarlathoteps_tentacle.tooltip.N} 对应）。 */
-    private static final int TOOLTIP_LINES = 18;
+    private static final int TOOLTIP_LINES = 20;
 
     /** 控制器外观方块：分子机械方块；取不到时退回本模组自造的激光机械方块（不让注册期 NPE）。 */
     private static Block appearanceBlock() {
