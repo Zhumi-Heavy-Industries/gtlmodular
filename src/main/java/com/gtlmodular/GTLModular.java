@@ -70,6 +70,10 @@ public final class GTLModular {
         // ★ 2026-10-30：一次性工具 3D 打印配方表（gtlmodular:disposable_tool_printing），同一注册窗口。
         modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
                 com.gtlmodular.common.data.print.DisposableToolPrintTypes::onRecipeTypeRegisterEvent);
+        // ★ 奈亚机「零部件加工」专用表（gtlmodular:component_parts），同一注册窗口。
+        //   不共用 gtlcore:component_assembly_line，避免零件配方连带改写部件组装机。
+        modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
+                com.gtlmodular.common.data.tentacle.ComponentPartsRecipeTypes::onRecipeTypeRegisterEvent);
 
         // ★ 2026-10-01：**天基矿石处理厂（gtceu:space_ore_processor）配方镜像**（v2，第二轮）。
         //   起因：gtladditions 分支 3.2.8Custom_SubSpace-fix2 自带的复制逻辑

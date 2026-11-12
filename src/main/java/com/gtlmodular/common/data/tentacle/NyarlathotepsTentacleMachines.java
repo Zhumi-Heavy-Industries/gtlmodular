@@ -29,7 +29,7 @@ import java.util.List;
  * {@code gtceu:suprachronal_assembly_line} / {@code gtceu:circuit_assembly_line}，
  * {@code gtceu:assembly_line} 是 GTCEu 原版），按 id 现取；取不到的自动跳过并告警，
  * 一张都取不到时才放弃注册（不崩服）。
- * <p>另外挂上了 gtlcore 的 {@code gtlcore:component_assembly_line}，
+ * <p>另外挂上了本模组自建的 {@code gtlmodular:component_parts}，
  * 使它多出一个「零部件加工」模式（一锭出全套零件的批量零件配方）。
  *
  * <h2>与原机一致的注册口径</h2>
@@ -50,7 +50,7 @@ import java.util.List;
 public final class NyarlathotepsTentacleMachines {
 
     /**
-     * GTO 原机的三张配方表，外加 gtlcore 的零件工厂表。
+     * GTO 原机的三张配方表。
      *
      * <p>按 id 现取而不是直接引用 {@code GTLRecipeTypes}，是为了在本模组未与 gtlcore 同时加载时
      * 也能正常注册（取不到的那张会在 {@link #register()} 里被跳过）。</p>
@@ -59,8 +59,9 @@ public final class NyarlathotepsTentacleMachines {
             new ResourceLocation("gtceu", "suprachronal_assembly_line"),
             new ResourceLocation("gtceu", "assembly_line"),
             new ResourceLocation("gtceu", "circuit_assembly_line"),
-            // 「零部件加工」模式：跑 GTE 零件工厂规格的一锭出全套零件配方
-            new ResourceLocation("gtlcore", "component_assembly_line"),
+            // 「零部件加工」：本模组自建的表，不共用 gtlcore:component_assembly_line，
+            // 以免零件配方连带改写部件组装机。
+            ComponentPartsRecipeTypes.id("component_parts"),
     };
 
     /** 控制器外壳贴图 = 分子机械方块（与 GTO 的 {@code workableCasingRenderer} 一致）。 */

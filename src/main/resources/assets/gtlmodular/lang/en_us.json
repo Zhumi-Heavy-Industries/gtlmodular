@@ -483,6 +483,7 @@
   "gtlmodular.cc.cc_casing_uev_superconductor.name": "Packaged Superconductor Base UEV Casing",
   "gtlmodular.cc.cc_processed_bolt_umv_superconductor.name": "Filed UMV Superconductor Base Bolt",
   "gtlmodular.nanochip_assembly_complex": "Nanochip Assembly Complex",
+  "gtlmodular.component_parts": "Component Parts Processing",
   "gtlmodular.nanochip_conversion": "Nanochip Conversion",
   "gtlmodular.nanochip_assembly_matrix": "Nanochip Assembly Matrix",
   "gtlmodular.nanochip_smd_processor": "Part Preparation Apparatus",
