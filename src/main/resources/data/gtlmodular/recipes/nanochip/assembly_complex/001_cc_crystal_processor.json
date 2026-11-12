@@ -67,6 +67,16 @@
           }
         }
       }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 18,
+          "value": {
+            "fluid": "gtceu:mutated_living_solder"
+          }
+        }
+      }
     ]
   },
   "outputs": {

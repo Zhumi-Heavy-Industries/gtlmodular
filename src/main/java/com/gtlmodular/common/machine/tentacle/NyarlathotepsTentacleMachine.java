@@ -59,12 +59,23 @@ import java.util.Set;
  * GTO 奈亚只允许装 1 个线程仓（结构谓词 {@code setMaxGlobalLimited(1)}）。
  */
 public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine, IIndependentThreadHost, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine {
+        implements IThreadedRecipeMachine, IIndependentThreadHost, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
 
 
+    /**
+     * 本机并行上限：<b>线圈温度倍率 × 结构里并行仓的并行数</b>（long 乘再钳到 int）。
+     *
+     * <p>★ 2026-11-08 修正：原来恒返回 1，Jade 的「同时处理至多 N 个配方」与 gtlcore
+     * {@code BatchProcessing} 的常规并行上限都会读到 1（实际引擎按线圈倍率 × 并行仓在跑）。
+     * 实际并行应用仍只在 {@link ThreadedRecipeLogic} 里乘一次，本方法只如实报同一口径
+     * （与 gtlcore {@code WorkableElectricParallelHatchMultipleRecipesMachine} 同构）。
+     */
     @Override
     public int getMaxParallel() {
-        return 1;
+        long hatch = org.gtlcore.gtlcore.common.data.GTLRecipeModifiers.getHatchParallel(this);
+        long total = Math.max(1L, (long) this.parallelMultiplier()) * Math.max(1L, hatch);
+        return (int) Math.min(Integer.MAX_VALUE, total);
     }
 
 
@@ -98,6 +109,29 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
         return new ThreadedRecipeLogic(this);
+    }
+
+    /** ★ 2026-11-10：记录放置者 UUID —— 能源缓冲「从无线电网抽电」的身份。 */
+    @Override
+    public void onMachinePlaced(@org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity player,
+                                net.minecraft.world.item.ItemStack stack) {
+        if (player instanceof net.minecraft.world.entity.player.Player p
+                && getRecipeLogic() instanceof ThreadedRecipeLogic logic) {
+            logic.setGridUser(p.getUUID());
+        }
+    }
+
+    /**
+     * ★ 2026-11-09：<b>引擎常驻</b>（不再「没装线程仓就交回原逻辑」）。
+     *
+     * <p>原因：gtlcore 1.2.3.3-fix3 下，gtladditions 给 {@code MultipleRecipesLogic} 的构造打了
+     * mixin，会把机器强转成 {@code IWirelessThreadModifierParallelMachine}；本机只实现 gtlcore 的
+     * {@code ParallelMachine} ⇒ 构造即 {@code ClassCastException}（0.3.358 实机崩溃就是这个）。
+     * ⇒ 改为：<b>装不装线程仓都由引擎驱动</b>，没仓时线程数回落到 {@link #baseThreads()}（1 条）。
+     */
+    @Override
+    public boolean engineRequiresThreadHatch() {
+        return false;
     }
 
     // ------------------------------------------------------------------ 线程仓（IThreadHatchPart）

@@ -56,14 +56,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  *   <li><b>{@code serverData} 标记</b>：Jade {@code serverData} <b>根</b>上存在
  *       {@link NanochipJadeKeys#KEY_THREAD_LIMIT}。这个键<b>只由</b>
  *       {@code NanochipThreadedJadeProvider#appendServerData} 写入，而它只在
- *       {@code getRecipeLogic() instanceof NanochipThreadedRecipeLogic} 时才写 ⇒
+ *       {@code getRecipeLogic() instanceof <旧世代逻辑类>}（该类已随 P1 删除）时才写 ⇒
  *       键存在 ⟺ 这块方块跑在独立线程逻辑上（而不是旧逻辑 / 关掉开关的机器）。
  *       GTM / GCYM / gtlcore / gtladditions / enhancedcore 永远不会写这个键
  *       （名字带本模组命名空间）。第一帧 serverData 可能还没到 ⇒ 那时<b>不取消</b>
  *       （原生条照常显示，我们那边也不画条），不会闪、也不会错画。</li>
  * </ol>
  *
- * <p>为什么<b>不</b>用客户端 {@code instanceof NanochipThreadedRecipeLogic} 当判据：
+ * <p>为什么<b>不</b>用客户端 {@code instanceof} 具体逻辑类（当时那个类已随 P1 删除）当判据：
  * 机器逻辑对象不保证同步到客户端，客户端那份可能是基类实例 ⇒ 会<b>永远不命中、安静失效</b>
  * （我们踩过「挂错对象导致永不生效」的坑，见 {@code 作者建议_实现路线.md:40}）。
  * 注册表键是可靠证据，所以判据落在它上面。
@@ -72,7 +72,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * <ol>
  *   <li><b>功能本体先独立可测</b>：显示内容先在机器 UI 里落地
  *       （{@code NanochipAssemblyComplexMachine#addDisplayText} 调
- *       {@code NanochipThreadedRecipeLogic#appendThreadDisplayText}），与混入解耦；
+ *       旧世代逻辑类的 {@code appendThreadDisplayText}；该类已随 P1 删除），与混入解耦；
  *       而且<b>本轮之后连 Jade 的多条条也不依赖本混入</b>（provider 自己画）。</li>
  *   <li><b>混入类里所有 {@code static} 字段都是 {@code private}</b>：本类仅有的 6 个静态字段
  *       （{@code diagBudget} / {@code diagNextAt} / {@code DIAG_INTERVAL_MS} / {@code KEY_PROGRESS} /

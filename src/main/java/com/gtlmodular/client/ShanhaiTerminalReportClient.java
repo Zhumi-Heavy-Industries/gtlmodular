@@ -35,6 +35,15 @@ public final class ShanhaiTerminalReportClient {
         minecraft.setScreen(new WhaleTerminalReportScreen(report));
     }
 
+    /** 最近一次结构扫描报告；终端预览按钮使用。 */
+    public static ShanhaiTerminalReport latestScan() {
+        ShanhaiTerminalReport found = null;
+        for (ShanhaiTerminalReport report : REPORTS.values()) {
+            if (report.type() == ShanhaiTerminalReport.Type.SCAN) found = report;
+        }
+        return found;
+    }
+
     public static void store(ShanhaiTerminalReport report) {
         REPORTS.remove(report.id());
         REPORTS.put(report.id(), report);

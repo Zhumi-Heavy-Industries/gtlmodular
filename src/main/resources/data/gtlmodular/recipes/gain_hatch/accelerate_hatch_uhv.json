@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtceu:uhv_sensor"
+    },
+    "F": {
+      "item": "gtceu:uhv_field_generator"
+    },
+    "A": {
+      "item": "gtceu:uhv_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:accelerate_hatch_uhv"
+  }
+}

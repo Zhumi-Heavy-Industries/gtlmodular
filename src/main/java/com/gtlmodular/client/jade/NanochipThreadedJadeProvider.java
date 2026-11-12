@@ -2,10 +2,12 @@ package com.gtlmodular.client.jade;
 
 import com.gregtechceu.gtceu.api.blockentity.MetaMachineBlockEntity;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
+import com.gregtechceu.gtceu.utils.GTUtil;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import com.gtlmodular.common.machine.nanochip.NanochipAssemblyComplexMachine;
-import com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic;
+import com.gtlmodular.common.machine.nanochip.NanochipRecipeOutputs;
+import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -17,16 +19,13 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import snownee.jade.api.BlockAccessor;
+import snownee.jade.api.fluid.JadeFluidObject;
 import snownee.jade.api.IBlockComponentProvider;
 import snownee.jade.api.IServerDataProvider;
 import snownee.jade.api.ITooltip;
 import snownee.jade.api.config.IPluginConfig;
 import snownee.jade.api.ui.IElement;
 import snownee.jade.api.ui.IElementHelper;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 
 /**
  * ★★★ 2026-10-28【独立跨配方线程 · Jade 显示】★★★
@@ -48,17 +47,17 @@ import java.util.Map;
  * <h2>★ 2026-11-02【多线程显示设计与理由】（逐条）</h2>
  * <ol>
  *   <li><b>每条线程一组三行（标签 / 条 / 并行）</b>：<b>几条在跑的批次就画几组</b>
- *       （一一对应：服务端列表（{@code NanochipThreadedJadeProvider#snapshotThreads}）里有一条，
+ *       （一一对应：服务端用 {@code writeGenericThreadData} 写出的批次列表里有一条，
  *       客户端就画一组 {@code 线程N:} + 整行宽进度条（条内 {@code 2/4 s}）+ {@code 并行 p}）。
- *       <b>编号保留</b>（玩家要区分是哪条），且已从「表内下标」换成<b>开批次时钉死的稳定编号</b>
- *       （{@code NanochipThreadedRecipeLogic#threadLabelOf}：批次跑完会从表里摘掉、下标会整体前移，
- *       而 fan-out 之后同一条配方会同时占多条，稳定编号才认得出是哪条）。</li>
+ *       <b>编号保留</b>（玩家要区分是哪条）：批次槽位号由服务端 {@code snapshotBatches()} 的顺序钉死，
+ *       客户端只按下标画，不自己重排。</li>
  *   <li><b>顺序 = 进度降序（同进度按编号升序）</b>：玩家看提示的目的就是「哪条快好了 / 机器在不在动」
  *       ⇒ 把最接近完工的摆最上面；同进度用稳定编号兜底 ⇒ 同一 tick 内两次读取顺序一致、不抖动。
- *       （排序在服务端 {@code snapshot()} 里做一次，面板与 Jade 共用同一份顺序与同一份数字。）
+ *       （排序在服务端批次快照里做一次，面板与 Jade 共用同一份顺序与同一份数字。）
  *       ⇒ 「列出来的 3 条」就是<b>进度最快的 3 条</b>。</li>
  *   <li><b>总览两行保持现状</b>：{@code 上限 N 条 · 在用 k 条} ＋ {@code 同时处理 R 次配方运行（各线程之和）}
- *       —— k 与 R 都由服务端按<b>全部</b>批次算（{@code runningThreadCount()} / {@code totalRunsAtOnce()}），
+ *       —— k 与 R 都由服务端按<b>全部</b>批次算
+ *       （{@code IThreadBatchLogic#runningBatches()} / 各批 {@code parallels()} 之和），
  *       与下面画了几条无关。</li>
  *   <li><b>超长截断（上限 3 条）</b>：进度条条数不超过 {@link NanochipJadeKeys#DISPLAY_LINES} = <b>3</b>
  *       （用户原话「最多也就同时只显示三个进度条吧」），多出来的用
@@ -102,8 +101,8 @@ import java.util.Map;
  *
  * <h2>服务端 / 客户端边界（逐条）</h2>
  * <ul>
- *   <li>{@link #appendServerData}：<b>只在服务端</b>跑 —— 此时才读得到真的线程表
- *       （{@code NanochipThreadedRecipeLogic#snapshot()} 是服务端权威数据）。</li>
+ *   <li>{@link #appendServerData}：<b>只在服务端</b>跑 —— 此时才读得到真的批次表
+ *       （{@code IThreadBatchLogic.snapshotBatches()} 是服务端权威数据）。</li>
  *   <li>{@link #appendTooltip}：<b>只在客户端</b>跑 —— Jade 的方块提示是纯客户端渲染，
  *       本方法只读 {@code accessor.getServerData()}，<b>不碰任何服务端对象</b>。</li>
  *   <li>服务端<b>不</b>注册 {@link #appendTooltip}（那是客户端注册表的事，见
@@ -111,17 +110,17 @@ import java.util.Map;
  * </ul>
  *
  * <h2>判定「只作用于我们的机器」（不许影响别的模组）</h2>
- * <p>服务端的判据是本机配方逻辑的<b>运行时类型</b>：
- * {@code getRecipeLogic() instanceof NanochipThreadedRecipeLogic}
- * （本类是 {@code RecipeLogic} 的直接子类，且只在 {@code NAC_INDEPENDENT_THREADS} 打开时由
- * {@code createRecipeLogic} 返回）⇒ 旧逻辑的机器与别人的模组一概不命中、一个键都不写。
+ * <p>服务端的判据是本机配方逻辑的<b>运行时类型</b>：实现
+ * {@link com.gtlmodular.common.machine.engine.IThreadBatchLogic} 且
+ * （线程上限 &gt; 1 或在跑批次 &gt; 0）。通用线程引擎与地心三模块的线程逻辑都实现它
+ * ⇒ 别人的模组、以及不带该接口的机器一概不命中、一个键都不写。
  * 客户端判定见 {@link NanochipJadeKeys#KEY_THREAD_LIMIT}（键存在 = 我们的机器）。
  *
  * <h2>诚实边界（不承诺夸大数字）</h2>
  * <ul>
  *   <li><b>N 是上限、k 是数出来的</b>：料不够 / 放不下 / 没电时 k &lt; N，照实显示。</li>
- *   <li><b>R 是各线程自己那份并行之和</b>（{@code totalRunsAtOnce()}），不是功率倍率，
- *       也不拿它算耗电。</li>
+ *   <li><b>R 是各线程自己那份并行之和</b>（{@code snapshotBatches()} 各批 {@code parallels()} 相加），
+ *       不是功率倍率，也不拿它算耗电。</li>
  *   <li><b>只画前 {@link NanochipJadeKeys#DISPLAY_LINES} 条</b>进度条（= 3 条，按进度降序取最快的那些），
  *       其余用一行交代「还有 M 条未列出」（{@code ....more.unlisted}）——
  *       悬浮框跟着准星走，不为了好看撑满屏幕；<b>k 与 R 仍是全部批次数出来的</b>，不是画出的那几条之和。</li>
@@ -129,8 +128,8 @@ import java.util.Map;
  *       而配套的混入已经把原生进度条取消 ⇒ 若这里收手就会「什么进度都没有」。
  *       显示内容与原生条<b>信息量等价</b>（一条状态行 + 那一条线程的进度条）。
  *       理由与数字来源见 {@link #appendTooltip} 的注释。</li>
- *   <li><b>旧逻辑机器（{@code NAC_INDEPENDENT_THREADS = false} 时）</b>：
- *       {@code getRecipeLogic()} 不是 {@code NanochipThreadedRecipeLogic} ⇒ 本 provider
+ *   <li><b>不带 {@code IThreadBatchLogic} 的机器（含 GTCEu 原生机器、别人的模组）</b>：
+ *       {@code getRecipeLogic()} 不实现该接口（或既没装线程仓也没有批次）⇒ 本 provider
  *       一个键都不写、什么都不显示，GTCEu 原生那条进度条<b>照旧</b>显示（回退无需改代码）。</li>
  * </ul>
  *
@@ -192,16 +191,26 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
     private static final String LANG_CALIB_REDUCTION = "gtlmodular.nanochip.jade.calibration_reduction";
 
     /**
+     * 线程总览行「独立线程：上限 %s 条 · 在用 %s 条」的语言键。
+     *
+     * <p>★ 2026-11-08【P1 去死类】：原来读死逻辑类的 {@code LANG_THREADS} 常量，
+     * 死类删除后由本类自带同名同值常量 ⇒ <b>键与文案一个字不变</b>（两份 lang 不动）。
+     */
+    private static final String LANG_THREADS = "gtlmodular.nanochip.threads.status";
+
+    /** 「同时处理 R 次配方运行（各批次之和）」的语言键；来源同 {@link #LANG_THREADS}。 */
+    private static final String LANG_THREADS_RUNS = "gtlmodular.nanochip.threads.runs";
+
+    /**
      * ★★ 0.3.132【① 读数：把「K 条」与「K 种」分开 · 键】★★
      *
      * <h4>它回答什么</h4>
-     * 「K 条」= 批次条数（{@link NanochipThreadedRecipeLogic#runningThreadCount()}，
+     * 「K 条」= 批次条数（{@link com.gtlmodular.common.machine.engine.IThreadBatchLogic#runningBatches()}，
      * 已经由 {@link NanochipJadeKeys#KEY_THREAD_RUNNING} 送到客户端）；
      * 「K 种」= <b>按配方 id 去重后的不同配方种数</b>（本键）。
      * ⇒ 两者相等且大于 1 = 真的在并行跑<b>不同</b>配方；
      * 种数小于条数 = 其中有同一条配方占了多条线程（fan-out）。
-     * 队长要的效果正是 GTO 那句「同时处理至多 16 种<b>不同</b>配方」（口径与用途的完整说明见
-     * {@link NanochipThreadedRecipeLogic#distinctRunningRecipeCount()} 的 javadoc）。
+     * 队长要的效果正是 GTO 那句「同时处理至多 16 种<b>不同</b>配方」。
      *
      * <h4>为什么键常量写在本类（与 {@link #KEY_CALIB_EU_MUL} 同一处理）</h4>
      * 本轮改动范围只允许动本文件与那两个 Java 文件（外加两份 lang）⇒
@@ -211,6 +220,10 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      *
      * <p>取值：{@code int}，<b>恒写</b>（包括「一条没跑」时写 0）：
      * 键在 = 服务端确实读到了本机的批次表；键缺失 = 不是我们的机器 / 旧版服务端（客户端因此不显示）。
+     *
+     * <p>⚠ 2026-11-08【P1 去死类后的现状】：原写入端在 NAC 专用分支里（已随死类一起删除），
+     * 现服务端<b>不写本键</b> ⇒ 客户端 {@link #appendDistinctRecipes} 因"键缺失"整行不显示
+     * （这正是它设计里的边界①）。键、文案与客户端出口保留，等通用引擎补上"按配方 id 去重"的读数后接线。
      */
     private static final String KEY_DISTINCT_RECIPES = "DistinctRecipes";
 
@@ -240,9 +253,10 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      *
      * <h4>载荷（为什么加了产物名也不会炸）</h4>
      * 只写「<b>短键</b> + 数字」，不写配方对象、不写 ItemStack 全量 NBT：
-     * 条目数在 {@link #snapshotThreads} 已按 {@link NanochipJadeKeys#OUTPUT_LINES} = <b>6</b> 截断
+     * 条目数在 {@link #writeGenericThreadData} 写列表时已按
+     * {@link NanochipJadeKeys#OUTPUT_LINES} = <b>6</b> 截断
      * ⇒ 每条新增 ≈ <b>70 字节</b>（String 键 ≈ 48 + Long ≈ 22，算法见
-     * {@link #threadTag}），一次提示最多新增 ≈ <b>420 字节</b>（6 条）。
+     * {@link #writeGenericThreadData}），一次提示最多新增 ≈ <b>420 字节</b>（6 条）。
      *
      * <h4>截断口径（复用既有机制，不自创）</h4>
      * ★ 2026-11-17【与进度条那节<b>脱钩</b>】：列出条数上限 = {@link NanochipJadeKeys#OUTPUT_LINES}（= 6，
@@ -250,7 +264,7 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * 两节读的是<b>同一份</b> serverData 列表；超出的用<b>既有键</b>
      * {@link NanochipJadeThreadRows#LANG_MORE_UNLISTED}
      * （{@code gtlmodular.nanochip.threads.more.unlisted}）如实交代 M = 在用 − 已列。
-     * <b>为什么必须独立</b>：{@code snapshotThreads} 的截断长度也必须是两个里较大的那个，
+     * <b>为什么必须独立</b>：服务端写列表时的截断长度也必须是两个里较大的那个，
      * 否则第 4~6 条线程的产物数据根本送不到客户端（完整理由见 {@link NanochipJadeKeys#OUTPUT_LINES}）。
      *
      * <h4>★★ 2026-11-05【本键的语义变更：<b>本地化键 → 物品注册名</b>】★★</h4>
@@ -260,7 +274,7 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * 那是<b>翻译用</b>的键，<b>反查不回 {@code Item}</b>（键→物品没有注册表映射）
      * ⇒ 客户端<b>拿不到 {@code ItemStack}</b> ⇒ 画不出图标。
      * 现在写 {@code BuiltInRegistries.ITEM.getKey(stack.getItem())} 的 {@code namespace:path}
-     * （取值端 {@link NanochipThreadedRecipeLogic#firstItemOutputId}，那里有完整理由与先例行号）
+     * （取值端 {@link NanochipRecipeOutputs#firstItemOutputId}，那里有完整理由与先例行号）
      * ⇒ 客户端 {@code ResourceLocation.tryParse} → {@code BuiltInRegistries.ITEM.get(...)}
      * → {@code ItemStack} ⇒ <b>既能取译名（串与本键改前送出的逐字相同 ⇒ 文案一个字不变），
      * 又能建物品图标元素</b>（见 {@link #appendThreadOutputs}）。
@@ -281,6 +295,18 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
     private static final String KEY_OUTPUT_REG = "id";
     private static final String KEY_OUTPUT_AMOUNT = "n";
 
+    /**
+     * ★ 2026-11-08：<b>真实产物对象</b>（物品 = {@code GTUtil.saveItemStack} 的 CompoundTag；
+     * 流体 = {@code FluidStack#saveToTag}）。
+     *
+     * <p>为什么必须送它：只送注册名，客户端只能 {@code new ItemStack(item)} 重建 ——
+     * GT 的物品/流体贴图与译名大量依赖 <b>NBT / 材质子类型</b>，重建后就会丢掉：
+     * 物品图标变成「通用物品」那一版，流体名从「末影等离子体」掉成「末影」。
+     * 队长原话：<b>「流体跟物品都有贴图呀，你直接引用就好了」</b>
+     * ⇒ 服务端把配方里那一份<b>原对象</b>存进来，客户端直接渲染，不再猜。
+     */
+    private static final String KEY_OUTPUT_STACK = "stack";
+
     /** 多产物一行：{@code 线程%s：%s}（%s = 用逗号连起来的各产物片段）。 */
     private static final String LANG_OUTPUTS_JOINED = "gtlmodular.nanochip.jade.thread_outputs.joined";
     /** 多产物片段：{@code %s × [%s]}。 */
@@ -290,6 +316,17 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
 
     /** ★ 见 {@link #KEY_OUTPUT_ID}：小节标题「各线程产物：」的语言键（中英各一条，见两份 lang）。 */
     private static final String LANG_OUTPUTS_HEADER = "gtlmodular.nanochip.jade.thread_outputs";
+
+    /**
+     * ★ 2026-11-08：<b>逐线程产物行的行高</b>（图标 18 + 4 的呼吸缝）。
+     *
+     * <p>为什么需要：图标（18×18）比文字高，Jade 的行高会取「该行元素最大高度」= 18；
+     * 而流体图标是<b>实心色块</b>（不像物品图标自带透明背景）⇒ 连续几行贴在一起时，
+     * 视觉上会变成<b>一根贯穿整节的柱子</b>（实机截图证）。给每行补一个
+     * {@code spacer(0, 22)} 把行高抬到 22，图标之间就有了 4px 的缝。
+     * 文字仍贴着行首绘制（Jade 本来就不做行内垂直居中），外观与改前一致。
+     */
+    private static final int OUTPUT_ROW_HEIGHT = 22;
 
     /** ★ 见 {@link #KEY_OUTPUT_ID}：一行 {@code 线程N：250 × [名]}（3 个占位符：序号 / 数量 / 名）。 */
     private static final String LANG_OUTPUTS_LINE = "gtlmodular.nanochip.jade.thread_outputs.line";
@@ -357,55 +394,18 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             if (data == null || accessor == null) {
                 return;
             }
-            NanochipThreadedRecipeLogic logic = threadedLogic(accessor);
-            if (logic == null) {
-                // ★ 2026-10-31：通用线程引擎（3D 打印阵列 / 部件组装机）也走同一套 Jade 显示。
-                // ★ 2026-11-05：改用公共读口 IThreadBatchLogic —— 通用引擎与地心三模块的线程逻辑
-                //   都实现它；不再只认 ThreadedRecipeLogic 这个具体类。
-                com.gtlmodular.common.machine.engine.IThreadBatchLogic generic = genericThreadedLogic(accessor);
-                // ★ 2026-11-05：地心三模块「没装线程仓」时不写任何键（Jade 完全回到旧版），
-                //   装了仓 / 有批次在跑才接管（否则 limit=1 的空表会给旧玩法凭空多出几行）。
-                if (generic != null && (generic.threadLimit() > 1 || generic.runningBatches() > 0)) {
-                    writeGenericThreadData(data, generic);
-                }
-                return;
+            // ★ 2026-10-31：通用线程引擎（3D 打印阵列 / 部件组装机）也走同一套 Jade 显示。
+            // ★ 2026-11-05：读口统一为公共接口 IThreadBatchLogic —— 通用引擎与地心三模块的线程逻辑
+            //   都实现它（NAC 主机自 2026-11-08 起同样走这条），不再只认任何具体逻辑类。
+            // ★ 2026-11-08【P1 去死类】：原先在它之前还有一条「NAC 专用分支」（认全树无实例化的
+            //   旧世代逻辑类）；该分支在运行期已恒不命中，本轮整段删除 ⇒ 本方法
+            //   只剩下面这一条**实际在跑**的通用路径（行为与删除前一致）。
+            com.gtlmodular.common.machine.engine.IThreadBatchLogic generic = genericThreadedLogic(accessor);
+            // ★ 2026-11-05：地心三模块「没装线程仓」时不写任何键（Jade 完全回到旧版），
+            //   装了仓 / 有批次在跑才接管（否则 limit=1 的空表会给旧玩法凭空多出几行）。
+            if (generic != null && (generic.threadLimit() > 1 || generic.runningBatches() > 0)) {
+                writeGenericThreadData(data, generic);
             }
-            int limit = logic.getThreadLimit();
-            // 无条件写标记（包括 limit <= 1 的直通档）：客户端的判据是「键存在」= 这是我们的机器，
-            // 用它把「我们的机器」与「别人的多线程机器」分开（理由见 NanochipJadeKeys 的类注释）。
-            data.putInt(NanochipJadeKeys.KEY_THREAD_LIMIT, limit);
-            int running = logic.runningThreadCount();
-            data.putInt(NanochipJadeKeys.KEY_THREAD_RUNNING, running);
-            // ★★ 0.3.132【① 读数：K 条 ÷ K 种】★★ —— 把「本刻在跑的批次里，按配方 id 去重后有几种
-            //   **不同**配方」写进**我们自己的** serverData（取值 = 只读 getter，口径见
-            //   NanochipThreadedRecipeLogic#distinctRunningRecipeCount() 的 javadoc）。
-            //   · 拿不到线程逻辑 ⇒ 本方法开头的 `logic == null` 已经 return ⇒ **一个键都不写**，
-            //     客户端因此不显示这一行（**绝不伪造**、绝不写一个猜出来的数）。
-            //   · 恒写（一条没跑时也写 0）：键在 = 「服务端确实读到了本机的批次表」，
-            //     与「不是我们的机器 / 旧版服务端」（键缺失）分开 —— 与 KEY_THREAD_LIMIT 的用法同一口径。
-            //   · 它只是读数：不改状态、不进存档、不参与任何判定。
-            //   ★ 一行回退：把下面这一行 `data.putInt(KEY_DISTINCT_RECIPES, ...);` 删掉
-            //     （客户端 appendDistinctRecipes 见到键缺失即整行不显示）⇒ 服务端回到改动前。
-            data.putInt(KEY_DISTINCT_RECIPES, logic.distinctRunningRecipeCount());
-            data.putLong(NanochipJadeKeys.KEY_THREAD_RUNS, logic.totalRunsAtOnce());
-            // ★ 2026-11-02【沿用原生进度条】：告诉客户端「原生那条进度条代表哪一条线程」
-            //   （服务端 step ④ 把批次表第 0 条镜像进基类单进度字段 ⇒ 原生条 = 第 0 条）。
-            //   客户端据此把这一条从「追加的条」里排除，并在原生条下面补一行说明。
-            data.putInt(NanochipJadeKeys.KEY_MIRRORED_SLOT, logic.mirroredThreadLabel());
-            data.putLong(NanochipJadeKeys.KEY_MIRRORED_PARALLELS, logic.mirroredThreadParallels());
-            // ★★ 0.3.132【Jade 校准折减读数】★★ 把「本机校准实际折减了多少」写进**我们自己的** serverData。
-            //   · 为什么不能靠上游那两行「总耗能倍率 / 总耗时倍率」：它们读 gtlcore 自己的 reduction 字段，
-            //     而我们的校准走 RecipeModifier（见 KEY_CALIB_EU_MUL 的注释）⇒ 那两行与校准无关、恒 100%。
-            //   · 拿不到机器 / 不是本机 ⇒ 一个键都不写（客户端因此不显示这一行，**绝不伪造** 100%）。
-            //   · 未成形由主机那两个 getter 内部处理（返回 1.0 ⇒ 照实显示「−0.0％」，不是不显示）。
-            writeCalibrationReduction(data, accessor);
-
-            ListTag list = new ListTag();
-            for (Map.Entry<Integer, NanochipThreadedRecipeLogic.ThreadRec> entry
-                    : snapshotThreads(logic)) {
-                list.add(threadTag(entry.getKey(), entry.getValue()));
-            }
-            data.put(NanochipJadeKeys.KEY_THREAD_LIST, list);
         } catch (Throwable t) {
             // 只记一条诊断（限频交给日志框架的等级过滤），显示端下一 tick 会再试
             GTLModular.LOGGER.debug("[gtlmodular] NAC Jade 线程状态写入失败（本次跳过）：{}", t.toString());
@@ -541,7 +541,7 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             // filterUpstreamLines(tooltip);
             int limit = data.getInt(NanochipJadeKeys.KEY_THREAD_LIMIT);
             int running = data.getInt(NanochipJadeKeys.KEY_THREAD_RUNNING);
-            tooltip.add(Component.translatable(NanochipThreadedRecipeLogic.LANG_THREADS, limit, running));
+            tooltip.add(Component.translatable(LANG_THREADS, limit, running));
             // ★★ 0.3.132【① 读数：K 条 ÷ K 种】★★ —— **紧跟上面那条线程总览行**追加一行
             //   （「在它之后立刻加」，不隔行、也不加到别处）：
             //   「本刻在跑 k 条线程 · d 种配方（按配方 id 去重）」⇒ k == d 才是真的在并行跑不同配方。
@@ -560,7 +560,7 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
                 appendCalibrationReduction(tooltip, data);
                 return;
             }
-            tooltip.add(Component.translatable(NanochipThreadedRecipeLogic.LANG_THREADS_RUNS,
+            tooltip.add(Component.translatable(LANG_THREADS_RUNS,
                     FormattingUtil.formatNumbers(data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS))));
             // ★ 2026-11-02【本轮删除】原来紧跟在这里的一行「延迟说明」
             //   （`tooltip.add(Component.translatable(NanochipJadeKeys.LANG_LATENCY_NOTE))`）
@@ -761,9 +761,9 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * <h4>译名为什么在客户端取（★ 本键的载荷语义已从「本地化键」改成「物品注册名」）</h4>
      * 服务端送的是 item 的<b>物品注册名</b>
      * （{@code BuiltInRegistries.ITEM.getKey(stack.getItem())}，形如 {@code gtlmodular:cc_crystal_processor}；
-     * 取值端与语义变更理由见 {@link NanochipThreadedRecipeLogic#firstItemOutputId}）——
+     * 取值端与语义变更理由见 {@link NanochipRecipeOutputs#firstItemOutputId}）——
      * 专用服务器上<b>没有</b>客户端的语言，在服务端取名字只会得到键本身；而送 ItemStack 全量 NBT
-     * 会把载荷翻好几倍（见 {@link #threadTag} 的估算）。客户端这里：
+     * 会把载荷翻好几倍（见 {@link #writeGenericThreadData} 的估算）。客户端这里：
      * ① 由注册名重建 {@link ItemStack}（{@code itemIconOf(ITooltip, String)}，源内 javadoc 见本类
      * 那个方法）——<b>只为画图标</b>；
      * ② 译名走 {@link #displayNameOf(String)}（{@code Component.translatable(注册名对应的
@@ -867,7 +867,11 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             ListTag multi = entry.getList(KEY_OUTPUTS_LIST, Tag.TAG_COMPOUND);
             if (multi.size() > 0) {
                 MutableComponent joined = Component.empty();
-                String firstItem = null;
+                // ★ 2026-11-08【图标/译名都「直接引用」配方里的原对象】
+                //   服务端的 Outputs 子项现在带 KEY_OUTPUT_STACK（真实 ItemStack / FluidStack，含 NBT）。
+                //   有它就渲染原对象（原贴图 + 原译名）；没有（旧服务端）才退回「按注册名重建」的兜底。
+                //   图标只取这一行的**第一个有效产物**，与行首文字同源。
+                IElement firstIcon = null;
                 boolean firstPart = true;
                 for (int j = 0; j < multi.size(); j++) {
                     CompoundTag o = multi.getCompound(j);
@@ -877,30 +881,43 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
                     if (reg.isEmpty() || amount <= 0L) {
                         continue;
                     }
+                    boolean isFluid = "f".equals(kind);
+                    CompoundTag packed = o.getCompound(KEY_OUTPUT_STACK);
                     Component part;
-                    if ("f".equals(kind)) {
+                    IElement icon = null;
+                    if (isFluid) {
+                        FluidStack fluid = unpackFluid(packed);
                         part = Component.translatable(LANG_OUTPUTS_FLUID_PART,
-                                FormattingUtil.formatNumbers(amount), fluidNameOf(reg));
+                                FormattingUtil.formatNumbers(amount),
+                                fluid != null ? fluid.getDisplayName().getString() : fluidNameOf(reg));
+                        if (firstPart) {
+                            icon = fluid != null ? fluidIconOf(tooltip, fluid) : fluidIconOf(tooltip, reg);
+                        }
                     } else {
+                        ItemStack stack = unpackItem(packed);
                         part = Component.translatable(LANG_OUTPUTS_ITEM_PART,
-                                FormattingUtil.formatNumbers(amount), displayNameOf(reg));
-                        if (firstItem == null) {
-                            firstItem = reg;
+                                FormattingUtil.formatNumbers(amount),
+                                stack != null ? stack.getHoverName().getString() : displayNameOf(reg));
+                        if (firstPart) {
+                            icon = stack != null ? itemIconOf(tooltip, stack) : itemIconOf(tooltip, reg);
                         }
                     }
                     if (!firstPart) {
                         joined.append(Component.literal("§7, §r"));
+                    } else {
+                        firstIcon = icon;
                     }
                     joined.append(part);
                     firstPart = false;
                 }
                 if (!firstPart) {
-                    IElement icon = firstItem == null ? null : itemIconOf(tooltip, firstItem);
-                    if (icon != null) {
-                        tooltip.add(icon);
+                    if (firstIcon != null) {
+                        tooltip.add(firstIcon);
+                        // ★ 见 OUTPUT_ROW_HEIGHT：把行高抬到 22，避免实心流体图标贴成一根柱子
+                        tooltip.append(tooltip.getElementHelper().spacer(0, OUTPUT_ROW_HEIGHT));
                     }
                     Component line = Component.translatable(LANG_OUTPUTS_JOINED, i, joined);
-                    if (icon != null) {
+                    if (firstIcon != null) {
                         tooltip.append(line);
                     } else {
                         tooltip.add(line);
@@ -928,6 +945,8 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
                 IElement icon = itemIconOf(tooltip, outputId);
                 if (icon != null) {
                     tooltip.add(icon);
+                    // ★ 见 OUTPUT_ROW_HEIGHT：与多产物分支同一行高口径，连续图标之间留缝
+                    tooltip.append(tooltip.getElementHelper().spacer(0, OUTPUT_ROW_HEIGHT));
                 }
                 // 数量口径：服务端写的就是「内容数量（**已含并行 p**）」，这里只做千分位格式化，
                 // **绝不再乘并行**（那正是本轮修过的 ×p² 缺陷）。
@@ -1039,11 +1058,137 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
     }
 
     /**
+     * ★ 2026-11-08【新增：流体注册名 → 该产物的<b>流体图标</b>元素】—— {@link #appendThreadOutputs} 用。
+     *
+     * <h4>为什么必须有</h4>
+     * 「各线程产物」的多产物分支里，纯流体线程（例：高维等离子聚变核心的「末影等离子体」）
+     * 以前<b>一个图标都没有</b>：旧实现只记第一个<b>物品</b>产物
+     * （{@code firstItem}），流体直接被跳过 ⇒ 玩家看到的是一列没有图标的
+     * {@code 7,372,800 mB [末影]}，与上一行「配方输出」的
+     * {@code 7372B [末影等离子体]} 不一致。
+     * 现在图标跟着<b>这一行第一个产物</b>走：物品 → {@link #itemIconOf}，
+     * 流体 → 本方法（{@code IElementHelper.fluid(JadeFluidObject)}，
+     * 与 GTCEu 自己的 {@code RecipeOutputProvider#addFluidTooltips} 同一族 API）。
+     *
+     * <h4>尺寸</h4>
+     * Jade 的 {@code FluidStackElement} 默认 {@code DEFAULT_SIZE} 比物品的 18×18 小，
+     * 这里显式 {@code size(18×18)} 与物品图标对齐 —— 队长对上一版「图标太小」已经提过一次，
+     * 不能物品 18×18、流体 10×10 混着排。
+     *
+     * <h4>边界（全部 {null} = 「这次不画图标」，绝不抛）</h4>
+     * 注册名解析失败 / 流体不存在 / {@code Fluids.EMPTY} / helper 取不到 / 元素工厂抛异常
+     * ⇒ 返回 {@code null}，那一行文字照旧显示（与 {@link #itemIconOf} 同款纪律）。
+     *
+     * @param tooltip 当前准星提示（只为取 {@code getElementHelper()}）
+     * @param fluidId 服务端送来的流体注册名（{@code namespace:path}）
+     * @return 流体图标元素；{@code null} = 画不出
+     */
+    private static IElement fluidIconOf(ITooltip tooltip, String fluidId) {
+        if (fluidId == null || fluidId.isEmpty()) {
+            return null;
+        }
+        try {
+            ResourceLocation id = ResourceLocation.tryParse(fluidId);
+            if (id == null) {
+                return null;
+            }
+            Fluid fluid = BuiltInRegistries.FLUID.get(id);
+            if (fluid == null || fluid == Fluids.EMPTY) {
+                return null;
+            }
+            IElementHelper helper = tooltip.getElementHelper();
+            if (helper == null) {
+                return null;
+            }
+            IElement icon = helper.fluid(JadeFluidObject.of(fluid, 1L));
+            // ★ 2026-11-08：**不要**再 size(18×18) —— FluidStackElement 的默认尺寸是 16×16，
+            //   强行拉到 18 会让 drawTiledSprite 多出一列 2px 余料（实机表现为图标右缘的
+            //   一条黑色缝 + 一条细色条）。16×16 正好一整块贴图，行高由 OUTPUT_ROW_HEIGHT 管。
+            return icon;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 解出服务端送来的真实物品栈（{@code KEY_OUTPUT_STACK}）；缺失/坏档一律 {@code null}。 */
+    private static ItemStack unpackItem(CompoundTag packed) {
+        if (packed == null || packed.isEmpty()) {
+            return null;
+        }
+        try {
+            ItemStack stack = GTUtil.loadItemStack(packed);
+            return stack == null || stack.isEmpty() ? null : stack;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 解出服务端送来的真实流体栈（{@code KEY_OUTPUT_STACK}）；缺失/坏档一律 {@code null}。 */
+    private static FluidStack unpackFluid(CompoundTag packed) {
+        if (packed == null || packed.isEmpty()) {
+            return null;
+        }
+        try {
+            FluidStack fluid = FluidStack.loadFromTag(packed);
+            return fluid == null || fluid.isEmpty() ? null : fluid;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * ★ 2026-11-08【直接引用真实物品栈】—— {@link #appendThreadOutputs} 用。
+     *
+     * <p>与按注册名重建的 {@link #itemIconOf(ITooltip, String)} 不同：这里拿到的是配方里那一份
+     * <b>原始 {@link ItemStack}</b>（含 NBT / 材质子类型）⇒ {@code IElementHelper.item(ItemStack)}
+     * 直接渲染它自己的贴图，不再出现「按注册名 new 出来的是通用物品图标」。
+     */
+    private static IElement itemIconOf(ITooltip tooltip, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return null;
+        }
+        try {
+            IElementHelper helper = tooltip.getElementHelper();
+            return helper == null ? null : helper.item(stack.copy());
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * ★ 2026-11-08【直接引用真实流体栈】—— {@link #appendThreadOutputs} 用。
+     *
+     * <p>流体贴图由 {@code FluidType} + NBT 共同决定；旧实现
+     * {@code JadeFluidObject.of(fluid, 1)} 丢掉 tag，贴图解析不到时就退化成纯色块。
+     * 这里把 <b>{@code stack.getTag()} 一起带上</b>，让 Jade 走它自己的
+     * {@code FluidType#getStillTexture} 解析 —— 也就是「直接引用」原流体贴图。
+     */
+    private static IElement fluidIconOf(ITooltip tooltip, FluidStack fluid) {
+        if (fluid == null || fluid.isEmpty()) {
+            return null;
+        }
+        try {
+            IElementHelper helper = tooltip.getElementHelper();
+            if (helper == null) {
+                return null;
+            }
+            IElement icon = helper.fluid(
+                    JadeFluidObject.of(fluid.getRawFluid(), 1L, fluid.getTag()));
+            // ★ 2026-11-08：**不要**再 size(18×18) —— FluidStackElement 的默认尺寸是 16×16，
+            //   强行拉到 18 会让 drawTiledSprite 多出一列 2px 余料（实机表现为图标右缘的
+            //   一条黑色缝 + 一条细色条）。16×16 正好一整块贴图，行高由 OUTPUT_ROW_HEIGHT 管。
+            return icon;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
      * item 的<b>本地化键</b> → <b>玩家语言</b>的显示名（{@link #appendThreadOutputs} 用）。
      *
      * <p>★ 2026-11-05【语义变更】：本方法的入参<b>仍然是「本地化键」</b>（一个字没改），
      * 变的是<b>调用链</b>——服务端现在送的是「物品注册名」（理由见 {@link #KEY_OUTPUT_ID} 与
-     * {@link NanochipThreadedRecipeLogic#firstItemOutputId}），所以调用方
+     * {@link NanochipRecipeOutputs#firstItemOutputId}），所以调用方
      * （{@link #appendThreadOutputs}）走的是与它<b>同名</b>的那个入口
      * {@link #displayNameOf(String)}：先把注册名换成
      * {@code stack.getDescriptionId()}（= 与改动前服务端送出的串<b>逐字相同</b>）再交给这里
@@ -1174,15 +1319,11 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
     }
 
     /**
-     * 从方块实体上取本机的独立线程逻辑；不是本机（或不是新逻辑）就返回 {@code null}。
-     *
-     * <p>只认 {@link NanochipThreadedRecipeLogic} 这个<b>运行时类型</b>：
-     * 旧逻辑机器（{@code NAC_INDEPENDENT_THREADS = false} 时的 gtladditions 配方逻辑）不是它
-     * ⇒ 本 provider 全程不介入，原生进度条照旧。
-     */
-    /**
-     * 通用线程引擎的机器（3D 打印阵列 / 部件组装机 / 地心三模块）：实现
+     * 通用线程引擎的机器（3D 打印阵列 / 部件组装机 / 地心三模块 / NAC 主机）：实现
      * {@link com.gtlmodular.common.machine.engine.IThreadBatchLogic} 的配方逻辑。
+     *
+     * <p>★ 2026-11-08【P1 去死类】：原来还有第二个取口（只认那个全树无实例化的旧世代逻辑类），
+     * 运行期恒不命中，已随 NAC 专用分支一起删除 ⇒ 本 provider 只认这一个公共接口。
      */
     private static com.gtlmodular.common.machine.engine.IThreadBatchLogic genericThreadedLogic(BlockAccessor accessor) {
         if (!(accessor.getBlockEntity() instanceof MetaMachineBlockEntity mbe)) {
@@ -1217,20 +1358,20 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             // ★ 通用产物识别：直接从这一批的配方里取全部物品/流体产物（数量已含并行，
             //   配方是 accurateParallel 缩放后的对象）⇒ 不需要给每台机器单独适配。
             ListTag outputs = new ListTag();
-            for (NanochipThreadedRecipeLogic.OutputView view
-                    : NanochipThreadedRecipeLogic.itemOutputs(batch.recipe())) {
+            for (NanochipRecipeOutputs.OutputView view
+                    : NanochipRecipeOutputs.itemOutputs(batch.recipe())) {
                 outputs.add(outputTag(view, false));
             }
-            for (NanochipThreadedRecipeLogic.OutputView view
-                    : NanochipThreadedRecipeLogic.fluidOutputs(batch.recipe())) {
+            for (NanochipRecipeOutputs.OutputView view
+                    : NanochipRecipeOutputs.fluidOutputs(batch.recipe())) {
                 outputs.add(outputTag(view, true));
             }
             if (outputs.size() > 0) {
                 entry.put(KEY_OUTPUTS_LIST, outputs);
             }
             // 旧键保留（第一个物品产物），兼容旧客户端/其它显示。
-            String outputId = NanochipThreadedRecipeLogic.firstItemOutputId(batch.recipe());
-            long outputCount = NanochipThreadedRecipeLogic.firstItemOutputAmount(batch.recipe());
+            String outputId = NanochipRecipeOutputs.firstItemOutputId(batch.recipe());
+            long outputCount = NanochipRecipeOutputs.firstItemOutputAmount(batch.recipe());
             if (outputId != null && outputCount > 0L) {
                 entry.putString(KEY_OUTPUT_ID, outputId);
                 entry.putLong(KEY_OUTPUT_COUNT, outputCount);
@@ -1245,23 +1386,24 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
         data.putLong(NanochipJadeKeys.KEY_MIRRORED_PARALLELS, 0L);
     }
 
-    /** 一条产物子项：{@code k}（i/f）、{@code id}（注册名）、{@code n}（数量）。 */
-    private static CompoundTag outputTag(NanochipThreadedRecipeLogic.OutputView view, boolean fluid) {
+    /** 一条产物子项：{@code k}（i/f）、{@code id}（注册名）、{@code n}（数量）、{@code stack}（真实对象）。 */
+    private static CompoundTag outputTag(NanochipRecipeOutputs.OutputView view, boolean fluid) {
         CompoundTag tag = new CompoundTag();
         tag.putString(KEY_OUTPUT_KIND, fluid ? "f" : "i");
         tag.putString(KEY_OUTPUT_REG, view.id());
         tag.putLong(KEY_OUTPUT_AMOUNT, view.amount());
+        // ★ 2026-11-08：把配方里的**原对象**一起送过去（物品含 NBT / 流体含 tag）
+        //   ⇒ 客户端直接渲染原贴图与原译名，不再按注册名重建。送不出去就退回注册名路径。
+        try {
+            if (view.content() instanceof ItemStack stack && !stack.isEmpty()) {
+                tag.put(KEY_OUTPUT_STACK, GTUtil.saveItemStack(stack.copy(), new CompoundTag()));
+            } else if (view.content() instanceof FluidStack fluidStack && !fluidStack.isEmpty()) {
+                tag.put(KEY_OUTPUT_STACK, fluidStack.saveToTag(new CompoundTag()));
+            }
+        } catch (Throwable ignored) {
+            // 序列化失败只影响图标/译名的精确度，不影响这一行的数字。
+        }
         return tag;
-    }
-
-    private static NanochipThreadedRecipeLogic threadedLogic(BlockAccessor accessor) {
-        if (!(accessor.getBlockEntity() instanceof MetaMachineBlockEntity mbe)) {
-            return null;
-        }
-        if (!(mbe.getMetaMachine() instanceof com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine machine)) {
-            return null;
-        }
-        return machine.getRecipeLogic() instanceof NanochipThreadedRecipeLogic logic ? logic : null;
     }
 
     /**
@@ -1276,6 +1418,13 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * <p><b>边界②「取不到机器 / 不是本机」</b>：两条早退 ⇒ <b>两个键都不写</b>
      * （客户端 {@link #appendCalibrationReduction} 见到键缺失就整行不显示 —— 宁可不说，绝不伪造）。
      * 这里<b>不</b>写 {@code 1.0} 兜底：写 1.0 就变成「我告诉你没折减」这种会撒谎的断言。
+     *
+     * <p>⚠ <b>2026-11-08【P1 去死类 · 现状：本方法当前没有调用点】</b>：它原来唯一的调用点在
+     * 「NAC 专用分支」里（该分支认的是全树无实例化的死类，运行期<b>恒不命中</b>）⇒ 删除分支后
+     * 本方法变成"保留但不被调用"，<b>行为与删除前完全一致</b>（那一行 Jade 文案此前也从未显示过）。
+     * 想启用只需在 {@link #appendServerData} 的通用分支里加一行
+     * {@code writeCalibrationReduction(data, accessor);}（这是<b>行为变更</b>：NAC 会多一行校准读数，
+     * 需队长另行决定）。
      */
     private static void writeCalibrationReduction(CompoundTag data, BlockAccessor accessor) {
         if (!(accessor.getBlockEntity() instanceof MetaMachineBlockEntity mbe)) {
@@ -1288,92 +1437,4 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
         data.putDouble(KEY_CALIB_DUR_MUL, nac.calibrationDurationMultiplierForDisplay());
     }
 
-    /**
-     * 线程明细的只读快照，<b>截到前 {@link NanochipJadeKeys#OUTPUT_LINES} 条（= 6）</b>。
-     *
-     * <p>★ 2026-11-17【<b>截断长度 = OUTPUT_LINES，不是 DISPLAY_LINES</b>】：
-     * 进度条那一节只画 {@link NanochipJadeKeys#DISPLAY_LINES} = 3 条（队长原设定），
-     * 而「各线程产物」那一节要列到 {@link NanochipJadeKeys#OUTPUT_LINES} = 6 条
-     * ⇒ <b>列表本身必须按大（= 6）的那个截</b>：列表若被截到 3 条，产物节拿不到第 4~6 条的数据，
-     * 它那边的上限再大也没用（这正是上一轮「6 个产物只显示一种」的一半根因）。
-     * 「画几条」是客户端两节各自的循环上限（3 / 6），与这里的列表长度是两件事。
-     *
-     * <p>为什么要截：线程上限可到 256（{@code MAX_CROSS_RECIPE_THREADS = 1 &lt;&lt; 8}），
-     * 而这个 NBT 是每次玩家准星指过来都要走一遍网络通道的载荷。截断掉的部分由
-     * {@link NanochipThreadedRecipeLogic#LANG_THREADS_MORE} 一行如实交代条数，不假装只有这几条。
-     */
-    private static List<Map.Entry<Integer, NanochipThreadedRecipeLogic.ThreadRec>> snapshotThreads(
-            NanochipThreadedRecipeLogic logic) {
-        List<Map.Entry<Integer, NanochipThreadedRecipeLogic.ThreadRec>> out =
-                new ArrayList<>(NanochipJadeKeys.OUTPUT_LINES);
-        for (Map.Entry<Integer, NanochipThreadedRecipeLogic.ThreadRec> entry : logic.snapshot()) {
-            if (out.size() >= NanochipJadeKeys.OUTPUT_LINES) {
-                break;
-            }
-            if (entry != null && entry.getKey() != null && entry.getValue() != null) {
-                out.add(entry);
-            }
-        }
-        return out;
-    }
-
-    /**
-     * 一条线程 → 一个 NBT 子 tag。
-     *
-     * <p><b>纪律（原口径，仍然成立）：不写配方对象</b> —— 配方本体（{@code GTRecipeSerializer.CODEC}
-     * 那一坨）与 ItemStack 的全量 NBT（附魔 / 自定义名 / CompoundTag）才是"让载荷翻好几倍"的东西，
-     * 本方法<b>一个都不写</b>。产物这一格写的是：
-     * <ul>
-     *   <li>{@link #KEY_OUTPUT_ID} = 产物 item 的<b>物品注册名</b>
-     *       （{@code BuiltInRegistries.ITEM.getKey(stack.getItem()).toString()}，例
-     *       {@code gtlmodular:cc_crystal_processor}，≤ 约 60 字符的 ASCII 串）
-     *       —— <b>★ 2026-11-05 语义变更</b>：改前写的是 {@code ItemStack#getDescriptionId()}
-     *       （本地化键，形如 {@code item.gtlmodular.cc_crystal_processor}）。
-     *       换的理由与逐字依据见 {@link #KEY_OUTPUT_ID}／{@link NanochipThreadedRecipeLogic#firstItemOutputId}：
-     *       本地化键<b>反查不回 {@code Item}</b> ⇒ 客户端画不出图标（队长要的正是图标）。
-     *       现在客户端既能由它重建 {@code ItemStack} 取译名（译名与改前逐字相同），又能建图标元素；</li>
-     *   <li>{@link #KEY_OUTPUT_COUNT} = 数量（{@code long}；<b>内容数量，已含并行 p</b>，
-     *       取值与记账同源，见 {@code NanochipThreadedRecipeLogic#firstItemOutputAmount} 的注释）。</li>
-     * </ul>
-     * <b>载荷估算（逐项，为什么加了产物也不会炸）</b>：条目数在 {@link #snapshotThreads} 已按
-     * {@link NanochipJadeKeys#OUTPUT_LINES} = 6 截断；每条新增 =
-     * String 键 ≈ <b>48 字节</b>（1 类型 + 2 名长 + {@code "OutputId"} 8 + 2 串长 + 35 串体）+
-     * Long ≈ <b>22 字节</b>（1 + 2 + {@code "OutputCount"} 11 + 8）≈ <b>70 字节/条</b>
-     * ⇒ 一次提示最多新增 ≈ <b>420 字节</b>（6 条），且<b>与机器实际在跑多少条线程无关</b>
-     * （上限 256 也还是 6 条；★ 2026-11-17 由「3 条 / 210 字节」改为「6 条 / 420 字节」——
-     * 翻倍后仍远小于整条配方的量级，见下面的对照）。对照：写整条配方 = 数千字节/条
-     * （{@code NanochipConcurrentBatches:251-253} 存档时正是整条 {@code GTRecipeSerializer.CODEC}），
-     * 写 ItemStack 全量 = 数百字节/条 ⇒ 用「短键 + 数字」把新增载荷钉死在 ~70 字节/条。
-     * <p>★ 换成注册名后这个估算<b>不变</b>：注册名与本地化键长度同量级
-     * （{@code gtlmodular:cc_crystal_processor} 30 字符 vs {@code item.gtlmodular.cc_crystal_processor} 35 字符）。
-     *
-     * <p>取不到就<b>一个键都不写</b>（客户端见到键缺失 ⇒ 照实写「无物品产物或未识别」，
-     * <b>绝不</b>伪造一个产物名、<b>绝不</b>拿别的线程的产物顶上）。
-     * 取数<b>纯只读</b>：{@code rec.recipe()} 是批次表里那条<b>已缩放</b>的配方（内容数量已含并行 p）。
-     *
-     * <p>槽位必须由调用方从 {@code snapshot()} 的 key 传进来 —— {@code ThreadRec} 自己不带槽位号。
-     */
-    private static CompoundTag threadTag(int slot, NanochipThreadedRecipeLogic.ThreadRec rec) {
-        CompoundTag tag = new CompoundTag();
-        tag.putInt(NanochipJadeKeys.KEY_SLOT, slot);
-        tag.putInt(NanochipJadeKeys.KEY_PROGRESS, rec.progress());
-        tag.putInt(NanochipJadeKeys.KEY_DURATION, rec.duration());
-        // ★ 2026-11-02【数字口径】：本条并行改走 {@code ThreadRec.parallels()}（= 与整机「同时处理 R 次」
-        //   同一个函数、同一个字段）⇒ 逐条之和恒等于那一行 R，不会出现两处各读一个字段而打架。
-        tag.putLong(NanochipJadeKeys.KEY_PARALLELS, rec.parallels());
-        // ★★ 2026-11-04【逐线程产物】★★ 只写「物品注册名 + 数量」（见方法注释的载荷估算）。
-        //   取不到（没有物品产物 / 纯流体 / 识别不出 / Ingredient 未解析 / 注册表里查不到该物品）
-        //   ⇒ 两个键都不写。
-        //   ★★ 2026-11-05【本键语义已从「本地化键」改成「物品注册名」】★★ —— 理由与取证见
-        //     KEY_OUTPUT_ID 与 NanochipThreadedRecipeLogic#firstItemOutputId：
-        //     本地化键反查不回 Item ⇒ 客户端画不出队长要的那个「产物图标」。
-        //   ★ 一行回退：把下面 5 行删掉 ⇒ 服务端回到改动前（客户端那节随之只显示「未识别」；
-        //     若连小节一起去掉，删掉 appendTooltip 里那一句 appendThreadOutputs(tooltip, data); 即可）。
-        String outputId = NanochipThreadedRecipeLogic.firstItemOutputId(rec.recipe());
-        if (outputId != null && !outputId.isEmpty()) {
-            tag.putString(KEY_OUTPUT_ID, outputId);
-            tag.putLong(KEY_OUTPUT_COUNT, NanochipThreadedRecipeLogic.firstItemOutputAmount(rec.recipe()));
-        }
-        return tag;
-    }
 }

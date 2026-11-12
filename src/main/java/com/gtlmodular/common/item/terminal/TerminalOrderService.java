@@ -71,11 +71,18 @@ public final class TerminalOrderService {
     public static boolean start(ServerPlayer player, ItemStack terminal,
                                 ShanhaiStructurePlan plan, ShanhaiTerminalAeBinding.Context ae) {
         if (player == null || terminal == null || terminal.isEmpty() || plan == null || ae == null) return false;
-        Map<AEKey, Long> shortages = MATERIALS.shortages(plan, player, ae);
-        if (shortages.isEmpty()) return false;
-        if (shortages.size() > 128) {
+        UUID terminalId = ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal);
+        Session existing = SESSIONS.get(terminalId);
+        if (existing != null && existing.plan.fingerprint().equals(plan.fingerprint())) {
             player.sendSystemMessage(Component.literal(
-                    "§e[哦鲸鲸终端] 缺口种类过多（" + shortages.size() + " 种），订单已跳过；请分批施工"));
+                    "§e[哦鲸鲸终端] 同一结构订单已在计算/提交中，不重复创建"));
+            return true;
+        }
+        TerminalMaterialRequest request = TerminalMaterialRequest.create(player, plan, ae);
+        if (request.isEmpty()) return false;
+        if (request.kindCount() > 128) {
+            player.sendSystemMessage(Component.literal(
+                    "§e[哦鲸鲸终端] 缺口种类过多（" + request.kindCount() + " 种），订单已跳过；请分批施工"));
             return false;
         }
         ICraftingService service = ae.grid().getCraftingService();
@@ -85,13 +92,20 @@ public final class TerminalOrderService {
                     "§e[哦鲸鲸终端] 没有可用的合成 CPU，已回退普通下单"));
             return false;
         }
-        List<GenericStack> inputs = new ArrayList<>(shortages.size());
-        long totalAmount = 0L;
-        for (Map.Entry<AEKey, Long> entry : shortages.entrySet()) {
-            inputs.add(new GenericStack(entry.getKey(), entry.getValue()));
-            totalAmount = Math.min(Long.MAX_VALUE, totalAmount + Math.max(0L, entry.getValue()));
+        List<GenericStack> inputs = request.inputs();
+        long totalAmount = request.totalAmount();
+        GTLModular.LOGGER.info("终端订单样板输入: {} 种材料，共 {} 份: {}",
+                request.kindCount(), totalAmount, request.shortages());
+        try {
+            var storage = ae.grid().getStorageService().getInventory().getAvailableStacks();
+            for (GenericStack input : inputs) {
+                long available = storage.get(input.what());
+                GTLModular.LOGGER.info("终端订单库存检查: {} 需要 {}，AE 网络库存 {}",
+                        input.what(), input.amount(), available);
+            }
+        } catch (Throwable t) {
+            GTLModular.LOGGER.warn("终端订单库存检查失败", t);
         }
-        GTLModular.LOGGER.info("终端订单样板输入: {} 种材料，共 {} 份: {}", shortages.size(), totalAmount, shortages);
         ItemStack marker = TerminalOrderMarker.create(plan.target(), plan.fingerprint());
         ItemStack encoded = PatternDetailsHelper.encodeProcessingPattern(
                 inputs.toArray(GenericStack[]::new),
@@ -109,11 +123,12 @@ public final class TerminalOrderService {
             UUID id = ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal);
             Session session = new Session(player, terminal, plan, ae, service, orderCpu, holder, future);
             Session previous = SESSIONS.put(id, session);
-            if (previous != null && previous.holder != holder) {
+            if (previous != null) {
                 previous.holder.gtlmodular$setTempPattern(null);
+                SESSIONS.remove(id, previous);
             }
             player.sendSystemMessage(Component.literal(
-                    "§b[哦鲸鲸终端] 已创建单个 AE 订单（" + shortages.size() + " 种材料，共 "
+                    "§b[哦鲸鲸终端] 已创建单个 AE 订单（" + request.kindCount() + " 种材料，共 "
                             + totalAmount + " 份），正在计算..."));
             return true;
         } catch (Throwable t) {
@@ -149,8 +164,7 @@ public final class TerminalOrderService {
             }
             cleanup(entry.getKey(), session, false);
             if (plan == null) {
-                session.player.sendSystemMessage(Component.literal(
-                        "§c[哦鲸鲸终端] 订单样板未被 AE 识别：没有找到订单标记的合成路径"));
+                fallback(session, "订单样板未被 AE 识别");
                 continue;
             }
             if (plan.simulation() || !plan.missingItems().isEmpty()) {
@@ -158,6 +172,7 @@ public final class TerminalOrderService {
                 GTLModular.LOGGER.info("终端订单计算不完整，缺少: {}", missing.getString());
                 session.player.sendSystemMessage(Component.literal(
                         "§c[哦鲸鲸终端] 订单材料无法通过 AE 合成：§f").append(missing));
+                fallback(session, "单订单材料不完整");
                 continue;
             }
             GTLModular.LOGGER.info("终端订单提交前: simulation={}, missing={}, bytes={}",
@@ -170,8 +185,22 @@ public final class TerminalOrderService {
             } else {
                 session.player.sendSystemMessage(Component.literal(
                         "§c[哦鲸鲸终端] 订单提交失败: " + result.errorCode()));
+                fallback(session, "单订单提交失败");
             }
         }
+    }
+
+    private static void fallback(Session session, String reason) {
+        boolean started = ShanhaiTerminalCraftingManager.begin(
+                session.player, session.terminal, session.plan, session.ae, MATERIALS);
+        if (started) {
+            com.gtlmodular.common.item.terminal.TerminalAutoBuildService.allowPolling(
+                    session.terminal);
+        }
+        session.player.sendSystemMessage(Component.literal(
+                started
+                        ? "§e[哦鲸鲸终端] " + reason + "，已回退到逐材料下单"
+                        : "§c[哦鲸鲸终端] " + reason + "，且逐材料下单也未启动"));
     }
 
     /** 标准 AE CPU 优先；没有时使用 ECO CPU（由 ECO 专用 mixin 收尾）。 */

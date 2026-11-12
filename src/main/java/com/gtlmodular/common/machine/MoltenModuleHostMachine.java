@@ -13,6 +13,7 @@ import com.gregtechceu.gtceu.api.misc.EnergyContainerList;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.api.module.ModuleKind;
+import com.gtlmodular.common.ae.AeWirelessBroadcast;
 import com.gtlmodular.common.data.host.ModulePreviewSlots;
 import com.gtlmodular.common.data.host.MoltenModuleHostPattern;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
@@ -23,10 +24,17 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
@@ -121,8 +129,57 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
     /** 上次界面补扫游戏刻。 */
     private long lastRescanTick = -1;
 
+    // ---------- AE 无线信号广播（参考数据能源「数据均分塔」的虚拟接管） ----------
+
+    /** 广播逻辑：放主机时按玩家无线终端绑定网络；模块连上时把模块内 ME 节点虚拟并网。 */
+    private final AeWirelessBroadcast aeWireless;
+
+    /** 广播状态文案（服务端算好，同步给客户端 UI；见 {@link #addDisplayText}）。 */
+    @DescSynced
+    private String aeBroadcastStatus = "";
+
+    /** 当前广播出去的 ME 节点数（仅用于上色：>0 显示绿）。 */
+    @DescSynced
+    private int aeBroadcastLinks;
+
     public MoltenModuleHostMachine(IMachineBlockEntity holder) {
         super(holder);
+        this.aeWireless = new AeWirelessBroadcast(this);
+    }
+
+    // ---------- AE 无线信号广播：对外钩子 ----------
+
+    /** 服务端维护完广播后回写（值不变则不重复同步）。 */
+    public void setAeBroadcastStatus(String status, int links) {
+        String text = status == null ? "" : status;
+        if (!text.equals(this.aeBroadcastStatus)) {
+            this.aeBroadcastStatus = text;
+        }
+        if (links != this.aeBroadcastLinks) {
+            this.aeBroadcastLinks = links;
+        }
+    }
+
+    public String getAeBroadcastStatus() {
+        return aeBroadcastStatus;
+    }
+
+    public int getAeBroadcastLinks() {
+        return aeBroadcastLinks;
+    }
+
+    /** 模块连上主机时由主机扫描 / 模块自连两路共同调用：立刻安排一次广播维护。 */
+    public void onModuleConnected(IModularMachineModule<MoltenModuleHostMachine, ?> module) {
+        aeWireless.onModuleChanged();
+    }
+
+    /** 模块断开主机时调用：下次维护会回收它的虚拟连接。 */
+    public void onModuleDisconnected(IModularMachineModule<MoltenModuleHostMachine, ?> module) {
+        aeWireless.onModuleChanged();
+    }
+
+    public AeWirelessBroadcast getAeWirelessBroadcast() {
+        return aeWireless;
     }
 
     // ---------- 自定义 RecipeLogic：主机不搜配方，避免「配方失败原因」 ----------
@@ -147,6 +204,8 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
         public void serverTick() {
             host.tickDrawWindow();
             host.tickCoilRefresh();
+            // AE 无线广播维护（内部 1 秒节流；模块连接/断开另有即时排队）
+            host.aeWireless.tick();
             // 不做任何配方搜索/失败记录；仅同步状态让标准 UI 行与线圈活跃材质照常工作。
             RecipeLogic.Status target;
             if (!isWorkingEnabled()) {
@@ -431,6 +490,11 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
             packed[i] = coilCells.get(i).asLong();
         }
         tag.putLongArray("GTLModularCoilCells", packed);
+        // AE 无线广播的绑定（WAP 维度 + 坐标）只写世界存档；掉落物不带，
+        // 避免将来实现 IDropSaveMachine 时把 WAP 坐标带进物品、再放到别的维度串网。
+        if (!forDrop) {
+            aeWireless.save(tag);
+        }
     }
 
     @Override
@@ -442,6 +506,7 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
         }
         liveCoilType = null;
         liveCoilTick = -1L;
+        aeWireless.load(tag);
     }
 
     /**
@@ -576,6 +641,8 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
                     if (mod instanceof MoltenModuleMachineBase<?> base) {
                         base.onHostLinked();
                     }
+                    // 模块连上的同一时刻广播 AE 无线信号（把模块里的 ME 节点并入绑定的主网络）
+                    aeWireless.onModuleChanged();
                     if (exceedsModuleLimit()) {
                         return;
                     }
@@ -653,18 +720,55 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
         super.onStructureFormed();
         captureCoilCells();
         scanAndConnectModules();
+        aeWireless.onHostFormed();
     }
 
     @Override
     public void onStructureInvalid() {
         super.onStructureInvalid();
         safeClearModules();
+        aeWireless.dropAll();
+        setAeBroadcastStatus("未成形", 0);
     }
 
-    /** 主机方块被移除：断开全部模块链接。 */
+    /** 主机方块被移除：断开全部模块链接与 AE 无线广播。 */
     @Override
     public void onMachineRemoved() {
         safeClearModules();
+        aeWireless.dropAll();
+    }
+
+    @Override
+    public void onUnload() {
+        aeWireless.dropAll();
+        super.onUnload();
+    }
+
+    // ---------- 放置 / 交互：绑定玩家身上的 AE 无线终端 ----------
+
+    /**
+     * 主机放下时按放置者身上的 AE 无线终端绑定主网络。
+     *
+     * <p>口径来自玩家 2026-11-10：「主机放下来的时候，根据玩家身上的无线终端来绑定」。
+     * 非玩家放置（结构生成 / 刷怪蛋）不绑定，之后可潜行 + 手持终端右键补绑。
+     */
+    @Override
+    public void onMachinePlaced(LivingEntity player, ItemStack stack) {
+        aeWireless.onPlaced(player, stack);
+    }
+
+    /** 潜行 + 手持 AE 无线终端右键：重新绑定（兜底入口，不影响正常右键开界面）。 */
+    @Override
+    public InteractionResult onUse(BlockState state, Level level, BlockPos pos, Player player,
+                                   InteractionHand hand, BlockHitResult hit) {
+        if (player.isShiftKeyDown()
+                && player.getItemInHand(hand).getItem() instanceof appeng.items.tools.powered.WirelessTerminalItem) {
+            if (!level.isClientSide) {
+                aeWireless.rebindFromPlayer(player);
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide);
+        }
+        return super.onUse(state, level, pos, player, hand, hit);
     }
 
     // ---------- 显示（基类已画 GT 标准行，这里只补模块/蓄电信息） ----------
@@ -757,6 +861,13 @@ public class MoltenModuleHostMachine extends CoilWorkableElectricMultiblockMachi
                 quickScan();
             }
         }
+        // AE 无线广播状态放最前：未成形 / 未绑定 / 离线这些最需要排障的状态也必须看得到
+        // （数据能源「数据均分塔」式：模块连上即把模块 ME 节点虚拟并入绑定网络）
+        textList.add(Component.literal("AE 无线广播: ")
+                .append(Component.literal(aeBroadcastStatus == null || aeBroadcastStatus.isEmpty()
+                                ? "未绑定" : aeBroadcastStatus)
+                        .withStyle(aeBroadcastLinks > 0 ? ChatFormatting.GREEN : ChatFormatting.GRAY))
+                .withStyle(ChatFormatting.GRAY));
         if (!isFormed()) {
             return;
         }

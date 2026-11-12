@@ -75,7 +75,10 @@ final class ComponentAssemblerStructures {
                 //   装仓后引擎线程数 = 仓的当前设定值；没装时保持 v1=4 / v2=8（见机器 baseThreads）。
                 .or(Predicates.abilities(
                         com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
-                        .setMaxGlobalLimited(1));
+                        .setMaxGlobalLimited(1))
+                // 超频仓：凡可插线程仓的机器都同样可插
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         // ★ 2026-10-31：激光输入仓只允许放在 l 位（激光安全机械方块），a/q/A/d 都不再接受。
         TraceabilityPredicate hatchable = Predicates.blocks(GTBlocks.CASING_STEEL_SOLID.get()).or(io).or(extra);
         TraceabilityPredicate laserSafe = Predicates.blocks(GCyMBlocks.CASING_LASER_SAFE_ENGRAVING.get());

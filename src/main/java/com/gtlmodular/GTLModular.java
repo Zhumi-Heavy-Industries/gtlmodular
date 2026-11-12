@@ -52,6 +52,16 @@ public final class GTLModular {
         // 同时订阅 GTM 的机器注册窗口（GTCEuAPI.RegisterEvent<RL, MachineDefinition>）。
         GTLModularMachines.registerEventListeners(modBus);
 
+        // ★ 2026-11-08：通用独立线程引擎的「唤醒巡检器」——服务端每 N tick 一次（Phase.END），
+        //   只给“退订了但按规则该订阅”的机器补订阅，不推进任何批次；见 ThreadWakeSweeper 类注释。
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.machine.engine.ThreadWakeSweeper::onServerTick);
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.machine.engine.ThreadWakeSweeper::onServerStopped);
+        // ★ 2026-11-10：右键机器 = 登记电网取电身份（老存档机器也能用；见 GridUserBinding 类注释）。
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.event.GridUserBinding::onRightClick);
+
         // ★ NAC 自有配方表的注册窗口：GTCEuAPI.RegisterEvent<RL, GTRecipeType>（在 GTRecipeTypes.init() 内、
         //   RECIPE_TYPES.freeze() **之前**）——与机器注册同款做法（gtlcore / gtmthings 都这么接）。
         //   必须走事件：freeze 之后 GTRegistry.register 直接抛 "registry has been frozen"。
@@ -105,6 +115,10 @@ public final class GTLModular {
         //   把 gtceu:stellar_forge 的机器工厂换成 StellarForgeMachine（GTO 连续运行/等级/掉电爆炸），
         //   并把 GTO 原版机器描述追加到 tooltip。
         modBus.addListener(com.gtlmodular.common.data.stellar.StellarForgeDefinitionSetup::onLoadComplete);
+
+        // ★ 2026-11-09：大型化学反应釜线圈加成的兜底（正常在 GTLModularMachines.init() 的
+        //   机器注册窗口里配好；这里只是极端加载顺序下的保险，两处都幂等）。
+        modBus.addListener(com.gtlmodular.common.data.LargeChemicalReactorCoilSetup::onLoadComplete);
         com.gtlmodular.common.data.GTLModularAddon.registrate =
                 com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate.create(MOD_ID);
 
@@ -117,6 +131,11 @@ public final class GTLModular {
         //   照 print 包 / SpaceOreRecipeMirror 的老套路，挂 Forge 事件总线的 ServerStartedEvent，
         //   在配方管理器就绪后同时写 lookup（机器用）与 RecipeManager.byType（JEI 用）。
         com.gtlmodular.common.data.tentacle.TentacleRecipes.register();
+
+        // ★ 2026-11-10：超级大冰箱（冷却塔冷凝中枢）的获取配方 —— 装配线 UXV + 研究门。
+        //   带研究门的配方要同时补一条「研究站配方」（输出带 assembly_line_research NBT 的数据介质），
+        //   纯 JSON 表达不了，所以跟奈亚之触同一套运行期注入。
+        com.gtlmodular.common.data.coolingtower.CoolingTowerRecipe.register();
 
         // ★ 2026-09-27：GTL-Enhancedcore 兼容 mixin 的**条件注册**（见 registerEnhancedcoreMixins）。
         // [2026-10-01 停用：反射+ignoreRequired 方案不采用，见 _enhcore/实施.md] registerEnhancedcoreMixins();

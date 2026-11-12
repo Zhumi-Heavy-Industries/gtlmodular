@@ -192,6 +192,10 @@ public final class GTLModularMachines {
         //     而 Predicates.abilities(...) 在构建结构谓词时就把方块表取走了 ⇒ 后注册的话
         //     线程仓谓词会拿到空表（7 台仓永远放不进结构）。
         com.gtlmodular.common.data.tentacle.ThreadHatchMachines.register();
+        // ★ 超频仓 17 档（对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」的要求。
+        com.gtlmodular.common.data.fuel.OverclockHatches.register();
+        // ★ 加速仓 14 档（LV~MAX，对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」。
+        com.gtlmodular.common.data.fuel.AccelerateHatches.register();
         // NAC（纳米芯片组装复合体，GTNH 移植）：控制器 + 11 个模块
         com.gtlmodular.common.data.nanochip.NanochipMachines.register();
         // ★ 2026-10-30：一次性工具 3D 打印 —— GTO 3D 打印机「一次性工具」分支剥离
@@ -213,11 +217,20 @@ public final class GTLModularMachines {
         //   配方表 = gtceu:dimensionally_transcendent_plasma_forge + gtceu:stellar_forge；
         //   结构里缺的 18 件方块见 common/data/hpfc/HpfcBlocks（在 initBlocks 里建）。
         com.gtlmodular.common.data.hpfc.HpfcMachines.register();
+        // ★ 2026-11-09：冷却塔冷凝中枢 —— 存档「琪露诺」里 13×16×16 实建冷却塔 1:1 导出，
+        //   控制器外观照 gtceu:cooling_tower，机器代码照 gtladditions 反熵冷凝中枢，
+        //   结构舱室位允许铝制防冻机械方块 + 本模组 7 档线程仓。
+        com.gtlmodular.common.data.coolingtower.CoolingTowerCondensationCenterMachines.register();
 
         // ★ 2026-11-01：恒星炎炀锻炉「换机器类 + 换描述 + 挂漩涡渲染器」必须**在这个窗口**做
         //   （机器注册 = GTM 的 RegisterEvent，早于客户端第一次资源加载；渲染器覆层贴图要在贴图集拼接时注册）。
         //   gtlcore 是本模组的依赖、先于本模组注册，这里取 gtceu:stellar_forge 一定能拿到。
         com.gtlmodular.common.data.stellar.StellarForgeDefinitionSetup.configureNow(true);
+
+        // ★ 2026-11-09：大型化学反应釜「吃线圈加成」—— 同样必须在这个窗口里换 definition 字段
+        //   （改机器类 + 把 C 位白铜线圈放开成任意加热线圈 + 追加 GTO 口径的耗时修正器）。
+        //   说明见 LargeChemicalReactorCoilSetup 类注释；配置开关 lcrCoil.enabled。
+        com.gtlmodular.common.data.LargeChemicalReactorCoilSetup.configureNow();
     }
 
     /**
@@ -595,7 +608,9 @@ public final class GTLModularMachines {
         // ★ 2026-11-02 队长口径（口径 A：只取单仓）：本机允许安装本模组线程仓（限 1 个），
         //   不再接受 gtladditions 的 Ω-天球分歧引擎。
         casing = casing.or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
-                .setMaxGlobalLimited(1));
+                .setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         FactoryBlockPattern f = FactoryBlockPattern.start()
                 .aisle("CCCCC", "CCSCC", "CCCCC", "CCCCC", "HHHHH", "P.P.P", "P.P.P", "P.P.P");
         f = f.where('S', controller(blocks(def.get())));
@@ -622,7 +637,9 @@ public final class GTLModularMachines {
         // 壳格：任意一格都能换成 输入/输出 物品或流体仓（下限 0、不限上限）
         TraceabilityPredicate casing =
                 blocks(blockOf("gtlcore:hyper_mechanical_casing")).or(ioUnlimited(false))
-                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1));
+                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         // 管道格：必须为硅岩管道，不可替换
         TraceabilityPredicate pipe = blocks(blockOf("gtceu:naquadah_huge_fluid_pipe"));
         // 单个切片、8 行高（5宽 × 8高 × 1深）
@@ -654,7 +671,9 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         // 机械方块格：可换输入/输出仓与并行仓
         TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true))
-                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1));
+                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         FactoryBlockPattern f = FactoryBlockPattern.start();
         for (String[] aisle : SpaceOrePatternLayers.AISLES) {
             f = f.aisle(aisle);

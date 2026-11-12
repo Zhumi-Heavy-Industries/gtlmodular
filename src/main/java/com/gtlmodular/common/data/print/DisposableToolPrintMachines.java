@@ -204,6 +204,9 @@ public final class DisposableToolPrintMachines {
                 .or(Predicates.autoAbilities(true, false, true))
                 .or(Predicates.abilities(
                         com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
-                        .setMaxGlobalLimited(1));
+                        .setMaxGlobalLimited(1))
+                // 超频仓：凡可插线程仓的机器都同样可插
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
     }
 }

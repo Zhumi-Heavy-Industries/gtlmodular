@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtlcore:max_sensor"
+    },
+    "F": {
+      "item": "gtlcore:max_emitter"
+    },
+    "A": {
+      "item": "gtceu:max_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:overclock_hatch_max"
+  }
+}

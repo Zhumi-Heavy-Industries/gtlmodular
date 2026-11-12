@@ -27,7 +27,8 @@ import org.jetbrains.annotations.Nullable;
  * 放在 {@code beforeWorking} 会让超档配方每 tick 被选中又被拒，饿死同轮能做的配方。
  */
 public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
 
 
     @Override
@@ -51,6 +52,16 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
         return new ThreadedRecipeLogic(this);
+    }
+
+    /** ★ 2026-11-10：记录放置者 UUID —— 能源缓冲「从无线电网抽电」的身份。 */
+    @Override
+    public void onMachinePlaced(@org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity player,
+                                net.minecraft.world.item.ItemStack stack) {
+        if (player instanceof net.minecraft.world.entity.player.Player p
+                && getRecipeLogic() instanceof ThreadedRecipeLogic logic) {
+            logic.setGridUser(p.getUUID());
+        }
     }
 
     /** 成形/失形各打一行：先分清是结构没成还是配方没配，再看引擎的 5 秒诊断。 */

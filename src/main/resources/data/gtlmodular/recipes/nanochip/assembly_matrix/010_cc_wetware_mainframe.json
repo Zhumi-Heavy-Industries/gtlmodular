@@ -116,17 +116,17 @@
     "fluid": [
       {
         "content": {
-          "amount": 2880,
+          "amount": 72,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:mutated_living_solder"
           }
         }
       },
       {
         "content": {
-          "amount": 1152,
+          "amount": 40000,
           "value": {
-            "fluid": "gtceu:polybenzimidazole"
+            "fluid": "gtceu:pcb_coolant"
           }
         }
       }

@@ -322,12 +322,12 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
      */
     @Override
     public Widget createUIWidget() {
-        WidgetGroup group = new WidgetGroup(0, 0, 176, 40);
+        WidgetGroup group = new WidgetGroup(0, 0, 130, 40);
         // 本 LDLib 版本的 LabelWidget 只收 String / Component / Supplier&lt;String&gt;（javap 现读）。
         group.addWidget(new LabelWidget(6, 4,
                 Component.translatable("gtlmodular.thread_hatch.config.title").getString()));
         // GTO 同职责控件：1 ~ 本档上限 的数量输入框（+/− 按钮 + Ctrl/Shift 加速由控件自带）。
-        group.addWidget(new IntInputWidget(6, 18, 150, 18,
+        group.addWidget(new IntInputWidget(6, 18, 118, 18,
                 this::getThreads, this::setThreadCount)
                 .setMin(1).setMax(getMaxThreads()));
         return group;

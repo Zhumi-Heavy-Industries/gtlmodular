@@ -2620,6 +2620,9 @@ public final class NyarlathotepsTentacleStructures {
                 // —— GTO 线程仓（0.3.285 起全局 1 个；GTO 同样是 setMaxGlobalLimited(1)）。
                 //    GTO 这条没有 previewCount ⇒ 预览格不占位，只在点开候选时出现。
                 .or(ability(ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                // 超频仓：凡可插线程仓的机器都同样可插
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate())
                 // —— 并行仓：队长要求保留（GTO 奈亚的谓词里没有它）。
                 //    GTCEu 自己的 `autoAbilities(checkParallel)` 是 max 1 + previewCount(1)；
                 //    本机一直是「不限个数」，本次不改上限，只让它像 GTCEu 那样占一格预览。

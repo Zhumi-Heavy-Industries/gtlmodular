@@ -31,6 +31,7 @@ public final class ShanhaiUltimateTerminalConfig {
     private static final String MODULE_CHECK_KEY = "ModuleCheckMode";
     private static final String BOUND_AE_KEY = "BoundAE";
     private static final String BOUND_ECO_KEY = "BoundEco";
+    private static final String BOUND_CONTROLLER_KEY = "BoundController";
     private static final String REPLACEMENT_FAMILY_KEY = "ReplacementFamily";
     private static final String REPLACEMENT_TIER_KEY = "ReplacementTier";
     private static final String TIER_SELECTIONS_KEY = "TierSelections";
@@ -178,6 +179,28 @@ public final class ShanhaiUltimateTerminalConfig {
         bound.putString("Dimension", pos.dimension().location().toString());
         bound.putLong("Pos", pos.pos().asLong());
         config.put(BOUND_AE_KEY, bound);
+    }
+
+    public static void setBoundController(ItemStack stack, GlobalPos pos) {
+        CompoundTag config = get(stack);
+        if (pos == null) {
+            config.remove(BOUND_CONTROLLER_KEY);
+            return;
+        }
+        CompoundTag bound = new CompoundTag();
+        bound.putString("Dimension", pos.dimension().location().toString());
+        bound.putLong("Pos", pos.pos().asLong());
+        config.put(BOUND_CONTROLLER_KEY, bound);
+    }
+
+    public static GlobalPos getBoundController(ItemStack stack) {
+        CompoundTag config = get(stack);
+        if (!config.contains(BOUND_CONTROLLER_KEY, CompoundTag.TAG_COMPOUND)) return null;
+        CompoundTag bound = config.getCompound(BOUND_CONTROLLER_KEY);
+        ResourceLocation dimension = ResourceLocation.tryParse(bound.getString("Dimension"));
+        if (dimension == null) return null;
+        ResourceKey<Level> levelKey = ResourceKey.create(Registries.DIMENSION, dimension);
+        return GlobalPos.of(levelKey, BlockPos.of(bound.getLong("Pos")));
     }
 
     public static void setBoundEco(ItemStack stack, GlobalPos pos) {

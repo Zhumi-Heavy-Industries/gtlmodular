@@ -160,6 +160,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         }
 
         if (player.isShiftKeyDown()) {
+            boolean orderStarted = false;
             if (rejectOutOfBuildHeight(serverPlayer, terminal, plan)) {
                 return InteractionResult.FAIL;
             }
@@ -170,9 +171,14 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                                 && (entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
                                 || entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE));
                 if (hasReplacements) {
-                    if (com.gtlmodular.common.item.terminal.TerminalReplaceService.prepareOrStart(
-                            serverPlayer, terminal, plan)) {
-                        return InteractionResult.SUCCESS;
+                    var result = com.gtlmodular.common.item.terminal.TerminalReplaceService.execute(
+                            serverPlayer, terminal, plan, ae);
+                    if (result != null) {
+                        serverPlayer.sendSystemMessage(Component.literal(
+                                (result.success() ? "§a" : "§c") + "[哦鲸鲸终端] "
+                                        + result.message() + "，变更 " + result.changed() + " 处"));
+                        sendBuildReport(serverPlayer, plan, result);
+                        return result.success() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
                     }
                 }
             }
@@ -190,12 +196,9 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             }
             // 第一次潜行右击：优先走 GTO 式单个 AE 订单（独立逻辑）
             if (ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) {
-                if (com.gtlmodular.common.item.terminal.TerminalOrderService.start(
-                        serverPlayer, terminal, plan, ae)) {
-                    com.gtlmodular.common.item.terminal.TerminalAutoBuildService.register(
-                            serverPlayer, terminal, plan);
-                    return InteractionResult.SUCCESS;
-                }
+                // GTO 单订单把全部缺口合成一个样板，AE 规划可能绕过网络里已有成品，
+                // 去从原料重算。这里改回逐材料计算：先扣库存，只对真正的缺口下单。
+                com.gtlmodular.GTLModular.LOGGER.info("终端使用逐材料订单路径（先扣 AE 库存，再计算缺口）");
             }
             // 旧多缺口逐单逻辑（订单服务不可用时的回退）
             requestMissingOrders(serverPlayer, terminal, plan, ae);
@@ -221,7 +224,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                     .anyMatch(entry -> entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
                             || entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE);
             var preflight = materials.preflight(plan, serverPlayer, ae);
-            boolean waitingOrders = ae != null
+            boolean waitingOrders = orderStarted && ae != null
                     && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)
                     && !preflight.success();
             if (hasReplacement || waitingOrders || !preflight.success()) {
@@ -293,6 +296,8 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             if (!(machine instanceof IMultiController controller)) return false;
             ShanhaiStructurePlan plan = ShanhaiStructurePlanner.scan(controller, terminal);
             if (plan == null) return false;
+            ShanhaiUltimateTerminalConfig.setBoundController(terminal,
+                    GlobalPos.of(player.level().dimension(), pos.immutable()));
             if (ShanhaiUltimateTerminalConfig.isModuleCheckMode(terminal)) {
                 reportModulePositions(player, plan);
             } else {

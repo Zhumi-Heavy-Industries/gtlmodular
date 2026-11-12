@@ -4128,7 +4128,9 @@ public final class HpfcStructures {
                 .or(ability(PartAbility.INPUT_LASER).setMaxGlobalLimited(1))
                 // —— GTO 线程仓（setMaxGlobalLimited(1)，与 GTO 原谓词同口径）；
                 //    GTO 这条没有 previewCount ⇒ 预览格不占位，只在点开候选时出现。
-                .or(ability(ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1));
+                .or(ability(ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
 
         return pattern
                 .where('A', plainCasing)

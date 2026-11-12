@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtceu:luv_sensor"
+    },
+    "F": {
+      "item": "gtceu:luv_field_generator"
+    },
+    "A": {
+      "item": "gtceu:luv_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:accelerate_hatch_luv"
+  }
+}

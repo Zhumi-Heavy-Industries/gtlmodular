@@ -125,4 +125,32 @@ public interface IThreadedRecipeMachine {
         }
         return true; // 没装仓：按“独立”处理，保持机器原行为
     }
+
+    /**
+     * ★ 2026-11-08：<b>本机是否「必须先装线程仓，引擎才接管」</b>。
+     *
+     * <p>默认 {@code false}——本模组自研机器（3D 打印阵列 / 小型 PCB 工厂 / 部件组装机 / NAC）
+     * <b>本来就是按引擎设计的</b>，装不装线程仓都该由引擎驱动；
+     * GTO 移植机（奈亚 / 高维等离子聚变核心）不是：它们原本有自己的多方块逻辑，
+     * 线程仓只是给它们<b>加线程</b>的增强件 ⇒ <b>没装线程仓时不该被引擎接管</b>，
+     * 应回到移植前的原逻辑（gtlcore 的 {@code MultipleRecipesLogic}）。
+     *
+     * <p>实现方式见 {@code ThreadedRecipeLogic} 里的「闸门」：没装线程仓时由
+     * 一个不自己订阅 tick 的 {@code MultipleRecipesLogic} 代跑，引擎只镜像它的进度。
+     */
+    default boolean engineRequiresThreadHatch() {
+        return false;
+    }
+
+    /**
+     * ★ 2026-11-09：<b>没装线程仓时由谁代跑</b> —— 只有 {@link #engineRequiresThreadHatch()}
+     * 为 {@code true} 的机器会问这一步。
+     *
+     * <p>返回 {@code null} ⇒ 按老口径交回 gtlcore 的 {@code MultipleRecipesLogic}（GTO 移植机）；
+     * 返回一个逻辑实例 ⇒ 用它当原逻辑。NAC 模块走后者：没装线程仓时回到自己的
+     * {@code ModuleRecipeLogic}，行为与装引擎之前逐字一致（含它自己的缓存供电口径）。
+     */
+    default com.gregtechceu.gtceu.api.machine.trait.RecipeLogic createEngineFallbackLogic() {
+        return null;
+    }
 }

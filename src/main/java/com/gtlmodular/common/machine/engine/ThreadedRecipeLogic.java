@@ -1,33 +1,21 @@
 package com.gtlmodular.common.machine.engine;
 
-import com.gregtechceu.gtceu.api.capability.IParallelHatch;
-import com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability;
-import com.gregtechceu.gtceu.api.capability.recipe.IO;
-import com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler;
-import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
-import com.gregtechceu.gtceu.api.recipe.content.Content;
-import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
-import com.gregtechceu.gtceu.common.data.GTRecipeModifiers;
 import com.gtlmodular.GTLModular;
-import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
-import org.gtlcore.gtlcore.api.machine.trait.MEPatternRecipeHandlePart;
-import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEPatternPartMachine;
-import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
-import com.google.common.collect.Table;
-import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
-import com.mojang.datafixers.util.Pair;
+import com.gtlmodular.common.config.GTLModularConfig;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.ItemStack;
+import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
+import org.gtlcore.gtlcore.api.machine.trait.MEPatternRecipeHandlePart;
+import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEPatternPartMachine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,28 +25,34 @@ import java.util.Map;
  * ★ <b>独立线程引擎 · 机器侧接法</b>：把 {@link ConcurrentRecipeEngine} 接到 GTCEu 的
  * {@link RecipeLogic} 上，让一台机器<b>同时推进多条配方</b>。
  *
- * <h2>它只做三件事</h2>
+ * <h2>本类只做四件事（其余按职责拆到同包的小类里）</h2>
  * <ol>
  *   <li><b>驱动</b>：{@link #serverTick} 每 tick 调一次 {@link ConcurrentRecipeEngine#tick}，
- *       内部类 {@link HostImpl} 回答引擎的六个问题（找配方／扣料／每 tick 输入／收尾出料）；</li>
+ *       内部类 {@link HostImpl} 回答引擎的六个问题；</li>
  *   <li><b>展示回写</b>：批次表非空时把<b>第 0 条</b>的 {@code recipe}／{@code progress}／{@code duration}
  *       写进基类的同步字段，并把状态置为 {@code WORKING}；空表则清零并置 {@code IDLE}
  *       ⇒ GUI／Jade／TOP 那套单进度条免费可用（只反映一条批次）；</li>
+ *   <li><b>订阅</b>：按需订阅（有批次 / 有料 / 有 ME 样板仓 / {@code pokeScan} 强制时才挂 tick），
+ *       由 {@link ThreadWakeSweeper} 兜底补订阅；</li>
  *   <li><b>存读档</b>：{@link #saveCustomPersistedData}／{@link #loadCustomPersistedData}
  *       转发给引擎（批次表是追加键，不新增任何 {@code @Persisted} 字段）。</li>
  * </ol>
+ *
+ * <h2>拆出去的四个协作者（形状对齐参考实现）</h2>
+ * <table border="1">
+ *   <tr><th>类</th><th>职责</th><th>对应旧实现</th></tr>
+ *   <tr><td>{@link BatchFinder}</td><td>跨表找配方、分片扫描、并行额度换算</td><td>{@code HostImpl#findBatch}</td></tr>
+ *   <tr><td>{@link BatchIo}</td><td>扣料 / 每 tick 输入 / 收尾出料 / 批次日志限流</td><td>{@code HostImpl#consumeInputs/tickInputs/finishOutputs}</td></tr>
+ *   <tr><td>{@link BatchDiagnostics}</td><td>拒绝原因、逐条扫描明细、缺料探测</td><td>本类里成片的 diag 字段与方法</td></tr>
+ *   <tr><td>{@link BatchWatchdog}</td><td>批次停滞 WARN（200 tick 无进度）</td><td>{@code serverTick} 里的看门狗段</td></tr>
+ * </table>
+ * <p>拆分只搬家、不换逻辑：字段、判断顺序、日志文本、限频规则与 0.3.344 逐字一致。
  *
  * <h2>为什么不调 {@code super.serverTick()}（★ 关键）</h2>
  * GTCEu 基类的 {@code serverTick()} 会在空闲时自己找配方、自己扣料、自己推进
  * {@code progress}，并会在表尾「空闲自退订」把 tick 订阅摘掉。本类要独占配方的挑选与扣料
  * （扣料只允许发生在 {@link ConcurrentRecipeEngine#tick} 的第③步、一条只扣一次），
  * 所以<b>整体覆写且从不调 {@code super.serverTick()}</b>。
- *
- * <p>订阅本身由基类 {@code onMachineLoad()} → {@code updateTickSubscription()} 建立；
- * 本类<b>不主动取消订阅</b>。已验证 GTCEu 1.20.1-1.4.4 的「空闲自退订」只写在
- * {@code serverTick()} 表尾（本类不调它 ⇒ 不会触发），而 {@code setStatus(...)} 内部的
- * {@code updateTickSubscription()} 只在「暂停／配方逻辑不可用」时才退订 ⇒ 空闲时调
- * {@code setStatus(Status.IDLE)} <b>不会</b>把本逻辑停掉。
  *
  * <h2>与基类字段的一处已知差异</h2>
  * {@code RecipeLogic.isActive} 是 <b>private 且没有 setter</b>（javap 现读 1.4.4），
@@ -71,7 +65,8 @@ import java.util.Map;
  * <h2>并行怎么算</h2>
  * {@code max(1, parallelMultiplier()) × max(1, 并行仓并行数)} 一起交给
  * {@code GTRecipeModifiers.accurateParallel}；并行仓并行数取「已成形多方块所有
- * {@link IParallelHatch} 部件里最大的 {@code getCurrentParallel()}」，没有并行仓就是 1。
+ * {@link com.gregtechceu.gtceu.api.capability.IParallelHatch} 部件里最大的
+ * {@code getCurrentParallel()}」，没有并行仓就是 1（见 {@link BatchFinder#parallelHatchCount()}）。
  *
  * @see IThreadedRecipeMachine
  * @see ConcurrentRecipeEngine
@@ -84,169 +79,67 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     /** 机器侧契约（构造时由传入的 machine 强转得到）。 */
     private final IThreadedRecipeMachine threaded;
 
-    // ---------- 2026-10-30 诊断（限频；2026-11-03 改为「每个不同原因最多 12 行」） ----------
-    private int diagLines;
-    private int diagCandidates;
-    /**
-     * 上一次<b>真实</b>拒绝原因（2026-11-03 玩家要求可读）：
-     * <ul>
-     *   <li>扫描冷却（{@link #IDLE_COOLDOWN_TICKS}）<b>不再覆盖</b>它 —— 旧版每 100 tick 打诊断时
-     *       恰好常落在冷却里，日志只会写「扫描冷却中（剩 N tick）」，看不到真正原因；</li>
-     *   <li>原因变化时把 {@link #diagLines} 归零 ⇒ 同一个原因最多 12 行，换原因重新计数，
-     *       长时间空转也不会刷屏、也不会「前 12 行之后永远没日志」。</li>
-     * </ul>
-     */
-    private String diagReject = "（还没试）";
-    private String diagLastLoggedReason;
+    /** 找配方（跨表 / 分片 / 并行额度）。 */
+    private final BatchFinder finder;
 
-    /** 上一次被判「物品/流体不匹配」的那条配方（诊断行据此算出缺的是物品还是流体）。 */
-    private GTRecipe diagRecipe;
+    /** 诊断（拒绝原因 / 扫描明细 / 缺料探测）。 */
+    private final BatchDiagnostics diag;
 
-    /** 上一次失败的附加原因（每 tick 输入 / 配方条件的 {@code reason()} 文本）。 */
-    private String diagExtra;
+    /** 批次与机器的交接（扣料 / 每 tick 输入 / 出料）。 */
+    private final BatchIo io;
 
-    /** 最后一次真正扫过的配方表 id（跨表时日志里能看到「这次扫的是哪张表」）。 */
-    private String diagScannedType;
-
-    /** 一条候选的失败记录（明细落盘用：原因 + 配方对象，配方对象只用来补「缺什么」）。 */
-    private record ScanReject(String reason, GTRecipe recipe) {}
+    /** 批次停滞看门狗。 */
+    private final BatchWatchdog watchdog;
 
     /**
-     * ★ 2026-11-03：<b>逐条扫描明细</b>。每张表先按 24 条分片轮扫；等整张表被覆盖完且一条都没跑起来时，
-     * 把「每条候选为什么失败」一次性打到日志（每张表每次世界加载只打一次，≤40 行）。
-     *
-     * <p>为什么需要它：跨表诊断里每张表只保留<b>最后一条</b>候选的拒绝原因，
-     * 而你真正在意的那条（比如 enderium_plasma）可能排在窗口中间 —— 只看最后一条会把原因张冠李戴。
+     * ★ 2026-11-10：<b>EU 能源缓冲</b>——配方每 tick 要的电先由它支付，每 N tick 才穿一次能源仓。
+     * 配置 {@code threading.energyBuffer=false} 时为 {@code null}（逐 tick 直扣，旧行为）。
      */
-    private final Map<GTRecipeType, Map<String, ScanReject>> scanRejectsByType = new java.util.IdentityHashMap<>();
+    private final EnergyBufferHandler energyBuffer;
 
-    /** 已经打过一次性明细的配方表（避免刷屏）。 */
-    private final java.util.Set<GTRecipeType> scanDumpDone =
-            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /** ★ 2026-11-08：{@link #pokeScan()} 置位 ⇒ 下一次调度立即扫描（不等扫描冷却）。 */
+    private boolean scanForced;
 
-    /** 本次 {@link #findBatchForType} 是否真的扫了（冷却/跳过时为 false，不参与多表原因汇总）。 */
-    private boolean diagScannedThisCall;
+    /** ★ 2026-11-10：<b>电网取电身份</b>（放置者 UUID；能源缓冲优先从无线电网扣电）。 */
+    private java.util.UUID gridUser;
 
-    // ---------- 2026-10-30 扫描节流（大配方表空转时不要每 tick 全表扫） ----------
-    /** 没有 ME 样板缓存时，一次 findBatch 最多试多少条配方。 */
-    private static final int SCAN_BUDGET = 24;
-    /** 整轮没找到配方后的冷却 tick 数（期间 findBatch 直接返回 null）。 */
-    private static final int IDLE_COOLDOWN_TICKS = 10;
+    /** 电网身份存档键（追加键，不新增 @Persisted 字段）。 */
+    private static final String TAG_GRID_USER = "gtlmodular_grid_user";
 
-    /**
-     * ★ 2026-11-03：<b>每张配方表各自的扫描游标与冷却</b>。
-     *
-     * <p>旧版是全局单份 {@code scanCursor/scanCooldownUntil} —— 单表时没问题，但跨表轮转时
-     * <b>第一张表一轮扫完就把整机冷却 10 tick</b>，后面的表在 {@code now < cooldownUntil}
-     * 分支直接返回、<b>根本没被扫到</b>（日志里「跨表=true」却只有第一张表的拒绝原因）。
-     * 改成每表一份后，一轮 findBatch 里每张表都能真正扫到自己的分片。
-     */
-    private static final class TableScanState {
-        int cursor;
-        long cooldownUntil;
-    }
-
-    private final Map<GTRecipeType, TableScanState> scanStates = new java.util.IdentityHashMap<>();
-
-    // ---------- ★ 2026-11-07：批次日志限流 + 停滞看门狗（玩家「部件组装机第一次下单会卡」） ----------
-
-    /** 每 20 tick 最多打几条「开机/完成」INFO（其余降到 DEBUG，避免大单时刷屏拖慢服务器线程）。 */
-    private static final int BATCH_LOG_PER_WINDOW = 4;
-    private static final int BATCH_LOG_WINDOW_TICKS = 20;
-
-    /** 批次停滞多久（tick）打一次 WARN；同一条机器最多每 200 tick 一行。 */
-    private static final int STUCK_WARN_TICKS = 200;
-
-    private long batchLogWindow = Long.MIN_VALUE;
-    private int batchLogUsed;
-
-    /** 上次进度总和 / 对应 tick（用于停滞检测）。 */
-    private int lastProgressSum = -1;
-    private long lastProgressSumTick = Long.MIN_VALUE;
-    private long lastStuckWarnTick = Long.MIN_VALUE;
-
-    /**
-     * 取一个「开机/完成」INFO 名额（每 20 tick 最多 {@value #BATCH_LOG_PER_WINDOW} 条）。
-     * 拿不到就降级成 DEBUG —— 大单时 1 tick 开 4 条批次也不会把主线程拖在同步日志 I/O 上。
-     */
-    private boolean takeBatchLogSlot() {
-        long window = machine.self().getOffsetTimer() / BATCH_LOG_WINDOW_TICKS;
-        if (window != batchLogWindow) {
-            batchLogWindow = window;
-            batchLogUsed = 0;
-        }
-        if (batchLogUsed >= BATCH_LOG_PER_WINDOW) {
-            return false;
-        }
-        batchLogUsed++;
-        return true;
-    }
-
-    /** 当前所有批次进度之和（停滞检测用）。 */
-    private int progressSum() {
-        int sum = 0;
-        for (int i = 0; i < engine.size(); i++) {
-            sum += engine.get(i).progress;
-        }
-        return sum;
-    }
-
-    /** 当前在跑批次数（显示用）。 */
-    public int runningThreadCount() {
-        return engine.size();
-    }
-
-    /** 当前所有在跑批次的并行之和（显示用）。 */
-    public long totalRunsAtOnce() {
-        long sum = 0L;
-        for (int i = 0; i < engine.size(); i++) {
-            sum += Math.max(1, engine.get(i).recipe.parallels);
-            if (sum < 0) {
-                return Long.MAX_VALUE;
+    /** 机器放置/右键时由机器类或事件转发（{@code IMachineLife.onMachinePlaced} / 右键）。 */
+    public void setGridUser(java.util.UUID user) {
+        if (user != null) {
+            this.gridUser = user;
+            try {
+                machine.self().markDirty();
+            } catch (Throwable ignored) {
+                // 落盘失败只影响重启后是否保留电网身份
             }
         }
-        return sum;
     }
 
-    /** 当前在跑批次占用的并行之和（「独立线程」关闭时用来算剩余共享额度）。 */
-    private int runningParallelSum() {
-        int sum = 0;
-        for (int i = 0; i < engine.size(); i++) {
-            sum += Math.max(1, engine.get(i).recipe.parallels);
-            if (sum < 0) {
-                return Integer.MAX_VALUE;
-            }
-        }
-        return sum;
-    }
-
-    /** 「并行重复配方」关闭时：同一条配方是否已被别的线程占用。 */
-    private boolean isRecipeRunningElsewhere(GTRecipe raw) {
-        if (raw == null || raw.getId() == null) {
-            return false;
-        }
-        for (int i = 0; i < engine.size(); i++) {
-            GTRecipe running = engine.get(i).recipe;
-            if (running != null && raw.getId().equals(running.getId())) {
-                return true;
-            }
-        }
-        return false;
+    /** 当前电网取电身份（可能为 null ⇒ 只有能源仓可用）。 */
+    public java.util.UUID getGridUser() {
+        return this.gridUser;
     }
 
     /**
-     * ★ 2026-11-07：<b>立刻清掉扫描冷却</b>（下一次 {@code findBatch} 马上重新扫）。
+     * ★ 2026-11-08：<b>GTO 移植机的「原逻辑」</b>——只有
+     * {@link IThreadedRecipeMachine#engineRequiresThreadHatch()} 为 true 的机器才会创建它。
      *
-     * <p>AE 推样板 / 换电路 / 换模式后调用：旧版要等 {@link #IDLE_COOLDOWN_TICKS} 才重扫，
-     * 大单首件会被玩家感知成「下单卡住」；现在推送成功当 tick 就能开始找配方。
+     * <p>没装线程仓时由它代跑（gtlcore 的 {@code MultipleRecipesLogic}，= 移植前的多方块逻辑）；
+     * 装了线程仓才轮到本引擎接管。见 {@link #serverTick()} 的闸门与 {@link #tickOriginal()}。
      */
-    public void pokeScan() {
-        for (TableScanState s : scanStates.values()) {
-            s.cooldownUntil = 0;
-        }
-        diagLastLoggedReason = null;
-        diagLines = 0;
-    }
+    private RecipeLogic original;
+
+    /** 当前是不是引擎接管：true = 引擎；false = 原逻辑在跑（仅 {@link #original} != null 时可能为 false）。 */
+    private boolean engineMode = true;
+
+    /** ★ 2026-11-09：原逻辑的「允许工作」开关是否已同步过（构造期不能读，改到第一次代跑时同步）。 */
+    private boolean originalWorkingSynced;
+
+    /** ★ 2026-11-09：原逻辑创建失败（跨版本 mixin 强转类崩溃）⇒ 永不再试，留在引擎模式。 */
+    private boolean originalCreateFailed;
 
     /**
      * @param machine 必须同时实现 {@link IRecipeLogicMachine} 与 {@link IThreadedRecipeMachine}
@@ -255,12 +148,138 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public ThreadedRecipeLogic(IRecipeLogicMachine machine) {
         super(machine);
         this.threaded = (IThreadedRecipeMachine) machine;
+        this.diag = new BatchDiagnostics(machine);
+        this.finder = new BatchFinder(machine, threaded, this, engine, diag);
+        this.io = new BatchIo(machine, this, finder, diag);
+        this.watchdog = new BatchWatchdog();
+        // ★ 2026-11-10：EU 能源缓冲（每 N tick 才调一次能源仓）。
+        this.energyBuffer = GTLModularConfig.isThreadingEnergyBuffer()
+                ? new EnergyBufferHandler(machine, GTLModularConfig.getThreadingEnergyBufferTicks(), this::getGridUser)
+                : null;
+        // ★ 2026-11-09：原逻辑改为「懒创建」——构造期机器还没初始化完，而且跨版本的
+        //   gtlcore/gtladditions mixin 会在 MultipleRecipesLogic 构造里做强转
+        //   （奈亚 0.3.358 的 ClassCastException）；放这里会把整个机器实例化打断。
+        //   现在由 {@link #updateEngineGate()} 在「第一次真的需要它」时创建，失败就留在引擎模式。
+        // ★ 2026-11-09：【不在构造期读 isWorkingEnabled()】
+        //   机器此时还没初始化完（Enhancedcore 的 IV mixin 会经 RecipeLogic.isWorkingEnabled()
+        //   去碰 IvNativeAccess，构造期它是 null ⇒ NPE 直接把游戏崩掉）。
+        //   工作开关改为第一次由原逻辑代跑时同步（见 tickOriginal）。
+        // ★ 2026-11-08（按需订阅）：登记到唤醒巡检器（WeakHashMap ⇒ 不阻止机器被回收）。
+        ThreadWakeSweeper.register(this);
     }
 
     /**
-     * 每个 server tick：<b>暂停就整 tick 不动 → 驱动引擎 → 展示回写</b>。
+     * ★ 2026-11-08：<b>「装线程仓才接管」的闸门</b>。
      *
-     * <p>暂停（{@link #isSuspend()}）时直接返回：不推进、不摘批次、不吞料（与基类一致）。
+     * <p>适用对象：{@link IThreadedRecipeMachine#engineRequiresThreadHatch()} 为 true 的
+     * GTO 移植机（奈亚 / 高维等离子聚变核心）。结构里有线程仓 ⇒ 引擎接管；
+     * 拆掉 / 没装 ⇒ 交回移植前的原逻辑（gtlcore {@code MultipleRecipesLogic}），
+     * 引擎只把它的进度镜像到本类的同步字段（GUI/Jade/原生进度条照常）。
+     *
+     * <p>切换时清空另一方状态：交回原逻辑时清批次（已扣料不退，与 {@code resetRecipeLogic} 同义）；
+     * 交回引擎时清原逻辑状态。检测每 tick 一次（部件表只读，成本与 {@code effectiveThreads()} 同级）。
+     */
+    private void updateEngineGate() {
+        if (!threaded.engineRequiresThreadHatch()) {
+            return;
+        }
+        boolean hatch = threaded.threadHatchThreads() > 0;
+        if (hatch) {
+            if (!engineMode) {
+                engineMode = true;
+                if (original != null) {
+                    original.resetRecipeLogic();   // 交回引擎：原逻辑的进度/配方作废
+                }
+            }
+            return;
+        }
+        // 没装仓 ⇒ 需要原逻辑：第一次真的要用时才创建（构造期不能建，见构造函数注释）。
+        if (original == null && !originalCreateFailed) {
+            try {
+                original = threaded.createEngineFallbackLogic();
+                if (original == null
+                        && machine instanceof org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine parallelMachine) {
+                    original = new OriginalRecipesLogic(parallelMachine);
+                }
+                if (original == null) {
+                    // 机器既没自带原逻辑、也不是 ParallelMachine ⇒ 没有可回退的东西：
+                    // 记下「已尝试」，别每 tick 再试一次。
+                    originalCreateFailed = true;
+                }
+            } catch (Throwable t) {
+                original = null;
+                originalCreateFailed = true;
+                GTLModular.LOGGER.warn(
+                        "[gtlmodular] {} 的原逻辑无法创建（跨版本 mixin 强转），本机保持引擎模式：{}",
+                        machine.self().getPos(), t.toString());
+            }
+        }
+        if (original != null && engineMode) {
+            engineMode = false;
+            originalWorkingSynced = false;
+            // ★ 2026-11-10：交回原逻辑前把引擎缓存的电退回能源仓（原逻辑不走缓冲）
+            if (energyBuffer != null) {
+                energyBuffer.flushBack();
+            }
+            engine.resetRecipeLogic();     // 交回原逻辑：批次清空（已扣料不退）
+        }
+    }
+
+    /** 原逻辑是否正在代跑（只有「需要装仓才接管 + 当前没仓」时为 true）。 */
+    private boolean originalActive() {
+        return original != null && !engineMode;
+    }
+
+    /**
+     * 原逻辑代跑一 tick，并把它的<b>公开读数</b>镜像进本类的同步字段。
+     *
+     * <p>为什么镜像而不是让 GUI 直接读它：本类才是 {@code machine.getRecipeLogic()}，
+     * GTCEu 的进度条、Jade、TOP 读的都是本类字段；镜像后客户端拿到的也是同步字段（原逻辑不参与同步）。
+     */
+    private void tickOriginal() {
+        // 第一次代跑时把「允许工作」开关同步给原逻辑（构造期不能碰，见构造函数注释）。
+        if (!originalWorkingSynced) {
+            originalWorkingSynced = true;
+            try {
+                original.setWorkingEnabled(isWorkingEnabled());
+            } catch (Throwable t) {
+                // 上游 mixin 偶发抛错也不能让机器停摆：保持原逻辑默认（允许工作）。
+            }
+        }
+        original.serverTick();
+        this.progress = original.getProgress();
+        this.duration = original.getDuration();
+        this.lastRecipe = original.getLastRecipe();
+        this.totalContinuousRunningTime = original.getTotalContinuousRunningTime();
+        Status status = original.getStatus();
+        if (status != getStatus()) {
+            setStatus(status);
+        }
+    }
+
+    /**
+     * 原逻辑外壳：gtlcore {@code MultipleRecipesLogic}，但<b>绝不自己订阅 tick</b>
+     * —— 驱动权统一在 {@link ThreadedRecipeLogic#serverTick()}（否则同一个逻辑会被 tick 两次）。
+     */
+    private static final class OriginalRecipesLogic
+            extends org.gtlcore.gtlcore.common.machine.trait.MultipleRecipesLogic {
+
+        OriginalRecipesLogic(org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine machine) {
+            super(machine);
+        }
+
+        @Override
+        public void updateTickSubscription() {
+            // 由通用引擎统一驱动，这里必须是空实现（双推会把进度/扣料翻倍）。
+        }
+    }
+
+    /**
+     * 每个 server tick：<b>推进引擎 → 停滞看门狗 → 空转诊断 → 展示回写 → 闲时退订</b>。
+     *
+     * <p>入口从「全局调度器统一调」改回 GTO 形状：<b>每台机器自己的 {@code serverTick}</b>，
+     * 但订阅由 {@link #updateTickSubscription()} 按需管理 —— 没批次、没料、没 ME 样板仓时
+     * 直接退订，不再每 tick 进回调。
      *
      * <p><b>绝不调 {@code super.serverTick()}</b>：原因见类注释（否则会抢配方、抢扣料、
      * 并且空闲自退订会摘掉订阅）。
@@ -270,6 +289,19 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         if (isSuspend()) {
             return;
         }
+        // ★ 2026-11-08：先看闸门——没装线程仓的 GTO 移植机，这一 tick 由原逻辑代跑。
+        updateEngineGate();
+        if (originalActive()) {
+            scanForced = false;
+            tickOriginal();
+            maybeIdleUnsubscribe();
+            return;
+        }
+        scanForced = false;
+        // ★ 2026-11-10：能源缓冲——安装检查 + 到点批量补能（每 N tick 才穿一次能源仓）。
+        if (energyBuffer != null) {
+            energyBuffer.tick();
+        }
         // 多方块部件级的「每 tick 工作钩子」（维护仓/消声仓/模块等）：GTCEu 的单配方逻辑
         // 每 tick 在 handleRecipeWorking 里调一次 machine.onWorking()，返回 false ⇒ 整机等待。
         // 本引擎有 N 条批次，但部件钩子只能按机器每 tick 调一次（调 N 次会把部件 upkeep 放大 N 倍）。
@@ -278,54 +310,21 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             return;
         }
         // ①②③：逐条推进 → 摘掉涨满的（先摘表再收尾出料）→ 有空位就找配方并原子扣料
+        finder.beginTick();
         engine.tick(new HostImpl());
 
         // ③.4 停滞看门狗（★ 2026-11-07）：引擎里还有批次、却连续 200 tick 一点进度都没有 ⇒ 打 WARN。
-        //   玩家报「部件组装机第一次下单会卡、调一个电路就不卡」：换模式/换电路会 resetRecipeLogic()
-        //   把批次清掉，于是机器恢复；但旧日志里看不出批次是卡在「每 tick 输入不足」还是「输出/别的」。
-        //   这里把第 0 条批次的配方/进度/每 tick 输入是否够 都写出来，下一次复现直接定位。
-        int progressNow = progressSum();
-        long nowTick = machine.self().getOffsetTimer();
-        if (progressNow != lastProgressSum) {
-            lastProgressSum = progressNow;
-            lastProgressSumTick = nowTick;
-        } else if (engine.size() > 0 && lastProgressSumTick != Long.MIN_VALUE
-                && nowTick - lastProgressSumTick >= STUCK_WARN_TICKS
-                && (lastStuckWarnTick == Long.MIN_VALUE || nowTick - lastStuckWarnTick >= STUCK_WARN_TICKS)) {
-            lastStuckWarnTick = nowTick;
-            ConcurrentRecipeEngine.Batch primary = engine.get(0);
-            boolean tickInputOk;
-            try {
-                tickInputOk = primary.recipe.matchTickRecipe(machine).isSuccess();
-            } catch (Throwable t) {
-                tickInputOk = false;
-            }
-            GTLModular.LOGGER.warn("[gtlmodular] 线程引擎批次停滞 @{}：{} 条批次已 {} tick 没有进度；"
-                            + "第0条 {} 进度 {}/{}，每tick输入={}。"
-                            + "（换模式/换电路会 resetRecipeLogic 清空批次，已扣料不退）",
-                    machine.self().getPos(), engine.size(), nowTick - lastProgressSumTick,
-                    primary.recipe.getId(), primary.progress, primary.duration,
-                    tickInputOk ? "够" : "不足");
-        }
+        watchdog.tick(engine, machine);
         // ③.5 诊断：空转时每 100 tick 打一行「为什么没配方」。
-        //   ★ 2026-11-03：每个不同的真实原因最多 12 行；原因不变不重复刷，
-        //   换原因重新计数；扫描冷却不再覆盖原因（见 diagReject 的注释）。
-        if (engine.size() == 0 && machine.self().getOffsetTimer() % 100L == 0L) {
-            if (!java.util.Objects.equals(diagReject, diagLastLoggedReason)) {
-                diagLastLoggedReason = diagReject;
-                diagLines = 0;
-            }
-            if (diagLines < 12) {
-                diagLines++;
-                GTLModular.LOGGER.info("[gtlmodular] 线程引擎诊断 {} @{}：成型={} 跨表={} 扫描={} 候选={} 拒绝={}",
-                        machine.getRecipeType().registryName, machine.self().getPos(),
-                        machine.self() instanceof com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController c
-                                ? c.isFormed() : true,
-                        isCrossTable(), diagScannedType,
-                        diagCandidates, diagDetail());
-            }
-        }
+        diag.logIdle(isCrossTable(), engine.size());
         // ④ 展示回写：把第 0 条批次的进度写进基类的同步字段（GUI/Jade/TOP 由此看到进度条）
+        writeDisplay();
+        // ★ 2026-11-08（按需订阅）：本 tick 收尾时，空表 + 无料 + 没被强制 ⇒ 退订。
+        maybeIdleUnsubscribe();
+    }
+
+    /** ④ 展示回写：第 0 条批次 → 基类同步字段；空表 → 清零并置 IDLE。 */
+    private void writeDisplay() {
         if (engine.size() > 0) {
             ConcurrentRecipeEngine.Batch primary = engine.get(0);
             this.lastRecipe = primary.recipe;
@@ -344,6 +343,132 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     }
 
     /**
+     * ★ 2026-11-08（GTO 口径）：<b>按需订阅</b> —— 只在「有活 / 可能有活」时挂在服务器 tick 上。
+     *
+     * <p>规则（{@link #wantsTick()}）：
+     * <ul>
+     *   <li>暂停 / 配方逻辑不可用 ⇒ 不订阅；</li>
+     *   <li>引擎里有批次 / {@link #pokeScan()} 强制 ⇒ 订阅（推进与首件不能断）；</li>
+     *   <li>空表但有物品/流体输入（含 ME 样板仓） ⇒ 订阅（可能接单，要继续扫）；</li>
+     *   <li>空表且无料 ⇒ <b>退订</b>（“只调度用到的线程”就是这一步）。</li>
+     * </ul>
+     *
+     * <p>唤醒口（实证，见 `_census/_javap_simple_recipelogic.txt` / `_javap_simple_handleparts.txt`）：
+     * 基类 {@code onMachineLoad()} / {@code resetRecipeLogic()} / {@code setStatus()} 会调本方法；
+     * GTCEu 多方块在 {@code onStructureFormed()} 里给每个配方 handler 注册了
+     * {@code recipeLogic::updateTickSubscription} 的 changed-listener ⇒ <b>玩家放料/抽料会叫醒</b>；
+     * gtlcore 样板仓的 buffer-changed listener 也指向同一个方法 ⇒ <b>AE 推料/写样板会叫醒</b>；
+     * 切配方表（gtlcore {@code afterSetActiveRecipeType}）同样会调。
+     *
+     * <p>兜底：{@link ThreadWakeSweeper} 每 N tick 巡检一次“没订阅但该订阅”的机器，
+     * 防漏唤醒导致永久不接单。
+     */
+    @Override
+    public void updateTickSubscription() {
+        // 只有“机器自己的 recipeLogic 就是本对象”时才由我们管理订阅。
+        // NAC 的类型外壳（NACThreadedRecipeLogic）把本对象当 delegate：机器订阅的是外壳，
+        // 外壳的 serverTick() 再调 delegate.serverTick() —— 这里绝不能给 delegate 再挂一份，
+        // 否则同一条逻辑会被 tick 两次。
+        if (!ownsTickSubscription()) {
+            return;
+        }
+        if (wantsTick()) {
+            if (subscription == null || !subscription.isStillSubscribed()) {
+                subscription = machine.self().subscribeServerTick(this::serverTick);
+                // ★ 2026-11-08：重新挂上 tick = 刚有料/刚被唤醒（放料、推样板、换模式、结构成形…
+                //   基类这些路径都会调本方法）⇒ 立刻清空扫描退避，保证首件不被空转退避拖慢。
+                finder.clearCooldowns();
+            }
+        } else if (subscription != null) {
+            subscription.unsubscribe();
+            subscription = null;
+        }
+    }
+
+    /** 机器自己的 {@code getRecipeLogic()} 是不是本对象（NAC 外壳的 delegate 返回 false）。 */
+    private boolean ownsTickSubscription() {
+        return machine.getRecipeLogic() == this;
+    }
+
+    /** 本 tick 要不要被 tick（= 要不要订阅）。 */
+    private boolean wantsTick() {
+        if (isSuspend() || !machine.isRecipeLogicAvailable()) {
+            return false;
+        }
+        if (!GTLModularConfig.isThreadingDemandSubscribe()) {
+            return true;   // 关掉按需订阅 ⇒ 与旧版一致：常开
+        }
+        if (engine.size() > 0 || scanForced) {
+            return true;
+        }
+        // ★ 2026-11-08：原逻辑代跑时，只要它在工作/等待，就必须保持订阅（否则半途停摆）。
+        if (originalActive() && (original.isWorking() || original.isWaiting() || original.isActive())) {
+            return true;
+        }
+        return hasAnyItemOrFluidInput();
+    }
+
+    /** 巡检器用：当前没订阅、但按规则应该订阅。 */
+    boolean needsWake() {
+        if (!GTLModularConfig.isThreadingDemandSubscribe() || !ownsTickSubscription()) {
+            return false;
+        }
+        if (subscription != null && subscription.isStillSubscribed()) {
+            return false;
+        }
+        return isServerAlive() && wantsTick();
+    }
+
+    /** 空闲收尾：空表 + 无料 + 没被强制 ⇒ 交给 {@link #updateTickSubscription()} 退订。 */
+    private void maybeIdleUnsubscribe() {
+        if (!GTLModularConfig.isThreadingDemandSubscribe() || !ownsTickSubscription()) {
+            return;
+        }
+        // ★ 2026-11-08：原逻辑还在跑 ⇒ 绝不退订（它没有自己的 tick 订阅）。
+        if (originalActive() && (original.isWorking() || original.isWaiting())) {
+            return;
+        }
+        if (engine.size() == 0 && !scanForced && !hasAnyItemOrFluidInput()) {
+            updateTickSubscription();
+        }
+    }
+
+    /** 巡检器用：机器还在服务端世界里（空指针/客户端都不碰）。 */
+    boolean isServerAlive() {
+        var self = machine.self();
+        return self != null && self.getLevel() != null && !self.getLevel().isClientSide;
+    }
+
+    /** 巡检日志用：机器坐标（拿不到就写 unknown，绝不再抛异常）。 */
+    Object sweepPos() {
+        try {
+            var self = machine.self();
+            return self == null ? "unknown" : self.getPos();
+        } catch (Throwable t) {
+            return "unknown";
+        }
+    }
+
+    /**
+     * ★ 2026-11-07：<b>立刻清掉扫描冷却</b>（下一次 {@code findBatch} 马上重新扫）。
+     *
+     * <p>AE 推样板 / 换电路 / 换模式后调用：旧版要等 {@code IDLE_COOLDOWN_TICKS} 才重扫，
+     * 大单首件会被玩家感知成「下单卡住」；现在推送成功当 tick 就能开始找配方。
+     */
+    public void pokeScan() {
+        finder.clearCooldowns();
+        diag.onPoke();
+        // ★ 2026-11-08：原逻辑代跑时，AE 推样板 / 换电路同样要叫醒它（它不是本引擎的批次表）
+        if (originalActive()) {
+            original.markLastRecipeDirty();
+        }
+        // ★ 2026-11-08（按需订阅）：强制本 tick 扫描 + 立即重订 —— AE 推样板 / 换电路后要当 tick 开扫，
+        //   不能等巡检器（默认 10 tick）。updateTickSubscription() 内部按 wantsTick() 决定订阅。
+        scanForced = true;
+        updateTickSubscription();
+    }
+
+    /**
      * 只读「是否在干活」：基类字段 {@code isActive} 是 private 且无 setter，子类写不进去
      * ⇒ 覆写这个 public 读数口，用「批次表非空」回答同一个问题
      * （与「把 {@code isActive} 写成 true」语义一致，见类注释）。
@@ -352,7 +477,8 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      */
     @Override
     public boolean isActive() {
-        return engine.size() > 0;
+        // ★ 2026-11-08：原逻辑代跑时，它的「在干活」同样要如实反映（原生进度条/机器面板读这里）。
+        return engine.size() > 0 || (originalActive() && original.isActive());
     }
 
     /**
@@ -365,7 +491,8 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * 判「能不能换模式」必须看这个数，不能只看状态。
      */
     public int runningBatchCount() {
-        return engine.size();
+        // ★ 2026-11-08：原逻辑代跑时没有「引擎批次」，返回 0（换模式安全闸看的是引擎批次，不误判）。
+        return originalActive() ? 0 : engine.size();
     }
 
     /**
@@ -380,9 +507,16 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void resetRecipeLogic() {
         super.resetRecipeLogic();
         engine.clear();
-        scanStates.clear();
-        scanRejectsByType.clear();
-        scanDumpDone.clear();
+        // ★ 2026-11-10：复位时把缓存的电退回能源仓（不能凭空留/丢）
+        if (energyBuffer != null) {
+            energyBuffer.flushBack();
+        }
+        // ★ 2026-11-08：原逻辑也要一起复位（否则失形/换模式后它还挂着旧进度）
+        if (original != null) {
+            original.resetRecipeLogic();
+        }
+        finder.reset();
+        diag.resetForReload();
     }
 
     /**
@@ -391,8 +525,21 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      */
     @Override
     public void saveCustomPersistedData(CompoundTag tag, boolean forDrop) {
+        // ★ 2026-11-10：存档/卸载前把缓存的电退回能源仓（缓存不跨读档）
+        if (energyBuffer != null) {
+            energyBuffer.flushBack();
+        }
+        // ★ 2026-11-08：先让原逻辑写它自己的字段（原逻辑代跑时与本类镜像值相同），
+        //   再让本类写权威值覆盖（引擎接管时以批次表为准）。
+        if (original != null) {
+            original.saveCustomPersistedData(tag, forDrop);
+        }
         super.saveCustomPersistedData(tag, forDrop);
         engine.save(tag);
+        // ★ 2026-11-10：电网取电身份（放置者 UUID）随逻辑一起存，重启后电网取电不丢
+        if (gridUser != null) {
+            tag.putString(TAG_GRID_USER, gridUser.toString());
+        }
     }
 
     /**
@@ -402,23 +549,51 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      */
     @Override
     public void loadCustomPersistedData(CompoundTag tag) {
+        // ★ 2026-11-10：读档前先清掉旧缓存（回到能源仓），避免跨档残电
+        if (energyBuffer != null) {
+            energyBuffer.flushBack();
+        }
+        // ★ 2026-11-08：原逻辑先读同一份 tag（读的是同一批字段），再由本类读权威值
+        if (original != null) {
+            original.loadCustomPersistedData(tag);
+        }
         super.loadCustomPersistedData(tag);
-        scanStates.clear();
-        scanRejectsByType.clear();
-        scanDumpDone.clear();
+        finder.reset();
+        diag.resetForReload();
         engine.load(tag);
+        // ★ 2026-11-10：读回电网取电身份（缺键 ⇒ 保持 null，只有能源仓可用）
+        try {
+            String raw = tag.getString(TAG_GRID_USER);
+            if (!raw.isEmpty()) {
+                gridUser = java.util.UUID.fromString(raw);
+            }
+        } catch (Throwable ignored) {
+            // 坏 UUID 只丢电网身份，不影响机器
+        }
+    }
+
+    // ================= 引擎 ↔ 机器的小桥（把 protected 字段收在子类里） =================
+
+    /**
+     * 配方修改器：等价于旧实现里的
+     * {@code machine.fullModifyRecipe(raw.copy(), ocParams, ocResult)}。
+     *
+     * <p>单独成方法是因为 {@code ocParams}／{@code ocResult} 是 {@link RecipeLogic} 的
+     * protected 字段，只有子类自己能碰；{@link BatchFinder} 只负责编排。
+     */
+    GTRecipe modifyRecipe(GTRecipe raw) {
+        return machine.fullModifyRecipe(raw.copy(), ocParams, ocResult);
+    }
+
+    /** 每 tick 输入的 chance cache（{@link RecipeLogic#getChanceCaches()} 的子类读口）。 */
+    Map<RecipeCapability<?>, Object2IntMap<?>> chanceCaches() {
+        return getChanceCaches();
     }
 
     /**
-     * 引擎的六个问题在本类上的答案。
-     *
-     * <p>只做转发与配方试算：<b>唯一的写世界点</b>是 {@link #consumeInputs}（开批次时扣料），
-     * {@link #tickInputs} 扣每 tick 的输入（EU／tick 流体），{@link #finishOutputs} 出料。
+     * 引擎的六个问题在本类上的答案（薄壳：真正的活都在 {@link BatchFinder} / {@link BatchIo}）。
      */
     private final class HostImpl implements ConcurrentRecipeEngine.Host {
-
-        /** 上次成功开出配方的配方表下标（独立线程跨表轮转的起点，保证公平）。 */
-        private int lastSuccessfulTypeIdx = 0;
 
         /** 宿主机器：就是基类的 {@code machine} 字段（{@code IRecipeLogicMachine}）。 */
         @Override
@@ -432,571 +607,93 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             return Math.max(1, threaded.effectiveThreads());
         }
 
-        /**
-         * 找一条能开的新配方：<b>配方修改器 → 并行 → 输入/每 tick 输入/条件三重匹配</b>，
-         * 全部通过才返回（此时<b>还没扣料</b>）。
-         *
-         * <p>并行 = {@code max(1, parallelMultiplier()) × max(1, 并行仓并行数)}。
-         * 候选来自本机配方类型（{@code machine.getRecipeType()}）的查表迭代器，跳过燃油配方
-         * （燃油走基类 {@code handleFuelRecipe} 那一路，本引擎不处理）。
-         */
-        /**
-         * ★ 2026-11-02 队长口径（独立线程 = 每条线程一台虚拟机器）：
-         * 独立线程开启时遍历机器的**全部配方表**（从上次成功的表开始轮转，保证公平），
-         * 第一张能开的配方就返回；关闭时行为与旧版完全一致（只用当前选中表）。
-         */
+        /** 找一条能开的新配方（见 {@link BatchFinder#findBatch()}）。 */
         @Override
         public GTRecipe findBatch() {
-            GTRecipeType current = ThreadedRecipeLogic.this.machine.getRecipeType();
-            if (current == null) {
-                return null;
-            }
-            GTRecipeType[] types = ThreadedRecipeLogic.this.machine.getRecipeTypes();
-            // ★ 2026-11-07 GTO 口径：线程仓的「独立线程」= 每条线程独立拉满功率，
-            //   不再管「用哪张配方表」。装仓后只要机器有 2 张以上表，就自动全部扫（公平轮转）。
-            boolean allTypes = types != null && types.length > 1;
-            if (!allTypes) {
-                return findBatchForType(current);
-            }
-            int n = types.length;
-            int startIdx = lastSuccessfulTypeIdx % n;
-            int candidatesSum = 0;
-            List<String> perTable = new ArrayList<>(n);
-            for (int i = 0; i < n; i++) {
-                int idx = (startIdx + i) % n;
-                diagScannedThisCall = false;
-                GTRecipe recipe = findBatchForType(types[idx]);
-                if (recipe != null) {
-                    lastSuccessfulTypeIdx = idx;
-                    return recipe;
-                }
-                if (diagScannedThisCall) {
-                    candidatesSum += diagCandidates;
-                    // ★ 2026-11-03：每张表扫完就把它自己的「原因 + 配方 + 缺什么」定稿，
-                    //   否则下一张表会把上一张的拒绝原因覆盖掉（旧版日志只剩最后一张表）。
-                    perTable.add(String.valueOf(types[idx].registryName) + " → " + diagDetail());
-                    diagRecipe = null;
-                    diagExtra = null;
-                }
-            }
-            if (!perTable.isEmpty()) {
-                diagCandidates = candidatesSum;
-                diagReject = "全部配方表都无可用配方（共 " + n + " 张）｜" + String.join("；", perTable);
-                diagRecipe = null;
-                diagExtra = null;
-            }
-            // 每张表都在冷却 / 都被跳过时：diagReject 保持上一次的真实原因，不覆盖、也不嵌套。
-            return null;
+            return finder.findBatch();
         }
 
-        /** 单张配方表的候选搜索（原 findBatch 的完整逻辑）。 */
-        private GTRecipe findBatchForType(GTRecipeType type) {
-            long now = machine.self().getOffsetTimer();
-            TableScanState state = scanStates.computeIfAbsent(type, t -> new TableScanState());
-            if (now < state.cooldownUntil) {
-                // ★ 2026-11-03：**不覆盖** diagReject —— 冷却期间保留上一次真实原因，
-                //   否则日志每 100 tick 只会打「扫描冷却中」，永远看不到为什么没配方。
-                //   冷却也是**每张表各自一份**（见 TableScanState 的注释）。
-                return null;
-            }
-            diagScannedType = String.valueOf(type.registryName);
-            diagScannedThisCall = true;
-            diagCandidates = 0;
-            // 清掉上一张表的配方/附加原因，避免这一张表「跳过」时把别人的配方带进诊断。
-            diagRecipe = null;
-            diagExtra = null;
-
-            // ① ME 样板仓（猪咪样板总成）已解码的配方：只含机器上样板对应的几条，
-            //    直接拿来当候选，不再每次扫整张表。
-            List<GTRecipe> candidates = meCachedCandidates(type);
-            boolean fromMeCache = !candidates.isEmpty();
-            int start = 0;
-            int limit;
-            if (fromMeCache) {
-                limit = candidates.size();
-            } else {
-                // ② 没有任何物品/流体输入 ⇒ 全表扫也一定不匹配，直接跳过（空转延迟归零）。
-                if (!hasAnyItemOrFluidInput()) {
-                    reject("无物品/流体输入（跳过扫描）｜" + describeInputCaps(), null, null);
-                    state.cooldownUntil = now + IDLE_COOLDOWN_TICKS;
-                    return null;
-                }
-                // 没有 ME 样板仓（或缓存为空）才退回整表；分片扫描，避免大表每 tick 全扫。
-                candidates = type.getLookup().getLookup().getRecipes(true)
-                        .filter(r -> !r.isFuel()).toList();
-                int total = candidates.size();
-                if (total == 0) {
-                    reject("候选=0（配方表为空）", null, null);
-                    return null;
-                }
-                start = state.cursor % total;
-                limit = Math.min(SCAN_BUDGET, total);
-            }
-
-            for (int i = 0; i < limit; i++) {
-                int idx = fromMeCache ? i : (start + i) % candidates.size();
-                GTRecipe raw = candidates.get(idx);
-                diagCandidates++;
-                // ★ 2026-11-07 GTO 口径：「并行重复配方」关 ⇒ 同一配方只许占一条线程。
-                //   放到引擎里做，机器类不用再各写一份 fullModifyRecipe 去重。
-                if (!threaded.threadHatchRepeatedRecipes() && isRecipeRunningElsewhere(raw)) {
-                    noteScanReject(type, raw, "并行重复配方关闭：该配方已在别的线程", null);
-                    continue;
-                }
-                // 先用「原配方」做一次只读匹配：物品/流体不够就不必再 copy/超频/精确并行
-                // （并行只会放大输入，原配方都不够 ⇒ 放大后一定不够）。
-                if (!RecipeRunnerHelper.matchRecipeInput(ThreadedRecipeLogic.this.machine, raw)) {
-                    noteScanReject(type, raw, "原料不足(含ME样板仓)", null);
-                    continue;
-                }
-                GTRecipe modified = ThreadedRecipeLogic.this.machine.fullModifyRecipe(
-                        raw.copy(), ThreadedRecipeLogic.this.ocParams, ThreadedRecipeLogic.this.ocResult);
-                if (modified == null) {
-                    noteScanReject(type, raw, "配方修改器返回 null（去重/门槛拒绝）", null);
-                    continue;
-                }
-                // 普通多方块 = 线程倍率 × 并行仓；巨构（usesParallelHatch=false）只看线程倍率。
-                // long 乘再钳到 int：温度倍率可能很大，不能把 int 乘爆成负数。
-                long multLong = Math.max(1, threaded.parallelMultiplier());
-                if (threaded.usesParallelHatch()) {
-                    multLong *= Math.max(1, parallelHatchCount());
-                }
-                int perThread = (int) Math.min(Integer.MAX_VALUE, multLong);
-                // ★ 2026-11-07 GTO 口径「独立线程」：
-                //   开 = 每条线程各自一份完整并行/功率额度（perThread）；
-                //   关 = 所有线程共用同一份额度（在跑批次的并行之和不得超过 perThread）。
-                int parallelBudget = perThread;
-                if (!threaded.threadHatchIndependent()) {
-                    int used = runningParallelSum();
-                    parallelBudget = perThread - used;
-                    if (parallelBudget <= 0) {
-                        noteScanReject(type, raw, "独立线程关闭：并行额度已被在跑线程占满", null);
-                        continue;
-                    }
-                }
-                Pair<GTRecipe, Integer> par = GTRecipeModifiers.accurateParallel(
-                        ThreadedRecipeLogic.this.machine.self(), modified, parallelBudget, false);
-                GTRecipe scaled = par.getFirst();
-                if (scaled == null) {
-                    noteScanReject(type, raw, "并行计算返回 null", null);
-                    continue;
-                }
-                // 只判输入（GTCEu 原生 RecipeLogic 也是「输入够就开跑」，输出空间在收尾时处理，
-                // 否则没放输出仓的机器会永远开不了批次）。
-                if (!RecipeRunnerHelper.matchRecipeInput(ThreadedRecipeLogic.this.machine, scaled)) {
-                    noteScanReject(type, scaled, "物品/流体不匹配(含ME样板仓)", null);
-                    continue;
-                }
-                GTRecipe.ActionResult tickResult = scaled.matchTickRecipe(ThreadedRecipeLogic.this.machine);
-                if (!tickResult.isSuccess()) {
-                    noteScanReject(type, scaled, "每tick输入不足(EU等)", reasonText(tickResult));
-                    continue;
-                }
-                GTRecipe.ActionResult conditionResult = scaled.checkConditions(ThreadedRecipeLogic.this);
-                if (!conditionResult.isSuccess()) {
-                    noteScanReject(type, scaled, "配方条件不满足", reasonText(conditionResult));
-                    continue;
-                }
-                diagReject = "有配方可跑";
-                diagRecipe = null;
-                diagExtra = null;
-                state.cooldownUntil = 0;
-                if (!fromMeCache) {
-                    state.cursor = (idx + 1) % candidates.size();
-                }
-                return scaled;
-            }
-
-            // 本轮没有结果：ME 缓存/整表都冷却一会儿，别在空转时每 tick 重复扫。
-            boolean fullPass;
-            if (fromMeCache) {
-                state.cooldownUntil = now + IDLE_COOLDOWN_TICKS;
-                fullPass = true;      // ME 样板缓存本身每次都全扫
-            } else {
-                int total = candidates.size();
-                if (start + limit >= total) {
-                    state.cooldownUntil = now + IDLE_COOLDOWN_TICKS;
-                    state.cursor = 0;
-                    fullPass = true;  // 分片轮扫已经覆盖完整张表
-                } else {
-                    state.cursor = (start + limit) % total;
-                    fullPass = false;
-                }
-            }
-            if (diagCandidates == 0) {
-                reject("候选=0（查表没命中：物品/流体/电路是否齐全）", null, null);
-            }
-            if (fullPass) {
-                // 整张表覆盖完仍一条没跑起来 ⇒ 逐条原因一次性打出来（每表每次世界加载只一次）
-                dumpScanDetail(type);
-            }
-            return null;
-        }
-
-
-        /**
-         * 原子扣料：{@code beforeWorking} → {@code preWorking} → 扣输入。
-         *
-         * <p>扣不齐（{@code handleRecipeIO(IN)} 返回 false）时调 {@code afterWorking} 收尾并返回 false
-         * ⇒ 引擎不收这条批次（<b>绝不吞料</b>）。
-         */
+        /** 原子扣料（见 {@link BatchIo#consumeInputs}）。 */
         @Override
         public boolean consumeInputs(GTRecipe recipe) {
-            if (!ThreadedRecipeLogic.this.machine.beforeWorking(recipe)) {
-                reject("beforeWorking 拒绝（线圈温度/配方门槛）: " + recipe.getId(), null, null);
-                return false;
-            }
-            recipe.preWorking(ThreadedRecipeLogic.this.machine);
-            if (!RecipeRunnerHelper.handleRecipeInput(ThreadedRecipeLogic.this.machine, recipe)) {
-                reject("扣料失败(输入仓/ME样板仓不够): " + recipe.getId(), null, null);
-                ThreadedRecipeLogic.this.machine.afterWorking();
-                return false;
-            }
-            // ★ 2026-11-07：日志限流（每 20 tick 最多 4 条 INFO，其余 DEBUG）——
-            //   大单时 1 tick 开数条批次，逐条 INFO 同步写盘会放大服务器卡顿。
-            if (takeBatchLogSlot()) {
-                GTLModular.LOGGER.info("[gtlmodular] 线程引擎开机 @{}：{}", machine.self().getPos(), recipe.getId());
-            } else {
-                GTLModular.LOGGER.debug("[gtlmodular] 线程引擎开机 @{}：{}", machine.self().getPos(), recipe.getId());
-            }
-            for (TableScanState s : scanStates.values()) {
-                s.cooldownUntil = 0;
-            }
-            return true;
+            return io.consumeInputs(recipe);
         }
 
-        /**
-         * 每 tick 的输入：先<b>模拟</b>匹配（{@code matchTickRecipe}，不写世界），
-         * 匹配通过才真扣这一 tick 的输入。不够返回 false ⇒ 该批次原地等。
-         */
+        /** 每 tick 输入（见 {@link BatchIo#tickInputs}）。 */
         @Override
         public boolean tickInputs(GTRecipe recipe) {
-            if (!recipe.matchTickRecipe(ThreadedRecipeLogic.this.machine).isSuccess()) {
-                return false;
-            }
-            return recipe.handleTickRecipeIO(IO.IN, ThreadedRecipeLogic.this.machine, getChanceCaches());
+            return io.tickInputs(recipe);
         }
 
-        /** 批次收尾：机器收尾 → {@code postWorking} → 出料。 */
+        /** 批次收尾出料（见 {@link BatchIo#finishOutputs}）。 */
         @Override
         public void finishOutputs(GTRecipe recipe) {
-            boolean outputOk;
-            try {
-                ThreadedRecipeLogic.this.machine.afterWorking();
-                recipe.postWorking(ThreadedRecipeLogic.this.machine);
-                outputOk = RecipeRunnerHelper.handleRecipeOutput(ThreadedRecipeLogic.this.machine, recipe);
-            } catch (Throwable failure) {
-                outputOk = false;
-                GTLModular.LOGGER.warn("[gtlmodular] 线程批次收尾异常 @{}: {}",
-                        machine.self().getPos(), failure.toString());
-            }
-            // ★ 2026-11-05（队长要求）：每条批次完成都留痕——“批次到底是跑完了还是被清掉了”再也不用猜。
-            // ★ 2026-11-07：INFO 限流（每 20 tick 最多 4 条），其余降到 DEBUG；产物摘要只在 INFO 时算。
-            if (takeBatchLogSlot()) {
-                GTLModular.LOGGER.info("[gtlmodular] 线程批次完成 @{}：{}（输出处理={}，耗时={}t）产物={}",
-                        machine.self().getPos(),
-                        recipe == null || recipe.getId() == null ? "?" : recipe.getId(),
-                        outputOk ? "成功" : "失败",
-                        recipe == null ? "?" : recipe.duration,
-                        describeOutputs(recipe));
-            } else if (GTLModular.LOGGER.isDebugEnabled()) {
-                GTLModular.LOGGER.debug("[gtlmodular] 线程批次完成 @{}：{}（输出处理={}，耗时={}t）",
-                        machine.self().getPos(),
-                        recipe == null || recipe.getId() == null ? "?" : recipe.getId(),
-                        outputOk ? "成功" : "失败",
-                        recipe == null ? "?" : recipe.duration);
-            }
-        }
-    }
-
-    // ================= ★ 2026-11-03 诊断增强（玩家：「为什么他说我输入材料不足」） =================
-
-    /**
-     * 记录一次<b>真实</b>拒绝：{@code reason} 进诊断行，{@code recipe}/{@code extra} 用来回答「缺什么」。
-     *
-     * <p>为什么单独存一份：扫描冷却（每轮空转 {@link #IDLE_COOLDOWN_TICKS} tick）期间
-     * {@code findBatch} 会直接返回，旧版把原因改写成「扫描冷却中」⇒ 日志永远看不到真正的拒绝原因。
-     */
-    private void reject(String reason, GTRecipe recipe, String extra) {
-        this.diagReject = reason;
-        this.diagRecipe = recipe;
-        this.diagExtra = extra;
-    }
-
-    /**
-     * 扫描期拒绝：既更新「最近一次真实原因」，也把这条候选记进本表的逐条明细
-     * （等整张表覆盖完仍无配方时一次性打日志，见 {@link #dumpScanDetail}）。
-     *
-     * <p>{@code extra} 有值（每 tick 输入 / 配方条件）时，不把配方塞进 {@code diagRecipe}
-     * —— 那样诊断行会去做输入探测，答非所问；明细里仍按配方 id 记录。
-     */
-    private void noteScanReject(GTRecipeType type, GTRecipe recipe, String reason, String extra) {
-        reject(reason, extra == null ? recipe : null, extra);
-        if (type != null && recipe != null && recipe.getId() != null) {
-            scanRejectsByType
-                    .computeIfAbsent(type, t -> new java.util.LinkedHashMap<>())
-                    .put(recipe.getId().toString(), new ScanReject(reason, recipe));
+            // ★ 2026-11-09：出料前给子类一次「按配方记账/改产出」的机会（NAC 模块用它记校准与杂质）。
+            onBatchFinished(recipe);
+            io.finishOutputs(recipe);
         }
     }
 
     /**
-     * 一次性扫描明细：整张表覆盖完还是一条配方都没跑起来时，把每条候选的失败原因打进日志。
-     *
-     * <p>作用：跨表诊断里每张表正文只保留「最后一条」候选的原因，而你关心的那条
-     * （例如 {@code enderium_plasma}）可能排在扫描窗口中间 —— 明细能逐条给出「原料不足 / 缺什么 /
-     * 每 tick 输入 / 条件不满足」，不用再猜。每张表每次世界加载只打一次，最多 40 行。
+     * 批次完成回调（<b>出料之前</b>）：子类可在这里记账、或改这条配方的产出。
+     * 默认空实现 ⇒ 其它机器行为逐字不变。
      */
-    private void dumpScanDetail(GTRecipeType type) {
-        Map<String, ScanReject> rejects = scanRejectsByType.get(type);
-        if (type == null || rejects == null || rejects.isEmpty() || !scanDumpDone.add(type)) {
-            return;
-        }
-        GTLModular.LOGGER.info("[gtlmodular] 线程引擎扫描明细 {} @{}（整轮覆盖 {} 条，全部失败；每表仅首次打印）",
-                type.registryName, machine.self().getPos(), rejects.size());
-        int shown = 0;
-        for (Map.Entry<String, ScanReject> entry : rejects.entrySet()) {
-            if (shown >= 40) {
-                GTLModular.LOGGER.info("[gtlmodular]   …（还有 {} 条未列出）", rejects.size() - 40);
-                break;
-            }
-            shown++;
-            ScanReject r = entry.getValue();
-            String hint = "";
-            if (r.reason() != null
-                    && (r.reason().contains("原料不足") || r.reason().contains("物品/流体不匹配"))) {
-                String missing = missingHint(r.recipe());
-                if (missing != null && !missing.isEmpty()) {
-                    hint = "｜缺=" + missing;
-                }
-            }
-            GTLModular.LOGGER.info("[gtlmodular]   {} → {}{}", entry.getKey(), r.reason(), hint);
-        }
-        // 明细只打一次；清掉本表累积，避免换料后一直占内存。
-        scanRejectsByType.remove(type);
+    protected void onBatchFinished(GTRecipe recipe) {
     }
 
-    /**
-     * 跨配方表是否生效：★ 2026-11-07 起与「独立线程」开关解耦 ——
-     * 线程本来就该各自挑不同配方，多表机器默认全部扫（GTO 同义）。
-     */
-    private boolean isCrossTable() {
-        return true;
+    // ================= 只读读数（Jade / 面板 / 子类） =================
+
+    /** 当前在跑批次数（显示用）。 */
+    public int runningThreadCount() {
+        return originalActive() ? 0 : engine.size();
     }
 
-    /** 诊断行正文：真实原因 +（输入不匹配时）配方 id + 缺物品还是缺流体。 */
-    private String diagDetail() {
-        StringBuilder sb = new StringBuilder(diagReject == null ? "?" : diagReject);
-        if (diagRecipe != null) {
-            sb.append("｜配方=").append(diagRecipe.getId());
-            String hint = missingHint(diagRecipe);
-            if (hint != null && !hint.isEmpty()) {
-                sb.append("｜缺=").append(hint);
-            }
-        } else if (diagExtra != null && !diagExtra.isEmpty()) {
-            sb.append("｜").append(diagExtra);
+    /** 当前所有在跑批次的并行之和（显示用）。 */
+    public long totalRunsAtOnce() {
+        if (originalActive()) {
+            return 0L;   // 原逻辑代跑：没有「引擎批次」，线程显示整节不出现
         }
-        return sb.toString();
+        long sum = 0L;
+        for (int i = 0; i < engine.size(); i++) {
+            sum += Math.max(1, engine.get(i).recipe.parallels);
+            if (sum < 0) {
+                return Long.MAX_VALUE;
+            }
+        }
+        return sum;
     }
-
-    /** 产物摘要（前 4 项），给「线程批次完成」那行用。 */
-    private static String describeOutputs(GTRecipe recipe) {
-        if (recipe == null) {
-            return "?";
-        }
-        try {
-            List<String> out = new ArrayList<>();
-            for (Content c : recipe.getOutputContents(ItemRecipeCapability.CAP)) {
-                Object inner = ItemRecipeCapability.CAP.of(c.getContent());
-                if (inner instanceof net.minecraft.world.item.crafting.Ingredient ingredient
-                        && ingredient.getItems().length > 0) {
-                    net.minecraft.world.item.ItemStack stack = ingredient.getItems()[0];
-                    out.add(net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(stack.getItem()).toString() + "×" + stack.getCount());
-                }
-            }
-            for (Content c : recipe.getOutputContents(FluidRecipeCapability.CAP)) {
-                Object inner = FluidRecipeCapability.CAP.of(c.getContent());
-                if (inner instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid
-                        && fluid.getStacks().length > 0) {
-                    out.add(net.minecraftforge.registries.ForgeRegistries.FLUIDS
-                            .getKey(fluid.getStacks()[0].getFluid()).toString()
-                            + "×" + fluid.getAmount() + "mB");
-                }
-            }
-            if (out.isEmpty()) {
-                return "无";
-            }
-            if (out.size() <= 4) {
-                return String.join(" ", out);
-            }
-            return String.join(" ", out.subList(0, 4)) + " …(共 " + out.size() + " 项)";
-        } catch (Throwable t) {
-            return "?";
-        }
-    }
-
-    /**
-     * ★ 2026-11-05：**缺料明细** —— 把这条配方缺哪些物品/流体、各缺多少（id×数量）列出来。
-     *
-     * <p>做法：拿 GTCEu 的 IN handler 链做一次 <b>simulate</b> —— 每个 handler 依次尝试「吃掉」输入，
-     * 最后剩下的就是<b>整机（含 ME 样板仓）拿不出来的部分</b>。只在打诊断时调用，不在找配方热路径。
-     */
-    private String describeMissingInputs(GTRecipe recipe) {
-        try {
-            List<String> missing = new ArrayList<>();
-            collectMissing(recipe, ItemRecipeCapability.CAP, missing);
-            collectMissing(recipe, FluidRecipeCapability.CAP, missing);
-            if (missing.isEmpty()) {
-                return "";
-            }
-            int limit = 8;
-            if (missing.size() <= limit) {
-                return String.join(" ", missing);
-            }
-            return String.join(" ", missing.subList(0, limit)) + " …(共 " + missing.size() + " 种)";
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
-    private <T> void collectMissing(GTRecipe recipe, RecipeCapability<T> cap, List<String> out) {
-        List<T> inputs = RecipeHelper.getInputContents(recipe, cap);
-        if (inputs.isEmpty()) {
-            return;
-        }
-        List<T> left = new ArrayList<>(inputs);
-        List<IRecipeHandler<?>> handlers = machine.getCapabilitiesProxy().get(IO.IN, cap);
-        if (handlers != null) {
-            for (IRecipeHandler<?> handler : handlers) {
-                if (left.isEmpty()) {
-                    break;
-                }
-                @SuppressWarnings("unchecked")
-                IRecipeHandler<T> typed = (IRecipeHandler<T>) handler;
-                List<T> next = typed.handleRecipe(IO.IN, recipe, left, null, true);
-                if (next != null) {
-                    left = next;
-                }
-            }
-        }
-        for (T inner : left) {
-            out.add(describeInput(inner));
-        }
-    }
-
-    /** 把一个配方输入内容写成「物品:id×N」/「流体:id×NmB」。 */
-    private static String describeInput(Object inner) {
-        try {
-            if (inner instanceof net.minecraft.world.item.crafting.Ingredient ingredient) {
-                net.minecraft.world.item.ItemStack[] stacks = ingredient.getItems();
-                String id = stacks.length == 0 ? "?"
-                        : net.minecraft.core.registries.BuiltInRegistries.ITEM
-                        .getKey(stacks[0].getItem()).toString();
-                long count = ingredient instanceof com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient sized
-                        ? sized.getAmount()
-                        : (stacks.length == 0 ? 1L : stacks[0].getCount());
-                return "物品:" + id + "×" + count;
-            }
-            if (inner instanceof com.gregtechceu.gtceu.api.recipe.ingredient.FluidIngredient fluid) {
-                com.lowdragmc.lowdraglib.side.fluid.FluidStack[] stacks = fluid.getStacks();
-                String id = stacks.length == 0 ? "?"
-                        : net.minecraftforge.registries.ForgeRegistries.FLUIDS
-                        .getKey(stacks[0].getFluid()).toString();
-                return "流体:" + id + "×" + fluid.getAmount() + "mB";
-            }
-            return String.valueOf(inner);
-        } catch (Throwable t) {
-            return String.valueOf(inner);
-        }
-    }
-
-    /**
-     * 「缺什么」探测：用 GTCEu 原版 {@code matchRecipeContents} 再判一次输入，
-     * 失败时取下它给的原因（格式 {@code 输入不足: item/fluid}，见 GTCEu 的
-     * {@code gtceu.recipe_logic.insufficient_in} 文案）。
-     *
-     * <p>只在打诊断行时调用（每 100 tick 最多一次，且同一原因最多 12 行），不在找配方的热路径里。
-     */
-    private String missingHint(GTRecipe recipe) {
-        // ★ 2026-11-05（队长要求）：先给**缺哪些物品/流体、各缺多少**（id + 数量），
-        //   看不到缺什么就只能猜。探不出来才退回原版「输入不足: item/fluid」文案。
-        String detailed = describeMissingInputs(recipe);
-        if (!detailed.isEmpty()) {
-            return detailed;
-        }
-        try {
-            GTRecipe.ActionResult result = recipe.matchRecipeContents(
-                    IO.IN, ThreadedRecipeLogic.this.machine, recipe.inputs, false);
-            if (result.isSuccess()) {
-                // 原版能过、gtlcore 通道过不去 ⇒ 多半是 ME 样板/库存总成这类自定义通道
-                return "原版匹配通过（卡在 gtlcore 的 ME/样板通道）";
-            }
-            String text = reasonText(result);
-            return text == null || text.isEmpty() ? "未知（原版匹配失败但不给原因）" : text;
-        } catch (Throwable t) {
-            return "探测异常:" + t.getClass().getSimpleName();
-        }
-    }
-
-    /** {@code ActionResult.reason()} → 可读文本（取不到就给 {@code null}）。 */
-    private static String reasonText(GTRecipe.ActionResult result) {
-        try {
-            if (result != null && result.reason() != null) {
-                Component reason = result.reason().get();
-                if (reason != null) {
-                    // 服务端没有语言表：Component#getString() 直接回翻译键（例如
-                    // "gtceu.recipe_logic.insufficient_in: item"）⇒ 这里换成中文再进日志，
-                    // 免得玩家在日志里看到一坨键名。
-                    return reason.getString()
-                            .replace("gtceu.recipe_logic.insufficient_in", "输入不足")
-                            .replace("gtceu.recipe_logic.insufficient_out", "输出不足")
-                            .replace("gtceu.recipe_logic.insufficient", "不足")
-                            .replace(": item", ": 物品")
-                            .replace(": fluid", ": 流体");
-                }
-            }
-        } catch (Throwable ignored) {
-            // 原因本身取不到不影响诊断
-        }
-        return null;
-    }
-
-    /**
-     * 并行仓并行数：<b>已成形多方块</b>的全部部件里，取最大的
-     * {@link IParallelHatch#getCurrentParallel()}；没有并行仓（或未成形／不是多方块）就 1。
-     */
-    private int parallelHatchCount() {
-        if (machine.self() instanceof IMultiController controller && controller.isFormed()) {
-            int max = 1;
-            List<IMultiPart> parts = controller.getParts();
-            if (parts != null) {
-                for (IMultiPart part : parts) {
-                    if (part instanceof IParallelHatch hatch) {
-                        max = Math.max(max, hatch.getCurrentParallel());
-                    }
-                }
-            }
-            return max;
-        }
-        return 1;
-    }
-
-    // ================= ★ 子类扩展点（接口 + 子类选择） =================
 
     /** 线程上限（线程仓当前设定值；没仓才用机器固定值；Jade/面板读取用）。 */
     public int threadLimit() {
-        return Math.max(1, threaded.effectiveThreads());
+        // ★ 2026-11-08：原逻辑代跑 ⇒ 报 1（Jade 的线程显示判据是「limit>1 或 有批次」，
+        //   报 1 + runningBatches=0 就不会画出「独立线程」那一节）。
+        return originalActive() ? 1 : Math.max(1, threaded.effectiveThreads());
     }
 
     /** 当前在跑的批次数（Jade/面板读取用）。 */
     public int runningBatches() {
-        return engine.size();
+        return originalActive() ? 0 : engine.size();
+    }
+
+    /**
+     * ★ 2026-11-10：<b>最近一次找配方失败的真实原因</b>（含「缺哪些物品/流体、各缺多少」），
+     * 给机器自己的 UI 显示用（{@code BatchDiagnostics.detail()} 的只读转出）。
+     *
+     * <p>原来这份明细只写进日志（每 100 tick 最多一行），玩家在界面里只能看到
+     * Enhancedcore 那句笼统的「未找到可运行的配方，请检查模式、原料和电路」。
+     * 转出到界面后，机器会直接写「拒绝=…｜配方=…｜缺=物品:xxx×1 流体:yyy×144mB」。
+     */
+    public String diagnosticDetail() {
+        return diag.detail();
     }
 
     /**
      * 每条在跑批次的只读快照（进度 / 已钉死的时长 / 并行份数），供 Jade 逐条画进度条。
      */
     public List<BatchView> snapshotBatches() {
+        if (originalActive()) {
+            return List.of();
+        }
         List<BatchView> list = new ArrayList<>(engine.size());
         for (int i = 0; i < engine.size(); i++) {
             ConcurrentRecipeEngine.Batch batch = engine.get(i);
@@ -1008,6 +705,16 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
 
     /** 一条批次快照：配方对象 / 进度 / 已钉死的时长 / 并行份数。 */
     public record BatchView(GTRecipe recipe, int progress, int duration, int parallels) {}
+
+    /**
+     * 跨配方表是否生效：★ 2026-11-07 起与「独立线程」开关解耦 ——
+     * 线程本来就该各自挑不同配方，多表机器默认全部扫（GTO 同义）。
+     */
+    private boolean isCrossTable() {
+        return true;
+    }
+
+    // ================= 子类扩展点 =================
 
     /**
      * 本机可用的样板配方候选：<b>原版 gtlcore 的通道 + 槽级兜底</b>。
@@ -1078,98 +785,52 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * <p>空机器没必要每 tick 扫几百条配方——这是空转延迟的最后一块大头。
      * 只检查「有没有」，不检查「够不够」；够不够仍由后面的 {@code matchRecipeInput} 判。
      *
+     * <p>机器里挂了 ME 样板仓（猪咪超样/gtlcore 样板总成）时，仓里刚推来的料并不在通用
+     * handler 的 {@code getContents()} 里 ⇒ 只要挂了样板仓就不跳过（ME 缓存命中时仍走快路径）。
+     *
      * <p><b>子类可覆写</b>（某些总成把输入藏在自定义仓里）。
      */
-    /** 机器结构里是否挂了 ME 样板仓（即使它的库存不在通用 handler 里）。 */
-    private boolean hasMePatternPart() {
-        try {
-            if (machine.self() instanceof IMultiController controller && controller.isFormed()) {
-                for (IMultiPart part : controller.getParts()) {
-                    if (part instanceof IMEPatternPartMachine) {
-                        return true;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-            // 拿不到部件表就不拦（宁可多扫）
+    protected boolean hasAnyItemOrFluidInput() {
+        if (BatchSupport.hasMePatternPart(machine)) {
+            return true;
         }
-        return false;
+        return hasRealItemOrFluidInput();
     }
 
     /**
-     * ★ 2026-11-05：「无物品/流体输入」时的定位信息 —— 列出这台机器到底有没有输入仓、
-     * 仓里有没有东西（区分「没装输入仓」与「装了但是空的」）。
+     * ★ 2026-11-08：<b>「真的有东西可喂」</b>——忽略「挂了 ME 样板仓」这条捷径，只按能力表
+     * 逐仓看有没有非空物品/流体。
+     *
+     * <p>为什么要拆出来：{@link #hasAnyItemOrFluidInput()} 对「挂了 ME 样板仓」的机器恒
+     * {@code true}（因为 AE 推来的料不在通用 handler 里，见上面注释）。这条保守规则会让
+     * **既没有样板、也没有任何实物输入**的空机器仍旧每轮去扫整张配方表
+     * （spark 实测：44 条候选 × 全量输入匹配 ≈ 6~7ms/轮），也就是玩家看到的「空扫、空闲延迟高」。
+     *
+     * <p>用途：{@code BatchFinder} 在「ME 样板缓存为空」时用本方法决定要不要回落到整表扫描；
+     * 真正的唤醒仍由「AE 推样板 → {@code pokeScan}/内容变化 → 重新订阅」负责，不会漏单。
      */
-    private String describeInputCaps() {
-        try {
-            Table<IO, RecipeCapability<?>, List<IRecipeHandler<?>>> proxy = machine.getCapabilitiesProxy();
-            if (proxy == null) {
-                return "能力表=null";
-            }
-            Map<RecipeCapability<?>, List<IRecipeHandler<?>>> in = proxy.row(IO.IN);
-            if (in == null) {
-                return "IN能力表=null";
-            }
-            int itemHandlers = 0;
-            int fluidHandlers = 0;
-            int itemContent = 0;
-            int fluidContent = 0;
-            for (Map.Entry<RecipeCapability<?>, List<IRecipeHandler<?>>> entry : in.entrySet()) {
-                RecipeCapability<?> cap = entry.getKey();
-                if (cap != ItemRecipeCapability.CAP && cap != FluidRecipeCapability.CAP) {
-                    continue;
-                }
-                for (IRecipeHandler<?> handler : entry.getValue()) {
-                    if (cap == ItemRecipeCapability.CAP) {
-                        itemHandlers++;
-                    } else {
-                        fluidHandlers++;
-                    }
-                    for (Object content : handler.getContents()) {
-                        if (content instanceof ItemStack stack && !stack.isEmpty()) {
-                            itemContent++;
-                        } else if (content instanceof FluidStack fluid && fluid.getAmount() > 0) {
-                            fluidContent++;
-                        }
-                    }
-                }
-            }
-            return "IN能力=" + in.size() + " 物品仓=" + itemHandlers + " 流体仓=" + fluidHandlers
-                    + " 物品条目=" + itemContent + " 流体条目=" + fluidContent
-                    + " 样板仓=" + (hasMePatternPart() ? "有" : "无");
-        } catch (Throwable t) {
-            return "输入仓探测异常:" + t.getClass().getSimpleName();
-        }
-    }
-
-    protected boolean hasAnyItemOrFluidInput() {
-        // ★ 2026-11-06（队长实机发现）：机器里挂了 ME 样板仓（猪咪超样/gtlcore 样板总成）时，
-        //   仓里刚推来的料并不在通用 handler 的 {@code getContents()} 里
-        //   ⇒ 只看 handler 会把「仓里有料」误判成「没有任何输入」而跳过扫描
-        //   ⇒ 机器永远不接单。这里只要挂了样板仓就不跳过（ME 缓存命中时仍走快路径）。
-        if (hasMePatternPart()) {
-            return true;
-        }
-        Table<IO, RecipeCapability<?>, List<IRecipeHandler<?>>> proxy = machine.getCapabilitiesProxy();
+    protected boolean hasRealItemOrFluidInput() {
+        var proxy = machine.getCapabilitiesProxy();
         if (proxy == null) {
             return true; // 拿不到能力表就不跳过，宁可多扫也不卡死
         }
-        Map<RecipeCapability<?>, List<IRecipeHandler<?>>> in = proxy.row(IO.IN);
+        var in = proxy.row(com.gregtechceu.gtceu.api.capability.recipe.IO.IN);
         if (in == null || in.isEmpty()) {
             return false;
         }
-        for (Map.Entry<RecipeCapability<?>, List<IRecipeHandler<?>>> entry : in.entrySet()) {
-            RecipeCapability<?> cap = entry.getKey();
-            if (cap != ItemRecipeCapability.CAP && cap != FluidRecipeCapability.CAP) {
+        for (var entry : in.entrySet()) {
+            var cap = entry.getKey();
+            if (cap != com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability.CAP
+                    && cap != com.gregtechceu.gtceu.api.capability.recipe.FluidRecipeCapability.CAP) {
                 continue;
             }
-            for (IRecipeHandler<?> handler : entry.getValue()) {
+            for (var handler : entry.getValue()) {
                 for (Object content : handler.getContents()) {
-                    if (content instanceof ItemStack stack) {
+                    if (content instanceof net.minecraft.world.item.ItemStack stack) {
                         if (!stack.isEmpty()) {
                             return true;
                         }
-                    } else if (content instanceof FluidStack fluid) {
+                    } else if (content instanceof com.lowdragmc.lowdraglib.side.fluid.FluidStack fluid) {
                         if (fluid.getAmount() > 0) {
                             return true;
                         }

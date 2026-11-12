@@ -30,7 +30,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "minecraft:chain_command_block"
+            "item": "kubejs:repeating_command_block_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "kubejs:chain_command_block_broken"
           }
         }
       }

@@ -33,3 +33,15 @@ replay_pid*.log
 
 # 本地依赖（编译用，不提交）
 libs/
+
+# 临时构建日志与本地产物
+_build_*.log
+build_check.log
+build_log.txt
+dist/*.jar
+_deploy_backups/
+_gtmt/
+_gtmt_src/
+_d/
+_compile_check.log
+_scratch/

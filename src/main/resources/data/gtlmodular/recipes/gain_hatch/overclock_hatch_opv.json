@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtceu:opv_sensor"
+    },
+    "F": {
+      "item": "gtceu:opv_emitter"
+    },
+    "A": {
+      "item": "gtceu:opv_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:overclock_hatch_opv"
+  }
+}

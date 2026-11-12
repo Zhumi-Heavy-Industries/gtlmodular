@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleRecipesLogic;
+import com.gtlmodular.common.machine.engine.IThreadBatchLogic;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.minecraft.nbt.CompoundTag;
@@ -23,7 +24,7 @@ import java.util.Map;
  * <p>这样没有复制第二套引擎：所有机器共用同一份独立线程实现，
  * NAC 这一层只负责满足 gtladditions 的返回类型契约，并把状态/存读档转给通用引擎。
  */
-public final class NACThreadedRecipeLogic extends GTLAddMultipleRecipesLogic {
+public final class NACThreadedRecipeLogic extends GTLAddMultipleRecipesLogic implements IThreadBatchLogic {
 
     private final ThreadedRecipeLogic delegate;
 
@@ -135,5 +136,31 @@ public final class NACThreadedRecipeLogic extends GTLAddMultipleRecipesLogic {
     @Override
     public void loadCustomPersistedData(CompoundTag tag) {
         delegate.loadCustomPersistedData(tag);
+    }
+
+    // ------------------------------------------------------------------
+    // IThreadBatchLogic：Jade 通用线程显示的三个只读读口。
+    //
+    // ★ 2026-11-08【D-1 修复】Jade 的 NanochipThreadedJadeProvider 早就有「通用线程引擎」
+    //   分支（genericThreadedLogic → IThreadBatchLogic），但本外壳没实现该接口 ⇒ NAC 走不进
+    //   那条分支；而旧分支认的 NanochipThreadedRecipeLogic 又已不在活路径（全树无 new）
+    //   ⇒ 线程 Jade 行 / 猪咪样板总成的安全闸全部静默失效。
+    //   本类只做三件事：把三个只读读数原样转发给 delegate（真正的调度在 engine 里），
+    //   不新增字段、不改存档、不改调度。
+    // ------------------------------------------------------------------
+
+    @Override
+    public int threadLimit() {
+        return delegate.threadLimit();
+    }
+
+    @Override
+    public int runningBatches() {
+        return delegate.runningBatches();
+    }
+
+    @Override
+    public List<ThreadedRecipeLogic.BatchView> snapshotBatches() {
+        return delegate.snapshotBatches();
     }
 }

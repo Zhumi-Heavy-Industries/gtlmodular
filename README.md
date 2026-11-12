@@ -22,7 +22,7 @@ GTNH 2.9.0 同名多方块的移植版：一台巨型主机 + 14 种外围模块
 | 项 | 值 | 出处 |
 |---|---|---|
 | modid | `gtlmodular` | `GTLModular.java:25` |
-| 当前版本 | `0.3.346` | `build.gradle:12`（唯一来源；`processResources` 注入 `mods.toml:8` 的 `${mod_version}`） |
+| 当前版本 | `0.3.349` | `build.gradle:12`（唯一来源；`processResources` 注入 `mods.toml:8` 的 `${mod_version}`） |
 | 显示名 | `GTL更多实用设备` | `build.gradle:100`（`\u` 转义） |
 | 作者 / 许可 | 小爱与太肥鱼 / 本模组自身 **MIT** | `build.gradle:101-103` |
 | Java | **编译 JDK 21**，产物字节码目标 **17** | `build.gradle:19-25` |

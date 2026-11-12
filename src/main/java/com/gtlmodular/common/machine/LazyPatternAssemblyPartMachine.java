@@ -2730,8 +2730,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
 
         @Override
         public TickingRequest getTickingRequest(IGridNode node) {
-            return new TickingRequest(ConfigHolder.INSTANCE.MEPatternOutputMin,
-                    ConfigHolder.INSTANCE.MEPatternOutputMax, false, true);
+            return new TickingRequest(ConfigHolder.INSTANCE.machines.MEPatternOutputMin,
+                    ConfigHolder.INSTANCE.machines.MEPatternOutputMax, false, true);
         }
 
         @Override
@@ -2741,7 +2741,7 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 return TickRateModulation.SLEEP;
             }
             if (buffer.isEmpty()) {
-                if (ticksSinceLastCall >= ConfigHolder.INSTANCE.MEPatternOutputMax) {
+                if (ticksSinceLastCall >= ConfigHolder.INSTANCE.machines.MEPatternOutputMax) {
                     isSleeping = true;
                     return TickRateModulation.SLEEP;
                 }
@@ -3043,9 +3043,12 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
                 && engine.runningBatchCount() > 0) {
             return true;
         }
+        // ★ 2026-11-08【P1 去死类】：原判据是 NanochipThreadedRecipeLogic（旧世代，全树无 new
+        //   ⇒ 恒 false）。活路径的 NAC 逻辑（NACThreadedRecipeLogic）已实现公共读口
+        //   IThreadBatchLogic，这里改认接口：NAC 有批次在跑时同样不许切模式（行为修复见 03 合同 D-1）。
         return !ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES
-                && logic instanceof com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic threaded
-                && threaded.runningThreadCount() > 0;
+                && logic instanceof com.gtlmodular.common.machine.engine.IThreadBatchLogic batch
+                && batch.runningBatches() > 0;
     }
 
     /** 真的把控制器切到该模式（切类型 + 作废旧配方搜索 + 失效相关表的槽配方缓存）。 */
@@ -4389,8 +4392,10 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             //     只是**不再无故丢掉整张批次表**。代价 = 换模式可能被推迟到当前批次跑完（更保守）。
             //   一行回退：把 `ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES` 改成 true。
             if (!ALLOW_MODE_SWITCH_WITH_RUNNING_BATCHES) {
-                if (logic instanceof com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic threaded
-                        && threaded.runningThreadCount() > 0) {
+                // ★ 2026-11-08【P1 去死类】：旧世代 NanochipThreadedRecipeLogic 全树无 new ⇒ 恒 false；
+                //   活路径 NAC 逻辑已实现 IThreadBatchLogic，改认接口（不许把整张批次表切没）。
+                if (logic instanceof com.gtlmodular.common.machine.engine.IThreadBatchLogic batch
+                        && batch.runningBatches() > 0) {
                     return;
                 }
                 // ★ 2026-11-05：奈亚/高维核心走本模组 ThreadedRecipeLogic —— 批次等 EU/等料时

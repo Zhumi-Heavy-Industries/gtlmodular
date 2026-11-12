@@ -47,7 +47,7 @@ public final class NanochipJadeKeys {
      *
      * <p>★ 2026-11-02【上限 = 3，用户原话】：<blockquote>「最多也就同时只显示三个进度条吧」</blockquote>
      * ⇒ 玩家侧可见的进度条上限就是 <b>3 条</b>（按进度降序取最快的 3 条，同进度按稳定编号升序，
-     * 排序在服务端 {@code NanochipThreadedRecipeLogic#snapshot()} 里做一次）。
+     * 排序在服务端批次快照里做一次（历史：当时是旧世代逻辑类的 {@code snapshot()}，该类已随 P1 删除）。
      * 超出的部分<b>不假装不存在</b>：由 {@link NanochipJadeThreadRows}
      * 用一行「……还有 M 条线程未列出」如实交代（M = 在用总数 − 已画条数，中英各一条文案）。
      *
@@ -60,7 +60,7 @@ public final class NanochipJadeKeys {
      * <p>⚠⚠ <b>下一轮请勿再为了「多显示产物」抬高本常量</b>：产物条数<b>不</b>由它决定，
      * 抬高它只会让进度条变多（= 队长明确否掉的观感）。要改产物条数请改 {@link #OUTPUT_LINES}。
      *
-     * <p>机器面板另有一份 {@code NanochipThreadedRecipeLogic.DISPLAY_LINES = 8}（<b>故意不同</b>：
+     * <p>机器面板另有一份 {@code DISPLAY_LINES = 8}（历史：当时在旧世代逻辑类上，该类已随 P1 删除；<b>故意不同</b>：
      * 面板是固定窗口、Jade 是跟着准星飘的悬浮框，两者可见面积不同；数字口径仍同一函数）。
      * 两边的「在用 k 条」「同时处理 R 次」都按<b>全部</b>批次算，与这里画几条无关。
      *
@@ -141,7 +141,7 @@ public final class NanochipJadeKeys {
      * ★ 2026-11-02【沿用原生进度条】「原生条代表的是哪一条线程」的键（= 该线程的稳定编号）。
      *
      * <p>服务端 step ④ 把<b>批次表第 0 条</b>的进度/时长镜像进机器基类的单进度字段
-     * （{@code NanochipThreadedRecipeLogic#mirrorBatchZeroToBaseFields}），而 GTCEu 原生那条进度条读的
+     * （旧世代逻辑类的 {@code mirrorBatchZeroToBaseFields}，该类已随 P1 删除），而 GTCEu 原生那条进度条读的
      * 正是这两个字段 ⇒ <b>原生条 = 批次表第 0 条</b>。客户端据此把「原生条已经代表的那一条」
      * 从追加列表里排除（见 {@code NanochipJadeThreadRows}），同一条线程不会被画两次。
      *

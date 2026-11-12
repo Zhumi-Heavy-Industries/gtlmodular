@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:draconiumawakened_double_wire"
+            "item": "gtceu:draconiumawakened_wire_gt_double"
           }
         }
       }

@@ -35,8 +35,32 @@ public final class TerminalAutoBuildService {
     private static final Map<UUID, Request> REQUESTS = new ConcurrentHashMap<>();
     private static int tickCounter;
 
-    private record Request(UUID playerId, UUID terminalId, GlobalPos target,
-                           String fingerprint, ShanhaiStructurePlan plan) {}
+    private static final class Request {
+        final UUID playerId;
+        final UUID terminalId;
+        final GlobalPos target;
+        final String fingerprint;
+        final ShanhaiStructurePlan plan;
+        volatile boolean waitForOrder;
+        volatile boolean completed;
+        final long registeredAt = System.currentTimeMillis();
+
+        UUID playerId() { return playerId; }
+        UUID terminalId() { return terminalId; }
+        GlobalPos target() { return target; }
+        String fingerprint() { return fingerprint; }
+        ShanhaiStructurePlan plan() { return plan; }
+
+        Request(UUID playerId, UUID terminalId, GlobalPos target, String fingerprint,
+                ShanhaiStructurePlan plan, boolean waitForOrder) {
+            this.playerId = playerId;
+            this.terminalId = terminalId;
+            this.target = target;
+            this.fingerprint = fingerprint;
+            this.plan = plan;
+            this.waitForOrder = waitForOrder;
+        }
+    }
 
     private static final ShanhaiTerminalMaterialService MATERIALS = new ShanhaiTerminalMaterialService();
     private static final ShanhaiStructureExecutor EXECUTOR = new ShanhaiStructureExecutor(MATERIALS);
@@ -45,9 +69,21 @@ public final class TerminalAutoBuildService {
 
     /** 订单/计划准备时登记；材料齐备后自动施工。 */
     public static void register(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan) {
+        register(player, terminal, plan, false);
+    }
+
+    public static void register(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
+                                boolean waitForOrder) {
         UUID terminalId = ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal);
         REQUESTS.put(terminalId, new Request(player.getUUID(), terminalId,
-                plan.target(), plan.fingerprint(), plan));
+                plan.target(), plan.fingerprint(), plan, waitForOrder));
+    }
+
+    /** 单订单失败回退逐材料时，允许自动施工恢复轮询。 */
+    public static void allowPolling(ItemStack terminal) {
+        if (terminal == null || terminal.isEmpty()) return;
+        Request request = REQUESTS.get(ShanhaiUltimateTerminalConfig.getTerminalUuid(terminal));
+        if (request != null) request.waitForOrder = false;
     }
 
     /** CPU 订单收尾后直接触发；不再等 preflight 全齐，缺的材料由执行器跳过并写进报告。 */
@@ -75,6 +111,7 @@ public final class TerminalAutoBuildService {
             for (int dx = -2; dx <= 2; dx++) {
                 for (int dz = -2; dz <= 2; dz++) level.getChunk(cx + dx, cz + dz);
             }
+            request.completed = true;
             REQUESTS.remove(entry.getKey(), request);
             ShanhaiStructurePlan plan = request.plan();
             ShanhaiStructureExecutor.Result result = player.isCreative()
@@ -103,6 +140,12 @@ public final class TerminalAutoBuildService {
         Iterator<Map.Entry<UUID, Request>> iterator = REQUESTS.entrySet().iterator();
         while (iterator.hasNext()) {
             Request request = iterator.next().getValue();
+            if (request.waitForOrder && !request.completed) {
+                // 新版本 CPU/订单收尾接口变动时，订单完成信号可能永远不来；超时后恢复轮询，
+                // 避免“材料已齐但终端一直不施工”。
+                if (System.currentTimeMillis() - request.registeredAt < 20_000L) continue;
+                request.waitForOrder = false;
+            }
             ServerPlayer player = server.getPlayerList().getPlayer(request.playerId());
             if (player == null) continue;
             ItemStack terminal = findTerminal(player, request.terminalId());

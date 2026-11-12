@@ -62,6 +62,8 @@ public final class WhaleTerminalScreen extends Screen {
     private int pickerY;
     private int closeX;
     private int closeY;
+    private int previewX;
+    private int previewY;
     private int ecoBtnX;
     private int ecoBtnY;
     private EditBox repeatBox;
@@ -116,6 +118,8 @@ public final class WhaleTerminalScreen extends Screen {
         pickerY = top + 182;
         closeX = left + PANEL_W - 98;
         closeY = top + PANEL_H - 24;
+        previewX = closeX - 96;
+        previewY = closeY;
         ecoBtnX = left + PANEL_W - 100;
         ecoBtnY = top + 9;
 
@@ -267,6 +271,9 @@ public final class WhaleTerminalScreen extends Screen {
         graphics.drawString(font, boundEco, left + 180, top + 224, EcoStyle.TEXT_DIM, false);
         graphics.drawString(font, tr("hint.0"), left + 10, top + 238, EcoStyle.TEXT_DIM, false);
         graphics.drawString(font, tr("hint.1"), left + 10, top + 250, EcoStyle.TEXT_DIM, false);
+        boolean previewHover = EcoStyle.hit(mouseX, mouseY, previewX, previewY, 88, 20);
+        EcoStyle.button(graphics, previewX, previewY, 88, 20, previewHover, true);
+        EcoStyle.centeredShadow(graphics, font, tr("preview.button"), previewX, 88, previewY + 6, EcoStyle.TEXT);
         boolean hover = EcoStyle.hit(mouseX, mouseY, closeX, closeY, 88, 20);
         EcoStyle.button(graphics, closeX, closeY, 88, 20, hover, true);
         EcoStyle.centeredShadow(graphics, font, Component.translatable("gui.gtlmodular.whale_terminal.close"),
@@ -320,6 +327,24 @@ public final class WhaleTerminalScreen extends Screen {
             if (EcoStyle.hit(mouseX, mouseY, ecoBtnX, ecoBtnY, 92, 18)) {
                 GTLModularNetwork.CHANNEL.sendToServer(new com.gtlmodular.network.OpenEcoSubsystemPacket(hand));
                 onClose();
+                return true;
+            }
+            if (EcoStyle.hit(mouseX, mouseY, previewX, previewY, 88, 20)) {
+                var player = Minecraft.getInstance().player;
+                if (player != null) {
+                    var held = player.getItemInHand(hand);
+                    var bound = ShanhaiUltimateTerminalConfig.getBoundController(held);
+                    if (bound != null && Minecraft.getInstance().level != null
+                            && bound.dimension().equals(Minecraft.getInstance().level.dimension())) {
+                        var machine = com.gregtechceu.gtceu.api.machine.MetaMachine.getMachine(
+                                Minecraft.getInstance().level, bound.pos());
+                        if (machine instanceof com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine controller
+                                && TerminalPreviewOpener.open(controller.getDefinition())) {
+                            return true;
+                        }
+                    }
+                    player.displayClientMessage(Component.literal("该多方块无法打开核心预览"), true);
+                }
                 return true;
             }
             if (EcoStyle.hit(mouseX, mouseY, closeX, closeY, 88, 20)) {

@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:double_trinium_titanium_plate"
+            "item": "gtceu:trinium_titanium_double_plate"
           }
         }
       }

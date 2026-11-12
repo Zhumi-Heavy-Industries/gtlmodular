@@ -24,6 +24,24 @@
         "chance": 0,
         "maxChance": 10000,
         "tierChanceBoost": 0
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "kubejs:chain_command_block_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "kubejs:command_block_broken"
+          }
+        }
       }
     ]
   },

@@ -249,7 +249,10 @@ final class SmallPcbFactoryStructures {
                 //   装仓后引擎线程数 = 仓的当前设定值；没装时保持原来的 2 线程。
                 .or(Predicates.abilities(
                         com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
-                        .setMaxGlobalLimited(1));
+                        .setMaxGlobalLimited(1))
+                // 超频仓：凡可插线程仓的机器都同样可插
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
 
         pattern.where('a', Predicates.controller(Predicates.blocks(definition.get())));
         pattern.where('j', shell);

@@ -31,7 +31,8 @@ import org.jetbrains.annotations.Nullable;
  * 会让引擎跳过这条候选；放在 {@code beforeWorking} 会让超档配方每 tick 被选中又被拒。
  */
 public class SmallPcbFactoryMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
 
 
     @Override
@@ -59,6 +60,16 @@ public class SmallPcbFactoryMachine extends WorkableElectricMultiblockMachine
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
         return new ThreadedRecipeLogic(this);
+    }
+
+    /** ★ 2026-11-10：记录放置者 UUID —— 能源缓冲「从无线电网抽电」的身份。 */
+    @Override
+    public void onMachinePlaced(@org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity player,
+                                net.minecraft.world.item.ItemStack stack) {
+        if (player instanceof net.minecraft.world.entity.player.Player p
+                && getRecipeLogic() instanceof ThreadedRecipeLogic logic) {
+            logic.setGridUser(p.getUUID());
+        }
     }
 
     @Override

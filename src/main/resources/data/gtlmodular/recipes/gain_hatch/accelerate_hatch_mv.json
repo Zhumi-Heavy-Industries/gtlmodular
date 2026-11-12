@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtceu:mv_sensor"
+    },
+    "F": {
+      "item": "gtceu:mv_field_generator"
+    },
+    "A": {
+      "item": "gtceu:mv_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:accelerate_hatch_mv"
+  }
+}

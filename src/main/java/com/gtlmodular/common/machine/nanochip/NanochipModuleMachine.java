@@ -1,6 +1,8 @@
 package com.gtlmodular.common.machine.nanochip;
 
 import com.gregtechceu.gtceu.api.block.ActiveBlock;
+import com.gregtechceu.gtceu.api.capability.recipe.EURecipeCapability;
+import com.gregtechceu.gtceu.api.capability.recipe.IO;
 import com.gregtechceu.gtceu.api.gui.GuiTextures;
 import com.gregtechceu.gtceu.api.gui.fancy.ConfiguratorPanel;
 import com.gregtechceu.gtceu.api.gui.fancy.IFancyConfigurator;
@@ -10,23 +12,19 @@ import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
 import com.gregtechceu.gtceu.api.machine.feature.IMachineLife;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IDisplayUIMachine;
-import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
-import com.gregtechceu.gtceu.api.recipe.OverclockingLogic;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.api.recipe.logic.OCParams;
 import com.gregtechceu.gtceu.api.recipe.logic.OCResult;
-import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.content.ContentModifier;
-import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
-import com.gregtechceu.gtceu.common.data.GTRecipeModifiers;
-import com.gregtechceu.gtceu.utils.GTUtil;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
+import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import com.hepdd.gtmthings.api.misc.WirelessEnergyManager;
 import com.lowdragmc.lowdraglib.gui.modular.ModularUI;
 import com.lowdragmc.lowdraglib.gui.texture.ColorBorderTexture;
@@ -61,6 +59,8 @@ import org.gtlcore.gtlcore.common.machine.trait.MultipleRecipesLogic;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * NAC 模块机（11 种模块共用一台实现，行为由 {@link NanochipModuleKind} 决定）。
@@ -80,7 +80,7 @@ import java.util.List;
  */
 public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         implements IModularMachineModule<NanochipAssemblyComplexMachine, NanochipModuleMachine>,
-        IMachineLife, IDisplayUIMachine {
+        IMachineLife, IDisplayUIMachine, IThreadedRecipeMachine {
 
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER = new ManagedFieldHolder(
             NanochipModuleMachine.class,
@@ -287,7 +287,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         //   现在交给日志闸：同一结论 + 同一原因 10 秒内只打一条 INFO，重复降到 debug；
         //   原因变了（换了另一格不符 / 从"没原因"变成有原因）⇒ 照打。
         if (!this.structureLogGate.shouldEmitInfo(LOG_CONCLUSION_UNFORMED, reason,
-                structureLogLabel(), now)) {
+                NanochipModuleLink.structureLogLabel(this), now)) {
             if (com.gtlmodular.GTLModular.LOGGER.isDebugEnabled()) {
                 com.gtlmodular.GTLModular.LOGGER.debug("[gtlmodular] NAC 模块 尚未成形 @{}（{}）：{}",
                         getPos(), kind.nameZh(), reason);
@@ -306,18 +306,28 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     /** 模块配方时长下限：与原版一致 5 秒。 */
     public static final int MIN_DURATION_TICKS = 100;
 
+    /** 配方修饰时算出的真实 EU/t；配方本身的 EU 输入置 0，working 阶段按这个值扣。 */
+    private static final Map<MetaMachine, Long> MODULE_EUT = new WeakHashMap<>();
+    /** 本模块对外暴露的当前耗电（EU/t）；主机按这个值统一扣电。 */
+    private long exposedEuPerTick;
+
+    public long getExposedEuPerTick() {
+        return hostConnected() && getRecipeLogic() != null && getRecipeLogic().isWorking()
+                ? exposedEuPerTick : 0L;
+    }
+
     /**
      * ★ 2026-09-19（队长「产出要降低到 1 出 8」）：简单物流模式下<b>组装矩阵</b>的产出倍率。
      *
      * <p>当时的做法是：配方数据（JSON 与两份规格 json 的 {@code outCount}）仍是 <b>16</b>，
-     * 只有简单模式在结算处乘本值 ⇒ 实出 <b>8</b>。详见 {@link #scaleOutputsForSimpleLogistics}。
+     * 只有简单模式在结算处乘本值 ⇒ 实出 <b>8</b>。详见 {@link NanochipModuleLink#scaleOutputsForSimpleLogistics}。
      *
      * <p>★ <b>2026-09-21 队长拍板：本值改为 {@code 1.0D}（= 运行期不再缩放）</b>。
      * 队长原话：「组装矩阵的 JSON 16 → 8（让 JEI 也显示 8，跟运行期一致）」——
      * 于是产出<b>直接写进配方</b>（30 条 {@code assembly_matrix/*.json} 与两份规格
      * {@code _census/nac_matrix_spec.json} / {@code _census/nac_cw_matrix_spec.json} 的
      * {@code outCount} 全部 16 → 8，留痕见规格的 {@code outCountBefore16} / {@code outCountBefore8}），
-     * 本值置 {@code 1.0D} 后 {@link #scaleOutputsForSimpleLogistics} 最上面那条
+     * 本值置 {@code 1.0D} 后 {@link NanochipModuleLink#scaleOutputsForSimpleLogistics} 最上面那条
      * {@code >= 1.0D} 短路会原样返回配方。
      *
      * <p>★ <b>同一天再按队长令改成阶梯</b>：「修改电路产出的数量，让每个系列最基础的产出八，4，2，1
@@ -369,10 +379,6 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     private static final String LOG_CONCLUSION_UNFORMED = "尚未成形";
 
-    /** 汇总行里本机的短标签（例：{@code 纳米芯片组装矩阵@(-74,69,-105)}）。 */
-    private String structureLogLabel() {
-        return kind.nameZh() + "@" + getPos().toShortString();
-    }
 
     private long lastRouterTick = Long.MIN_VALUE;
     private TickableSubscription routerTickSub;
@@ -445,6 +451,13 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     /** 主机的配方等级（吃复合体电时，界面上的「最大配方等级」用；服务端算）。 */
     @DescSynced
     private int syncedHostTier;
+
+    /**
+     * ★ 2026-11-08：无线电网模式下主机此刻的「假电压档」（按账户余额折算，参考伪神之锻炉）。
+     * 客户端没有 GTMT 账户余额表，只能读这一格同步值。
+     */
+    @DescSynced
+    private int syncedWirelessTier;
     @DescSynced
     private long syncedHostMaxInputVoltage;
     @DescSynced
@@ -580,7 +593,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         if (level == null || level.isClientSide) {
             return;
         }
-        String encoded = encodeNacSlots();
+        String encoded = NanochipModuleLink.encodeNacSlots(this);
         if (!encoded.equals(syncedNacSlots)) {
             syncedNacSlots = encoded;
             // 诊断（0.2.5）：见证「重进世界后到底有没有再发布」这一次；条数=0 说明是空串。
@@ -634,38 +647,6 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         return true;
     }
 
-    /**
-     * ★ 把「结构里真实站着的 part」编码成逗号分隔的 {@code BlockPos.asLong()}。
-     *
-     * <p>与 {@code NanochipAssemblyComplexMachine#encodeNacSlots()} <b>逐字节一致</b>（客户端只有一个
-     * 解码器）。数据来源 = GTCEu 的 {@code MultiblockControllerMachine.getParts()}，<b>不区分仓的来源</b>。
-     */
-    private String encodeNacSlots() {
-        List<IMultiPart> parts = getParts();
-        StringBuilder sb = new StringBuilder();
-        int kept = 0;
-        int dropped = 0;
-        for (IMultiPart part : parts) {
-            if (part == null || part.self() == null) {
-                continue;
-            }
-            if (kept >= MAX_NAC_SLOTS) {
-                dropped++;
-                continue;
-            }
-            if (kept > 0) {
-                sb.append(',');
-            }
-            sb.append(part.self().getPos().asLong());
-            kept++;
-        }
-        if (dropped > 0) {
-            GTLModular.LOGGER.warn("[gtlmodular] CTM: 仓位清单超过上限 {} 条（结构里 {} 个 part @{}），"
-                            + "已截断 {} 条 —— 被截断的那几格外壳保持原样（不参与连接纹理）。",
-                    MAX_NAC_SLOTS, parts.size(), getPos(), dropped);
-        }
-        return sb.toString();
-    }
 
     /** 连接快照的刷新节流（20 tick 一次，与主机侧的 F 位重算同频）。 */
     private static final int HOST_STATE_REFRESH_INTERVAL = 20;
@@ -852,6 +833,16 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     private transient com.gregtechceu.gtceu.api.misc.EnergyContainerList hostEnergyList;
 
     /**
+     * ★ 2026-11-08：<b>模块侧的主机供电「配方处理器」</b>（与 {@link #hostEnergyList} 共用同一个实例）。
+     *
+     * <p>它会被注册进控制器的 {@code capabilitiesProxy} 的 {@code EURecipeCapability} 输入列表 ——
+     * 这是 GTCEu 配方 EU 结算真正读取的地方（{@code RecipeRunner}）。
+     * 只喂 {@code getEnergyContainer()} 是不够的：配方侧看不见它，于是会出现
+     * 「储能读到 Long.MAX、最大输入却是 0 ⇒ 电力输入不足」。
+     */
+    private transient NanochipModuleLink.HostEnergyContainer hostEnergyRecipeHandler;
+
+    /**
      * 能量容器：自带能源仓优先；没装就用复合体代理。
      * （界面那两行「最大功率/最大配方等级」读的也是它，所以模块界面能显示复合体的电压。）
      *
@@ -875,9 +866,81 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         }
         if (hostEnergyList == null) {
             hostEnergyList = new com.gregtechceu.gtceu.api.misc.EnergyContainerList(
-                    List.of(new HostEnergyContainer(this)));
+                    List.of(hostEnergyHandler()));
         }
+        ensureHostEnergyHandler();
         return hostEnergyList;
+    }
+
+    /** 主机供电处理器的稳定实例（{@code getEnergyContainer()} 与能力代理共用同一个）。 */
+    private NanochipModuleLink.HostEnergyContainer hostEnergyHandler() {
+        if (hostEnergyRecipeHandler == null) {
+            hostEnergyRecipeHandler = new NanochipModuleLink.HostEnergyContainer(this);
+        }
+        return hostEnergyRecipeHandler;
+    }
+
+    /**
+     * ★ 2026-11-08【模块「电力输入不足」的根因修复】：把 {@link #hostEnergyHandler()} 追加进
+     * <b>能力代理</b>的 {@code EURecipeCapability} 输入处理器列表。
+     *
+     * <h4>为什么必须做这一步</h4>
+     * GTCEu 的配方 EU 结算（{@code RecipeRunner} / {@code RecipeHelper}）只从
+     * {@code getCapabilitiesProxy().get(IO.IN, EURecipeCapability.CAP)} 取处理器；
+     * 我们原来只重写了 {@code getEnergyContainer()}（那是<b>派生读取器</b>，配方侧看不见）⇒
+     * 模块没有自己的能源仓时，代理里一个 EU 处理器都没有，配方一匹配就报
+     * 「电力输入不足」（Enhancedcore 的诊断会同时显示「最大输入 0 EU/t、当前储能 Long.MAX」，
+     * 正是「读得到存量、读不到输入」的特征）。主机侧 {@code registerGridPowerHandler()}
+     * 早就是这么做的，模块侧漏了同一刀 —— 本方法补齐。
+     *
+     * <h4>纪律（与主机侧逐条一致）</h4>
+     * <ul>
+     *   <li><b>只追加、绝不替换</b>：真能源仓/激光仓的处理器与我们在同一个 key 下同一个 list；</li>
+     *   <li><b>幂等</b>：成形回调可能重复（异步结构检查线程）；</li>
+     *   <li>未连主机 / 主机未成形 ⇒ 直接返回（容器自己也会报 0，不会凭空造电）。</li>
+     * </ul>
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void ensureHostEnergyHandler() {
+        if (isRemote() || !hostConnected()) {
+            return;
+        }
+        NanochipAssemblyComplexMachine h = getHost();
+        if (h == null || !h.isFormed()) {
+            return;
+        }
+        // 只有「确实在吃复合体的电」的模块才挂这个处理器：自带能源仓且电网关闭的模块保持原样
+        // （那时 getEnergyContainer() 返回它自己的仓，配方 EU 结算也必须只看自己的仓）。
+        if (!drawingFromHost()) {
+            return;
+        }
+        try {
+            var proxy = this.getCapabilitiesProxy();
+            if (proxy == null) {
+                return;
+            }
+            NanochipModuleLink.HostEnergyContainer handler = hostEnergyHandler();
+            List existing = (List) proxy.get(IO.IN, EURecipeCapability.CAP);
+            List writable;
+            if (existing == null) {
+                writable = new ArrayList();
+                proxy.put(IO.IN, EURecipeCapability.CAP, writable);
+            } else if (existing instanceof ArrayList) {
+                writable = existing;
+            } else {
+                writable = new ArrayList(existing);
+                proxy.put(IO.IN, EURecipeCapability.CAP, writable);
+            }
+            if (!writable.contains(handler)) {
+                writable.add(handler);
+                GTLModular.LOGGER.info(
+                        "[gtlmodular] NAC 模块 @{} {} 已把「主机供电」接入能力代理：EU 输入处理器 {} 个",
+                        getPos(), getModuleKind(), writable.size());
+            }
+        } catch (Throwable t) {
+            GTLModular.LOGGER.warn("[gtlmodular] NAC 模块 @{} 注册主机供电处理器失败：{}",
+                    getPos(), t.toString());
+        }
     }
 
     /** 是否正在吃复合体的电（自带能源仓的模块为 false）。 */
@@ -893,9 +956,36 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         return own == null || own.getEnergyCapacity() <= 0L;
     }
 
+    /**
+     * 本模块此刻是不是由「无线电网 / 免费电」在供能（= 按需现取、等价于 MAX 档电源）。
+     *
+     * <p>NH 原版的模块超频档位 = 「NAC 能源仓等级 − 配方等级」；无线电网输入终端在 GTL 里
+     * 是 `Long.MAX` 级容量（等价 MAX+16 档），所以吃电网的模块应当按 MAX 档算超频，
+     * 而不是因为没有物理能源仓被判成 ULV（0 档）—— 那会让所有模块做配方慢到只有基准速度。
+     */
+    public boolean isHostGridPowered() {
+        if (!GTLModularConfig.isNanochipFreeEnergyEnabled()
+                && !GTLModularConfig.isNanochipGridPowerEnabled()) {
+            return false;
+        }
+        // 客户端没有 host 字段，只能读服务端同步下来的快照。
+        return isRemote() ? syncedDrawingFromHost : drawingFromHost();
+    }
+
     /** 等级/电压代理复合体：gtlcore 的并行公式与 GT 的超频都读这两个值。 */
     @Override
     public int getTier() {
+        // ★ 2026-11-08：电网/免费电 = MAX 级电源（见 isHostGridPowered 的注释）。
+        //   以前这里代理 host.getTier()，而主机在没有物理能源仓时 `tier` 会被算成 0（ULV）
+        //   ⇒ 模块界面「最大配方等级: ULV」、超频次数 = 0、做配方特别慢。
+        if (isHostGridPowered()) {
+            // 参考伪神之锻炉：档位 = 无线电网余额折算的「假电压档」（余额大 → MAX_TRUE）。
+            NanochipAssemblyComplexMachine h = getHost();
+            if (h != null) {
+                return h.wirelessTier();
+            }
+            return syncedWirelessTier > 0 ? syncedWirelessTier : com.gregtechceu.gtceu.api.GTValues.MAX_TRUE;
+        }
         if (drawingFromHost()) {
             NanochipAssemblyComplexMachine host = getHost();
             if (host != null) {
@@ -907,73 +997,62 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     @Override
     public long getOverclockVoltage() {
+        // ★ 2026-11-08：电网/免费电 = 按需现取 ⇒ 直接给 MAX 档电压（与 wireless energy terminal 同口径）。
+        if (isHostGridPowered()) {
+            return Long.MAX_VALUE;
+        }
         if (drawingFromHost()) {
             NanochipAssemblyComplexMachine host = getHost();
             if (host != null) {
-                return host.getOverclockVoltage();
+                long v = host.getOverclockVoltage();
+                if (v > 0L) {
+                    return v;
+                }
+                // ★ 2026-11-08：主机的 getOverclockVoltage() 读的是 EnergyContainerList 的汇总电压；
+                //   「电网容器（Long.MAX）× 1A + 真能源仓」在汇总里会 int/long 溢出成负 ⇒ 返回 0，
+                //   于是模块的 moduleOverclock() 第一句 maxVoltage<=0 直接 return null，模块永远不开工
+                //   （界面表现就是「电力输入不足 / 最大输入 0」）。这里退回主机那个**已经做过饱和处理**
+                //   的 getMaxInputVoltage()（电网模式下是 Long.MAX，绕开列表汇总的溢出）。
+                long hardened = host.getMaxInputVoltage();
+                if (hardened > 0L) {
+                    return hardened;
+                }
             }
         }
         return super.getOverclockVoltage();
     }
 
-    /** 代理容器：蓄电/耗电都走复合体。 */
-    private static final class HostEnergyContainer
-            implements com.gregtechceu.gtceu.api.capability.IEnergyContainer {
-        private final NanochipModuleMachine module;
+    /**
+     * 模块「超压电压为 0、一条配方都 build 不出来」时的限流诊断（5 秒一条）。
+     * 调用点：{@link NanochipModuleLink#moduleOverclock} 的 {@code maxVoltage <= 0} 分支。
+     */
+    private transient long lastNoPowerLogTick = Long.MIN_VALUE;
 
-        HostEnergyContainer(NanochipModuleMachine module) {
-            this.module = module;
+    void logNoOverclockVoltage() {
+        Level lv = getLevel();
+        if (lv == null || lv.isClientSide) {
+            return;
         }
-
-        private NanochipAssemblyComplexMachine host() {
-            NanochipAssemblyComplexMachine h = module.getHost();
-            return (h != null && h.isFormed()) ? h : null;
+        long now = lv.getGameTime();
+        if (lastNoPowerLogTick != Long.MIN_VALUE && now - lastNoPowerLogTick < 100L) {
+            return;
         }
-
-        @Override
-        public long getEnergyStored() {
-            NanochipAssemblyComplexMachine h = host();
-            return h == null ? 0L : h.getTotalStoredEU();
-        }
-
-        @Override
-        public long getEnergyCapacity() {
-            NanochipAssemblyComplexMachine h = host();
-            return h == null ? 0L : h.getTotalCapacityEU();
-        }
-
-        @Override
-        public long getInputVoltage() {
-            NanochipAssemblyComplexMachine h = host();
-            return h == null ? 0L : h.getMaxInputVoltage();
-        }
-
-        @Override
-        public long getInputAmperage() {
-            return 1L;
-        }
-
-        @Override
-        public boolean inputsEnergy(net.minecraft.core.Direction side) {
-            return false; // 不从旁路充能，只由复合体供给
-        }
-
-        @Override
-        public long acceptEnergyFromNetwork(net.minecraft.core.Direction side, long amount, long voltage) {
-            return 0L; // 拒绝直接注入
-        }
-
-        @Override
-        public long changeEnergy(long amount) {
-            if (amount >= 0L) {
-                return 0L; // 模块不回充复合体
-            }
-            // ★ 2026-09-21：吃主机的电改走**本模块自己的能量缓存**（缓存由主机每 20 tick 按优先级灌），
-            //   所以这里不再直接向主机要电 —— 缓存不够就一点不扣，走 GT 的「等电」分支。
-            long need = -amount;
-            return module.consumeBufferEU(need) ? -need : 0L;
-        }
+        lastNoPowerLogTick = now;
+        NanochipAssemblyComplexMachine h = getHost();
+        var own = super.getEnergyContainer();
+        GTLModular.LOGGER.info(
+                "[gtlmodular] NAC 模块 @{} {} 超频电压<=0（配方无法 build）：connected={} drawing={} host={} "
+                        + "hostOverclockVoltage={} hostMaxInputVoltage={} hostMaxInputPower={} ownCapacity={} "
+                        + "grid={} free={}",
+                getPos(), getModuleKind(), hostConnected(), drawingFromHost(), h != null,
+                h == null ? -1L : h.getOverclockVoltage(),
+                h == null ? -1L : h.getMaxInputVoltage(),
+                h == null ? -1L : h.getMaxInputPower(),
+                own == null ? -1L : own.getEnergyCapacity(),
+                GTLModularConfig.isNanochipGridPowerEnabled(),
+                GTLModularConfig.isNanochipFreeEnergyEnabled());
     }
+
 
 
     // ---------- 分流器：通道调度 ----------
@@ -1065,6 +1144,8 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         syncedHostConnected = connected;
         syncedDrawingFromHost = drawingFromHost();
         syncedHostTier = connected && h != null ? h.getTier() : 0;
+        // ★ 2026-11-08：无线电网模式的假电压档（参考伪神之锻炉，客户端要靠它显示 MAX/档位名）。
+        syncedWirelessTier = connected && h != null ? h.wirelessTier() : 0;
         syncedHostMaxInputVoltage = connected && h != null ? h.getMaxInputVoltage() : 0L;
         syncedHostStoredEU = connected && h != null ? h.getTotalStoredEU() : 0L;
         syncedHostCapacityEU = connected && h != null ? h.getTotalCapacityEU() : 0L;
@@ -1076,6 +1157,9 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         } else {
             syncedHostInfo = "尚未被复合体登记；复合体成形后会自动登记";
         }
+        // ★ 2026-11-08：连接/成形变化后把「主机供电」处理器补回能力代理（幂等）。
+        //   结构成/失形会重建 capabilitiesProxy，这一步保证配方 EU 结算始终看得见主机电源。
+        ensureHostEnergyHandler();
     }
 
     private void unsubscribeRouterTick() {
@@ -1143,6 +1227,15 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
         }
 
         /**
+         * ★ 2026-11-09：本逻辑现在只作为 {@link ThreadedRecipeLogic} 的「原逻辑」被驱动
+         * （没装线程仓时由引擎闸门代跑），<b>绝不自己订阅 tick</b> —— 双推会把进度与扣料翻倍。
+         */
+        @Override
+        public void updateTickSubscription() {
+            // 由引擎外壳统一驱动
+        }
+
+        /**
          * ★★【2026-09-21 0.1.23】简单模式下把组装矩阵的产出缩到「1 出 8」—— 挂在这里，因为这里是
          * <b>唯一真正会生效的地方</b>。
          *
@@ -1167,7 +1260,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
          * 去 {@code RecipeRunnerHelper.handleRecipeOutput(...)} 发货。
          * ⇒ 在 {@code setupRecipe} 里缩放，等价于「在发货口缩放」，两处循环都覆盖、且只有这一个作用点。
          *
-         * <p>本覆写<b>只动产出的数量</b>（{@link #scaleOutputsForSimpleLogistics} 只替换 {@code outputs}），
+         * <p>本覆写<b>只动产出的数量</b>（{@link NanochipModuleLink#scaleOutputsForSimpleLogistics} 只替换 {@code outputs}），
          * 不动 EU / 时长 —— 那两样的接法涉及与 gtlcore 自己的并行 EU 算法是否叠加，
          * 属于另一个决定，不在本轮。
          *
@@ -1175,14 +1268,14 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
          * （让 JEI 也显示 8，跟运行期一致）」。产出已<b>直接写进配方</b>（同日再按队长令改成阶梯
          * 处理器 8 / 装配 4 / 电脑 2 / 主机 1，见 {@link #SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER} 的注释），
          * {@link #SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER} 置 {@code 1.0D} ⇒
-         * {@link #scaleOutputsForSimpleLogistics} 会在 {@code >= 1.0D} 短路处原样返回入参，
+         * {@link NanochipModuleLink#scaleOutputsForSimpleLogistics} 会在 {@code >= 1.0D} 短路处原样返回入参，
          * 本覆写因此<b>不再改变任何配方</b>（保留它只为守住"作用点唯一"这条结构纪律：将来若又要
          * 恢复运行期缩放，唯一允许的挂点仍然是这里，不能挂回 {@code recipeModifier} 链）。
          * 三处因此一致：JEI = 简单模式运行期 = 原版模式运行期 = 同一套阶梯。
          */
         @Override
         public void setupRecipe(GTRecipe recipe) {
-            super.setupRecipe(scaleOutputsForSimpleLogistics(module, recipe));
+            super.setupRecipe(NanochipModuleLink.scaleOutputsForSimpleLogistics(module, recipe));
         }
 
         @Override
@@ -1231,7 +1324,8 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
                 }
                 return;
             }
-            long perTick = Math.max(1L, RecipeHelper.getInputEUt(recipe));
+            long perTick = Math.max(1L,
+                    MODULE_EUT.getOrDefault(module, Math.max(1L, RecipeHelper.getInputEUt(recipe))));
             if (getProgress() == 0 && module.getLevel() != null && !module.getLevel().isClientSide) {
                 GTLModular.LOGGER.info(
                         "[gtlmodular] 模块供电诊断 @{} {}：connected={} drawing={} free={} grid={} user={} perTick={}",
@@ -1245,7 +1339,10 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
             // ★ 伪神之锻炉同款：模块本身就是无线电网的消费者，不再经过主机缓存/主机
             //   EnergyContainerList 的容量汇总。免费电直接放行；电网模式直接扣主机的
             //   无线电网账户。这条路径优先于下面的缓存/主机无限判定。
-            if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+            // 模块只暴露耗电（exposedEuPerTick），统一由主机在 tickModuleRefresh 里扣电；
+            // 这里不再自己扣，避免主机/模块两边重复扣。
+            if (GTLModularConfig.isNanochipFreeEnergyEnabled()
+                    || GTLModularConfig.isNanochipGridPowerEnabled()) {
                 setStatus(RecipeLogic.Status.WORKING);
                 if (!machine.onWorking()) {
                     interruptRecipe();
@@ -1254,20 +1351,6 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
                 progress++;
                 totalContinuousRunningTime++;
                 return;
-            }
-            if (GTLModularConfig.isNanochipGridPowerEnabled()) {
-                java.util.UUID user = host.gridPowerUser();
-                if (user != null
-                        && WirelessEnergyManager.addEUToGlobalEnergyMap(user, -perTick, host)) {
-                    setStatus(RecipeLogic.Status.WORKING);
-                    if (!machine.onWorking()) {
-                        interruptRecipe();
-                        return;
-                    }
-                    progress++;
-                    totalContinuousRunningTime++;
-                    return;
-                }
             }
 
             long full = perTick * (long) Math.max(1, recipe.duration);
@@ -1340,136 +1423,119 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
+        // ★ 2026-11-09：模块也接同一套独立线程引擎。线程仓装在 NAC 主机上 ⇒ 线程数现读主机；
+        //   没仓时由 engineRequiresThreadHatch() 的闸门交回下面的 ModuleRecipeLogic（行为与改动前一致）。
+        return new ModuleThreadedLogic(this);
+    }
+
+    // ================= 独立线程引擎（★ 2026-11-09：主机装了线程仓 ⇒ 模块也有对应的线程） =================
+
+    /** 没装线程仓时的固定线程基线（1 条 = 改动前的单配方口径）。 */
+    @Override
+    public int baseThreads() {
+        return 1;
+    }
+
+    /**
+     * 模块<b>不看自己的结构</b>：线程仓装在 NAC 主机上 ⇒ 直接读主机的线程仓设定值。
+     * 模块没连主机 / 主机没成形 / 主机没装仓 ⇒ 0 ⇒ 引擎闸门交回 {@link ModuleRecipeLogic}。
+     */
+    @Override
+    public int threadHatchThreads() {
+        NanochipAssemblyComplexMachine host = getHost();
+        if (host == null || !hostConnected() || !host.isFormed()) {
+            return 0;
+        }
+        return host.threadHatchThreads();
+    }
+
+    /** 每条线程的并行倍率：模块维持改动前的口径（一条配方一份额度），不乘并行仓。 */
+    @Override
+    public int parallelMultiplier() {
+        return 1;
+    }
+
+    @Override
+    public boolean usesParallelHatch() {
+        return false;
+    }
+
+    /** ★ 模块是「装仓才接管」的一类：没仓时不进引擎，回到原来的模块逻辑。 */
+    @Override
+    public boolean engineRequiresThreadHatch() {
+        return true;
+    }
+
+    @Override
+    public RecipeLogic createEngineFallbackLogic() {
         return new ModuleRecipeLogic(this);
     }
 
     /**
-     * 该模块的「可用输入功率」（wiki：「超频后的功率不能超过 NAC 可用输入功率」）。
+     * 引擎唯一会走的配方修正口（{@code BatchFinder} → {@code machine.fullModifyRecipe}）。
      *
-     * <p>口径：模块自己装了能源仓 ⇒ 用它自己的电压；吃复合体的电（{@code drawingFromHost}）
-     * ⇒ 取「模块电压」与「NAC 最大输入功率
-     * （能源仓电压 × 安培数，{@link NanochipAssemblyComplexMachine#getMaxInputPower()}）」中的较大者。
-     *
-     * <p>★ 2026-09-21（能量缓存这一轮）：原先这里是 **1 A 的保守下界**，注释里写明"算准安培数属于能量缓存那一轮的活"
-     * —— 现在那一轮到了：主机侧已经把 {@code getMaxInputPower()}（电压 × 安培）暴露出来，本方法改用它。
+     * <p>把「简单模式产出缩放」挂在这里：引擎接管时 {@code ModuleRecipeLogic.setupRecipe} 那条路
+     * 不再运行，产出缩放必须换到这个口；没装线程仓（引擎不接管）时不缩放，由原逻辑照旧处理。
      */
-    private static long moduleAvailableInputPower(NanochipModuleMachine module, long ownVoltage) {
-        long cap = ownVoltage;
-        NanochipAssemblyComplexMachine host = module.getHost();
-        if (host != null && module.hostConnected()) {
-            long hostPower = host.getMaxInputPower();
-            if (hostPower > cap) {
-                cap = hostPower;
-            }
+    @Override
+    public GTRecipe fullModifyRecipe(GTRecipe recipe, OCParams params, OCResult result) {
+        GTRecipe modified = super.fullModifyRecipe(recipe, params, result);
+        if (modified != null && threadHatchThreads() > 0) {
+            modified = NanochipModuleLink.scaleOutputsForSimpleLogistics(this, modified);
         }
-        return cap;
+        return modified;
     }
 
     /**
-     * 模块配方修正：2/2 封顶的**无损**电力超频 + 5 秒时长下限。
-     * （原版注释：{@code Modules have capped 2/2 overclocks ... The recipe time can not be
-     * overclocked below 5 seconds.}）
+     * ★ 2026-11-09：模块的线程引擎外壳 —— 与其它机器同一套 {@link ThreadedRecipeLogic}，
+     * 只补两处模块语义：
+     * <ol>
+     *   <li><b>批次完成记账</b>：组装矩阵的产出报给宿主（10 万电路校准窗口）+ 按配方涨杂质，
+     *       即原来挂在 {@code ModuleRecipeLogic.onRecipeFinish()} 上的两件事；</li>
+     *   <li>产出缩放不在这里做（见 {@link #fullModifyRecipe}）。</li>
+     * </ol>
      */
-    public static GTRecipe moduleOverclock(MetaMachine machine, GTRecipe recipe,
-                                           OCParams params, OCResult result) {
-        if (!(machine instanceof NanochipModuleMachine module)) {
-            return null;
+    private static final class ModuleThreadedLogic extends ThreadedRecipeLogic {
+        private final NanochipModuleMachine module;
+
+        ModuleThreadedLogic(NanochipModuleMachine module) {
+            super(module);
+            this.module = module;
         }
-        long maxVoltage = module.getOverclockVoltage();
-        if (maxVoltage <= 0L) {
-            return null;
-        }
-        GTRecipe copy = recipe.copy();
-        long eut = Math.max(1L, RecipeHelper.getInputEUt(copy));
-        int duration = Math.max(1, copy.duration);
-        // ★★ 2026-09-21（0.1.27）对齐 NH 官方规格「无损超频(2/2)」★★
-        //   本地 wiki 底本逐页写着（`_census/wiki_抓取/raw/*.wiki.txt`，19 页，同一段话）：
-        //   「取 NAC能源仓等级 与 配方等级 之差，单次耗时除以2、**功率乘以2**；
-        //     处理时间不会低于5秒，且超频后的功率不能超过 NAC 可用输入功率。」
-        //   ⇒ 两条都必须改：
-        //   ① 我方旧实现是 `eut *= 4L`（GT 的"完美超频"口径），**与"无损"矛盾** —— 无损是 ×2；
-        //   ② 超频**次数**来自「能源仓等级 − 配方等级」，而不是只看"功率还够不够"。
-        int hatchTier = GTUtil.getTierByVoltage(maxVoltage);
-        int recipeTier = GTUtil.getTierByVoltage(eut);
-        // ⚠️ **不再套 MAX_OVERCLOCKS(2) 封顶**：主机 wiki 页「超频与缓存」写的就是
-        //    「取 NAC能源仓等级与配方等级之差」——**没有封顶**；我们自己的 parity 体检
-        //    `check_nac_mechanics_parity.js` 的 X4 分歧条目也早用 NH 字节码写明了
-        //    「NH = 时长÷2 / EU×2，次数 = 主机能源仓等级 − 配方等级（**无 2 次封顶**），地板 100 tick」。
-        //    (2/2) 那个记法是 GTCEu 对"无损超频"的标注（EU×2 / 时长÷2），**不是"最多两次"**。
-        int maxOc = Math.max(0, hatchTier - recipeTier);
-        long powerCap = moduleAvailableInputPower(module, maxVoltage);
-        int oc = 0;
-        while (oc < maxOc
-                && duration / 2 >= MIN_DURATION_TICKS
-                && eut <= powerCap / 2L) {
-            eut *= 2L;
-            duration /= 2;
-            oc++;
-        }
-        // 组装矩阵享受复合体的纳米校准与模块加成（原版：模块的 Speed / EU cost / running cost
-        // 由模块自身的机制与 NAC 的 Calibration 共同给出）
-        int floorTicks = MIN_DURATION_TICKS;
-        if (module.kind == NanochipModuleKind.ASSEMBLY_MATRIX) {
-            NanochipAssemblyComplexMachine host = module.getHost();
-            if (host != null && module.hostConnected()) {
-                NanochipCalibration.Family family = NanochipAssemblyComplexMachine.familyOf(recipe);
-                double euMul = host.getCalibration().euMultiplier() * host.moduleEuMultiplier(family);
-                double durMul = host.getCalibration().durationMultiplier(family)
-                        * host.moduleDurationMultiplier(family);
-                eut = (long) Math.max(1.0D, Math.min((double) Long.MAX_VALUE, eut * euMul));
-                duration = (int) Math.max(floorTicks,
-                        Math.min(Integer.MAX_VALUE, Math.round(duration * durMul)));
-                floorTicks = host.minDurationTicks();
-            }
-        }
-        // 蚀刻阵列：晶体满校准后「激光源仓」开始生效（原版机制，1:1 照抄两条公式）
-        if (module.kind == NanochipModuleKind.ETCHING_ARRAY) {
+
+        @Override
+        protected void onBatchFinished(GTRecipe recipe) {
             NanochipAssemblyComplexMachine host = module.getHost();
             if (host != null && module.hostConnected()
-                    && host.getCalibration().specialActive(NanochipCalibration.Family.CRYSTAL)) {
-                long amperage = module.laserAmperage();
-                if (amperage >= 512L) {
-                    // Divides EU Cost by each Amperage Interval over 256A
-                    eut = Math.max(1L, eut / (amperage / 256L));
-                }
-                int laserTier = module.laserHatchTier();
-                if (laserTier > 9) {
-                    // Divides Recipe Duration by (Hatch Tier - 9)
-                    duration = Math.max(floorTicks, duration / (laserTier - 9));
-                }
+                    && module.kind == NanochipModuleKind.ASSEMBLY_MATRIX) {
+                host.recordExternalProduction(recipe);
             }
+            module.onRecipeProduced();
         }
-        RecipeHelper.setInputEUt(copy, eut);
-        copy.duration = Math.max(floorTicks, duration);
-        copy.ocTier = oc;
-        return copy;
     }
 
-    /** 备用入口：电压不足时仍按标准非完美超频处理（模块可单独使用）。 */
+    /** 模块配方修正（实现在 {@link NanochipModuleLink#moduleOverclock}；本方法只是保留公开入口）。 */
+    public static GTRecipe moduleOverclock(MetaMachine machine, GTRecipe recipe,
+                                           OCParams params, OCResult result) {
+        return NanochipModuleLink.moduleOverclock(machine, recipe, params, result);
+    }
+
+    /**
+     * 把 {@link NanochipModuleLink#moduleOverclock} 算出的真实 EU/t 写回本机。
+     *
+     * <p>★ 2026-11-08【P2 M2】：{@code MODULE_EUT} 与 {@code exposedEuPerTick} 都是本类 private 字段，
+     * 搬不走 ⇒ 保留在机器侧，由纯计算方在原位置、用原值、按原顺序回调写回（两处写、顺序不变）。
+     */
+    static void applyOverclockEu(NanochipModuleMachine module, long eut) {
+        MODULE_EUT.put(module, Math.max(1L, eut));
+        module.exposedEuPerTick = Math.max(1L, eut);
+    }
+
+    /** 备用入口（实现在 {@link NanochipModuleLink#moduleFlexibleOverclock}；保留公开入口是为了
+     *  {@code NanochipMachines} 里的方法引用 {@code NanochipModuleMachine::moduleFlexibleOverclock} 不变）。 */
     public static GTRecipe moduleFlexibleOverclock(MetaMachine machine, GTRecipe recipe,
                                                    OCParams params, OCResult result) {
-        GTRecipe direct = moduleOverclock(machine, recipe, params, result);
-        GTRecipe modified;
-        if (direct != null) {
-            modified = direct;
-        } else {
-            modified = GTRecipeModifiers.ELECTRIC_OVERCLOCK
-                    .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK_SUBTICK)
-                    .apply(machine, recipe, params, result);
-        }
-        // ★★ 2026-09-21（0.1.23）**产出 0.5 缩放已从这条链上搬走** ★★
-        //   理由见 ModuleRecipeLogic.setupRecipe 的注释：这条链 = 注册在 builder 上的
-        //   `recipeModifier`，而在 gtlcore 的 `MultipleRecipesLogic` 下它**根本不会被调用**
-        //   （javap：该类全文无 fullModifyRecipe / doModifyRecipe 调用）⇒ 挂在这里等于没挂，
-        //   队长看到的"简单模式产出依然是 16"就是这么来的。
-        //   现在缩放只有**一个**作用点（`ModuleRecipeLogic.setupRecipe`）⇒ 结构上不可能被缩两次。
-        // ★ 模块已改为继承原版 WorkableElectricMultiblockMachine（不再走 gtlcore 的 MultipleRecipesLogic）
-        //   ⇒ 本修饰器**现在是真正会被调用的**（原版 RecipeLogic 走 fullModifyRecipe 这条链）。
-        //   并行也改走原版：GTCEu 自带的 ParallelLogic 按「输入余量 / 输出可合并」放大整条配方，
-        //   这就是模块「无限并行」的唯一来源。
-        GTRecipe base = modified != null ? modified : recipe;
-        return com.gregtechceu.gtceu.api.recipe.modifier.ParallelLogic
-                .applyParallel(machine, base, Integer.MAX_VALUE, false).getFirst();
+        return NanochipModuleLink.moduleFlexibleOverclock(machine, recipe, params, result);
     }
 
     // ---------- 组装矩阵产出：**阶梯 8/4/2/1 已直接写进配方**（2026-09-21 队长拍板）----------
@@ -1480,103 +1546,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
     //   （`SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER` 0.5D → **1.0D**），本节的乘法器因此**恒为空操作**
     //   （`>= 1.0D` 短路），下面注释里"配方仍是 count=16 / 乘 0.5 ⇒ 实出 8"是**当时的实况留痕**，
     //   自 2026-09-21 起作废，保留只为可追溯（详见 O.87 与 `check_module_output_scaling.js` A4）。
-
-    /**
-     * 简单模式（{@code nanochipComplex.simpleLogisticsMode = true}）下，<b>组装矩阵</b>的物品与流体
-     * 产出按本倍率缩放：配方 JSON 里仍是 {@code count = 16}，到机器结算这一步才乘 0.5 ⇒ <b>实出 8</b>。
-     *
-     * <p><b>为什么配方数据不动、改在结算处</b>（队长给的两个选项里选前者，理由三条）：
-     * <ol>
-     *   <li><b>一份数据两种模式都对</b>：{@code data/gtlmodular/recipes/nanochip/assembly_matrix/*.json}
-     *       与两份规格 {@code _census/nac_matrix_spec.json} / {@code _census/nac_cw_matrix_spec.json}
-     *       的 {@code outCount = 16} 全部<b>原样不动</b>，体检
-     *       {@code check_nac_p1_recipes.js} / {@code check_nac_p2_recipes.js} / {@code check_nac_cc_items.js}
-     *       的登记值一条都不用改（不会出现"规格 16 / 简单模式要 8"的两个真相）；
-     *   <li><b>没有条件表达能力可用</b>：KubeJS/数据包侧的 {@code forge:mod_loaded} 只能表达"装了哪个模组"，
-     *       <b>表达不了配置开关</b>；GTCEu 的配方 condition 里也没有"读本模组配置"的现成 condition
-     *       （做过调查：{@code GTRecipeConditions} 只有 mod_loaded / 维度 / 研究 之类），
-     *       硬做两套配方就得给整套数据包加一份 30 条的镜像 + 一套自定义 condition —— 风险远大于收益；
-     *   <li><b>缩放点唯一且可证</b>：{@code moduleOverclock}/{@code moduleFlexibleOverclock} 已经是本模组
-     *       唯一的模块配方入口（{@code NanochipMachines.java:534} 注册
-     *       {@code .recipeModifier(NanochipModuleMachine::moduleFlexibleOverclock)}），改动只此一处。
-     * </ol>
-     *
-     * <p>⚠️ <b>2026-09-21（0.1.23）更正</b>：上面第 3 条"缩放点唯一且可证"<b>当时是错的</b> ——
-     * 那条链（注册的 {@code recipeModifier}）在 gtlcore 的 {@code MultipleRecipesLogic} 下
-     * <b>从来不会被调用</b>（取证见 {@code ModuleRecipeLogic.setupRecipe} 的注释），
-     * 所以 0.1.19～0.1.22 之间这段缩放<b>一次都没生效</b>（队长实测"简单模式产出依然是 16"）。
-     * 现在真正的唯一作用点是 {@code ModuleRecipeLogic.setupRecipe(GTRecipe)} ——
-     * gtlcore 每次拿到配方都会经过它，且只有它一处调用本方法。
-     *
-     * <p><b>为什么不会与配方解析冲突</b>：配方 JSON 照旧解析成 {@code outputs.item[0].content.count = 16}
-     * 的 {@code GTRecipe}（注册表里那条共享对象<b>一个字节都不变</b>）；缩放发生在
-     * {@code setupRecipe} 里，产出的是一条<b>深拷贝</b>（{@code GTRecipe.copy()} +
-     * {@code copyContents(outputs, ContentModifier.multiplier(0.5))}），
-     * 由 {@code RecipeLogic} 作为"本条要跑的配方"持有（{@code getLastRecipe()}）。
-     * ⇒ 扣料 / 产出 / 纳米校准记账读的都是同一个对象，<b>实出多少就记多少</b>
-     * （不会出现"界面写 16、实际给 8"或"校准按 16 记账"这种错位）。
-     *
-     * <p><b>⚠ 必须 copy()</b>：{@code GTRecipeModifiers.ELECTRIC_OVERCLOCK} 那条回落路径
-     * <b>有可能原样返回入参</b>（= 配方注册表里那条共享对象，javap：{@code copyContents} 只在
-     * {@code copy()} 里生成新 Map）—— 就地改它的 {@code outputs} 会污染所有机器。
-     * 所以这里一律先 {@code copy()} 再整表替换 {@code outputs}。
-     * （{@code copyContents} 的字节码已核：返回 {@code new HashMap} + 每个 {@code Content}
-     * 都经 {@code Content.copy(cap, modifier)} 造新对象；{@code ItemRecipeCapability.copyWithModifier}
-     * 走 {@code modifier.apply(amount).intValue()} ⇒ 16 × 0.5 = 8。装配矩阵 30 条配方均只有
-     * <b>一个</b> item 输出（count=16），所以不存在"别的产物被缩成 0"的情形。）
-     *
-     * <p><b>不改这里的两件事</b>（如实登记）：
-     * <ul>
-     *   <li><b>模块层（元件 ×2）/ 换算层（真物品 ⇄ CC 1:1）</b>：一行没动；</li>
-     *   <li><b>主机「直通档」</b>（{@code NanochipAssemblyComplexMachine.nacRecipeModifier}，
-     *       跑的是 {@code circuit_assembler} 配方表）：<b>不在</b>本次缩放范围内 ——
-     *       队长点名的是"组装矩阵"那 16 个，直通档是另一条路（它的产出由配方 JSON 决定）。</li>
-     * </ul>
-     *
-     * <p>★ <b>2026-09-21 队长拍板：产出直接写进配方，运行期不再缩放</b>。
-     * 队长原话：「组装矩阵的 JSON 16 → 8（让 JEI 也显示 8，跟运行期一致）」——
-     * 本函数这一层 ×0.5 <b>停用</b>：
-     * <ul>
-     *   <li><b>产出落在配方里</b>：30 条 {@code data/gtlmodular/recipes/nanochip/assembly_matrix/*.json}
-     *       的 {@code outputs.item[0].content.count} 与两份规格（{@code _census/nac_matrix_spec.json}
-     *       20 行 / {@code _census/nac_cw_matrix_spec.json} 10 行）的 {@code outCount}
-     *       先 <b>16 → 8</b>（规格留痕：{@code outCountBefore16 = 2}、{@code outCountBefore8 = 16}，
-     *       顶层 {@code outCountRework20260921}），
-     *       ★ 同日再按队长令「修改电路产出的数量，让每个系列最基础的产出八，4，2，1最后每个系列的主机产出一份」
-     *       改成<b>按档位阶梯</b>：<b>处理器 8 / 装配 4 / 电脑 2 / 主机 1</b>
-     *       （7 个系列同构；规格留痕 {@code outCountBeforeLadder = 8}，顶层 {@code outCountReworkLadder20260921}）；
-     *       配方<b>条数不变</b>（仍 30 条），只改数值。JEI 读的就是这条数据 ⇒ JEI 显示的就是阶梯值；</li>
-     *   <li><b>运行期不再缩放</b>：{@link #SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER} 置 {@code 1.0D}，
-     *       本函数上面那条 {@code >= 1.0D} 短路直接 {@code return recipe;} ⇒ 下面的深拷贝 +
-     *       {@code ContentModifier.multiplier} 代码<b>保留但不再执行</b>（留作将来若又要
-     *       "运行期有别于 JEI"的现成挂点，也让 {@code _census/check_module_output_scaling.js}
-     *       的 A1/A2/A3/A5 结构判据继续成立：作用点唯一、只动产出、不误伤主机）；</li>
-     *   <li>⇒ <b>JEI = 简单模式运行期 = 原版模式运行期 = 同一套阶梯（8/4/2/1）</b>，三处一致，
-     *       不会再被缩两次（阶梯值再 ×0.5 会把处理器缩成 4、主机缩成 0 这条歧路已堵死）；</li>
-     *   <li>上文提到的「配方 JSON 照旧解析成 {@code count = 16}」「16 × 0.5 = 8」
-     *       「一个 item 输出（count=16）」是 <b>2026-09-19 当时的实况</b>，自本次起作废
-     *       （原文保留，只为留痕）。</li>
-     * </ul>
-     */
-    public static GTRecipe scaleOutputsForSimpleLogistics(MetaMachine machine, GTRecipe recipe) {
-        if (recipe == null || !GTLModularConfig.isNanochipSimpleLogistics()) {
-            return recipe;   // 原版模式：原样返回，行为逐语义不变
-        }
-        if (!(machine instanceof NanochipModuleMachine module)
-                || module.getModuleKind() != NanochipModuleKind.ASSEMBLY_MATRIX) {
-            return recipe;   // 只缩放组装矩阵；其余 13 台模块一字不动
-        }
-        if (SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER >= 1.0D) {
-            return recipe;
-        }
-        GTRecipe copy = recipe.copy();
-        java.util.Map<RecipeCapability<?>, java.util.List<Content>> scaled =
-                recipe.copyContents(recipe.outputs,
-                        ContentModifier.multiplier(SIMPLE_LOGISTICS_OUTPUT_MULTIPLIER));
-        copy.outputs.clear();
-        copy.outputs.putAll(scaled);
-        return copy;
-    }
+    // ★ 2026-11-08【P2 M2】：`scaleOutputsForSimpleLogistics` 本体已搬到 `NanochipModuleLink`（逐字），这里只留上面这段历史留痕。
 
     // ---------- 宿主连接 ----------
 
@@ -1595,11 +1565,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
      * 最坏 1 秒内会被登记（旧代码里模块自己是"谁后跑谁覆盖"的一方，正是连接抖动的根因）。
      */
     public boolean hostConnected() {
-        if (!isFormed()) {
-            return false;
-        }
-        NanochipAssemblyComplexMachine h = host;
-        return h != null && h.isFormed() && h.isModuleConnected(this);
+        return NanochipModuleLink.hostConnected(this);
     }
 
     /**
@@ -1831,7 +1797,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
             Level formedLogLevel = getLevel();
             long formedLogNow = formedLogLevel == null ? 0L : formedLogLevel.getGameTime();
             if (this.structureLogGate.shouldEmitInfo(LOG_CONCLUSION_FORMED, "",
-                    structureLogLabel(), formedLogNow)) {
+                    NanochipModuleLink.structureLogLabel(this), formedLogNow)) {
                 com.gtlmodular.GTLModular.LOGGER.info("[gtlmodular] NAC 模块 已成形 @{}（{}，复合体连接={}）"
                                 + "{}",
                         getPos(), kind.nameZh(), linked ? "是" : "否",
@@ -1869,7 +1835,7 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
             Level invalidLogLevel = getLevel();
             long invalidLogNow = invalidLogLevel == null ? 0L : invalidLogLevel.getGameTime();
             if (this.structureLogGate.shouldEmitInfo(LOG_CONCLUSION_INVALID, invalidReason,
-                    structureLogLabel(), invalidLogNow)) {
+                    NanochipModuleLink.structureLogLabel(this), invalidLogNow)) {
                 com.gtlmodular.GTLModular.LOGGER.info("[gtlmodular] NAC 模块 结构失效 @{}（{}，复合体连接={}；"
                                 + "只在状态翻转时打这条，避免刷屏）{}",
                         getPos(), kind.nameZh(), hostConnected() ? "是" : "否",
@@ -1959,184 +1925,89 @@ public class NanochipModuleMachine extends WorkableElectricMultiblockMachine
 
     @Override
     public void addDisplayText(List<Component> textList) {
-        // 完全回归 GTCEu 基类显示：不刷新自定义 tier/energy 代理，也不追加任何文字。
+        // ★ 2026-11-08 修（界面「最大配方等级: ULV」）：
+        //   GTCEu 基类的「最大功率 / 最大配方等级」两行读的是 protected 字段
+        //   {@code energyContainer} / {@code tier}，而它们**只在结构成形那一刻**赋值一次；
+        //   客户端更是只有服务端同步过来的快照（本机 host 字段为 null）。
+        //   所以这里先把同步快照刷进那两个字段，再交给基类渲染 —— 电网/免费电按 MAX 档显示。
+        refreshDisplayFields();
         super.addDisplayText(textList);
-        if (textList != null) {
+    }
+
+    /**
+     * 把「服务端算好并同步过来的供电快照」刷进基类界面要读的 {@code energyContainer} / {@code tier}。
+     *
+     * <p>口径：吃复合体的电且电网/免费电开着 ⇒ {@code tier = GTValues.MAX}（按需现取、等价 MAX 档电源）；
+     * 否则用主机同步下来的档位。客户端额外造一个只读的能量容器壳，让「最大功率」两行有数可读。
+     */
+    private void refreshDisplayFields() {
+        if (!syncedDrawingFromHost) {
             return;
         }
-        // 只刷新 GTCEu 原版界面要读的 tier/energyContainer，不追加任何自定义文字。
-        if (syncedDrawingFromHost) {
+        boolean grid = GTLModularConfig.isNanochipFreeEnergyEnabled()
+                || GTLModularConfig.isNanochipGridPowerEnabled();
+        if (grid) {
+            // 参考伪神之锻炉：电网模式的档位 = 余额折算的假电压档。
+            NanochipAssemblyComplexMachine h = getHost();
+            int wt = h != null ? h.wirelessTier() : syncedWirelessTier;
+            this.tier = wt > 0 ? wt : syncedWirelessTier;
+        } else {
             this.tier = syncedHostTier;
-            if (getLevel() != null && getLevel().isClientSide) {
-                this.energyContainer = new com.gregtechceu.gtceu.api.misc.EnergyContainerList(
-                        List.of(new com.gregtechceu.gtceu.api.capability.IEnergyContainer() {
-                            @Override
-                            public long getEnergyStored() {
-                                return syncedHostStoredEU;
-                            }
-
-                            @Override
-                            public long getEnergyCapacity() {
-                                return syncedHostCapacityEU;
-                            }
-
-                            @Override
-                            public long getInputVoltage() {
-                                return syncedHostMaxInputVoltage;
-                            }
-
-                            @Override
-                            public long getInputAmperage() {
-                                return 1L;
-                            }
-
-                            @Override
-                            public long getOutputVoltage() {
-                                return 0L;
-                            }
-
-                            @Override
-                            public long getOutputAmperage() {
-                                return 0L;
-                            }
-
-                            @Override
-                            public boolean inputsEnergy(net.minecraft.core.Direction side) {
-                                return false;
-                            }
-
-                            @Override
-                            public boolean outputsEnergy(net.minecraft.core.Direction side) {
-                                return false;
-                            }
-
-                            @Override
-                            public long acceptEnergyFromNetwork(net.minecraft.core.Direction side,
-                                                               long voltage, long amperage) {
-                                return 0L;
-                            }
-
-                            @Override
-                            public long changeEnergy(long amount) {
-                                return 0L;
-                            }
-                        }));
-            }
         }
-        super.addDisplayText(textList);
-        if (textList != null) {
-            return;
-        }
-        // 与生态园同款（{@code MoltenModuleMachineBase.addDisplayText}）：
-        // gtceu 的「最大功率 / 最大配方等级」两行读的是基类 protected 字段 energyContainer / tier，
-        // 而那两个字段只在结构成形时赋一次值 —— 吃复合体电的模块要按主机实况刷新，
-        // 否则界面会一直显示 0 / ULV（看起来像"没接电"）。
-        // ★ 2026-09-16：本方法是在**客户端**被 ComponentPanelWidget.textSupplier 回调的
-        //   （见 IDisplayUIMachine.createUI），所以这里读服务端算好的同步快照（synced*），
-        //   而不是 getHost()（那个字段只存在于服务端 ⇒ 客户端恒为 null ⇒ 永远显示"未连接"）。
-        if (syncedDrawingFromHost) {
-            this.tier = syncedHostTier;
-            if (getHost() != null) {
-                this.energyContainer = getEnergyContainer();
-            }
-        }
-        super.addDisplayText(textList);
-        textList.add(Component.literal("NAC 模块: ")
-                .append(Component.literal(kind.nameZh()).withStyle(ChatFormatting.GOLD))
-                .append(Component.literal(" · " + kind.nameEn()).withStyle(ChatFormatting.DARK_GRAY))
-                .withStyle(ChatFormatting.GRAY));
-        textList.add(Component.translatable("gtlmodular.nanochip.module.ui.role")
-                .append(Component.translatable(kind.langKey("role")).withStyle(ChatFormatting.AQUA))
-                .withStyle(ChatFormatting.GRAY));
-        textList.add(Component.literal("复合体连接: ")
-                .append(Component.literal(syncedHostConnected ? "已连接" : "未连接")
-                        .withStyle(syncedHostConnected ? ChatFormatting.GREEN : ChatFormatting.RED))
-                .append(Component.literal(syncedHostInfo).withStyle(ChatFormatting.GRAY))
-                .withStyle(ChatFormatting.GRAY));
-        // 供电：自带能源仓优先；没装就吃复合体的电（组装矩阵会让电）——与生态园同款
-        boolean fromHost = syncedDrawingFromHost;
-        textList.add(Component.literal("供电: ")
-                .append(Component.literal(fromHost ? "复合体中央供电" : "本机能源仓，或未成形")
-                        .withStyle(fromHost ? ChatFormatting.AQUA : ChatFormatting.GRAY))
-                .append(Component.literal(fromHost && kind == NanochipModuleKind.ASSEMBLY_MATRIX
-                        ? " · 最低优先级：别的模块等电时让电" : "")
-                        .withStyle(ChatFormatting.DARK_GRAY))
-                .withStyle(ChatFormatting.GRAY));
-        // ★ 2026-09-21：能量缓存一行（wiki：模块缓存 = NAC最大输入功率 × (2 × 模块最大配方时间)；
-        //   主机每 20 tick 按优先级灌；起跑前要求缓存覆盖整条配方）。客户端只读同步快照。
-        if (fromHost) {
-            long cap = getBufferCapacityEU();
-            long cur = getBufferEU();
-            textList.add(Component.literal("能量缓存: ")
-                    .append(Component.literal(cap > 0L
-                                    ? com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(cur)
-                                      + " / " + com.gregtechceu.gtceu.utils.FormattingUtil.formatNumbers(cap) + " EU"
-                                    : "等主机设定容量")
-                            .withStyle(cap > 0L ? ChatFormatting.AQUA : ChatFormatting.DARK_GRAY))
-                    .append(Component.literal(" · 优先级 " + (kind == NanochipModuleKind.ASSEMBLY_MATRIX ? "-1：最后补" : "1"))
-                            .withStyle(ChatFormatting.DARK_GRAY))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        if (kind.hasUpkeep()) {
-            // ★ 2026-09-21（连接专项研究 C 节 ①）：净化水族耗材**不再显示成"1级净化水"** ——
-            //   判定早已是"1~16 级任一级都算够"，界面却还拿 seed 里的 grade_1 去查显示名，
-            //   给玩家"只认 1 级"的假象。这里按族显示，与判定口径一致。
-            boolean waterFamily = NanochipModuleUpkeep.isPurifiedWaterFamily(kind.upkeepFluidId());
-            textList.add(Component.literal("运行耗材: ")
-                    .append(Component.literal(kind.upkeepMbPerSecond() + " mB/s ").withStyle(ChatFormatting.GOLD))
-                    .append((waterFamily
-                            ? Component.translatable("gtlmodular.nanochip.module.upkeep.water_any_tier")
-                            : NanochipModuleUpkeep.fluidDisplayName(kind.upkeepFluidId(), kind.upkeepFluidId()))
-                            .copy().withStyle(ChatFormatting.AQUA))
-                    .append(Component.literal(kind == NanochipModuleKind.BIOLOGICAL_COORDINATOR
-                            ? " · 湿件/生物满校准可豁免" : " · 从本机流体输入仓扣，检测到哪一级用哪一级")
-                            .withStyle(ChatFormatting.DARK_GRAY))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        if (kind.isRouter()) {
-            textList.add(Component.literal("分流规则: ")
-                    .append(Component.literal(splitterRules.rules().size() + " / "
-                            + NanochipSplitterRules.MAX_RULES).withStyle(ChatFormatting.GOLD))
-                    .append(Component.literal(" · 打开本仓 GUI 左侧「分流规则」页编辑；红石阈值读本机四周信号")
-                            .withStyle(ChatFormatting.GRAY))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        // 全板浸没：浸泡液杂质（原版三段式：省电 / 正常 / 多耗电）
-        if (kind == NanochipModuleKind.BOARD_PROCESSOR) {
-            String level = impurity <= 15.0D ? "省电" : (impurity < 65.0D ? "正常" : "多耗电");
-            textList.add(Component.literal("浸泡液杂质: ")
-                    .append(Component.literal(String.format(java.util.Locale.ROOT, "%.2f%%", impurity))
-                            .withStyle(impurity <= 15.0D ? ChatFormatting.GREEN
-                                    : (impurity < 65.0D ? ChatFormatting.YELLOW : ChatFormatting.RED)))
-                    .append(Component.literal(" · " + level + " · EU ×"
-                            + String.format(java.util.Locale.ROOT, "%.3f", impurityEuMultiplier()))
-                            .withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(" 杂质重置阈值 " + autoFlushThreshold + "%")
-                            .withStyle(ChatFormatting.DARK_GRAY))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        // 净化水组织器一族（光学 + 奇异 / 寰宇 / 超因果三台）：供水等级（等级越高加成越大）
-        if (kind.isWaterScaledOrganizer()) {
-            int grade = highestPurifiedWaterGrade();
-            textList.add(Component.literal("净化水等级: ")
-                    .append(Component.literal(grade <= 0 ? "未供水" : grade + " 级")
-                            .withStyle(grade <= 0 ? ChatFormatting.RED : ChatFormatting.AQUA))
-                    .append(Component.literal(grade <= 0
-                            ? " · 本模块不给加成，需供 1~16 级净化水"
-                            : " · 加成强度 ×" + String.format(java.util.Locale.ROOT, "%.2f", waterStrength()))
-                            .withStyle(ChatFormatting.GRAY))
-                    .withStyle(ChatFormatting.GRAY));
-        }
-        // 蚀刻阵列：激光源仓（晶体满校准后生效）
-        if (kind == NanochipModuleKind.ETCHING_ARRAY) {
-            int laserTier = laserHatchTier();
-            textList.add(Component.literal("激光源仓: ")
-                    .append(Component.literal(laserTier <= 0 ? "未安装" : "等级 " + laserTier
-                            + " · " + laserAmperage() + " A")
-                            .withStyle(laserTier <= 0 ? ChatFormatting.DARK_GRAY : ChatFormatting.AQUA))
-                    .append(Component.literal(" · 晶体满校准后：EU ÷ 每 256A 一档，时长 ÷ 等级−9")
-                            .withStyle(ChatFormatting.GRAY))
-                    .withStyle(ChatFormatting.GRAY));
+        if (getLevel() != null && getLevel().isClientSide) {
+            this.energyContainer = new com.gregtechceu.gtceu.api.misc.EnergyContainerList(
+                    List.of(new com.gregtechceu.gtceu.api.capability.IEnergyContainer() {
+                        @Override
+                        public long getEnergyStored() {
+                            return syncedHostStoredEU;
+                        }
+
+                        @Override
+                        public long getEnergyCapacity() {
+                            return syncedHostCapacityEU;
+                        }
+
+                        @Override
+                        public long getInputVoltage() {
+                            return syncedHostMaxInputVoltage;
+                        }
+
+                        @Override
+                        public long getInputAmperage() {
+                            return 1L;
+                        }
+
+                        @Override
+                        public long getOutputVoltage() {
+                            return 0L;
+                        }
+
+                        @Override
+                        public long getOutputAmperage() {
+                            return 0L;
+                        }
+
+                        @Override
+                        public boolean inputsEnergy(net.minecraft.core.Direction side) {
+                            return false;
+                        }
+
+                        @Override
+                        public boolean outputsEnergy(net.minecraft.core.Direction side) {
+                            return false;
+                        }
+
+                        @Override
+                        public long acceptEnergyFromNetwork(net.minecraft.core.Direction side,
+                                                           long voltage, long amperage) {
+                            return 0L;
+                        }
+
+                        @Override
+                        public long changeEnergy(long amount) {
+                            return 0L;
+                        }
+                    }));
         }
     }
 

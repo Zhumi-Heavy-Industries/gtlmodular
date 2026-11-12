@@ -149,7 +149,7 @@ public final class ShanhaiStructureExecutor {
             //      直接一次 setBlock 成目标状态 —— 世界更新减半，也绕开 BlockItem 的放置逻辑；
             //   2) 拆下来的旧方块不逐块退款（原来每块 1 次背包 36 格扫描 + 2 次 AE 网络调用），
             //      先攒进 bulkReturns，循环结束后一次性 storeDismantled 聚合入库。
-            if (bulkReplace && entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
+            if (entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
                     && !entry.desiredState().isAir()
                     && !(entry.desiredState().getBlock() instanceof net.minecraft.world.level.block.EntityBlock)) {
                 ItemStack bulkRemoved = entry.current().isEmpty()
@@ -257,19 +257,31 @@ public final class ShanhaiStructureExecutor {
             ItemStack removed = ItemStack.EMPTY;
             Fluid removedFluid = Fluids.EMPTY;
             boolean forced = entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE;
-            if (entry.kind() == ShanhaiStructurePlan.Kind.REPLACE || forced) {
+            boolean directReplace = entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
+                    && !entry.desiredState().isAir()
+                    && !(entry.desiredState().getBlock() instanceof net.minecraft.world.level.block.EntityBlock);
+            if (directReplace) {
+                removed = entry.current().isEmpty() ? ItemStack.EMPTY : entry.current().copyWithCount(1);
                 removedFluid = entry.currentFluid();
-                if (!materials.canRefundFluidForStructure(player, ae, removedFluid,
-                        entry.currentFluidAmount())) {
+                if (!level.setBlock(entry.pos(), entry.desiredState(), 3)) {
                     storeCreativeForcedReturns(player, ae, forcedReturns);
-                    return new Result(false, changed, "旧流体无回收空间", details);
+                    return new Result(false, changed, "方块放置失败: " + entry.pos().toShortString(), details);
                 }
-                removed = removeExisting(level, entry);
-            }
-            if (!place(level, player, entry, material)) {
-                restoreExisting(level, entry, removed, removedFluid);
-                storeCreativeForcedReturns(player, ae, forcedReturns);
-                return new Result(false, changed, "方块放置失败: " + entry.pos().toShortString(), details);
+            } else {
+                if (entry.kind() == ShanhaiStructurePlan.Kind.REPLACE || forced) {
+                    removedFluid = entry.currentFluid();
+                    if (!materials.canRefundFluidForStructure(player, ae, removedFluid,
+                            entry.currentFluidAmount())) {
+                        storeCreativeForcedReturns(player, ae, forcedReturns);
+                        return new Result(false, changed, "旧流体无回收空间", details);
+                    }
+                    removed = removeExisting(level, entry);
+                }
+                if (!place(level, player, entry, material)) {
+                    restoreExisting(level, entry, removed, removedFluid);
+                    storeCreativeForcedReturns(player, ae, forcedReturns);
+                    return new Result(false, changed, "方块放置失败: " + entry.pos().toShortString(), details);
+                }
             }
             if (forced && !removed.isEmpty()) {
                 forcedReturns.add(removed);

@@ -829,6 +829,99 @@ public final class GTLModularConfig {
                             "相机到控制器方块超过这个距离就不画这台机器的黑日（仍保留在扫描缓存里）。")
                     .defineInRange("nyarlathotepFx.drawDistance", 384, 64, 1024);
 
+    // ==================================================================
+    // 通用独立线程引擎 · 调度（threading）
+    //
+    // ★ 2026-11-08：GTO 式按需订阅。机器没批次、没料、没 ME 样板仓时退订；
+    //   来料 / AE 推样板 / 换配方表 / 结构成形时重订；巡检器每 N tick 兜底补订阅。
+    //   关掉 demandSubscribe ⇒ 回到“永久订阅”（旧行为），一行回退。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    /** 按需订阅总开关（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_DEMAND_SUBSCRIBE =
+            BUILDER.comment("通用独立线程引擎：按需订阅（默认开）",
+                            "开：机器没批次、没物品/流体输入、没 ME 样板仓时退订，空闲机器不占 tick；",
+                            "关：回到旧版“永久订阅”，每台机器每 tick 都进 serverTick（兼容/排查用）。")
+                    .define("threading.demandSubscribe", true);
+
+    /** 唤醒巡检间隔（tick）。 */
+    private static final ForgeConfigSpec.IntValue THREADING_WAKE_SWEEP_TICKS =
+            BUILDER.comment("线程唤醒巡检间隔（tick；默认 10 = 0.5 秒）",
+                            "只给“退订了但按规则该订阅”的机器补订阅（防漏唤醒冻结），不推进批次；",
+                            "调小：接单更及时、空转巡检更频繁；调大：更省 CPU、漏唤醒恢复更慢。")
+                    .defineInRange("threading.wakeSweepTicks", 10, 1, 200);
+
+    /** ★ 2026-11-10：EU 能源缓冲总开关（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_ENERGY_BUFFER =
+            BUILDER.comment("通用独立线程引擎：EU 能源缓冲（默认开）",
+                            "开：配方每 tick 要的电先由内部缓存支付，每 N tick 才向能源仓批量补一次；",
+                            "关：回到逐 tick 直接穿能源仓能力链（旧行为，排查用）。")
+                    .define("threading.energyBuffer", true);
+
+    /** ★ 2026-11-10：能源缓冲补能间隔（tick；默认 10）。 */
+    private static final ForgeConfigSpec.IntValue THREADING_ENERGY_BUFFER_TICKS =
+            BUILDER.comment("能源缓冲补能间隔（tick；默认 10 = 每 0.5 秒调一次能源仓）",
+                            "补能量 = 上一窗口的真实消耗量（自适应），缓存约等于 N tick 的电；",
+                            "调大：调仓次数更少、机器/能源仓界面的存量显示更“滞后”；调小：更接近逐 tick。")
+                    .defineInRange("threading.energyBufferTicks", 10, 1, 100);
+
+    /** ★ 2026-11-10：能源缓冲「优先从无线电网抽电」（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_GRID_POWER =
+            BUILDER.comment("通用独立线程引擎：优先从无线电网抽电（默认开）",
+                            "开：机器放置者名下有无线电网余额时，能源缓冲先扣电网（每 N tick 批量扣一次），能源仓兜底；",
+                            "关：只从机器自己的能源仓取电（旧行为）。",
+                            "电网身份 = 放置者 UUID（IMachineLife.onMachinePlaced 记录，随机器存档）。")
+                    .define("threading.gridPower", true);
+
+    // ==================================================================
+    // 大型化学反应釜 · 线圈加成（lcrCoil）
+    //
+    // ★ 2026-11-09（玩家口径：照抄 GTO 的大型化学反应釜）：
+    //   GTO 的 LargeChemicalReactorMachine 继承 CoilMultiblockMachine，getRealRecipe 里是
+    //     RecipeModifier.overclocking(this, unit, recipe, false, 1, 1,
+    //         (getCoilTier() + 2 > recipe.tier) ? 0.25 : 0.5)
+    //   这个 0.25/0.5 是 GTCEu 26.x RecipeModifier#overclocking(holder, unit, recipe,
+    //   boolean generator, double euMultiplier, double durationMultiplier, double durationFactor)
+    //   的最后一个参数 —— **「每一次超频的耗时倍率」**（euMultiplier / durationMultiplier 都是 1，
+    //   即不额外省电、不额外加速）：
+    //     线圈等级 + 2 > 配方等级 ⇒ 每次超频耗时 ×0.25 = 无损超频（4 倍速/档）
+    //     否则                   ⇒ 每次超频耗时 ×0.5  = 普通超频（2 倍速/档）
+    //   对应 GTO 自己的描述「线圈等级不低于运行的配方等级时启用无损超频」。
+    //   （★ 2026-11-09 修正：上一版 0.3.362 把它误读成「整单耗时的固定倍率」，本轮已改成
+    //     与 GTO 一致的「每次超频倍率」。）
+    //   本包 gtceu 1.4.4 的大型化学反应釜结构里只有一个「白铜线圈」位置、机器本体不读线圈
+    //   （WorkableElectricMultiblockMachine），线圈纯装饰；本模组在机器注册窗口把机器类换成
+    //   CoilLargeChemicalReactorMachine，并把结构 C 位放开成任意加热线圈，按上面口径超频。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue LCR_COIL_ENABLED =
+            BUILDER.comment("大型化学反应釜的线圈加成总开关（默认开）",
+                            "Enable coil support for the Large Chemical Reactor (default true).",
+                            "开：结构 C 位接受任意等级加热线圈；线圈等级够高时启用无损超频（GTO 口径）；",
+                            "关：完全保持 gtceu 1.4.4 原样（只能放白铜线圈、机器不读线圈、无加成）。")
+                    .define("lcrCoil.enabled", true);
+
+    private static final ForgeConfigSpec.IntValue LCR_COIL_TIER_ADVANTAGE =
+            BUILDER.comment("线圈等级相对配方等级的优势值（默认 2；GTO 原式为 2）",
+                            "判定式：线圈等级 + 该值 > 配方等级 ⇒ 无损超频（perfectOverclockDurationFactor），",
+                            "否则普通超频（normalOverclockDurationFactor）。",
+                            "线圈等级 0 = 白铜、1 = 坎塔尔、2 = 镍铬、3 = 钛锆钼……（ICoilType#getTier 的序号）。",
+                            "配方等级 = 配方 EU/t 折算的电压等级（ULV=0、LV=1、MV=2……）。")
+                    .defineInRange("lcrCoil.tierAdvantage", 2, 0, 30);
+
+    private static final ForgeConfigSpec.DoubleValue LCR_COIL_PERFECT_OVERCLOCK_FACTOR =
+            BUILDER.comment("无损超频「每次超频」的耗时倍率（默认 0.25 = 每档 4 倍速；GTO 原式为 0.25）",
+                            "线圈等级满足「等级 + tierAdvantage > 配方等级」时使用。",
+                            "注意：这是每一次超频的倍率，不是整单额外再乘一次。")
+                    .defineInRange("lcrCoil.perfectOverclockDurationFactor", 0.25D, 0.01D, 1.0D);
+
+    private static final ForgeConfigSpec.DoubleValue LCR_COIL_NORMAL_OVERCLOCK_FACTOR =
+            BUILDER.comment("普通超频「每次超频」的耗时倍率（默认 0.5 = 每档 2 倍速；GTO 原式为 0.5）",
+                            "线圈等级不够时使用（GTO 原版就是这样：线圈跟不上配方等级 ⇒ 只有普通超频）。")
+                    .defineInRange("lcrCoil.normalOverclockDurationFactor", 0.5D, 0.01D, 1.0D);
+
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     // ---- 奈亚中央黑日：运行期读取入口（每帧 / 每轮现读，改完重进即生效） ----
@@ -1444,6 +1537,89 @@ public final class GTLModularConfig {
             return OUTPUT_ASSEMBLY_VOID_FILTERED.get();
         } catch (IllegalStateException notLoaded) {
             return OUTPUT_ASSEMBLY_VOID_FILTERED.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-08：线程引擎按需订阅是否开启（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingDemandSubscribe() {
+        try {
+            return THREADING_DEMAND_SUBSCRIBE.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_DEMAND_SUBSCRIBE.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-08：唤醒巡检间隔（tick；配置未加载时回落默认 10）。 */
+    public static int getThreadingWakeSweepTicks() {
+        try {
+            return THREADING_WAKE_SWEEP_TICKS.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_WAKE_SWEEP_TICKS.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：EU 能源缓冲是否开启（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingEnergyBuffer() {
+        try {
+            return THREADING_ENERGY_BUFFER.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_ENERGY_BUFFER.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：能源缓冲补能间隔（tick；配置未加载时回落默认 10）。 */
+    public static int getThreadingEnergyBufferTicks() {
+        try {
+            return THREADING_ENERGY_BUFFER_TICKS.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_ENERGY_BUFFER_TICKS.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：能源缓冲是否优先从无线电网抽电（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingGridPower() {
+        try {
+            return THREADING_GRID_POWER.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_GRID_POWER.getDefault();
+        }
+    }
+
+    // ---- 大型化学反应釜 · 线圈加成（配置未加载时一律回落默认值） ----
+
+    /** 大型化学反应釜线圈加成总开关（默认 true）。 */
+    public static boolean isLcrCoilEnabled() {
+        try {
+            return LCR_COIL_ENABLED.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_ENABLED.getDefault();
+        }
+    }
+
+    /** 线圈等级相对配方等级的优势值（默认 2）。 */
+    public static int getLcrCoilTierAdvantage() {
+        try {
+            return LCR_COIL_TIER_ADVANTAGE.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_TIER_ADVANTAGE.getDefault();
+        }
+    }
+
+    /** 无损超频「每次超频」的耗时倍率（默认 0.25）。 */
+    public static double getLcrCoilPerfectOverclockFactor() {
+        try {
+            return LCR_COIL_PERFECT_OVERCLOCK_FACTOR.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_PERFECT_OVERCLOCK_FACTOR.getDefault();
+        }
+    }
+
+    /** 普通超频「每次超频」的耗时倍率（默认 0.5）。 */
+    public static double getLcrCoilNormalOverclockFactor() {
+        try {
+            return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.getDefault();
         }
     }
 }

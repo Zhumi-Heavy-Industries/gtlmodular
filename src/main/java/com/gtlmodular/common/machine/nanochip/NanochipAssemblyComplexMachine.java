@@ -81,7 +81,6 @@ import com.gregtechceu.gtceu.api.block.ActiveBlock;
 import com.gregtechceu.gtceu.api.capability.IEnergyContainer;
 import com.gregtechceu.gtceu.api.capability.recipe.EURecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.IO;
-import com.gregtechceu.gtceu.api.capability.recipe.IRecipeCapabilityHolder;
 import com.gregtechceu.gtceu.api.capability.recipe.IRecipeHandler;
 import com.gregtechceu.gtceu.api.capability.recipe.ItemRecipeCapability;
 import com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability;
@@ -109,24 +108,17 @@ import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.gregtechceu.gtceu.api.recipe.ingredient.SizedIngredient;
 import com.gregtechceu.gtceu.api.recipe.logic.OCParams;
 import com.gregtechceu.gtceu.api.recipe.logic.OCResult;
-import com.gregtechceu.gtceu.api.recipe.lookup.RecipeIterator;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
 import com.gtladd.gtladditions.api.machine.feature.IThreadModifierPart;
-import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleRecipesLogic;
-import com.gtladd.gtladditions.api.machine.logic.GTLAddMultipleTypeRecipesLogic;
 import com.gtladd.gtladditions.api.machine.multiblock.GTLAddWorkableElectricMultipleRecipesMachine;
-import com.gtladd.gtladditions.common.data.ParallelData;
 import com.gtladd.gtladditions.utils.CommonUtils;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.NanochipBlocks;
-import com.gtlmodular.common.data.host.ModulePreviewSlots;
 import com.gtlmodular.common.data.nanochip.NanochipComplexPattern;
 import com.gtlmodular.common.data.nanochip.NanochipRecipeTypes;
 import com.gtlmodular.common.machine.MultiTypeLookupHost;
 import com.gtlmodular.common.machine.nanochip.NanochipCalibration;
-import com.gtlmodular.common.machine.nanochip.NanochipCalibrationPanel;
-import com.gtlmodular.common.machine.nanochip.NanochipCandidateSearch;
 import com.gtlmodular.common.machine.nanochip.NanochipConversionMap;
 import com.gtlmodular.common.machine.nanochip.NanochipMirrorBindGuard;
 import com.gtlmodular.common.machine.nanochip.NanochipModuleKind;
@@ -134,8 +126,6 @@ import com.gtlmodular.common.machine.nanochip.NanochipModuleMachine;
 import com.gtlmodular.common.machine.nanochip.NanochipPipeGraph;
 import com.gtlmodular.common.machine.nanochip.NanochipStructureLogGate;
 import com.gtlmodular.common.machine.nanochip.NanochipStructureRefresh;
-import com.gtlmodular.common.machine.nanochip.NanochipThreadHost;
-import com.gtlmodular.common.machine.nanochip.NanochipThreadedRecipeLogic;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumNetwork;
 import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
 import com.hepdd.gtmthings.api.misc.WirelessEnergyManager;
@@ -147,9 +137,7 @@ import it.unimi.dsi.fastutil.longs.LongIterator;
 import java.lang.reflect.Field;
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -158,7 +146,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.LongPredicate;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -183,10 +170,6 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineHost;
 import org.gtlcore.gtlcore.api.machine.multiblock.IModularMachineModule;
-import org.gtlcore.gtlcore.api.recipe.IAdvancedContentModifier;
-import org.gtlcore.gtlcore.api.recipe.IGTRecipe;
-import org.gtlcore.gtlcore.api.recipe.IParallelLogic;
-import org.gtlcore.gtlcore.api.recipe.RecipeExtensionCopier;
 import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
 import org.gtlcore.gtlcore.api.recipe.ingredient.LongIngredient;
 import org.gtlcore.gtlcore.utils.datastructure.ModuleRenderInfo;
@@ -198,8 +181,7 @@ implements IDisplayUIMachine, com.gtlmodular.common.machine.engine.IThreadedReci
 IModularMachineHost<NanochipAssemblyComplexMachine>,
 IMachineLife,
 NanochipStructureRefresh.Refreshable,
-MultiTypeLookupHost,
-NanochipThreadHost {
+MultiTypeLookupHost {
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER = new ManagedFieldHolder(NanochipAssemblyComplexMachine.class, WorkableMultiblockMachine.MANAGED_FIELD_HOLDER);
     /**
      * ★★ 2026-10-19【主机侧「先蓄够一整条配方的电再开工」总开关】★★
@@ -209,7 +191,7 @@ NanochipThreadHost {
      * 本次改动前的行为</b>（起跑不看电量，跑到一半没电才停）。
      *
      * <p>关闭方式：把本常量改成 {@code false} 重新编译即可 —— 判定点唯一（
-     * {@link NanochipRecipeLogic#setupRecipe(GTRecipe)} 里那一句 {@code if (PRECHARGE...)}），
+     * {@code 旧派活实现#setupRecipe(GTRecipe)} 里那一句 {@code if (PRECHARGE...)}），
      * 关掉之后不扣任何东西、不改任何存档、不改任何既有分支。
      * 这与本包登记 {@code calculateParallels} 回退方式的做法同款（纯代码层、可随时回退）。
      *
@@ -232,14 +214,14 @@ NanochipThreadHost {
      * {@code _census/复合型机器_调研.md}（§2 / §3.1 / §6.1 方案 A）。
      *
      * <p><b>关闭方式</b>：把本常量改成 {@code false} 重新编译即可 —— 判定点唯一
-     * （{@link NanochipRecipeLogic#lookupRecipeIterator()} 里那一句 {@code if (NAC_MULTI_TYPE_RECIPES)}），
+     * （{@code 旧派活实现#lookupRecipeIterator()} 里那一句 {@code if (NAC_MULTI_TYPE_RECIPES)}），
      * 关掉之后候选来源逐字回到「只搜激活类型」，其余一切（线程截断、公平轮转、并行分配、逐槽隔离）不受影响。
      * 这与本类登记 {@code NAC_PRECHARGE_WHOLE_RECIPE} 回退方式的做法同款（纯代码层、可随时回退）。
      *
      * <p><b>零存档影响</b>：本常量不是 {@code @Persisted} 字段、不进 NBT、不改存档格式；
      * 也不改 {@link #getRecipeTypes()} 的返回内容与顺序（下标稳定性不受影响）。
      *
-     * <p>⚠️ <b>不承诺「每种类型各自并行」</b>：并行仍由 {@link NanochipRecipeLogic#calculateParallels()}
+     * <p>⚠️ <b>不承诺「每种类型各自并行」</b>：并行仍由 {@code 旧派活实现#calculateParallels()}
      * 逐条各吃各的容量上限决定（贪婪 + 逐条上限语义）—— 候选类型从 1 类变 N 类<b>不会</b>放大
      * 「每条配方的并行上限」，也不会改变<b>线程数</b>（{@link #getMultipleThreads()}）这条真正的并发上限。
      *
@@ -621,10 +603,7 @@ NanochipThreadHost {
      * 每次 {@link #getEnergyContainer()} 都<b>重新构造</b> {@code EnergyContainerList} 包一层，
      * 所以这里只缓存容器对象本身（与 {@link #gridPowerUser} 解耦 ⇒ 拆放/换人后自动跟着变）。
      */
-    private transient GridEnergyContainer gridEnergyContainer;
-    @Nullable
-    /** {@link EnergyContainerList} 私有列表字段的缓存句柄（{@code null} = 取不到 ⇒ 走退化路径）。 */
-    private static final Field ENERGY_CONTAINER_LIST_FIELD = NanochipAssemblyComplexMachine.resolveEnergyListField();
+    private transient NanochipEnergy.GridEnergyContainer gridEnergyContainer;
     @DescSynced
     /** 各族电路数量（逗号分隔，9 个）与历史总数：给图形进度条用（多方块本体没有配置页，
      *  所以进度条做在结构里真空传送带仓的页面上，数据从这里同步过去）。 */
@@ -722,14 +701,6 @@ NanochipThreadHost {
      */
     private GTRecipeType[] simpleModeRecipeTypes;
     /**
-     * 【新逻辑】的游标本体（{@link #nanochipThreadCursors()} 返回的就是它）。
-     *
-     * <p>★ 与【旧逻辑】的 {@code NanochipRecipeLogic.lastSelectedRecipeId} 是<b>同一个语义位、
-     * 两个独立容器</b>：旧逻辑继续用自己那个字段，新逻辑用本数组 ⇒ 两条逻辑<b>各自连续</b>，
-     * 切换开关不会让对方的位置错乱（共用同一个数组才是错的：一边推进会污染另一边）。
-     */
-    private final String[] threadCursors = new String[]{null};
-    /**
      * <b>跨配方线程的 hard cap</b>（= 同一时刻最多挂起多少条不同配方）。
      *
      * <h4>★ 2026-10-27【并行改「64 位 + 饱和截断」】：本上限<b>不再</b>兼任「防 int 溢出」的职责</h4>
@@ -767,7 +738,7 @@ NanochipThreadHost {
      * 「<b>最大并行池也会被限制在 {@code Long.MAX_VALUE} 就被截断掉</b>」。
      * 于是并行不再有任何「防溢出」型的人为压低：
      * 单条配方的上限是 {@link Long#MAX_VALUE}
-     * （{@code NanochipRecipeLogic#perRecipeParallelLimit()}），真正的值由「真的放得下」的二分收敛；
+     * （{@code 旧派活实现#perRecipeParallelLimit()}），真正的值由「真的放得下」的二分收敛；
      * 需要落到 {@code int} 的地方由 {@link #saturatingToInt(long)} <b>饱和到 {@code Integer.MAX_VALUE}</b>
      * （不是 {@code 8388607}，也绝不回绕）。
      * <p>所以本常量 = {@code Long.MAX_VALUE} 在 {@code int} 接口上的饱和截断值 = {@link Integer#MAX_VALUE}。
@@ -824,7 +795,7 @@ NanochipThreadHost {
      * {@code getMaxParallel() × getMultipleThreads()} 那个「总池」，逐条配方<b>各自</b>拿
      * {@link Long#MAX_VALUE} 当上限，去做「真正放得下」的二分（二分仍保留 —— 它是防
      * 「产出放不下 ⇒ 起跑前被挡 ⇒ 永远 0%」的关键）；{@code false} = <b>逐字回到</b>本次改动前的
-     * 「总池分摊」口径（{@code NanochipRecipeLogic.parallelBudget()}）。
+     * 「总池分摊」口径（{@code 旧派活实现.parallelBudget()}）。
      *
      * <p><b>为什么不是 BigInteger</b>：作者原话「运算 BigInteger 超大型整数不能让数值太膨胀」
      * 「你的内存会先死」，并说「最大并行池也会被限制在 Long.MAX_VALUE 就被截断掉」「不可能变成负数」
@@ -840,7 +811,7 @@ NanochipThreadHost {
      * 在超限模式下 {@code getTotalParallelLimit()} 直接 {@code return Long.MAX_VALUE}。
      *
      * <p><b>零存档影响</b>：本常量不是 {@code @Persisted}、不同步、不改 {@code getRecipeTypes()}；
-     * 判定点唯一（{@code NanochipRecipeLogic#perRecipeParallelLimit()}），改回 {@code false}
+     * 判定点唯一（{@code 旧派活实现#perRecipeParallelLimit()}），改回 {@code false}
      * 重新编译即<b>逐字回退</b>到旧口径。
      */
     public static final boolean NAC_PER_THREAD_FULL_PARALLEL = true;
@@ -893,17 +864,6 @@ NanochipThreadHost {
      * </ol>
      */
     public static final boolean SHOW_VERBOSE_HOST_LINES = false;
-    /** 父类那一行「同时处理至多 %d 个配方」的键 —— 只用来在本覆写里<b>定位并替换</b>它。 */
-    private static final String LANG_UPSTREAM_PARALLEL = "gtceu.multiblock.parallel";
-    /** 父类那一行「拥有 %s 个跨配方线程」的键 —— 同款按键替换：数字换成我们钳制后的 {@code U}。 */
-    private static final String LANG_UPSTREAM_THREADS = "gtladditions.multiblock.threads";
-    /**
-     * 父类那一行「最大功率：§a%s EU/t（%s§r）」的键（GTCEu 自带，逐字取证：
-     * {@code _census/_probe_nacmat_evidence/lang/gtceu-1.20.1-1.4.4__gtceu__zh_cn.json:3682-3686}）
-     * —— 只用来在本类里<b>定位并替换</b>它：数值换成「整个电网的电量」（见
-     * {@link #replaceMaxPowerWithGridTotal}），档名沿用父类那一段实参。
-     */
-    private static final String LANG_MAX_ENERGY_PER_TICK = "gtceu.multiblock.max_energy_per_tick";
     /** 上面那条「配方定档」归因日志的限流游标（20 tick = 1 秒最多一条；普通字段、不进存档）。 */
     private long lastRecipeBuildLogTick = Long.MIN_VALUE;
     /**
@@ -974,9 +934,9 @@ NanochipThreadHost {
      * <p><b>为什么不按类名硬编码</b>：真正想表达的是「源头的<b>可获取能力</b>远超储能尺度」，
      * 而不是「它是某个特定类」。真实储能式能源仓（即便 MAX 档激光仓）离这个值有极大距离，
      * 不会被误判。<b>✗ 未取证项</b>：MAX 档激光仓 {@code 电压 × 安培} 的实测值未逐档量过，
-     * 故取半程哨兵把余量留足（★ 2026-10-19：{@code NanochipRecipeLogic} 里那份同义的
+     * 故取半程哨兵把余量留足（★ 2026-10-19：{@code 旧派活实现} 里那份同义的
      * {@code ON_DEMAND_POWER_FLOOR} <b>已删除</b>，主机起跑闸
-     * {@code NanochipRecipeLogic#hostAffordableWhole} 改为直接调用本类的
+     * {@code 旧派活实现#hostAffordableWhole} 改为直接调用本类的
      * {@code isEnergySourceEffectivelyUnlimited()} / {@code getObtainableEnergyEU()}
      * ⇒ 全文件只剩这一个哨兵，单一数据源）。
      */
@@ -1203,33 +1163,11 @@ NanochipThreadHost {
      * 被限频掉的那些轮只在条数语义上计入 {@link #loadPartsInvalidateThrown}（停机闸照数）。
      */
     private long loadPartsRecoveryThrowLastLog = -1L;
-    /** 见 {@link #describeThrowable}：诊断行里最多打几帧栈（≥3 才够"栈顶若干帧"）。 */
-    private static final int DESCRIBE_THROWABLE_FRAMES = 4;
     /** 「结构位置表格数 vs 上游 cache 格数」这道自证只打一次（见 {@link #crossCheckStructureCells()}）。 */
     private boolean structureCellsCrossChecked;
-    /**
-     * ★★【2026-10 三次修正 · 模块预览位置】<b>扫描位是否按主机朝向做旋转换算</b> ★★
-     *
-     * <ul>
-     *   <li><b>{@code false}（默认 = 修复后行为）</b>⇒ {@link #getModuleScanPositions()} 走
-     *       {@code origin.offset(slot.offset())}（<b>纯平移</b>）。
-     *       理由：① 本机 {@code facing=north} 时 gtlcore 的
-     *       {@code ModuleRenderInfo.calculateModuleOffset} 逐字节码退化为恒等变换
-     *       （{@code calculateUpRotation} 在 {@code front} 为水平方向时直接返回 {@code NONE}，
-     *       {@code _enh2_extract/gtlcore_module_api.txt:366-402}；{@code rotateByFrontAxis} 的
-     *       "前轴 = Z + {@code NONE}" 分支就是原值，同文件 {@code :374-381/:522}）⇒ 两条路线逐值等价；
-     *       ② 该换算约定在 gtlcore 里<b>只被"幽灵主机 NORTH/UP"路径调用过</b>，未在真实非 north 主机上验证
-     *       （{@code _census/模块框架对齐_执行记录.md} §⑦-2 / §R4）；③ 现行 NAC 图案<b>只有 north 能成形</b>
-     *       （施工记录 §50.2 证据 2：8 种组合逐格实测 8712/8712 只在新图案 + north 命中）
-     *       ⇒ 那条非 north 分支永远走不到，留着只增加未取证面。</li>
-     *   <li><b>{@code true}</b> ⇒ 逐字回到 2026-10 上一版（{@code calculateModuleOffset(getFrontFacing(),
-     *       getUpwardsFacing())}），供进游戏做 A/B 对照。</li>
-     * </ul>
-     *
-     * <p>本开关只影响"返回哪 12 个坐标"；{@link #scanAndConnectModules()} 的顺序、连接/断开判定、
-     * {@code @Persisted} 字段与快照兜底路径一律未动。改本值需<b>重新构建</b>（编译期常量）。
-     */
-    public static final boolean NAC_MODULE_SCAN_ROTATE_BY_HOST = false;
+    /** 扫描位是否按主机朝向做旋转换算（开关值见 {@link NanochipModuleLinkHost}；现行值 {@code false} = 纯平移）。 */
+    public static final boolean NAC_MODULE_SCAN_ROTATE_BY_HOST = NanochipModuleLinkHost.NAC_MODULE_SCAN_ROTATE_BY_HOST;
+
     private static final long INVALID_GRACE_TICKS = 100L;
     /** 待执行的断开时刻（gameTime）；-1 = 没有待执行断开（哨兵用 -1，不用 Long.MIN_VALUE：减法会溢出）。 */
     private long moduleDisconnectDeadline = -1L;
@@ -1413,42 +1351,15 @@ NanochipThreadHost {
         }
         this.lastUnformedAuditTick = now;
         List<String> audit = NanochipComplexPattern.auditStructure(lv, this.getPos(), 12);
-        String fSlots = this.summarizeFSlotContent();
+        String fSlots = NanochipDiagnostics.summarizeFSlotContent(this, this.cachedModuleSlots);
         String auditDetail = fSlots + "\n" + String.join((CharSequence)"\n", audit);
         if (!this.structureLogGate.shouldEmitInfo(UNFORMED_CONCLUSION, auditDetail, "\u590d\u5408\u4f53@" + this.getPos().toShortString(), now)) {
             if (GTLModular.LOGGER.isDebugEnabled()) {
-                this.logUnformedAuditBody(audit, fSlots, true);
+                NanochipDiagnostics.logUnformedAuditBody(this, audit, fSlots, true);
             }
             return;
         }
-        this.logUnformedAuditBody(audit, fSlots, false);
-    }
-
-    /**
-     * 真正把"缺件清单"写出去（{@code debugOnly=true} ⇒ 全部降到 debug，内容一字不变）。
-     *
-     * <p>拆成独立方法是为了让 INFO / debug 两条路<b>共用同一份文案</b>：
-     * 降噪只改"多久打一次 / 打不打"，<b>不改清单内容</b>（队长要看的就是这份清单）。
-     */
-    private void logUnformedAuditBody(List<String> audit, String fSlots, boolean debugOnly) {
-        if (audit.isEmpty()) {
-            if (debugOnly) {
-                GTLModular.LOGGER.debug("[gtlmodular] NAC \u5c1a\u672a\u6210\u5f62 @{}\uff1a\u552f\u4e00\u65b9\u5757\u683c\uff08\u7f51\u683c\u673a\u58f3/\u5f3a\u5316\u673a\u58f3/\u590d\u5408\u4f53\u73bb\u7483/\u8ba1\u7b97\u77e9\u9635\u673a\u58f3/\u9632\u706b\u5899\u6295\u5f71\uff09**\u5168\u90e8\u5c31\u4f4d** \u21d2 \u7f3a\u53e3\u5728\u300c\u591a\u89e3\u683c\u300d\uff08H \u4ed3\u4f4d / I \u53ef\u5ffd\u7565\u4f4d / F \u6a21\u5757\u4f4d / \u7a7a\u683c\uff09\u6216\u6570\u91cf\u7c7b\u9650\u5236\u4e0a\uff1b{}\uff1bGTCEu \u9010\u683c\u539f\u56e0\uff1a{}", new Object[]{this.getPos(), fSlots, String.valueOf(NanochipAssemblyComplexMachine.describeStructureFailure(this.getMultiblockState()))});
-            } else {
-                GTLModular.LOGGER.info("[gtlmodular] NAC \u5c1a\u672a\u6210\u5f62 @{}\uff1a\u552f\u4e00\u65b9\u5757\u683c\uff08\u7f51\u683c\u673a\u58f3/\u5f3a\u5316\u673a\u58f3/\u590d\u5408\u4f53\u73bb\u7483/\u8ba1\u7b97\u77e9\u9635\u673a\u58f3/\u9632\u706b\u5899\u6295\u5f71\uff09**\u5168\u90e8\u5c31\u4f4d** \u21d2 \u7f3a\u53e3\u5728\u300c\u591a\u89e3\u683c\u300d\uff08H \u4ed3\u4f4d / I \u53ef\u5ffd\u7565\u4f4d / F \u6a21\u5757\u4f4d / \u7a7a\u683c\uff09\u6216\u6570\u91cf\u7c7b\u9650\u5236\u4e0a\uff1b{}\uff1bGTCEu \u9010\u683c\u539f\u56e0\uff1a{}", new Object[]{this.getPos(), fSlots, String.valueOf(NanochipAssemblyComplexMachine.describeStructureFailure(this.getMultiblockState()))});
-            }
-        } else if (debugOnly) {
-            GTLModular.LOGGER.debug("[gtlmodular] NAC \u7f3a\u4ef6\u6e05\u5355 @{}\uff08{} \u6761\uff1b{}\uff09\uff1a", new Object[]{this.getPos(), audit.size(), fSlots});
-            for (String line : audit) {
-                GTLModular.LOGGER.debug("[gtlmodular]   \u00b7 {}", (Object)line);
-            }
-        } else {
-            GTLModular.LOGGER.info("[gtlmodular] NAC \u7f3a\u4ef6\u6e05\u5355 @{}\uff08{} \u6761\uff1b{}\uff09\uff1a", new Object[]{this.getPos(), audit.size(), fSlots});
-            for (String line : audit) {
-                GTLModular.LOGGER.info("[gtlmodular]   \u00b7 {}", (Object)line);
-            }
-        }
-        this.logFailedPredicate(debugOnly);
+        NanochipDiagnostics.logUnformedAuditBody(this, audit, fSlots, false);
     }
 
     @Override
@@ -1519,194 +1430,22 @@ NanochipThreadHost {
         }
     }
 
-    /**
-     * <b>F 位（模块位）内容清点</b>：模块控制器共几台、网格接口机壳几个、其它几个。
-     *
-     * <p>★ 2026-09-19（队长原话：「可是我压根就没放纳米芯片组装矩阵呀」）—— 这条正是为此加的。
-     * 图案里那条判据是「<b>14 种模块控制器合计 ≤ 15 台</b>」（{@code NanochipComplexPattern} 的
-     * {@code blocks(accepted).setMaxGlobalLimited(15)}），而它的失败文案在 GTCEu 里
-     * <b>只有「最多：%d个」，不带方块名</b>（jar lang {@code gtceu.multiblock.pattern.error.limited.0}）。
-     * GTLsupb 补上去的那个方块名取的是<b>该判据的第一个候选</b>，而我们候选表的首项就是
-     * {@link NanochipModuleKind#ASSEMBLY_MATRIX}（枚举首项）⇒ 玩家会看到"纳米芯片组装矩阵最多：15个"，
-     * 于是以为"我没放组装矩阵却说我放了"。⇒ 把**真实台数**直接数出来，不再让人猜。
-     *
-     * <p>线程/时机：只读世界方块状态，可在 {@code onStructureFormed}（GTCEu 异步线程回调）与
-     * {@code tickSync}（服务端线程）两侧调用；{@link #cachedModuleSlots} 在失效时**故意保留**
-     * （见该字段注释），所以未成形时也能清点。
-     */
-    public String summarizeFSlotContent() {
-        Level level = this.getLevel();
-        List<BlockPos> slots = this.cachedModuleSlots;
-        int controllers = 0;
-        int casings = 0;
-        int others = 0;
-        if (level != null) {
-            for (BlockPos pos : slots) {
-                if (!level.isLoaded(pos)) {
-                    ++others;
-                    continue;
-                }
-                Block block = level.getBlockState(pos).getBlock();
-                if (NanochipAssemblyComplexMachine.isModuleControllerBlock(block)) {
-                    ++controllers;
-                    continue;
-                }
-                if (block == NanochipBlocks.MESH_INTERFACE_CASING.get()) {
-                    ++casings;
-                    continue;
-                }
-                ++others;
-            }
-        }
-        return "F \u4f4d " + slots.size() + " \u683c\uff1a\u6a21\u5757\u63a7\u5236\u5668 " + controllers + " \u53f0\uff08\u4e0a\u9650 " + this.getMaxModuleCount() + "\uff09/ \u7f51\u683c\u63a5\u53e3\u673a\u58f3 " + casings + " \u4e2a / \u5176\u5b83 " + others;
-    }
-
-    /** 该方块是不是 14 种模块控制器之一（按注册名判，避免依赖 GTCEu 的 definition API 细节）。 */
-    private static boolean isModuleControllerBlock(Block block) {
-        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(block);
-        if (id == null || !"gtlmodular".equals(id.getNamespace())) {
-            return false;
-        }
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            if (!kind.machineId().equals(id.getPath())) continue;
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * ★ 2026-09-19（队长：「我只放了 4 台模块，但是一将模块的主机替换成纳米网络芯片机械方块它就能成型」）：
-     * <b>把 GTCEu 失败的那条判据连同它的计数一起打出来</b>。
-     *
-     * <h3>为什么必须打这张表</h3>
-     * GTCEu 的数量类错误只给"最多：%d个"（jar lang {@code gtceu.multiblock.pattern.error.limited.0}，
-     * <b>不带方块名</b>），方块名是 GTLsupb 补的、取的是<b>该判据第一个候选</b>；而方块与计数都藏在
-     * {@code MultiblockState} 里 ⇒ 不上这张表就只能靠猜（本轮已经猜错过一次：
-     * 我按"模块控制器合计 ≤15 台"去解释，可队长只有 4 台 —— 4 ≤ 15，这条解释<b>不成立</b>）。
-     *
-     * <h3>取什么</h3>
-     * 字段可见性已按 gtceu-1.20.1-1.4.4 字节码核对：
-     * <ul>
-     *   <li>{@code MultiblockState.error} / {@code getGlobalCount()} 都是 public；</li>
-     *   <li>{@code SinglePredicateError.predicate}（public final SimplePredicate）与 {@code .type}
-     *       ⇒ 能指名道姓说出"是哪条判据"；</li>
-     *   <li>{@code SimplePredicate.maxCount / minCount / maxLayerCount / minLayerCount / candidates} 都是 public
-     *       ⇒ 上限值与候选方块名都能读出来。</li>
-     * </ul>
-     * 诊断只读、全程 try/catch：任何异常都吞掉，绝不拖垮结构检查本身。
-     */
-    private void logFailedPredicate() {
-        this.logFailedPredicate(false);
-    }
-
-    /**
-     * @param debugOnly ★ 2026-09-21（队长：「…要好久，尤其是主机」+ 日志每分钟 90 条）：
-     *                  这一组"失败判据 / 全局计数表"是 {@link #logUnformedAudit()} 的一部分，
-     *                  当缺件清单被判为"结论与原因都没变、已折叠"时，它也必须一起降到 debug ——
-     *                  否则上面刚省下的量会被这几条 INFO 又打回去（漏一处等于没降）。
-     *                  内容一字不变，只换输出级别。
-     */
-    private void logFailedPredicate(boolean debugOnly) {
-        try {
-            MultiblockState state = this.getMultiblockState();
-            if (state == null) {
-                return;
-            }
-            PatternError error = state.error;
-            if (error == null || error == MultiblockState.UNLOAD_ERROR || error == MultiblockState.UNINIT_ERROR) {
-                return;
-            }
-            Map<SimplePredicate, Integer> counts = state.getGlobalCount();
-            if (error instanceof SinglePredicateError) {
-                SinglePredicateError single = (SinglePredicateError)error;
-                SimplePredicate p = single.predicate;
-                if (debugOnly) {
-                    GTLModular.LOGGER.debug("[gtlmodular] NAC \u5931\u8d25\u5224\u636e @{}\uff1atype={}\uff080..3 = \u6570\u91cf\u7c7b\uff09\uff1b\u8be5\u5224\u636e\u8ba1\u6570={} / \u4e0a\u9650 max={} min={} maxLayer={} minLayer={}\uff1b\u5019\u9009\u65b9\u5757={}", new Object[]{this.getPos(), single.type, NanochipAssemblyComplexMachine.countOf(counts, p), p.maxCount, p.minCount, p.maxLayerCount, p.minLayerCount, NanochipAssemblyComplexMachine.candidateNames(p)});
-                } else {
-                    GTLModular.LOGGER.info("[gtlmodular] NAC \u5931\u8d25\u5224\u636e @{}\uff1atype={}\uff080..3 = \u6570\u91cf\u7c7b\uff09\uff1b\u8be5\u5224\u636e\u8ba1\u6570={} / \u4e0a\u9650 max={} min={} maxLayer={} minLayer={}\uff1b\u5019\u9009\u65b9\u5757={}", new Object[]{this.getPos(), single.type, NanochipAssemblyComplexMachine.countOf(counts, p), p.maxCount, p.minCount, p.maxLayerCount, p.minLayerCount, NanochipAssemblyComplexMachine.candidateNames(p)});
-                }
-            } else if (debugOnly) {
-                GTLModular.LOGGER.debug("[gtlmodular] NAC \u5931\u8d25\u5224\u636e @{}\uff1a\u975e\u5355\u5224\u636e\u9519\u8bef\uff08{}\uff09", (Object)this.getPos(), (Object)error.getClass().getSimpleName());
-            } else {
-                GTLModular.LOGGER.info("[gtlmodular] NAC \u5931\u8d25\u5224\u636e @{}\uff1a\u975e\u5355\u5224\u636e\u9519\u8bef\uff08{}\uff09", (Object)this.getPos(), (Object)error.getClass().getSimpleName());
-            }
-            if (counts != null && !counts.isEmpty()) {
-                if (debugOnly) {
-                    GTLModular.LOGGER.debug("[gtlmodular] NAC \u5168\u5c40\u8ba1\u6570\u8868 @{}\uff08{} \u6761\uff09\uff1a", (Object)this.getPos(), (Object)counts.size());
-                } else {
-                    GTLModular.LOGGER.info("[gtlmodular] NAC \u5168\u5c40\u8ba1\u6570\u8868 @{}\uff08{} \u6761\uff09\uff1a", (Object)this.getPos(), (Object)counts.size());
-                }
-                for (Map.Entry<SimplePredicate, Integer> e : counts.entrySet()) {
-                    SimplePredicate p = (SimplePredicate)e.getKey();
-                    if (debugOnly) {
-                        GTLModular.LOGGER.debug("[gtlmodular]   \u00b7 \u5019\u9009={} \u8ba1\u6570={} max={} min={}", new Object[]{NanochipAssemblyComplexMachine.candidateNames(p), e.getValue(), p.maxCount, p.minCount});
-                        continue;
-                    }
-                    GTLModular.LOGGER.info("[gtlmodular]   \u00b7 \u5019\u9009={} \u8ba1\u6570={} max={} min={}", new Object[]{NanochipAssemblyComplexMachine.candidateNames(p), e.getValue(), p.maxCount, p.minCount});
-                }
-            }
-        }
-        catch (RuntimeException runtimeException) {
-            // empty catch block
-        }
-    }
-
-    /** 全局计数表里该判据的计数（拿不到返回 -1）。 */
-    private static int countOf(Map<SimplePredicate, Integer> counts, SimplePredicate p) {
-        if (counts == null) {
-            return -1;
-        }
-        Integer v = counts.get(p);
-        return v == null ? -1 : v;
-    }
-
-    /** 判据候选方块名（最多列 6 个，按注册名；拿不到就写"拿不到"）。 */
-    private static String candidateNames(SimplePredicate p) {
-        try {
-            BlockInfo[] infos = (BlockInfo[])p.candidates.get();
-            if (infos == null || infos.length == 0) {
-                return "\u5019\u9009\u8868\u4e3a\u7a7a";
-            }
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < Math.min(6, infos.length); ++i) {
-                if (i > 0) {
-                    sb.append(", ");
-                }
-                sb.append(BuiltInRegistries.BLOCK.getKey(infos[i].getBlockState().getBlock()));
-            }
-            if (infos.length > 6) {
-                sb.append(", \u2026\u5171 ").append(infos.length).append(" \u4e2a");
-            }
-            return sb.append(']').toString();
-        }
-        catch (RuntimeException e) {
-            return "\u5019\u9009\u8868\u8bfb\u4e0d\u51fa\u6765\uff1a" + e.getClass().getSimpleName();
-        }
-    }
-
-    @Nullable
     /** 客户端只读：本机取电身份（{@code null} = 没登记放置者 ⇒ 走"必须有能源仓"的老行为）。 */
     public UUID gridPowerUser() {
         return this.gridPowerUser;
     }
 
     /** 懒建电网容器（不缓存 {@code EnergyContainerList}：基类每次现建，我们跟着现包）。 */
-    private GridEnergyContainer gridEnergyContainer() {
+    private NanochipEnergy.GridEnergyContainer gridEnergyContainer() {
         if (this.gridEnergyContainer == null) {
-            this.gridEnergyContainer = new GridEnergyContainer(this);
+            this.gridEnergyContainer = new NanochipEnergy.GridEnergyContainer(this);
         }
         return this.gridEnergyContainer;
     }
 
-    /**
-     * ★ 2026-11-13【NAC 电网取电】<b>本机这一刻有没有取电身份</b>。
-     *
-     * <p>判据唯一：{@link #gridPowerUser} 非空<b>且</b>配置开关打开。
-     * 两者缺一 ⇒ 电网容器自报 0 压 0 安 0 容量 ⇒ {@code isEnergySourceEffectivelyUnlimited()} 为假
-     * ⇒ 全机<b>逐字回到"必须有能源仓"的老行为</b>（老存档读档后就是这个状态）。
-     */
+    /** 本机这一刻有没有电网取电身份（实现在 {@link NanochipEnergy}）。 */
     public boolean hasGridPowerIdentity() {
-        return this.gridPowerUser != null && GTLModularConfig.isNanochipGridPowerEnabled();
+        return NanochipEnergy.hasGridPowerIdentity(this);
     }
 
     /**
@@ -1759,7 +1498,7 @@ NanochipThreadHost {
      * <p>客户端**绝不**生成（{@link #gridPowerUser} 是 {@code @DescSynced}，客户端只读服务端镜像）。
      * 读取路径（Jade / 中央供电）随时可能问到这里，故必须无副作用可重入。
      */
-    private UUID resolveGridUser() {
+    UUID resolveGridUser() {
         if (this.gridPowerUser != null) {
             return this.gridPowerUser;
         }
@@ -1780,7 +1519,7 @@ NanochipThreadHost {
      * <h4>为什么要覆写这里（一处覆盖全部读取点）</h4>
      * {@code getEnergyContainer()} 是 NAC 里<b>唯一没被覆写</b>的能源入口（基类每次现建，见
      * {@code _census/_javap_simple_workablemb.txt:1004-1075}）⇒ 覆写它一处，同时覆盖：
-     * ① 配方每 tick 真扣 EU（{@code NanochipThreadedRecipeLogic.java:1814} 的
+     * ① 配方每 tick 真扣 EU（旧派活实现里的
      * {@code handleTickRecipeIO(IO.IN, ...)} 从 {@code capabilitiesProxy} 里的 {@code IEnergyContainer} 吃）；
      * ② 中央供电灌模块缓存（本类 {@code distributeModuleEnergy} → {@code e.changeEnergy(-want)}）；
      * ③ 模块来要电（本类 {@code requestModuleEnergy}）；
@@ -1800,7 +1539,7 @@ NanochipThreadHost {
      *
      * ⇒ <b>顺序：电网（index 0）→ 能源仓（基类原样跟在后面）</b>。语义 = <b>电网优先、能源仓兜底</b>：
      * 「直接从电网取电」逐字成立；电网余额不够时电网容器只扣走它能扣的部分
-     * （{@link GridEnergyContainer#changeEnergy(long)}），剩下的由能源仓补上；
+     * （{@link NanochipEnergy.GridEnergyContainer#changeEnergy(long)}），剩下的由能源仓补上；
      * 两者都拿不出 ⇒ 返回 0 ＝ <b>一点不扣</b> ⇒ 走 GTCEu 的"等电"分支（等待、不退进度、不掉料）。
      *
      * <h4>老存档零回归（不取"仓优先"的代价，如实登记）</h4>
@@ -1825,48 +1564,12 @@ NanochipThreadHost {
         ArrayList<IEnergyContainer> list = new ArrayList<IEnergyContainer>();
         list.add(this.gridEnergyContainer());
         if (own != null) {
-            for (IEnergyContainer c : NanochipAssemblyComplexMachine.innerContainers(own)) {
+            for (IEnergyContainer c : NanochipEnergy.innerContainers(own)) {
                 if (c == null || c == this.gridEnergyContainer()) continue;
                 list.add(c);
             }
         }
         return new EnergyContainerList(list);
-    }
-
-    private static List<IEnergyContainer> innerContainers(EnergyContainerList list) {
-        try {
-            Field f = ENERGY_CONTAINER_LIST_FIELD;
-            if (f == null) {
-                return List.of();
-            }
-            Object raw = f.get(list);
-            if (raw instanceof List) {
-                List l = (List)raw;
-                ArrayList<IEnergyContainer> out = new ArrayList<IEnergyContainer>(l.size());
-                for (Object o : l) {
-                    if (!(o instanceof IEnergyContainer)) continue;
-                    IEnergyContainer c = (IEnergyContainer)o;
-                    out.add(c);
-                }
-                return out;
-            }
-        }
-        catch (Throwable throwable) {
-            // empty catch block
-        }
-        return List.of();
-    }
-
-    @Nullable
-    private static Field resolveEnergyListField() {
-        try {
-            Field f = EnergyContainerList.class.getDeclaredField("energyContainerList");
-            f.setAccessible(true);
-            return f;
-        }
-        catch (Throwable ignored) {
-            return null;
-        }
     }
 
     /** 电网取电被拒（没有放置者身份）时的限流说明 —— 绝不静默失效。 */
@@ -1903,7 +1606,7 @@ NanochipThreadHost {
      * {@code NotifiableRecipeHandlerTrait<Long> + IEnergyContainer + IInt128EnergyContainer}
      * （本仓既有取证见本文件 {@code :4587-4591} 及其引用的 classstr 行）
      * —— <b>它就是一个 recipe handler，活在 proxy 里</b>，容量 Long.MAX 级、按需现取。
-     * 本方法把我们的电网容器摆到<b>同一个位置</b>（配合 {@code GridEnergyContainer} 上的
+     * 本方法把我们的电网容器摆到<b>同一个位置</b>（配合 {@code NanochipEnergy.GridEnergyContainer} 上的
      * {@code IRecipeHandler<Long>} 实现），机制即照抄完成。
      *
      * <h4>三条纪律</h4>
@@ -1932,7 +1635,7 @@ NanochipThreadHost {
         if (!GTLModularConfig.isNanochipGridPowerEnabled() && !GTLModularConfig.isNanochipFreeEnergyEnabled()) {
             return;
         }
-        GridEnergyContainer grid = this.gridEnergyContainer();
+        NanochipEnergy.GridEnergyContainer grid = this.gridEnergyContainer();
         try {
             Table proxy = this.getCapabilitiesProxy();
             if (proxy == null) {
@@ -1964,7 +1667,7 @@ NanochipThreadHost {
             EURecipeCapability cap = EURecipeCapability.CAP;
             IO io = IO.IN;
             List existing = (List)proxy.get((Object)io, (Object)cap);
-            GridEnergyContainer grid = this.gridEnergyContainer();
+            NanochipEnergy.GridEnergyContainer grid = this.gridEnergyContainer();
             if (existing == null || !existing.contains(grid)) {
                 return;
             }
@@ -2199,7 +1902,7 @@ NanochipThreadHost {
     /**
      * 统一使用通用独立线程引擎。
      *
-     * <p>NAC 不再维护专用 {@code NanochipThreadedRecipeLogic}；所有机器共用
+     * <p>NAC 不再维护专用派活类（已删除）；所有机器共用
      * {@link com.gtlmodular.common.machine.engine.ThreadedRecipeLogic} 与
      * {@link com.gtlmodular.common.machine.engine.ConcurrentRecipeEngine}。
      * 自动样板总成、线程仓、候选来源等兼容只需改通用引擎一处。
@@ -2251,7 +1954,7 @@ NanochipThreadHost {
      * ★★ <b>「查找侧收窄」×「复合型机器」语义冲突的机器侧回答</b>（{@link MultiTypeLookupHost} 的唯一实现）★★
      *
      * <p><b>为什么 NAC 要回答「是」</b>：本机开着 {@link #NAC_MULTI_TYPE_RECIPES}（默认 {@code true}）时，
-     * {@link NanochipRecipeLogic#lookupRecipeIterator()} 会在<b>同一轮</b>里遍历 {@link #getRecipeTypes()}
+     * {@code 旧派活实现#lookupRecipeIterator()} 会在<b>同一轮</b>里遍历 {@link #getRecipeTypes()}
      * 声明的<b>全部</b>类型取候选（对照：关掉它才落回「只搜 {@link #getRecipeType()}` 单值」那条分支）
      * ⇒ 本机这一轮<b>不依赖</b> {@code getActiveRecipeType()} ⇒ 「本轮会被搜的类型集合」= 全部类型。
      *
@@ -2301,20 +2004,6 @@ NanochipThreadHost {
         return false;
     }
 
-    /**
-     * 旧 {@link NanochipThreadHost} 接口的线程数入口。
-     *
-     * <p>现在主引擎是通用 {@code ThreadedRecipeLogic}，实际线程数走
-     * {@link com.gtlmodular.common.machine.engine.IThreadedRecipeMachine#effectiveThreads()}；
-     * 本方法保留给仍可能调用旧接口的代码，口径与 {@link #getMultipleThreads()} 一致：
-     * 有线程仓按仓，没有线程仓 1 条。
-     */
-    @Override
-    public int nanochipThreadCount() {
-        int hatch = this.countThreadHatchThreads();
-        return Math.max(1, hatch > 0 ? hatch : this.getMultipleThreads());
-    }
-
     private int countThreadHatchThreads() {
         long total = 0L;
         for (IMultiPart part : this.getParts()) {
@@ -2323,69 +2012,6 @@ NanochipThreadHost {
             return Integer.MAX_VALUE;
         }
         return (int)total;
-    }
-
-    @Override
-    /**
-     * 本轮要搜的配方类型：<b>本机声明的全部类型</b>（简单模式下 = 电路组装表 + 换算表）。
-     *
-     * <p>返回的正是 {@link #getRecipeTypes()} 的当前快照 —— 于是「组装与换算同轮搜」
-     * 这条语义在<b>新旧两条逻辑上完全同源</b>（新逻辑不自己另算一份类型表）。
-     *
-     * <p>⚠️ 关掉 {@link #NAC_MULTI_TYPE_RECIPES} 时返回<b>只含激活类型</b>的单元素数组，
-     * 与新逻辑那边的口径一致（新逻辑拿到这个数组就只搜那一个类型）——
-     * 也就是说「多类型开关」对两条逻辑<b>同时生效</b>，不会出现「旧逻辑关掉了、新逻辑还在搜两类」。
-     */
-    public GTRecipeType[] nanochipSearchTypes() {
-        return this.getRecipeTypes();
-    }
-
-    @Override
-    /**
-     * 候选能不能用 —— 转交<b>旧逻辑</b>的 {@code checkRecipe(GTRecipe)}（gtladditions 父类提供，
-     * 口径逐字见 {@code _census/enhancedcore-src/.../ThreadLimitedRecipeLogic.java:245-270}：
-     * 输入放得下 + 产出放得下 + 电压等级够 + 配方自带条件）。
-     *
-     * <p><b>为什么复用旧逻辑那一份而不是在新逻辑里重写</b>：
-     * 「一条候选能不能跑」这件事全机只该有<b>一个</b>口径；两份写法迟早走岔，
-     * 而走岔的表现是「同一条样板在两条派活通路上一次能跑、一次不能跑」这种最难查的故障。
-     * 新旧两条逻辑因此共用这一个判定（新逻辑侧的调用点见
-     * {@code NanochipThreadedRecipeLogic.isCandidateUsable}）。
-     *
-     * <p><b>fail-safe</b>：拿不到旧逻辑实例 / 它抛异常 ⇒ 返回 {@code true}（= 不挡），
-     * 让新逻辑走它自己那份判据（那侧还有电压等级与「真的放得下」两道闸）——
-     * 绝不因为「辅助判定读不到」把配方整体挡掉。
-     */
-    public boolean nanochipCandidateUsable(GTRecipe candidate) {
-        if (candidate == null) {
-            return false;
-        }
-        try {
-            RecipeLogic logic = this.getRecipeLogic();
-            if (logic instanceof NanochipRecipeLogic) {
-                NanochipRecipeLogic legacy = (NanochipRecipeLogic)logic;
-                return legacy.checkRecipe(candidate);
-            }
-        }
-        catch (RuntimeException e) {
-            GTLModular.LOGGER.debug("[gtlmodular] NAC \u72ec\u7acb\u7ebf\u7a0b\uff1a\u5019\u9009\u6821\u9a8c\u8f6c\u4ea4\u5931\u8d25\uff08\u4e0d\u6321\uff0c\u4ea4\u7ed9\u65b0\u903b\u8f91\u81ea\u5224\uff09\uff1a{}", (Object)e.toString());
-        }
-        return true;
-    }
-
-    @Override
-    /**
-     * 公平轮转游标（长度 1 的可变数组，{@code [0]} = 上次选中的最后一条配方 id）。
-     *
-     * <p>由<b>机器</b>持有而不是逻辑持有：开关切换 / 逻辑重建时轮转位置不丢
-     * （否则「常备配方霸占线程位」会在每次切换后重来一次）。
-     *
-     * <p><b>零存档影响</b>：这个字段既无 {@code @Persisted} 也无 {@code @DescSynced}，
-     * 且不在 {@code MANAGED_FIELD_HOLDER} 的字段表里 ⇒ 不进 NBT、不同步、
-     * 存档重载后游标从 {@code null} 开始（= 从排序后的第一条开始），与旧逻辑原来的字段行为一致。
-     */
-    public String[] nanochipThreadCursors() {
-        return this.threadCursors;
     }
 
     /**
@@ -2528,7 +2154,7 @@ NanochipThreadHost {
      * 不再回落到电压基线 / Ω-天球分歧引擎仓，避免“没放线程仓却显示 128/256”。
      *
      * <p>通用引擎通过 {@link com.gtlmodular.common.machine.engine.IThreadedRecipeMachine#effectiveThreads()}
-     * 读这个口径；旧 {@link NanochipThreadHost} 也复用同一份。
+     * 读这个口径（历史接口 {@code NanochipThreadHost} 已随 P1-f 删除）。
      */
     public int getMultipleThreads() {
         if (this.getLevel() != null && this.getLevel().isClientSide) {
@@ -2610,326 +2236,22 @@ NanochipThreadHost {
         return Math.max(1, NanochipAssemblyComplexMachine.saturatingToInt(parallel));
     }
 
-    /**
-     * ★★ 0.3.132【最大功率 = 显示整个电网的电量 · 队长令】★★
-     *
-     * <h4>队长口径（逐字）</h4>
-     * <blockquote>「它不是只显示那么多，是**显示电网一共有多少电**」</blockquote>
-     *
-     * <h4>为什么原来是 `9.22e18` 封顶（取证）</h4>
-     * GTCEu 基类的「最大功率」那一行由
-     * {@code MultiblockDisplayText.Builder.addEnergyUsageLine(IEnergyContainer)} 画出，读的是
-     * {@code this.energyContainer}（{@code EnergyContainerList}）的
-     * {@code getInputVoltage()/getOutputVoltage()/getEnergyCapacity()}，**全是 `long`**；
-     * 而 gtlcore 的 {@code EnergyContainerListMixin:47-61} 又用
-     * {@code NumberUtils.saturatedMultiply/saturatedAdd} 汇总 ⇒ **天花板恒为 `Long.MAX_VALUE`**。
-     * 原版（gtladditions 的无线机器）之所以能显示 {@code 2.74e69}，是因为它的
-     * {@code WorkableElectricMultiblockMachineMixin.redirectEnergyUsageLine} 对那次
-     * {@code addEnergyUsageLine} 调用做了 {@code @Redirect}，改读
-     * {@code IWirelessNetworkEnergyHandler.getMaxAvailableEnergy(): BigInteger}。
-     * 我们 NAC 继承的是**非无线**基类 ⇒ 那条分支永远进不去。
-     *
-     * <h4>本方法做什么（与 {@link #filterUpstreamParallelLines} 同款纪律）</h4>
-     * <ol>
-     *   <li>按语言键 {@value #LANG_MAX_ENERGY_PER_TICK} 把父类那一行**剔掉**；</li>
-     *   <li>再由我们**无条件补一行**：数值 = 该玩家/队伍在无线电网里的**整个余额**
-     *       （{@code WirelessEnergyManager.getUserEU(uuid)}，`BigInteger`），
-     *       格式化**直接调上游那个方法** {@code CommonUtils.formatBigIntegerFixed(BigInteger)}
-     *       ⇒ 与第 2 张实机截图**逐字节一致**（该方法内部：≤{@code Long.MAX_VALUE} 走千分位，
-     *       否则走 {@code DecimalFormat("0.00000000E0")} 再小写、把 {@code e} 换成 {@code e+}
-     *       —— 逐字取证自 {@code CommonUtils.formatBigIntegerFixed} 的字节码）；</li>
-     *   <li>档名 `(MAX+16)` 那一段**原样沿用父类那一行自己的实参**（`Object[]` 的第 2 个），
-     *       不去自己猜档位 —— 父类已经按 `getMaxVoltage()` 算好了，照抄最省且不会漂。</li>
-     * </ol>
-     *
-     * <h4>纪律</h4>
-     * <ul>
-     *   <li><b>纯只读</b>：只读玩家电网余额与配置开关，**不扣电、不改状态、不进存档**；</li>
-     *   <li>读不到余额 / 没登记放置者 / 开关关闭 ⇒ <b>一个字都不改</b>（保留父类原行，绝不显示 0 冒充）；</li>
-     *   <li>本改动**只影响这一行的显示**：机器实际单 tick 可消费上限仍由
-     *       `changeEnergy(long)` 决定（`long` 域）—— 这一点在注释里如实写明，不误导读者。</li>
-     * </ul>
-     */
-    private void replaceMaxPowerWithGridTotal(List<Component> textList) {
-        BigInteger total;
-        if (textList == null || !this.isFormed()) {
-            return;
-        }
-        UUID user = this.gridPowerUser();
-        if (user == null || !GTLModularConfig.isNanochipGridPowerEnabled()) {
-            return;
-        }
-        try {
-            total = WirelessEnergyManager.getUserEU((UUID)user);
-        }
-        catch (RuntimeException e) {
-            return;
-        }
-        if (total == null) {
-            return;
-        }
-        Object tierArg = null;
-        int seenAt = -1;
-        for (int i = 0; i < textList.size(); ++i) {
-            TranslatableContents tc;
-            Component line = textList.get(i);
-            ComponentContents componentContents = line.getContents();
-            if (!(componentContents instanceof TranslatableContents) || !LANG_MAX_ENERGY_PER_TICK.equals((tc = (TranslatableContents)componentContents).getKey())) continue;
-            Object[] args = tc.getArgs();
-            if (args != null && args.length >= 2) {
-                tierArg = args[1];
-            }
-            seenAt = i;
-            break;
-        }
-        if (seenAt < 0) {
-            return;
-        }
-        textList.remove(seenAt);
-        MutableComponent value = Component.literal((String)CommonUtils.formatBigIntegerFixed((BigInteger)total));
-        MutableComponent row = tierArg == null ? Component.translatable((String)LANG_MAX_ENERGY_PER_TICK, (Object[])new Object[]{value}) : Component.translatable((String)LANG_MAX_ENERGY_PER_TICK, (Object[])new Object[]{value, tierArg});
-        textList.add(seenAt, (Component)row);
-    }
-
-    private void filterUpstreamParallelLines(List<Component> textList) {
-        if (textList == null || !this.isFormed()) {
-            return;
-        }
-        Iterator<Component> it = textList.iterator();
-        while (it.hasNext()) {
-            TranslatableContents tc;
-            Component line = it.next();
-            ComponentContents componentContents = line.getContents();
-            if (!(componentContents instanceof TranslatableContents) || !LANG_UPSTREAM_PARALLEL.equals((tc = (TranslatableContents)componentContents).getKey()) && !LANG_UPSTREAM_THREADS.equals(tc.getKey())) continue;
-            it.remove();
-        }
-        long threads = Math.max(1L, (long)this.getMultipleThreads());
-        long threadsInUse = this.safeRunningThreadsForDisplay();
-        long totalRuns = this.safeTotalRunsForDisplay();
-        long perRecipe = Math.max(1L, totalRuns / threadsInUse);
-        long total = NanochipAssemblyComplexMachine.saturatingMul(threadsInUse, perRecipe);
-        textList.add(NanochipAssemblyComplexMachine.parallelTotalLine(threadsInUse, perRecipe, total));
-        textList.add(NanochipAssemblyComplexMachine.threadsLine(threads));
-    }
-
-    /**
-     * ★★ <b>【GTO 式总量显示】覆写父类的并行行</b> ★★ —— 把「同时处理至多 N 个配方」里的 N
-     * 从<b>单条配方的并行上限</b>换成<b>整机真实总量</b>：{@code N = 在用线程数 K × 每条线程的真实并行 P}。
-     *
-     * <h3>口径（逐字取自 GTO 官方语言文件，本任务唯一口径依据）</h3>
-     * GTO 的 {@code gtocore.machine.thread}（{@code _census/_gto_wildcard/zh_cn.json:5709}）：
-     * 「同时处理至多 %1$s 种不同配方，每种配方至多 %2$s 个」⇒ <b>两层连乘</b>，
-     * 「种数 / 线程数」是<b>第一层乘数</b>。用户给的 GTO 实机截图那一行是
-     * {@code 同时处理至多 16,384 个配方} ⇒ 那是一个「正常数字」，**不是** {@code int} 上限占位值
-     * （推导见 {@code _census/GTO界面口径对齐_实施记录.md} §②）。
-     *
-     * <h3>逐行来源（本覆写只替换<b>两行</b>，其余行逐字保留父类输出）</h3>
-     * <p>⚠ <b>2026-11-13 状态更新（本任务 ②）</b>：实机显示证明「那两行不是经由本方法进入列表的」
-     * ⇒ 最终口径已由 {@link #filterUpstreamParallelLines}（在 {@code addDisplayText} 里）收口。
-     * 本方法里的按键替换/兜底追加是**次级**保障（保留，因为它只会写出与我们同口径的行；
-     * 且 {@link #filterUpstreamParallelLines} 会把同键的旧行剔掉 ⇒ 屏幕上一对、不重复）。
-     * <ul>
-     *   <li><b>在用线程条数 K</b> = {@link NanochipThreadedRecipeLogic#runningThreadCount()}（数出来的，
-     *       与界面「在用 K 条」同一格；取不到时钳 ≥1）；</li>
-     *   <li><b>每条线程的真实并行 P</b> = {@code ceil(R / K)}，其中 {@code R} =
-     *       {@link NanochipThreadedRecipeLogic#totalRunsAtOnce()}（各线程自己那份并行之和，
-     *       与界面「同时处理 R 次配方运行（各线程之和）」同一格）⇒ <b>两个乘数都是现场真实值</b>；
-     *       ⚠ 改前这两个乘数是 {@link #getMaxParallel()}（{@code int} 接口上的饱和占位值
-     *       {@link #FULL_PARALLEL_CAP} = 2147483647）与 {@link #getMultipleThreads()}（上限 U）
-     *       ⇒ 显示 {@code 549,755,813,632}（天量、不像 GTO；用户实机反馈）；</li>
-     *   <li><b>总量</b> = {@link #saturatingMul(long, long)}（64 位、乘法前判界，绝不回绕）
-     *       ⇒ 真值（等价于 R，最多因向上取整 +1；K ≤ R 恒成立，边界另有 {@code max(1,·)} 兜底）；</li>
-     *   <li><b>「拥有 M 个跨配方线程」那一行</b> = 同款按键替换成 <b>同一个 {@code U}</b>
-     *       （父类原口径 = 它自己的 128 基线 + {@code getAdditionalThread()}，<b>未钳制</b>）
-     *       ⇒ 屏幕上不再出现 128 与 256 并排打架。<b>本轮未改这一格</b>（它是「上限」，不是「在用」）。</li>
-     * </ul>
-     *
-     * <h3>为什么是覆写、为什么先调 super</h3>
-     * ① 该方法是 {@code protected}（字节码：{@code _census/_tmp_subspace/javap_modbase.u8.txt:103}
-     * 的声明 + {@code :162} 的 {@code invokespecial}），同血统作者也在同一层覆写它
-     * （{@code _census/shanhai-src/…/PrimordialOmegaEngineModuleBase.java:817}）；
-     * ② <b>不新增 mixin、不动父类</b>；先调 {@code super} 是为了让父类写好的其它行与它自己的
-     * 成形判断<b>逐字保留</b>，本覆写只替换<b>两个已知键</b>的行（{@code gtceu.multiblock.parallel}
-     * 与 {@code gtladditions.multiblock.threads}）⇒ 父类万一还写了别的行，一行都不会被吞掉；
-     * 万一某版本父类少写了这两行之一，兜底由我们追加（<b>显示绝不凭空少一行</b>）。
-     *
-     * <h3>只动显示、不动行为（开 / 关独立线程等价）</h3>
-     * 本方法只在 {@code addDisplayText} 的显示通路上被调用，全程只读三个 getter
-     * （{@link #getMultipleThreads()} / {@link NanochipThreadedRecipeLogic#runningThreadCount()} /
-     * {@link NanochipThreadedRecipeLogic#totalRunsAtOnce()}）：不写任何字段、
-     * 不进任何判定，配方结算（输入扣减 / 产出 / 时长 / 并行 / 概率 / 回滚）一条都不经过这里。
-     * ⚠ 本覆写**不再读** {@link #getMaxParallel()}：它只是 {@code int} 接口上的饱和占位值，
-     * 参与显示就会得到天量（这正是本轮修掉的那个显示问题）。
-     *
-     * <p><b>回退</b>：把 {@code threadsInUse}/{@code perRecipe} 两行改回
-     * {@code max(1, getMaxParallel()) × max(1, getMultipleThreads())}（逐字见回退包 H3），
-     * 或删掉本覆写（连同三个键常量与两个行构造函数）⇒ 逐字回到父类的两行
-     * （并行 = {@code getMaxParallel()}、线程 = 父类自己的 128 基线）。
-     */
     protected void addParallelDisplay(List<Component> textList) {
-        int insertAt;
         if (textList == null) {
             return;
         }
         super.addParallelDisplay(textList);
-        if (!this.isFormed()) {
-            return;
-        }
-        long threads = Math.max(1L, (long)this.getMultipleThreads());
-        long threadsInUse = this.safeRunningThreadsForDisplay();
-        long totalRuns = this.safeTotalRunsForDisplay();
-        long perRecipe = Math.max(1L, totalRuns / threadsInUse);
-        long total = NanochipAssemblyComplexMachine.saturatingMul(threadsInUse, perRecipe);
-        long gtoKinds = threads;
-        long parallelShown = totalRuns > 0L ? perRecipe : Integer.MAX_VALUE;
-        int parallelAt = -1;
-        int threadsAt = -1;
-        for (int i = 0; i < textList.size(); ++i) {
-            Component line = textList.get(i);
-            ComponentContents componentContents = line.getContents();
-            if (!(componentContents instanceof TranslatableContents)) continue;
-            TranslatableContents contents = (TranslatableContents)componentContents;
-            if (LANG_UPSTREAM_PARALLEL.equals(contents.getKey())) {
-                parallelAt = i;
-                continue;
-            }
-            if (!LANG_UPSTREAM_THREADS.equals(contents.getKey())) continue;
-            threadsAt = i;
-        }
-        if (parallelAt >= 0 && threadsAt >= 0) {
-            insertAt = Math.min(parallelAt, threadsAt);
-            textList.remove(Math.max(parallelAt, threadsAt));
-            textList.remove(Math.min(parallelAt, threadsAt));
-        } else if (parallelAt >= 0 || threadsAt >= 0) {
-            insertAt = parallelAt >= 0 ? parallelAt : threadsAt;
-            textList.remove(insertAt);
-        } else {
-            insertAt = textList.size();
-        }
-        textList.add(insertAt, NanochipAssemblyComplexMachine.gtoThreadsLine(gtoKinds));
-        textList.add(insertAt + 1, NanochipAssemblyComplexMachine.gtoPerRecipeLine(parallelShown));
-        textList.add(insertAt + 2, this.gtoIndependentThreadLine());
+        NanochipStateSync.addParallelDisplay(this, textList);
     }
 
-    /**
-     * ★【GTO 界面口径对齐】本机这一刻**真实在用**的线程条数（只给显示用）。
-     *
-     * <p>取数口：{@link NanochipThreadedRecipeLogic#runningThreadCount()}（= 批次表条数，
-     * 与界面「在用 K 条」、Jade 的 {@code KEY_THREAD_RUNNING} **同一个数**）。
-     * 取不到（子类/字段初始化期/夹具）⇒ 退回 {@code 1}：<b>绝不让 0 参与后面的除法</b>
-     * （0 会让「每条并行」算不出来，也会让总量显示成 0）。
-     *
-     * <p>⚠ 退化数据（{@code K > R}，正常不会出现：每条在跑批次至少贡献 1 次并行）时，
-     * 调用方那边「每条并行」会被钳到 1（{@code max(1, R/K)}）⇒ 总量如实显示成 {@code K}（不显示 0）。
-     * <p><b>只读、纯显示</b>：不写任何字段、不进任何判定（配方结算不经过这里）。
-     */
-    private long safeRunningThreadsForDisplay() {
-        try {
-            RecipeLogic logic = this.getRecipeLogic();
-            if (logic instanceof NanochipThreadedRecipeLogic) {
-                NanochipThreadedRecipeLogic threaded = (NanochipThreadedRecipeLogic)logic;
-                return Math.max(1L, (long)threaded.runningThreadCount());
-            }
-            if (logic instanceof com.gtlmodular.common.machine.engine.ThreadedRecipeLogic generic) {
-                return Math.max(1L, (long)generic.runningThreadCount());
-            }
-        }
-        catch (RuntimeException e) {
-            GTLModular.LOGGER.debug("[gtlmodular] NAC \u603b\u91cf\u663e\u793a\uff1a\u5728\u7528\u7ebf\u7a0b\u6570\u53d6\u4e0d\u5230\uff0c\u6309 1 \u8ba1\uff1a{}", (Object)e.toString());
-        }
-        return 1L;
-    }
-
-    /**
-     * ★【GTO 界面口径对齐】各线程**自己那份并行之和**（只给显示用）。
-     *
-     * <p>取数口：{@link NanochipThreadedRecipeLogic#totalRunsAtOnce()}（= 界面
-     * 「同时处理 R 次配方运行（各线程之和）」、Jade 的 {@code KEY_THREAD_RUNS} **同一个数**）
-     * ⇒ 屏幕上那两行与总量行**天然同源**，不会被读成两套账。
-     *
-     * <p>取不到 ⇒ {@code 0}（调用方会把它钳到「每条至少 1」，见 {@code addParallelDisplay}）。
-     */
-    private long safeTotalRunsForDisplay() {
-        try {
-            RecipeLogic logic = this.getRecipeLogic();
-            if (logic instanceof NanochipThreadedRecipeLogic) {
-                NanochipThreadedRecipeLogic threaded = (NanochipThreadedRecipeLogic)logic;
-                return Math.max(0L, threaded.totalRunsAtOnce());
-            }
-            if (logic instanceof com.gtlmodular.common.machine.engine.ThreadedRecipeLogic generic) {
-                return Math.max(0L, generic.totalRunsAtOnce());
-            }
-        }
-        catch (RuntimeException e) {
-            GTLModular.LOGGER.debug("[gtlmodular] NAC \u603b\u91cf\u663e\u793a\uff1a\u5404\u7ebf\u7a0b\u5e76\u884c\u4e4b\u548c\u53d6\u4e0d\u5230\uff0c\u6309 0 \u8ba1\uff1a{}", (Object)e.toString());
-        }
-        return 0L;
-    }
-
-    /** ★【GTO 式总量】那一行的成品（GTO 句式 + 明确总量；三格 = <b>在用条数 K / 每条真实并行 P / 总量 K×P</b>）。 */
-    private static Component parallelTotalLine(long threadsInUse, long perRecipe, long total) {
-        return Component.translatable((String)LANG_PARALLEL_TOTAL, (Object[])new Object[]{FormattingUtil.formatNumbers((long)threadsInUse), FormattingUtil.formatNumbers((long)perRecipe), FormattingUtil.formatNumbers((long)total)}).withStyle(ChatFormatting.GRAY);
-    }
-
-    /**
-     * ★【GTO 口径】第 1 行「同时处理至多 <b>N</b> 种不同配方」。
-     *
-     * <p>★★ <b>颜色必须由语言键给，不能在 Java 里硬编码</b> ★★ —— 这是本工程与 GTCEu/GTO 共有的做法：
-     * 色码写在语言文件的值里（例如 GTCEu 的 {@code "最大功率：§a%s EU/t（%s§r）"}）。
-     * 我上一版用 {@code Component.literal("同时处理至多 ")...withStyle(GREEN)} 硬拼，
-     * <b>数字那格就丢了色码</b>、只能继承外层颜色 ⇒ 队长一眼看出"颜色跟其他的不同"。
-     * ⇒ 现在整行走 {@code translatable}，色码在键里，逐字照 GTO 的
-     * {@code gtocore.machine.thread.0 = "同时处理至多 §a%s§r 种不同配方"}（绿）。
-     */
-    private static Component gtoThreadsLine(long kinds) {
-        return Component.translatable((String)"gtlmodular.nanochip.parallel.kinds", (Object[])new Object[]{FormattingUtil.formatNumbers((long)kinds)});
-    }
-
-    /**
-     * ★【GTO 口径】第 2 行「每种配方至多 <b>Y</b> 个」。
-     *
-     * <p>色码同样在键里，逐字照 GTO 的 {@code gtocore.machine.thread.1 = "每种配方至多 §d%s§r 个"}（紫）。
-     */
-    private static Component gtoPerRecipeLine(long perRecipe) {
-        return Component.translatable((String)"gtlmodular.nanochip.parallel.per", (Object[])new Object[]{FormattingUtil.formatNumbers((long)perRecipe)});
-    }
-
-    /**
-     * ★【GTO 口径】第 3 行「独立线程[已启用] / [未启用]」。
-     *
-     * <p>逐字照 GTO 的 {@code gtocore.machine.independent_thread = "独立线程[%s]"}（截图逐字「独立线程[已启用]」）。
-     * ★ <b>整行单色</b>：GTO 那一行没有给状态单独上色（它和「同时处理…」那两行一样是灰的）
-     * —— 我上一版把 {@code 已启用} 单独染绿是**自作主张**，队长一眼看出不对，故改回单色。
-     * 判据 = 本机跨配方线程数 &gt; 1（与 {@link #isCrossRecipeThreadActive()} 同源）。
-     */
-    private Component gtoIndependentThreadLine() {
-        return Component.translatable((String)(this.getMultipleThreads() > 1 ? "gtlmodular.nanochip.threads.independent.on" : "gtlmodular.nanochip.threads.independent.off")).withStyle(ChatFormatting.GRAY);
-    }
-
-    private static Component threadsLine(long threads) {
-        return Component.translatable((String)LANG_UPSTREAM_THREADS, (Object[])new Object[]{FormattingUtil.formatNumbers((long)threads)}).withStyle(ChatFormatting.GRAY);
-    }
-
-    /** 已成形的指定种类模块数量。 */
+    /** 已成形的指定种类模块数量（实现在 {@link NanochipModuleLinkHost}）。 */
     public int countModules(NanochipModuleKind kind) {
-        int n = 0;
-        for (IModularMachineModule m : this.getModules()) {
-            NanochipModuleMachine module;
-            if (!(m instanceof NanochipModuleMachine) || !(module = (NanochipModuleMachine)m).isFormed() || module.getModuleKind() != kind) continue;
-            ++n;
-        }
-        return n;
+        return NanochipModuleLinkHost.countModules(this, kind);
     }
 
-    /** 全部已成形模块数。 */
+    /** 全部已成形模块数（实现在 {@link NanochipModuleLinkHost}）。 */
     public int formedModuleCount() {
-        int n = 0;
-        for (IModularMachineModule m : this.getModules()) {
-            NanochipModuleMachine module;
-            if (!(m instanceof NanochipModuleMachine) || !(module = (NanochipModuleMachine)m).isFormed()) continue;
-            ++n;
-        }
-        return n;
+        return NanochipModuleLinkHost.formedModuleCount(this);
     }
 
     /**
@@ -3147,7 +2469,7 @@ NanochipThreadHost {
      * ⇒ 这里 {@code catch (RuntimeException)} 只把"取不到"这一种结果收敛成 {@code null}，
      * 不吞掉别的逻辑错误。
      */
-    private static ItemStack firstItemStackOf(Object content) {
+    static ItemStack firstItemStackOf(Object content) {
         if (content instanceof ItemStack) {
             ItemStack stack = (ItemStack)content;
             return stack.isEmpty() ? null : stack;
@@ -3191,7 +2513,7 @@ NanochipThreadHost {
      * → 物品栈自身 count（普通 {@code ItemStack} 内容）→ 1（兜底）。
      * 用全限定名避免动 import 区。
      */
-    private static long producedCountOf(Object content) {
+    static long producedCountOf(Object content) {
         if (content instanceof LongIngredient) {
             LongIngredient longIngredient = (LongIngredient)((Object)content);
             return longIngredient.getActualAmount();
@@ -3223,7 +2545,7 @@ NanochipThreadHost {
         }
         this.lastCraftLogTick = now;
         GTRecipeType activeType = this.getRecipeType();
-        GTLModular.LOGGER.info("[gtlmodular] \u4e3b\u673a\u5b8c\u6210\u914d\u65b9 [\u914d\u65b9\u8868 {} / \u672c\u673a\u6a21\u5f0f {}]\uff1a\u8f93\u5165 {} \u2192 \u8f93\u51fa {}\uff08{} tick\uff09", new Object[]{recipe.getType().registryName, activeType == null ? "?" : activeType.registryName, NanochipAssemblyComplexMachine.renderItemContents(recipe.getInputContents((RecipeCapability)ItemRecipeCapability.CAP)), NanochipAssemblyComplexMachine.renderItemContents(recipe.getOutputContents((RecipeCapability)ItemRecipeCapability.CAP)), recipe.duration});
+        GTLModular.LOGGER.info("[gtlmodular] \u4e3b\u673a\u5b8c\u6210\u914d\u65b9 [\u914d\u65b9\u8868 {} / \u672c\u673a\u6a21\u5f0f {}]\uff1a\u8f93\u5165 {} \u2192 \u8f93\u51fa {}\uff08{} tick\uff09", new Object[]{recipe.getType().registryName, activeType == null ? "?" : activeType.registryName, NanochipDiagnostics.renderItemContents(recipe.getInputContents((RecipeCapability)ItemRecipeCapability.CAP)), NanochipDiagnostics.renderItemContents(recipe.getOutputContents((RecipeCapability)ItemRecipeCapability.CAP)), recipe.duration});
     }
 
     /**
@@ -3282,33 +2604,6 @@ NanochipThreadHost {
         }
         this.lastHostPrechargeLogTick = now;
         GTLModular.LOGGER.info("[gtlmodular] NAC \u4e3b\u673a\u9884\u84c4\u7535\uff1a\u672c\u6761\u914d\u65b9\u6574\u6761\u9700\u8981 {} EU\uff0c\u590d\u5408\u4f53\u5f53\u524d {} EU\uff08\u53ef\u83b7\u53d6\u80fd\u529b {} EU\uff0c\u6700\u5927\u8f93\u5165\u529f\u7387 {} EU/t\uff0c\u6a21\u5f0f {}\uff09\u21d2 \u672c tick \u4e0d\u5f00\u5de5\uff0c\u6512\u591f\u624d\u5f00\u59cb\u3002\u82e5\u8fd9\u662f\u300c\u65e0\u9650/\u6309\u9700\u73b0\u53d6\u80fd\u6e90\u300d\uff08\u65e0\u7ebf\u7535\u7f51\u7ec8\u7aef / \u521b\u9020\u80fd\u6e90\u4ed3\uff09\uff0c\u8bf4\u660e\u5bb9\u91cf\u4e0a\u9650\u6ca1\u8bfb\u5230 \u2014\u2014 \u68c0\u4fee\u65b9\u5411\uff1a\u8fd9\u4e9b\u4ed3\u5ba4\u662f\u5426\u771f\u7684\u6302\u5728 NAC \u7ed3\u6784\u4e0a\uff08\u5224\u636e\u89c1 isEnergySourceEffectivelyUnlimited\uff09\u3002", new Object[]{need, stored, this.getObtainableEnergyEU(), this.getMaxInputPower(), this.syncedMode});
-    }
-
-    /**
-     * 把物品内容渲染成「名称×数量 + 名称×数量」的可读串（诊断用）。
-     *
-     * <p>★ 2026-10-31【M3】：判据从「只认 {@code ItemStack}」改成复用
-     * {@link #firstItemStackOf(Object)} / {@link #producedCountOf(Object)} 的多路兜底 ——
-     * 否则本包（gtlcore 1.2.3.2）物品产出是 {@code Ingredient}，{@link #logCraftedRecipe} 那行
-     * 「主机完成配方 …：输入 {} → 输出 {}」会**恒显示"（无物品）"**，日志等于没有信息
-     * （修前它正是本次根因的判据，见 {@code _census/纳米校准_诊断.md} E5）。
-     *
-     * <p>识别不出时照实写「（未识别物品×N）」而不是静默漏掉 —— 日志里不能出现"少了一截"的假象。
-     */
-    private static String renderItemContents(List<Content> contents) {
-        StringBuilder sb = new StringBuilder();
-        for (Content c : contents) {
-            ItemStack stack = NanochipAssemblyComplexMachine.firstItemStackOf(c.content);
-            if (sb.length() > 0) {
-                sb.append(" + ");
-            }
-            if (stack == null || stack.isEmpty()) {
-                sb.append("\uff08\u672a\u8bc6\u522b\u7269\u54c1\u00d7").append(NanochipAssemblyComplexMachine.producedCountOf(c.content)).append('\uff09');
-                continue;
-            }
-            sb.append(stack.getHoverName().getString()).append('\u00d7').append(NanochipAssemblyComplexMachine.producedCountOf(c.content));
-        }
-        return sb.length() == 0 ? "\uff08\u65e0\u7269\u54c1\uff09" : sb.toString();
     }
 
     /**
@@ -3509,15 +2804,17 @@ NanochipThreadHost {
     /**
      * ★ 2026-10-28【独立跨配方线程 · 补齐「机器侧每 tick 同步」】<b>包内转发入口</b>。
      *
-     * <p>旧逻辑（{@link NanochipRecipeLogic}）的 {@code serverTick} 第一句就是 {@code nac.tickSync()}；
-     * 而新逻辑（{@code NanochipThreadedRecipeLogic}）<b>整体覆写</b>了 {@code serverTick}、
-     * 不经过旧逻辑那一句 ⇒ 那条路上的「每 tick 同步」会整体失效
+     * <p>旧派活实现（已删除的内嵌类）的 {@code serverTick} 第一句就是 {@code nac.tickSync()}；
+     * 后来替换它的派活类<b>整体覆写</b>了 {@code serverTick}、不经过那一句
+     * ⇒ 那条路上的「每 tick 同步」会整体失效
      * （受影响：F 位连接刷新每 20 tick、界面同步文案 {@link #updateSyncedTexts}、
      * 未成形缺件审计的 15 秒限流那一路）。
      *
-     * <p>{@link #tickSync()} 本体是 {@code private}（它只被旧逻辑调），而新逻辑是<b>另一个类</b>
-     * ⇒ 这里给一个包内转发方法（方法体只有一句），让新逻辑能<b>与旧逻辑同频</b>地每 tick 调一次。
+     * <p>{@link #tickSync()} 本体是 {@code private}（它只被派活类调），而派活类是<b>另一个类</b>
+     * ⇒ 这里给一个包内转发方法（方法体只有一句），让派活类能<b>同频</b>地每 tick 调一次。
      * 语义与调用频次<b>逐字相同</b>：没有新增逻辑、没有任何行为改动、不新增字段、不进 NBT。
+     * <p>注：当前唯一调用方是仍未删除的旧派活实现（全树无实例化）；保留本转发方法，是为了
+     * 让后续删除那个文件时不必改动 {@code tickSync()} 的可见性。
      */
     void nanochipTickSync() {
         this.tickSync();
@@ -3531,16 +2828,8 @@ NanochipThreadHost {
         this.syncedActiveFamilyOrdinal = activeFamily == null ? -1 : activeFamily.ordinal();
         this.syncedFullWindowDenominator = NanochipCalibration.useFullWindowDenominator();
         this.syncedBreakdownText = this.calibration.breakdown();
-        StringBuilder counts = new StringBuilder();
-        for (NanochipCalibration.Family family : NanochipCalibration.Family.values()) {
-            counts.append(this.calibration.countOf(family)).append(',');
-        }
-        this.syncedFamilyCounts = counts.toString();
-        StringBuilder tiers = new StringBuilder();
-        for (NanochipCalibration.Family family : NanochipCalibration.Family.values()) {
-            tiers.append(this.calibration.tierOf(family)).append(',');
-        }
-        this.syncedFamilyTiers = tiers.toString();
+        this.syncedFamilyCounts = NanochipStateSync.familyCountsCsv(this);
+        this.syncedFamilyTiers = NanochipStateSync.familyTiersCsv(this);
         this.syncedHistoryTotal = this.calibration.total();
         long vacuumTotal = this.vacuumNetwork.total();
         if (this.vacuumDirty || vacuumTotal != this.lastVacuumTotal) {
@@ -3549,16 +2838,7 @@ NanochipThreadHost {
             this.syncedVacuumText = this.vacuumNetwork.summaryAll();
         }
         this.syncedParallelShown = this.getMaxParallel();
-        StringBuilder sb = new StringBuilder();
-        for (NanochipModuleKind kind : NanochipModuleKind.values()) {
-            int n = this.countModules(kind);
-            if (n <= 0) continue;
-            if (sb.length() > 0) {
-                sb.append(" \u00b7 ");
-            }
-            sb.append(kind.nameZh()).append(" \u00d7").append(n);
-        }
-        this.syncedModuleText = sb.length() == 0 ? "\u672a\u5b89\u88c5\u6a21\u5757" : sb.toString();
+        this.syncedModuleText = NanochipStateSync.moduleText(this);
     }
 
     public NanochipCalibration getCalibration() {
@@ -3682,69 +2962,70 @@ NanochipThreadHost {
         }
     }
 
-    /** 复合体自身蓄电（EU）。 */
+    /** 复合体自身蓄电（EU；实现在 {@link NanochipEnergy}）。 */
     public long getTotalStoredEU() {
-        if (!this.isFormed()) {
-            return 0L;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        return e == null ? 0L : e.getEnergyStored();
-    }
-
-    /** 复合体自身蓄电上限（EU）。 */
-    public long getTotalCapacityEU() {
-        if (!this.isFormed()) {
-            return 0L;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        return e == null ? 0L : e.getEnergyCapacity();
-    }
-
-    /** 复合体能源仓输入电压。 */
-    public long getMaxInputVoltage() {
-        if (!this.isFormed()) {
-            return 0L;
-        }
-        // 电网/免费电时直接给哨兵电压：EnergyContainerList 会把多个容器的
-        // 电压×电流相加，Long.MAX 级电网叠上能源仓后可能溢出成 0，
-        // 模块的 HostEnergyContainer 就会显示“最大输入 0”。
-        if (GTLModularConfig.isNanochipGridPowerEnabled() || GTLModularConfig.isNanochipFreeEnergyEnabled()) {
-            return Long.MAX_VALUE;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        if (e == null) {
-            return 0L;
-        }
-        // 有些无线电源只报“已存/容量 = Long.MAX”，电压字段是 0；模块代理读的就是
-        // 这个电压，所以这里把 Long.MAX 级储能/容量也视为 MAX 输入电压。
-        if (e.getEnergyStored() >= ON_DEMAND_POWER_FLOOR_EU
-                || e.getEnergyCapacity() >= ON_DEMAND_POWER_FLOOR_EU) {
-            return Long.MAX_VALUE;
-        }
-        return e.getInputVoltage();
+        return NanochipEnergy.getTotalStoredEU(this);
     }
 
     /**
-     * <b>NAC 最大输入功率（EU/t）＝ 能源仓输入电压 × 安培数</b>。
+     * ★ 2026-11-08【参考伪神之锻炉（GTLAdditions {@code ForgeOfTheAntichrist#refreshTier}）】：
+     * <b>无线电网机器的「档位」由账户余额折算出「假电压档」</b>，而不是恒 0（ULV）或写死 MAX。
      *
-     * <p>wiki 的缓存公式读的就是它：{@code 模块缓存 = NAC最大输入功率 × (2 × 模块最大配方时间)}，
-     * 以及「超频后的功率不能超过 NAC 可用输入功率」。
-     * 这里对 {@code 电压 × 安培} 做一次**饱和乘法**（电压到 OPV/MAX 档时数值极大，直接乘会回绕成负数）。
+     * <p>参考实现口径（{@code GTLAddWirelessWorkableElectricMultipleRecipesMachine.kt:100-108}）：
+     * <pre>
+     *   val totalEu = WirelessEnergyManager.getUserEU(uuid)
+     *   val longEu = NumberUtils.getLongValue(totalEu)
+     *   tier = if (longEu == Long.MAX_VALUE) GTValues.MAX_TRUE else NumberUtils.getFakeVoltageTier(longEu)
+     * </pre>
+     * 本方法照同一口径取数；免费电模式直接给 {@code MAX_TRUE}。
+     * <p>只读、无副作用（真正写 {@code tier} 的是 {@link #refreshWirelessTier()}）。
      */
+    public int wirelessTier() {
+        if (!GTLModularConfig.isNanochipGridPowerEnabled() && !GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+            return this.tier;
+        }
+        if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+            return com.gregtechceu.gtceu.api.GTValues.MAX_TRUE;
+        }
+        UUID u = this.resolveGridUser();
+        if (u == null) {
+            return this.tier;
+        }
+        BigInteger bal;
+        try {
+            bal = WirelessEnergyManager.getUserEU(u);
+        } catch (Throwable t) {
+            return this.tier;
+        }
+        long longEu = bal == null || bal.signum() <= 0
+                ? 0L
+                : (bal.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0 ? Long.MAX_VALUE : bal.longValue());
+        return longEu == Long.MAX_VALUE
+                ? com.gregtechceu.gtceu.api.GTValues.MAX_TRUE
+                : org.gtlcore.gtlcore.utils.NumberUtils.getFakeVoltageTier(longEu);
+    }
+
+    /** 把 {@link #wirelessTier()} 的结果写进基类的 {@code tier}（界面/并行/模块档位都读它）。 */
+    public void refreshWirelessTier() {
+        if (!GTLModularConfig.isNanochipGridPowerEnabled() && !GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+            return;
+        }
+        this.tier = this.wirelessTier();
+    }
+
+    /** 复合体自身蓄电上限（EU；实现在 {@link NanochipEnergy}）。 */
+    public long getTotalCapacityEU() {
+        return NanochipEnergy.getTotalCapacityEU(this);
+    }
+
+    /** 复合体能源仓输入电压（实现在 {@link NanochipEnergy}）。 */
+    public long getMaxInputVoltage() {
+        return NanochipEnergy.getMaxInputVoltage(this);
+    }
+
+    /** NAC 最大输入功率 = 输入电压 × 安培（EU/t；实现在 {@link NanochipEnergy}）。 */
     public long getMaxInputPower() {
-        if (!this.isFormed()) {
-            return 0L;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        if (e == null) {
-            return 0L;
-        }
-        long v = this.getMaxInputVoltage();
-        long a = Math.max(1L, e.getInputAmperage());
-        if (v <= 0L) {
-            return 0L;
-        }
-        return NanochipAssemblyComplexMachine.saturatingMul(v, a);
+        return NanochipEnergy.getMaxInputPower(this);
     }
 
     /**
@@ -3767,7 +3048,7 @@ NanochipThreadHost {
      * {@code batched.parallels = (int) Math.min((long) Math.max(1, recipe.parallels) * limit, Integer.MAX_VALUE);}
      * —— 「先转 {@code long} 再乘、最后在 {@code int} 边界饱和」正是本组工具的用法。
      */
-    private static long saturatingMul(long a, long b) {
+    static long saturatingMul(long a, long b) {
         if (a <= 0L || b <= 0L) {
             return 0L;
         }
@@ -3806,65 +3087,14 @@ NanochipThreadHost {
         return v >= Integer.MAX_VALUE ? Integer.MAX_VALUE : (int)Math.max(0L, v);
     }
 
-    /**
-     * ★ 2026-10-08【无线电网供电兼容】<b>本复合体的供电是不是「无限 / 按需现取」型</b>。
-     *
-     * <p>判据只看能源容器<b>自报的容量</b>（{@link EnergyContainerList#getEnergyCapacity()}）：
-     * 达到 {@link #ON_DEMAND_POWER_FLOOR_EU} ⇒ 真。覆盖两类真实能源：
-     * GTL Additions 的「无线电网输入终端」与创造级能源仓 —— 它们都<b>不储能、按需现取</b>，
-     * 因此 {@code getEnergyStored()} 只能是 0 或一个没有意义的饱和值，
-     * <b>不能用「已存多少」来判断它们给不给得出电</b>。
-     *
-     * <p><b>容器类名的真实出处</b>（供日后核对，本方法刻意不依赖它）：
-     * 无线电网输入终端 {@code com.gtladd.gtladditions.common.machine.multiblock.part.WirelessEnergyNetworkTerminalPartMachineBase}
-     * 提供的是 {@code com.gtladd.gtladditions.common.machine.trait.NetworkEnergyContainer}，
-     * 其类签名逐字为
-     * {@code NotifiableRecipeHandlerTrait<Long> + IEnergyContainer + IInt128EnergyContainer}
-     * ——{@code _census/_probe_nacmat_evidence/classstr_gtladditions-3.2.8Custom_SubSpace-fix1.txt:12007-12017, 12609-12616}；
-     * 其中 {@code IInt128EnergyContainer} 是 gtlcore 真实接口
-     * （{@code org.gtlcore.gtlcore.api.capability.IInt128EnergyContainer}，方法
-     * {@code getInt128EnergyStored/…Capacity/…InputPerSec/…OutputPerSec}，
-     * ——同目录 {@code classstr_gtlcore-1.2.3.2-fix1.txt:9-22}），
-     * 即「容量超出 long 表达范围、必须用 Int128 计量」的能源所实现的那一个接口。
-     */
+    /** 供电是不是「无限 / 按需现取」型（实现在 {@link NanochipEnergy}）。 */
     public boolean isEnergySourceEffectivelyUnlimited() {
-        if (!this.isFormed()) {
-            return false;
-        }
-        // 电网/免费电本质是“按需现取”，容量本身已是 Long.MAX 级；不能再让
-        // EnergyContainerList 把电网容量和能源仓容量相加后溢出成负数/0 来判断。
-        if (GTLModularConfig.isNanochipGridPowerEnabled() || GTLModularConfig.isNanochipFreeEnergyEnabled()) {
-            return true;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        if (e == null) {
-            return false;
-        }
-        return e.getEnergyCapacity() >= 0x3FFFFFFFFFFFFFFFL;
+        return NanochipEnergy.isEnergySourceEffectivelyUnlimited(this);
     }
 
-    /**
-     * ★ 2026-10-08【无线电网供电兼容】<b>本复合体这一刻「可获取」的 EU</b>
-     * —— 即「需要量 ≤ 主机可提供的量」这条口径里的右边。
-     *
-     * <ul>
-     *   <li>储能式（正常能源仓/激光仓）：返回<b>已存</b>（{@link EnergyContainerList#getEnergyStored()}），
-     *       与改动前的 {@code avail} 口径<b>逐字一致</b>；</li>
-     *   <li>无限 / 按需现取型（无线电网终端、创造能源）：已存没有意义（恒为 0）⇒
-     *       返回<b>容量</b>（{@link #ON_DEMAND_POWER_FLOOR_EU} 以上），表示「要多少现取多少」；</li>
-     *   <li>真·完全无电（容量 0 且存量 0）：返回 0 ⇒ 调用方照旧拦住。</li>
-     * </ul>
-     */
+    /** 本复合体这一刻「可获取」的 EU（实现在 {@link NanochipEnergy}）。 */
     public long getObtainableEnergyEU() {
-        if (!this.isFormed()) {
-            return 0L;
-        }
-        EnergyContainerList e = this.getEnergyContainer();
-        if (e == null) {
-            return 0L;
-        }
-        long stored = e.getEnergyStored();
-        return this.isEnergySourceEffectivelyUnlimited() ? Long.MAX_VALUE : stored;
+        return NanochipEnergy.getObtainableEnergyEU(this);
     }
 
     /**
@@ -3993,12 +3223,12 @@ NanochipThreadHost {
                 NanochipModuleMachine nanochipModule = (NanochipModuleMachine)iModularMachineModule;
                 nanochipModule.onHostLinked();
             }
-            this.logModuleLinkChange("+", iModularMachineModule, recomputed.size(), slots.size());
+            NanochipDiagnostics.logModuleLinkChange(this, "+", iModularMachineModule, recomputed.size(), slots.size());
         }
         for (IModularMachineModule iModularMachineModule : new ArrayList<IModularMachineModule>(this.modules)) {
             if (recomputed.contains(iModularMachineModule)) continue;
             iModularMachineModule.removeFromHost(this);
-            this.logModuleLinkChange("-", iModularMachineModule, recomputed.size(), slots.size());
+            NanochipDiagnostics.logModuleLinkChange(this, "-", iModularMachineModule, recomputed.size(), slots.size());
         }
         if (this.modules.size() != recomputed.size() || !this.modules.containsAll(recomputed)) {
             GTLModular.LOGGER.warn("[gtlmodular] NAC @{} \u6a21\u5757\u96c6\u5408\u6536\u655b\u5f02\u5e38\uff1a\u96c6\u5408 {} \u4e2a / \u672c\u6b21\u91cd\u7b97 {} \u4e2a\uff08\u9884\u671f\u76f8\u7b49\uff09", new Object[]{this.getPos(), this.modules.size(), recomputed.size()});
@@ -4047,7 +3277,7 @@ NanochipThreadHost {
             BlockPos pos;
             pos = restored.get(i);
             Block block = level.getBlockState(pos).getBlock();
-            if (NanochipAssemblyComplexMachine.isModuleControllerBlock(block) || block == NanochipBlocks.MESH_INTERFACE_CASING.get()) continue;
+            if (NanochipDiagnostics.isModuleControllerBlock(block) || block == NanochipBlocks.MESH_INTERFACE_CASING.get()) continue;
             this.restoredSlotsSettled = true;
             this.restoredModuleSlots = List.of();
             GTLModular.LOGGER.info("[gtlmodular] NAC @{} \u5b58\u6863 F \u4f4d\u5feb\u7167**\u672a\u91c7\u7528**\uff1a\u7b2c {} / {} \u683c @{} \u7ad9\u7684\u662f {}\uff08\u65e2\u4e0d\u662f\u7f51\u683c\u63a5\u53e3\u673a\u58f3\u3001\u4e5f\u4e0d\u662f\u6a21\u5757\u63a7\u5236\u5668\uff09\u21d2 \u7ed3\u6784\u5df2\u4e0d\u662f\u5b58\u6863\u65f6\u7684\u6837\u5b50\uff0c\u9000\u56de\u7b49 GTCEu \u7b2c\u4e00\u6b21\u6210\u529f\u5339\u914d", new Object[]{this.getPos(), i + 1, restored.size(), pos.toShortString(), BuiltInRegistries.BLOCK.getKey(block)});
@@ -4063,29 +3293,9 @@ NanochipThreadHost {
         return this.cachedModuleSlots;
     }
 
-    private void logModuleLinkChange(String sign, IModularMachineModule<NanochipAssemblyComplexMachine, ?> module, int recomputedCount, int slotCount) {
-        MetaMachine meta;
-        String string;
-        if (module instanceof NanochipModuleMachine) {
-            NanochipModuleMachine nanochipModule = (NanochipModuleMachine)module;
-            string = nanochipModule.getModuleKind().nameZh();
-        } else {
-            string = module.getClass().getSimpleName();
-        }
-        String kind = string;
-        MetaMachine machine = module instanceof MetaMachine ? (meta = (MetaMachine)module) : null;
-        GTLModular.LOGGER.info("[gtlmodular] NAC @{} \u5df2\u8fde\u63a5\u6a21\u5757 {}\u300c{}\u300d@{}\uff08F \u4f4d\u4e0a\u6210\u5f62\u6a21\u5757 {}/{}\uff0c\u672c\u6b21\u64cd\u4f5c\u540e\u5df2\u8fde\u63a5 {} \u4e2a\uff09", new Object[]{this.getPos(), sign, kind, machine == null ? "\u672a\u77e5\u5750\u6807" : machine.getPos().toShortString(), recomputedCount, slotCount, this.modules.size()});
-    }
-
-    /**
-     * 只读：{@code module} 是否在主机权威的「已连接模块集合」里。
-     *
-     * <p>★ 模块侧（{@link NanochipModuleMachine#hostConnected()}）<b>只读</b>这一个判定的结果，
-     * 不再自己写集合 —— 这是"连接不稳"的修法核心。刻意不返回 {@code getModules()} 的包装集合，
-     * 以免每 tick 在热路径上多分配一个对象。
-     */
+    /** 只读：{@code module} 是否在主机权威的「已连接模块集合」里（实现在 {@link NanochipModuleLinkHost}）。 */
     public boolean isModuleConnected(IModularMachineModule<NanochipAssemblyComplexMachine, ?> module) {
-        return module != null && this.modules.contains(module);
+        return NanochipModuleLinkHost.isModuleConnected(this, module);
     }
 
     @Override
@@ -4136,24 +3346,6 @@ NanochipThreadHost {
     public void scanAndConnectModules() {
         IModularMachineHost.super.scanAndConnectModules();
         this.refreshModulesFromStructure();
-    }
-
-    private static boolean structureChunksLoaded(Level level, BlockPos controllerPos) {
-        if (level == null || controllerPos == null) {
-            return false;
-        }
-        try {
-            for (int dx = -32; dx <= 32; dx += 16) {
-                for (int dz = -32; dz <= 32; dz += 16) {
-                    if (level.isLoaded(controllerPos.offset(dx, 0, dz))) continue;
-                    return false;
-                }
-            }
-            return true;
-        }
-        catch (Throwable t) {
-            return false;
-        }
     }
 
     public void onLoad() {
@@ -4439,59 +3631,11 @@ NanochipThreadHost {
         }
         catch (RuntimeException e) {
             hasError = true;
-            errorName = "\u8bfb\u72b6\u6001\u65f6\u629b " + NanochipAssemblyComplexMachine.describeThrowable(e);
+            errorName = "\u8bfb\u72b6\u6001\u65f6\u629b " + NanochipDiagnostics.describeThrowable(e);
         }
         Level world = this.getLevel();
-        boolean chunksLoaded = NanochipAssemblyComplexMachine.structureChunksLoaded(world, this.getPos());
+        boolean chunksLoaded = NanochipModuleLinkHost.structureChunksLoaded(world, this.getPos());
         GTLModular.LOGGER.info("[gtlmodular] NAC \u90e8\u4ef6\u672a\u5c31\u7eea\u8bca\u65ad @{}\uff1a\u96f6\u4ef6\u6570={}\uff0cisFormed={}\uff0c\u663e\u793a\u7b49\u7ea7\u5b57\u6bb5 tier={}\uff0chasError={}\uff0cerror={}\uff0ccache \u683c\u6570={}\uff0c\u7ed3\u6784\u533a\u5757\u5168\u52a0\u8f7d={}\uff0c\u7a97\u53e3\u622a\u6b62={}\uff0c\u4e0a\u6b21\u5c1d\u8bd5={}\uff0c\u5df2\u5c1d\u8bd5={}\uff0c\u5df2\u5931\u6548={}\uff0c\u4e0a\u6b21\u5931\u6548={}\uff0c\u8fde\u7eed\u65e0\u6548={}\uff0c\u8fde\u7eed\u629b\u5f02\u5e38={}\uff0c\u672c tick \u672a\u80fd\u4ea4\u51fa\u91cd\u5224={}\uff0cgameTime={} \u2014\u2014 \u9762\u677f\u300c\u7ed3\u6784\u90e8\u4ef6\u5c1a\u672a\u5c31\u7eea\u300d\u7684\u5224\u636e\u662f\u4e0a\u6e38 isRecipeLogicAvailable()\uff08= isFormed && !hasError\uff0c\u4e0d\u770b\u96f6\u4ef6\u8868\uff1b\u5b57\u8282\u7801\u89c1 _census/_javap_simple_workablemb.txt:475-487\uff09\uff1b\u663e\u793a\u7b49\u7ea7\u53ea\u7531 onStructureFormed \u65f6\u6309\u80fd\u6e90\u4ed3\u5199\u4e0b\u4e00\u6b21 \u21d2 \u90e8\u4ef6\u6ca1\u56de\u6765\u65f6\u90a3\u4e00\u884c\u4e0d\u53ef\u4fe1", new Object[]{this.getPos(), parts == null ? -1 : parts.size(), this.isFormed(), this.tier, hasError, errorName, cache, chunksLoaded, this.loadPartsRecoveryDeadline, this.loadPartsRecoveryLastAttempt, this.loadPartsRecoveryAttempts, this.loadPartsInvalidateCount, this.loadPartsInvalidateLastTick, this.loadPartsInvalidateIneffective, this.loadPartsInvalidateThrown, actionRefusedNoLever, now});
-    }
-
-    /**
-     * ★★ 0.3.131【① 让异常带栈】★★ 把一个抓到的异常压成**一行可读**的
-     * 「类名 / message / 栈顶 {@value #DESCRIBE_THROWABLE_FRAMES} 帧（类.方法:行号）」。
-     *
-     * <p><b>为什么需要它</b>：实机诊断行只给了 `error=读状态时抛 NullPointerException`——
-     * 类名有了、**抛点没有**。而这一类 NPE 的类名恒为 {@code NullPointerException}，
-     * 没有栈就等于没有证据（上一轮就是靠"类名 + 一句猜测"把守卫写成了死代码）。
-     * 本方法让栈顶落到**既有那一行**里（不新增日志行），而调用方（
-     * {@link #diagnoseLoadPartsNotReady}）的栈顶第 2 帧必然是我们自己的类 ⇒ 一眼可钉死。
-     *
-     * <p><b>为什么不用 {@code LOGGER.warn(..., e)}</b>：那会新增一条日志行（本题要求"不新增日志行"）；
-     * 而 {@code describeThrowable} 是**纯读**（只读异常的 class / message / stackTrace），
-     * 零副作用、不可能再抛（{@code getStackTrace()} 对未 fillInStackTrace 的异常返回空数组，
-     * 那一支也已显式兜住）。
-     */
-    private static String describeThrowable(Throwable t) {
-        StackTraceElement[] frames;
-        if (t == null) {
-            return "?\uff08\u5f02\u5e38\u5bf9\u8c61\u4e3a null\uff09";
-        }
-        StringBuilder sb = new StringBuilder(128);
-        sb.append(t.getClass().getName());
-        String message = t.getMessage();
-        if (message != null && !message.isEmpty()) {
-            sb.append(": ").append(message);
-        }
-        try {
-            frames = t.getStackTrace();
-        }
-        catch (RuntimeException e) {
-            frames = null;
-        }
-        sb.append(" @\u6808\u9876[");
-        if (frames == null || frames.length == 0) {
-            sb.append("\u65e0\u6808\uff08\u8be5\u5f02\u5e38\u672a fillInStackTrace / \u53d6\u6808\u5931\u8d25\uff09");
-        } else {
-            int printed = 0;
-            for (int i = 0; i < frames.length && printed < 4; ++printed, ++i) {
-                if (printed > 0) {
-                    sb.append(" < ");
-                }
-                sb.append(frames[i].getClassName()).append('.').append(frames[i].getMethodName()).append(':').append(frames[i].getLineNumber());
-            }
-        }
-        sb.append(']');
-        return sb.toString();
     }
 
     /**
@@ -4528,6 +3672,34 @@ NanochipThreadHost {
         }
     }
 
+    /**
+     * 统一扣电（净化水厂模式）：模块只暴露 {@code getExposedEuPerTick()}，
+     * 主机把所有正在工作的模块耗电加总后，从自己的能源容器/无线电网一次性扣。
+     */
+    private void payModuleEnergy() {
+        Level level = this.getLevel();
+        if (level == null || level.isClientSide
+                || GTLModularConfig.isNanochipFreeEnergyEnabled()) {
+            return;
+        }
+        long demand = 0L;
+        for (IModularMachineModule m : this.getModules()) {
+            if (!(m instanceof NanochipModuleMachine module)
+                    || !module.isFormed() || !module.drawingFromHost()) {
+                continue;
+            }
+            demand = saturatingAdd(demand, module.getExposedEuPerTick());
+        }
+        if (demand <= 0L) {
+            return;
+        }
+        EnergyContainerList e = this.getEnergyContainer();
+        if (e != null) {
+            // tickModuleRefresh 每 tick 调一次 ⇒ 按“EU/t”扣一次，不乘 20。
+            e.changeEnergy(-demand);
+        }
+    }
+
     /** 每 {@value #MODULE_REFRESH_INTERVAL} tick 按结构 {@code F} 位刷新「已连接」。 */
     private void tickModuleRefresh() {
         Level level = this.getLevel();
@@ -4540,11 +3712,14 @@ NanochipThreadHost {
             if (hatch != this.syncedThreadHatchThreads) {
                 this.syncedThreadHatchThreads = hatch;
             }
+            // ★ 2026-11-08：参考伪神之锻炉 —— 每 20 tick 按无线电网余额刷新档位（余额变动后档位跟着变）。
+            this.refreshWirelessTier();
         }
         this.recoverLoadPartsIfNeeded();
         this.mirrorBindGuard.tick(this);
         this.confirmFoldedPattern();
         this.tickNacSlotHeartbeat();
+        this.payModuleEnergy();
         this.distributeModuleEnergy(now);
         if (GTLModularConfig.isNanochipOriginalMode()) {
             return;
@@ -4648,6 +3823,12 @@ NanochipThreadHost {
         if (!this.isFormed() || !this.isWorkingEnabled()) {
             return;
         }
+        // 电网/免费电由 payModuleEnergy() 统一按暴露耗电扣，不再往模块缓存灌电，
+        // 否则同一份电会扣两次。
+        if (GTLModularConfig.isNanochipFreeEnergyEnabled()
+                || GTLModularConfig.isNanochipGridPowerEnabled()) {
+            return;
+        }
         EnergyContainerList e = this.getEnergyContainer();
         if (e == null) {
             return;
@@ -4689,19 +3870,9 @@ NanochipThreadHost {
     }
 
     @Override
-    /**
-     * 模块上限：每种模块各 1 台 + 1 个余量（原版为 12 个模块槽，对应 NH 的 11 种模块）。
-     *
-     * <p>★ 2026-09-18（队长指示新增三台组织器）：模块种类由 11 → <b>14</b>
-     * （{@link NanochipModuleKind#values()} 现读：原有 11 + 奇异 / 寰宇 / 超因果优化组织器）
-     * ⇒ 上限同步取 <b>15</b>（14 种各 1 台 + 1 个余量），口径与原版一致。
-     * 结构侧的 {@code F} 位有 48 格，装得下；本值与 {@code NanochipComplexPattern.build()}
-     * （冻结面，有 sha256 钉子）无关 —— 改它不动主机图案。
-     * <p>刻意写成<b>字面量</b>：{@code _census/check_nac_mechanics_parity.js} 的 B10 直接读这个数字
-     * 并与「NH 只在界面文本里写 0-12」做对照（见该脚本的 X6 divergence），保持可解析。
-     */
+    /** 模块上限（实现在 {@link NanochipModuleLinkHost}）。 */
     public int getMaxModuleCount() {
-        return 15;
+        return NanochipModuleLinkHost.getMaxModuleCount();
     }
 
     @Override
@@ -4710,146 +3881,13 @@ NanochipThreadHost {
     }
 
     @Override
-    /**
-     * ★【2026-10 模块框架对齐 · A1】<b>模块扫描位（世界坐标）</b> —— gtlcore
-     * {@link IModularMachineHost#scanAndConnectModules()} 的唯一数据源。
-     *
-     * <h3>改前 / 改后</h3>
-     * 改前：{@code return new BlockPos[0];}（空表）⇒ 框架那条「遍历扫描位 → 校验 → connectToHost」
-     * 的路<b>彻底空转</b>，模块连接只能靠 {@code onStructureFormed()} 那一刻的 F 位快照
-     * （{@link #cachedModuleSlots}）⇒ 读档后快照为空，就得干等一次整图案匹配（实测 4 分 18 秒）。
-     * 改后：返回 12 个模块位的世界坐标，与官方那套同构（参照 {@code gtladditions} 的
-     * {@code SubspaceCorridorHubIndustrialArray}：{@code getModuleScanPositions()} = 纯几何助手
-     * {@code calculateModulePositions(getPos(), getFrontFacing())}；以及
-     * {@code forge_of_the_antichrist} 的 {@code AntichristPosHelper}）。
-     *
-     * <h3>几何来源（唯一数据源 = 写死的实测表）</h3>
-     * {@link NanochipComplexPattern#moduleControllerOffsets()} 的 12 条偏移（来源 = 玩家存档实测
-     * 「4 个 F 位(偏移)」列 + 「模块底座 7×3×7 与主机基座逐格重合」的 48/48 穷举，见该类
-     * {@code NAC_MODULE_PREVIEW_SLOTS} 的 javadoc）。<b>本次已逐格核对 12/12 与结构定义一致</b>：
-     * 按 {@code (NAC_CTRL_X−x, row−NAC_CTRL_ROW, NAC_CTRL_Z−z) = (31−x, row−8, 32−z)} 反算成
-     * {@code NAC_SLICES} 下标后，12 条全部落在 {@code 'F'}（模块位）上，且都在 {@code row=2}
-     * （= 基座顶层，与模块控制器层一致）；逐条下标/字符见执行记录
-     * {@code _census/模块框架对齐_执行记录.md} §②。
-     *
-     * <h3>朝向折算（不自己写旋转数学）</h3>
-     * 这张偏移表是在「主机 {@code facing=north}」的参照系里量的（与
-     * {@code ModulePreviewSlots.buildNac()} 声明 {@code hostFront=NORTH / hostUp=UP} 同口径）
-     * ⇒ 这里直接复用 gtlcore 自己的
-     * {@link ModuleRenderInfo#calculateModuleOffset(Direction, Direction)}：预览侧
-     * {@code PatternPreviewWidget$MBPattern.initializeModules}（字节码
-     * {@code _enh2_extract/gtlcore_module_api.txt:3301-3305}）正是
-     * {@code hostPos.offset(info.calculateModuleOffset(hostFront, hostUp))} 得到模块控制器的世界坐标，
-     * 与本法<b>同一个公式</b> ⇒ 「预览画在哪」与「主机扫哪里」永远一致，且没有我方自造的旋转约定。
-     * <br>第 6 个参数（模块定义）在本调用里<b>不被读取</b>：该 record 的
-     * {@code calculateModuleOffset} 只读 {@code worldOffset / hostFront / hostUp}
-     * （同文件 {@code :159-204}，且 record 的规范构造器无 null 检查，{@code :135-157}）⇒ 传 {@code null}。
-     *
-     * <h3>线程 / 副作用</h3>
-     * 纯算术 + 只读本机方块状态（{@code getPos() / getFrontFacing() / getUpwardsFacing()}）：
-     * <b>不碰世界、不碰集合、不写任何字段</b> ⇒ 任意线程可调；真正写模块集合的
-     * {@link #scanAndConnectModules()} 仍只在服务端线程被调。
-     *
-     * <h3>与快照机制的分工（为什么必须保留快照路径）</h3>
-     * 本表只覆盖「12 个基座的<b>边中点</b>」这 12 格（= 模块底座能与主机基座逐格重合的唯一位置）；
-     * 玩家若把模块控制器放在同一基座的<b>其它</b> F 位（另外 3 条边），框架扫描扫不到它 —— 那正是
-     * {@link #refreshModulesFromStructure()} 那条 F 位快照路径继续存在的原因（兜底/差集补齐，
-     * 见 {@link #scanAndConnectModules()}）。
-     *
-     * <h3>★★ 2026-10 三次修正：默认改成"纯平移"，不做朝向旋转（开关见方法下方的
-     * {@link #NAC_MODULE_SCAN_ROTATE_BY_HOST}）</h3>
-     * <p>上面「朝向折算」那一节保留原文备查，但它有<b>两处已被本次修正推翻/降级</b>：
-     * <ol>
-     *   <li>它断言"预览与本法同一个公式 ⇒ 永远一致"——<b>公式相同不等于必要</b>：当
-     *       {@code hostFront = NORTH} 时 {@code calculateModuleOffset} 逐字节码退化为恒等变换
-     *       （{@code calculateUpRotation} 只要 {@code front} 是水平方向就返回 {@code NONE}，
-     *       {@code _enh2_extract/gtlcore_module_api.txt:366-402}；{@code rotateByFrontAxis} 的
-     *       "前轴 = Z + {@code NONE}" 分支即原值，同文件 {@code :374-381/:522}），
-     *       而本机（{@code RotationState.NON_Y_AXIS}，数据包/存档实测 {@code facing=north}）
-     *       与预览里的幽灵主机都恰好是 {@code NORTH} ⇒ 两条路线<b>逐值等价</b>，
-     *       旋转是"多余的、也是唯一可能带来未取证 ±90°/180° 约定的那一环"。</li>
-     *   <li>它没有说明"非 north 主机"其实<b>不可能存在</b>：现行图案只有
-     *       {@code facing=north} 能成形（施工记录 §50.2 证据 2：8 种组合逐格实测，
-     *       新图案 + north 8712/8712 命中，其余 6 种全不成形）⇒ 该旋转永远不会真正生效，
-     *       却把"未取证面"（{@code _census/模块框架对齐_执行记录.md} §⑦-2 / §R4：
-     *       该函数在 gtlcore 里只被幽灵主机路径调用过）留在主路径上。默认改成纯平移即为此。</li>
-     * </ol>
-     * <p><b>另注（位点表）</b>：本节上方提到的 12 条偏移现已是"各基座 −z 边中点 + north"
-     * （= 数据包/存档里模块真实站着的那一组），选表开关见
-     * {@link NanochipComplexPattern#NAC_MODULE_SLOTS_CANONICAL_MINUS_Z}；
-     * 旧版"最朝外 F 位"表已降级为备选（12 条里 8 条在 ±x 边上，其 east/west 的 ±90° 符号
-     * 从未在真实存档里验证过）。
-     *
-     * <p><b>失败姿态</b>：表为空 / 拿不到本机坐标或朝向 ⇒ 返回空表（等价于改前的行为，
-     * 快照路径照旧兜底；绝不猜、绝不抛）。
-     */
     public BlockPos[] getModuleScanPositions() {
-        List<NanochipComplexPattern.ModuleControllerSlot> slots = NanochipComplexPattern.moduleControllerOffsets();
-        if (slots.isEmpty()) {
-            return new BlockPos[0];
-        }
-        BlockPos origin = this.getPos();
-        Direction front = this.getFrontFacing();
-        Direction up = this.getUpwardsFacing();
-        if (origin == null || front == null || up == null) {
-            return new BlockPos[0];
-        }
-        BlockPos[] out = new BlockPos[slots.size()];
-        boolean rotateByHost = false;
-        for (int i = 0; i < out.length; ++i) {
-            NanochipComplexPattern.ModuleControllerSlot slot = slots.get(i);
-            if (!rotateByHost) {
-                out[i] = origin.offset((Vec3i)slot.offset());
-                continue;
-            }
-            ModuleRenderInfo info = new ModuleRenderInfo(slot.offset(), Direction.NORTH, Direction.UP, slot.front(), Direction.UP, null);
-            out[i] = origin.offset((Vec3i)info.calculateModuleOffset(front, up));
-        }
-        return out;
+        return NanochipModuleLinkHost.getModuleScanPositions(this);
     }
 
     @Override
-    /**
-     * 「点击显示机器模块」（{@code M:OFF→M:ON}）预览数据。
-     *
-     * <p><b>根因</b>：gtlcore 的 {@link IModularMachineHost#getModulesForRendering()} 默认实现
-     * <b>直接 {@code return Collections.emptyList()}</b>
-     * （字节码：{@code _enh2_extract/gtlcore_module_api.txt:1419-1422}：{@code invokestatic
-     * Collections.emptyList → areturn}）。预览侧唯一消费点是
-     * {@code PatternPreviewWidget$MBPattern.initializeModules}（同文件 {@code :3230-3246}），
-     * 它拿到空表立刻 {@code return List.of()} ⇒ 点按钮画面不变。我方 NAC 原先没覆写它。
-     *
-     * <p><b>数据从哪来（★ 2026-10 修正：已改成写死的实测表，不再运行时推导）</b>：
-     * {@link ModulePreviewSlots#nacModules} 调
-     * {@link NanochipComplexPattern#moduleControllerOffsets()} —— 该方法现在只是把
-     * <b>12 条写死的位点</b>（来源 = 玩家存档实测 {@code _census/expect_table.md} §1 的
-     * 「4 个 F 位(偏移)」列）转成列表，<b>恒返回 12 条、没有任何可能失败的路径</b>。
-     * 旧实现是"从 {@code NAC_SLICES} 收齐 F 位 → 用「4 个轴向 ±3 格也都是 F」解出 12 个基座中心"
-     * 的运行时反推，玩家日志实锤它<b>恒命中 0 个</b>
-     * （{@code IllegalStateException: 基座中心判据命中 0 个（期望 12）}）⇒ 恒返回空表 ⇒
-     * 点 {@code M:ON} 画面不变；该反推已停用（{@code @Deprecated} 死代码，禁止再调用）。
-     * 表的内容、逐条自检与"为什么必须写死"全部写在 {@code NAC_MODULE_PREVIEW_SLOTS} 的 javadoc 里。
-     *
-     * <p><b>性能</b>：这张表只依赖图案常量、与机器实例无关 ⇒ 在 {@link ModulePreviewSlots}
-     * 里做了<b>静态</b>缓存（全局一份，≤ 48 条），本方法每次调用只是一次 {@code volatile} 读 + 返回；
-     * 诊断日志同一台宿主<b>只打一次</b>（键集合有硬上限）。
-     *
-     * <p><b>失败姿态</b>：{@code getPos()} 为空 / 推导失败 / 任何意外 ⇒ 返回<b>空表</b>。
-     *
-     * <p><b>红线</b>：本方法<b>只读</b>——不碰 AE 刷新（{@code refreshPatternsNow}/{@code needPatternSync}）、
-     * 不碰 {@code cachedModuleSlots}/{@code lastMatchedModuleSlots}、不碰模式游标、催化剂字段、
-     * 分页 UI、{@code clampCapacityToMax}/{@code getInternalSlotCount}/{@code growCapacityFor}，
-     * 也不碰 {@code NanochipStructureCheckThrottle}。与"模块连接"机制无关（那是
-     * {@code refreshModulesFromStructure} 的事）。
-     */
     public List<ModuleRenderInfo> getModulesForRendering() {
-        try {
-            return ModulePreviewSlots.nacModules(this.getPos());
-        }
-        catch (Throwable t) {
-            GTLModular.LOGGER.debug("[gtlmodular] \u6a21\u5757\u9884\u89c8: NAC getModulesForRendering \u5f02\u5e38\uff0c\u8fd4\u56de\u7a7a\u8868: {}", (Object)t.toString());
-            return List.of();
-        }
+        return NanochipModuleLinkHost.getModulesForRendering(this);
     }
 
     /**
@@ -4891,9 +3929,9 @@ NanochipThreadHost {
         this.lastMatchedModuleSlots.addAll(sorted);
     }
 
-    /** 当前生效的 F 位快照条数（诊断/界面用；0 = 还没拿到过一次成功匹配）。 */
+    /** 当前生效的 F 位快照条数（实现在 {@link NanochipModuleLinkHost}）。 */
     public int moduleSlotCount() {
-        return this.cachedModuleSlots.size();
+        return NanochipModuleLinkHost.moduleSlotCount(this.cachedModuleSlots);
     }
 
     public void onStructureFormed() {
@@ -4913,6 +3951,8 @@ NanochipThreadHost {
             }
         }
         this.registerGridPowerHandler();
+        // ★ 2026-11-08：参考伪神之锻炉 —— 成形时按无线电网余额刷一次「假电压档」。
+        this.refreshWirelessTier();
         this.snapshotModuleSlots();
         this.pipeGraph.markDirty();
         this.reconcileRoutingMode();
@@ -4929,7 +3969,7 @@ NanochipThreadHost {
         String formedDetail = (this.fullMode() ? "\u5168\u6d41\u7a0b\u6863" : "\u76f4\u901a\u6863") + "|F \u4f4d=" + this.lastMatchedModuleSlots.size();
         boolean emitFormed = this.structureLogGate.shouldEmitInfo(FORMED_CONCLUSION, formedDetail, "\u590d\u5408\u4f53@" + this.getPos().toShortString(), formedLogNow);
         if (emitFormed || GTLModular.LOGGER.isDebugEnabled()) {
-            Object[] formedArgs = new Object[]{this.getPos(), this.fullMode() ? "\u5168\u6d41\u7a0b\u6863" : "\u76f4\u901a\u6863", this.lastMatchedModuleSlots.size(), this.formedModuleCount(), this.getMaxModuleCount(), this.summarizeFSlotContent()};
+            Object[] formedArgs = new Object[]{this.getPos(), this.fullMode() ? "\u5168\u6d41\u7a0b\u6863" : "\u76f4\u901a\u6863", this.lastMatchedModuleSlots.size(), this.formedModuleCount(), this.getMaxModuleCount(), NanochipDiagnostics.summarizeFSlotContent(this, this.cachedModuleSlots)};
             if (emitFormed) {
                 GTLModular.LOGGER.info(FORMED_LINE_FORMAT, formedArgs);
             } else {
@@ -4962,7 +4002,7 @@ NanochipThreadHost {
             this.clearModuleBuffers();
         }
         int dropped = this.modules.size();
-        this.logStructureFailureDetail();
+        NanochipDiagnostics.logStructureFailureDetail(this, this.lastMatchedModuleSlots);
         this.logUnformedAudit();
         Level invalidLevel = this.getLevel();
         this.moduleDisconnectDeadline = invalidLevel == null ? -1L : invalidLevel.getGameTime() + 100L;
@@ -5012,148 +4052,11 @@ NanochipThreadHost {
         this.clearThreadPart();
     }
 
-    /** 结构失效：打一条"首个不符处 + 该格期望什么"；拿不到逐格原因时退化成摘要并说明原因。 */
-    private void logStructureFailureDetail() {
-        String detail = NanochipAssemblyComplexMachine.describeStructureFailure(this.getMultiblockState());
-        if (detail != null) {
-            GTLModular.LOGGER.info("[gtlmodular] NAC \u7ed3\u6784\u5931\u6548\u5b9a\u4f4d @{}\uff1a{}", (Object)this.getPos(), (Object)detail);
-            return;
-        }
-        GTLModular.LOGGER.info("[gtlmodular] NAC \u7ed3\u6784\u5931\u6548\u6458\u8981 @{}\uff1aGTCEu \u672c\u6b21\u6ca1\u6709\u7559\u4e0b\u9010\u683c\u539f\u56e0\uff08MultiblockState.error == null\uff09\u2014\u2014 \u539f\u56e0\uff1aonStructureInvalid() \u4e0d\u5e26\u53c2\u6570\uff0c\u9010\u683c\u539f\u56e0\u53ea\u80fd\u4ece MultiblockState.error \u8bfb\uff0c\u800c GTCEu \u53ea\u5728\u300c\u6570\u91cf\u7c7b / \u88ab\u5378\u8f7d\u300d\u5931\u8d25\u8def\u5f84\u4e0a\u5199\u5b83\uff0c\u5355\u683c\u4e0d\u7b26\u5e38\u5e38\u76f4\u63a5 return false\uff1b\u21d2 \u9000\u5316\u6458\u8981\uff1a\u5f53\u524d\u5df2\u8fde\u63a5\u6a21\u5757 {} \u4e2a\uff1b{}", new Object[]{this.getPos(), this.modules.size(), this.summarizeModuleSlots()});
-    }
-
     /**
-     * 把 GTCEu 结构检查的失败原因翻成一行可读诊断（"首个不符处 + 该格期望什么"）。
-     *
-     * <p>数据来源（<b>已按 {@code gtceu-1.20.1-1.4.4} 字节码核对，不是猜的</b>）：
-     * {@code BlockPattern} 判定失败时会把 {@code SinglePredicateError} / {@code PatternStringError} /
-     * 基础 {@code PatternError} 写进 {@code MultiblockState.error}（{@code setError} 顺带把 state 挂到
-     * error 上），而 {@code PatternError.getPos()} = 该 state 当时正在检查的那一格、
-     * {@code getErrorInfo()} = 期望文案、{@code getCandidates()} = 该格允许放的方块/物品。
-     * {@code onStructureInvalid()} 本身不带任何参数，所以这是<b>唯一</b>能拿到逐格原因的途径。
-     *
-     * <h4>诚实边界（哪些情况它给不出"那一格"）</h4>
-     * <ul>
-     *   <li>数量类失败（{@code SinglePredicateError.type} 0/1/2/3 = 全局上限 / 全局下限 / 每层上限 /
-     *       每层下限，例：NAC 的"能源仓最多 2 个"是<b>全局</b>限制）没有"某一格"的概念，
-     *       此时 {@code getPos()} 只是"最后被检查的那一格"，返回值里会标注；</li>
-     *   <li>{@code MultiblockState.UNLOAD_ERROR} / {@code UNINIT_ERROR} 这两个静态错误对象没有挂 state
-     *       （直接 {@code getPos()} 会 NPE），单独识别并说明"不是真的结构错"；</li>
-     *   <li>完全不写 error 的失败路径 ⇒ 返回 {@code null}，调用方改用摘要；</li>
-     *   <li>本方法<b>只读</b>，任何异常都被吞掉（返回 null）—— 诊断绝不能拖垮结构检查本身。</li>
-     * </ul>
-     *
-     * @param state 该多方块的 {@code getMultiblockState()}（可为 null）
-     * @return 一行诊断；拿不到逐格原因时返回 {@code null}
+     * 结构失败原因的一行可读诊断（实现见 {@link NanochipDiagnostics}；保留本方法给模块侧既有调用）。
      */
     public static String describeStructureFailure(MultiblockState state) {
-        if (state == null) {
-            return null;
-        }
-        PatternError error = state.error;
-        if (error == null) {
-            return null;
-        }
-        if (error == MultiblockState.UNLOAD_ERROR) {
-            return "GTCEu \u8bb0\u5f55\u7684\u539f\u56e0\u662f\u300c\u65b9\u5757/\u96f6\u4ef6\u88ab\u5378\u8f7d\u300dMultiblockState.UNLOAD_ERROR\u2014\u2014 \u4e0d\u662f\u771f\u7684\u7ed3\u6784\u9519\uff0c\u7b49\u533a\u5757/\u96f6\u4ef6\u91cd\u65b0\u52a0\u8f7d\u540e\u4f1a\u81ea\u52a8\u590d\u67e5";
-        }
-        if (error == MultiblockState.UNINIT_ERROR) {
-            return "GTCEu \u8bb0\u5f55\u7684\u539f\u56e0\u662f\u300c\u7ed3\u6784\u72b6\u6001\u5c1a\u672a\u521d\u59cb\u5316\u300dMultiblockState.UNINIT_ERROR \u2014\u2014 \u4e0d\u662f\u771f\u7684\u7ed3\u6784\u9519";
-        }
-        try {
-            String what;
-            BlockPos bad = error.getPos();
-            Component expected = error.getErrorInfo();
-            int type = -1;
-            if (error instanceof SinglePredicateError) {
-                SinglePredicateError single = (SinglePredicateError)error;
-                type = single.type;
-                what = switch (single.type) {
-                    case 0 -> "\u8be5\u65b9\u5757/\u4ed3\u4f4d\u7684\u3010\u5168\u5c40\u6570\u91cf\u8d85\u8fc7\u4e0a\u9650\u3011\uff1b\u4f8b\uff1a\u80fd\u6e90\u4ed3\u6700\u591a 2 \u4e2a";
-                    case 1 -> "\u8be5\u65b9\u5757/\u4ed3\u4f4d\u7684\u3010\u5168\u5c40\u6570\u91cf\u4e0d\u8db3\u3011\uff1b\u4f8b\uff1a\u81f3\u5c11 1 \u4e2a\u80fd\u6e90\u4ed3";
-                    case 2 -> "\u8be5\u65b9\u5757/\u4ed3\u4f4d\u7684\u3010\u6bcf\u5c42\u6570\u91cf\u8d85\u8fc7\u4e0a\u9650\u3011";
-                    case 3 -> "\u8be5\u65b9\u5757/\u4ed3\u4f4d\u7684\u3010\u6bcf\u5c42\u6570\u91cf\u4e0d\u8db3\u3011";
-                    default -> "\u8be5\u683c\u5224\u5b9a\u4e0d\u7b26\uff1a\u5355\u683c\u6ca1\u901a\u8fc7";
-                };
-            } else {
-                what = "\u8be5\u683c\u5224\u5b9a\u4e0d\u7b26\uff1a\u901a\u7528\u7ed3\u6784\u9519\u8bef";
-            }
-            boolean countType = type >= 0 && type <= 3;
-            return String.format(Locale.ROOT, "%s\uff1bGTCEu \u8bb0\u5f55\u7684\u4f4d\u7f6e %s%s\uff1b\u8be5\u683c\u5b9e\u9645=%s\uff1bGTCEu \u671f\u671b\u6587\u6848=\u300c%s\u300d\uff1b\u5141\u8bb8\u653e\u7684\u65b9\u5757/\u7269\u54c1=%s%s", what, bad == null ? "\u672a\u7ed9\u51fa" : bad.toShortString(), countType ? "\u6570\u91cf\u7c7b\u9519\u8bef\uff1a\u8fd9\u53ea\u662f\u300c\u6700\u540e\u88ab\u68c0\u67e5\u7684\u90a3\u4e00\u683c\u300d\uff0c\u4e0d\u662f\u300c\u67d0\u4e00\u683c\u653e\u9519\u4e86\u300d" : "", bad == null ? "\u672a\u77e5" : NanochipAssemblyComplexMachine.describeSlotContent(state.getWorld(), bad), expected == null ? "\u65e0" : expected.getString(), NanochipAssemblyComplexMachine.describeCandidates(error), type < 0 ? "" : "\uff1bGTCEu \u9519\u8bef\u7c7b\u578b=" + error.getClass().getSimpleName() + "(type=" + type + ")");
-        }
-        catch (RuntimeException e) {
-            return null;
-        }
-    }
-
-    /** 逐个 F 位打印"这一格现在站的是什么"（结构失效诊断用；最多 6 格 + 省略数）。 */
-    private String summarizeModuleSlots() {
-        Level level = this.getLevel();
-        if (level == null || this.lastMatchedModuleSlots.isEmpty()) {
-            return "\u7f13\u5b58\u91cc\u6ca1\u6709 F \u4f4d\u5750\u6807\uff08\u672c\u673a\u8fd9\u6b21\u4f1a\u8bdd\u8fd8\u6ca1\u6709\u6210\u529f\u5339\u914d\u8fc7\u4e00\u6b21\uff09";
-        }
-        int formed = 0;
-        for (BlockPos pos : this.lastMatchedModuleSlots) {
-            NanochipModuleMachine module;
-            MetaMachine metaMachine = MetaMachine.getMachine((BlockGetter)level, (BlockPos)pos);
-            if (!(metaMachine instanceof NanochipModuleMachine) || !(module = (NanochipModuleMachine)metaMachine).isFormed()) continue;
-            ++formed;
-        }
-        StringBuilder sb = new StringBuilder();
-        int shown = 0;
-        for (BlockPos pos : this.lastMatchedModuleSlots) {
-            if (shown >= 6) break;
-            if (shown > 0) {
-                sb.append(" | ");
-            }
-            sb.append(pos.toShortString()).append('=').append(NanochipAssemblyComplexMachine.describeSlotContent(level, pos));
-            ++shown;
-        }
-        if (this.lastMatchedModuleSlots.size() > shown) {
-            sb.append(" | \u2026\u53e6 ").append(this.lastMatchedModuleSlots.size() - shown).append(" \u683c");
-        }
-        return "\u4e0a\u6b21\u6210\u529f\u5339\u914d\u7684 F \u4f4d " + this.lastMatchedModuleSlots.size() + " \u4e2a\uff0c\u5176\u4e2d\u5df2\u6210\u5f62\u6a21\u5757 " + formed + " \u4e2a\uff1a" + String.valueOf(sb);
-    }
-
-    /** 一格上现在是什么（模块/NAC 模块机 → 种类；否则方块 id）。 */
-    private static String describeSlotContent(Level level, BlockPos pos) {
-        MetaMachine machine;
-        MetaMachine metaMachine = machine = level == null ? null : MetaMachine.getMachine((BlockGetter)level, (BlockPos)pos);
-        if (machine instanceof NanochipModuleMachine) {
-            NanochipModuleMachine module = (NanochipModuleMachine)machine;
-            return module.getModuleKind().nameZh() + (module.isFormed() ? " \u00b7 \u5df2\u6210\u5f62" : " \u00b7 \u672a\u6210\u5f62");
-        }
-        ResourceLocation id = level == null ? null : BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock());
-        String base = id == null ? "\u53d6\u4e0d\u5230\u65b9\u5757 id" : id.toString();
-        return machine == null ? base : base + " \u00b7 " + machine.getClass().getSimpleName();
-    }
-
-    /** GTCEu 给出的"允许放什么"（每类只取第一个，最多 6 类；拿不到就说明拿不到）。 */
-    private static String describeCandidates(PatternError error) {
-        List candidates = error.getCandidates();
-        if (candidates == null || candidates.isEmpty()) {
-            return "GTCEu \u672a\u7ed9\u51fa\u5019\u9009\u8868";
-        }
-        StringBuilder sb = new StringBuilder();
-        int groups = 0;
-        for (List<?> group : (List<List<?>>)candidates) {
-            ItemStack first;
-            if (group == null || group.isEmpty()) continue;
-            if (groups >= 6) {
-                sb.append(" / \u2026");
-                break;
-            }
-            if (groups > 0) {
-                sb.append(" / ");
-            }
-            ResourceLocation id = (first = (ItemStack)group.get(0)).isEmpty() ? null : BuiltInRegistries.ITEM.getKey(first.getItem());
-            sb.append(id == null ? "\u7a7a" : id.toString());
-            if (group.size() > 1) {
-                sb.append("(+").append(group.size() - 1).append(')');
-            }
-            ++groups;
-        }
-        return sb.length() == 0 ? "GTCEu \u672a\u7ed9\u51fa\u5019\u9009\u8868" : sb.toString();
+        return NanochipDiagnostics.describeStructureFailure(state);
     }
 
     public void saveCustomPersistedData(CompoundTag tag, boolean forDrop) {
@@ -5217,7 +4120,7 @@ NanochipThreadHost {
      * <h4>它本来对我们有没有用（已核）</h4>
      * 消费 {@code limitedDuration} 的是 gtladditions 的 {@code GTLAddMultipleRecipesLogic}
      * （两处 {@code RecipeCalculationHelper.buildNormalRecipe/buildWirelessRecipe}），
-     * 而本机 {@link #createRecipeLogic} 返回的是我们自己的 {@link NanochipThreadedRecipeLogic}
+     * 而本机 {@link #createRecipeLogic} 返回的是我们自己的 {@link NACThreadedRecipeLogic}
      * ⇒ <b>这个值在我们的机器上没有任何代码读它</b>。它只是一个"能点、能改、但不影响任何事"的旋钮，
      * 留着只会误导玩家（队长原话方向：「它会影响我们的机制」——实际上它不改我们的机制，但会让人以为会改）。
      *
@@ -5255,18 +4158,17 @@ NanochipThreadHost {
             return;
         }
         if (this.isFormed() && !this.hasRegisteredParts()) {
-            this.replaceUnreadyTierDisplay(textList);
+            NanochipStateSync.replaceUnreadyTierDisplay(textList);
         }
         if (this.isFormed() && !this.hasRegisteredParts()) {
-            textList.add((Component)Component.literal((String)"  \u00b7 \u7ed3\u6784\u90e8\u4ef6\u672a\u5c31\u7eea\uff08\u80fd\u6e90\u4ed3 / \u6837\u677f\u603b\u6210\u5c1a\u672a\u91cd\u65b0\u8fde\u63a5\uff09").withStyle(ChatFormatting.YELLOW));
-            textList.add((Component)Component.literal((String)"    \u6700\u5927\u914d\u65b9\u7b49\u7ea7 / \u6700\u5927\u529f\u7387\u6682\u4e0d\u663e\u793a\uff08\u907f\u514d\u8bef\u8bfb\u6210\u964d\u7ea7\uff09\uff1b\u672c\u7248\u5df2\u505c\u7528\u8bfb\u6863\u81ea\u52a8\u6062\u590d\uff08B \u5f00\u5173\uff09\uff1a\u8bf7\u62c6\u653e\u4e00\u6b21\u63a7\u5236\u5668\uff0c\u6216\u70b9\u5de6\u4fa7\u300c\u7acb\u5373\u66f4\u65b0\u7ed3\u6784\u300d\u6309\u94ae").withStyle(ChatFormatting.DARK_GRAY));
+            NanochipStateSync.appendUnreadyLines(textList);
         }
         if (!this.isFormed()) {
-            textList.add((Component)Component.literal((String)"\u7eb3\u7c73\u82af\u7247\u7ec4\u88c5\u590d\u5408\u4f53\uff1a\u7ed3\u6784\u672a\u6210\u5f62").withStyle(ChatFormatting.RED));
+            NanochipStateSync.appendNotFormedLine(textList);
             return;
         }
-        this.replaceMaxPowerWithGridTotal(textList);
-        this.addMirrorBindingDisplay(textList);
+        NanochipStateSync.replaceMaxPowerWithGridTotal(this, textList);
+        NanochipStateSync.addMirrorBindingDisplay(textList);
         if (this.getLevel() instanceof ServerLevel) {
             long t = this.getLevel().getGameTime();
             if (this.lastUiRefreshTick < 0L || t - this.lastUiRefreshTick >= 60L) {
@@ -5275,92 +4177,7 @@ NanochipThreadHost {
             }
         }
         boolean full = "\u5168\u6d41\u7a0b\u6863".equals(this.syncedMode);
-        textList.add((Component)Component.literal((String)("\u6a21\u5757: " + this.formedModuleCount() + " / " + this.getMaxModuleCount())).withStyle(ChatFormatting.WHITE));
-        RecipeLogic logicRef = this.getRecipeLogic();
-        if (logicRef instanceof NanochipThreadedRecipeLogic) {
-            NanochipThreadedRecipeLogic threaded = (NanochipThreadedRecipeLogic)logicRef;
-            threaded.appendThreadDisplayText(textList);
-        }
-    }
-
-    /**
-     * ★★ 2026-11-10（第 2 轮）<b>部件未就绪时的等级显示处理：把那两行「按部件推导」的值收起来</b>★★
-     *
-     * <p>为什么按<b>语言键</b>找这两行（而不是按位置/序号）：它们是 GTCEu 基类
-     * {@code WorkableElectricMultiblockMachine.addDisplayText} 里连续添加的（字节码
-     * {@code _census/_javap_simple_workablemb.txt:775-802}：{@code MultiblockDisplayText.builder(...)
-     * .addEnergyUsageLine(energyContainer).addEnergyTierLine(tier)...}），语言键是
-     * 「本机读到的那个字段」的稳定标识、与语言无关 ——
-     * 本工程已有同款用法（{@code MoltenModuleHostMachine.java:744-751} 按
-     * {@code gtceu.gui.machinemode}、{@code MoltenSpaceOreModuleMachine.java:335-343} 按
-     * {@code gtceu.multiblock.parallel} 定位并替换基类那一行），本轮沿用同一套口径。
-     *
-     * <p>两个键的出处（部署 jar 的常量池与语言文件，逐条）：
-     * {@code _census/_probe_nacmat_evidence/classstr_gtceu-1.20.1-1.4.4.txt:15548-15561}
-     * （{@code addEnergyUsageLine} → {@code gtceu.multiblock.max_energy_per_tick}；
-     * {@code addEnergyTierLine} → {@code gtceu.multiblock.max_recipe_tier}）与
-     * {@code _census/_probe_nacmat_evidence/lang/gtceu-1.20.1-1.4.4__gtceu__zh_cn.json:3682-3686}
-     * （「最大功率：§a%s EU/t（%s§r）」「最大配方等级：%s」）。
-     *
-     * <p><b>低风险</b>：只在"已成形 + 零件表空"这条故障路径上被调到，正常机器一次都不进；
-     * 万一某个版本把键改了 ⇒ 找不到那两行 ⇒ <b>退回原样显示</b>（不抛异常、不误删别的行）。
-     *
-     * @param textList 基类刚刚写好的显示行（就地修改：删掉两行 + 替换一行）
-     */
-    private void replaceUnreadyTierDisplay(List<Component> textList) {
-        boolean tierLineSeen = false;
-        Iterator<Component> it = textList.iterator();
-        while (it.hasNext()) {
-            Component line = it.next();
-            ComponentContents componentContents = line.getContents();
-            if (!(componentContents instanceof TranslatableContents)) continue;
-            TranslatableContents tc = (TranslatableContents)componentContents;
-            String key = tc.getKey();
-            if ("gtceu.multiblock.max_recipe_tier".equals(key)) {
-                tierLineSeen = true;
-                it.remove();
-                continue;
-            }
-            if (!LANG_MAX_ENERGY_PER_TICK.equals(key)) continue;
-            it.remove();
-        }
-        if (tierLineSeen) {
-            textList.add((Component)Component.literal((String)"\u6700\u5927\u914d\u65b9\u7b49\u7ea7\uff1a\u5f85\u5b9a\uff08\u80fd\u6e90\u4ed3\u672a\u91cd\u8fde\uff0c\u90e8\u4ef6\u5c31\u7eea\u540e\u81ea\u52a8\u6062\u590d\uff09").withStyle(ChatFormatting.GRAY));
-        }
-    }
-
-    /**
-     * ★★ 2026-11-11【样板总成镜像绑定 = 0 · 显示】★★ 把「这一格数字是谁算的、0 是什么意思」摊到面板上。
-     *
-     * <h3>为什么必须补这一行</h3>
-     * <p>上游 Jade 那一格 {@code gtceu.top.proxies_bound = "样板总成镜像绑定数量：%s"}
-     * 只给一个裸数字（填它的是 gtlcore 的 Jade provider，算它的是
-     * {@code MEPatternBufferPartMachineBase.getProxies()}；两条出处都在
-     * {@link NanochipMirrorBindGuard} 的类注释 §一）。数字为 0 时玩家<b>读不出</b>「未绑」还是「坏了」，
-     * 也读不出「那是别的机器的部件、跟我这台机器有没有配方可做无关」。
-     *
-     * <h3>显示口径 = 只读、照实说（显示即事实）</h3>
-     * <ul>
-     *   <li>{@code readState(...) == null}（未成形 / 零件表为空）⇒ 显示「<b>未读取</b>」，
-     *       <b>绝不</b>用 0 冒充「已读、就是 0」；</li>
-     *   <li>已读且 {@code 已入链 > 0} ⇒ 显示那个数字（灰）；</li>
-     *   <li>已读、{@code 已入链 == 0}、且上游没记过任何镜像坐标 ⇒ 只显示「<b>0 = 未绑定</b>」这一行
-     *       （{@code …mirror.none} 那条键）。原先跟在它后面的两行解释文案已按用户要求<b>整段删除</b>，
-     *       对应的两条语言键也从中英两份 lang 里一并移除；</li>
-     *   <li>已读、{@code 已入链 == 0}、但上游<b>记着</b>镜像坐标 ⇒ 显示「<b>断链</b>」+ 已自动重建几次 +
-     *       一条立刻可用的临时解法（拿闪存重绑一次）。</li>
-     * </ul>
-     * <p><b>纯只读</b>：本方法一行判定都不改、一个字段都不写（它只调
-     * {@link NanochipMirrorBindGuard#readState}）。显示层与恢复动作口径同源（同一份 {@code State}），
-     * 不可能出现「面板说已绑定、上游还是 0」这种打架。
-     *
-     * <p>中英文案走 {@code Component.translatable}（键在
-     * {@code assets/gtlmodular/lang/{zh_cn,en_us}.json} 各一条，键名两边完全一致）⇒ 客户端按语言自行选，
-     * 不存在"在英文环境里塞一句中文"这种事；提示行里引用的方块名也用上游自己的 lang
-     * （{@code block.gtceu.me_pattern_buffer_proxy = "ME样板总成镜像"}，出处
-     * {@code gtl-dev/inspect/gtceu/assets/gtceu/lang/zh_cn.json:806}）。
-     */
-    private void addMirrorBindingDisplay(List<Component> textList) {
+        NanochipStateSync.appendModuleLine(this, textList);
     }
 
     /** 供调试/日志用的一行摘要。 */
@@ -5368,858 +4185,5 @@ NanochipThreadHost {
         return String.format(Locale.ROOT, "NAC[%s, \u6a21\u5f0f=%s, \u5e76\u884c=%d, \u6821\u51c6=%s, \u6821\u51c6\u5206\u6bcd=%s]", this.getPos(), this.syncedMode, this.syncedParallelShown, this.syncedCalibrationText, this.syncedFullWindowDenominator ? "\u539f\u7248\u56fa\u5b9a 100000" : "\u5df2\u8bb0\u5f55\u6570");
     }
 
-    private static final class GridEnergyContainer
-    implements IEnergyContainer,
-    IRecipeHandler<Long> {
-        /** 余额读数缓存时长（tick）＝ 20（1 秒）。同一 tick 内恒定 ⇒ 匹配与付款同源。 */
-        private static final long CACHE_TICKS = 20L;
-        private final NanochipAssemblyComplexMachine machine;
-        private long cachedEu;
-        private long cachedAtTick = Long.MIN_VALUE;
-
-        GridEnergyContainer(NanochipAssemblyComplexMachine machine) {
-            this.machine = machine;
-        }
-
-        @Nullable
-        /**
-         * 取电身份（{@code null} = 开关已关；开关开着时由
-         * {@code NanochipAssemblyComplexMachine#resolveGridUser()} 保证非空）。
-         *
-         * <p>★ 2026-11-14【照抄山海 · 身份】原先这里直接读 {@code machine.gridPowerUser()}，
-         * 于是"没登记放置者"＝ {@code null} ＝ 本容器整段惰性。现在改走
-         * {@link NanochipAssemblyComplexMachine#resolveGridUser()}：**没登记就现生成一个随机 UUID
-         * 并持久化**，逐字照抄山海 {@code MatterCopierMachine.ensureWirelessUuid()}
-         * （{@code _census/shanhai-src/com/dishanhai/gt_shanhai/common/machine/misc/MatterCopierMachine.java:461-465}：
-         * {@code if (getUuid() == null) setUuid(UUID.randomUUID());}）。
-         * ⇒ 机器**永远有一个自己的电网账户**，"能不能从电网取电"不再由"有没有登记成功"决定。
-         */
-        private UUID user() {
-            return GTLModularConfig.isNanochipGridPowerEnabled() ? this.machine.resolveGridUser() : null;
-        }
-
-        /**
-         * 该玩家（或他去 FTB 队伍）当下的无线电网余额（EU，夹到非负 long）。
-         *
-         * <p>{@code getUserEU} 返回 {@code BigInteger}
-         * （{@code classstr_gtladditions-...txt:2774-2776}），量级可超出 long ⇒ 先比 {@code Long.MAX_VALUE}
-         * 再窄化（<b>绝不</b>直接 {@code longValue()} 让它回绕成负数）。
-         * 读数按 {@link #CACHE_TICKS} 缓存：余额查询本身是一次哈希查表，
-         * 但本容器每 tick 会被读取点问多次 ⇒ 缓存既省开销、又保证同 tick 内"匹配/付款"读同一个数。
-         */
-        private long wireEu() {
-            long now;
-            Level lv = this.machine.getLevel();
-            long l = now = lv == null ? Long.MIN_VALUE : lv.getGameTime();
-            if (now == Long.MIN_VALUE || this.cachedAtTick == Long.MIN_VALUE || now - this.cachedAtTick >= 20L) {
-                this.cachedAtTick = now;
-                UUID u = this.user();
-                if (u == null) {
-                    this.cachedEu = 0L;
-                } else {
-                    BigInteger bal = null;
-                    try {
-                        bal = WirelessEnergyManager.getUserEU((UUID)u);
-                    }
-                    catch (Throwable t) {
-                        this.cachedEu = 0L;
-                        bal = null;
-                    }
-                    this.cachedEu = bal == null || bal.signum() <= 0 ? 0L : (bal.compareTo(BigInteger.valueOf(Long.MAX_VALUE)) > 0 ? Long.MAX_VALUE : bal.longValue());
-                }
-            }
-            return this.cachedEu;
-        }
-
-        public long getEnergyStored() {
-            if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
-                return Long.MAX_VALUE;
-            }
-            return this.user() == null ? 0L : this.wireEu();
-        }
-
-        /**
-         * ★ 2026-11-14【照抄山海 · 取消"无身份⇒必须有能源仓"这个坑】
-         *
-         * <p>改前：没有取电身份 ⇒ 自报 0 ⇒ {@code isEnergySourceEffectivelyUnlimited()} 为假 ⇒
-         * 该机**整机退回"必须有能源仓"的老行为**（这正是"用户重放了主机与模块还是供电不足"
-         * 那条路上的第二重坑：即使身份登记成功，只要读档/拆放时序错一次就被打回老行为）。
-         *
-         * <p>改后：只要**开关开着**就自报哨兵容量（与 GTLAdditions「无线电网输入终端」的
-         * Long.MAX 级容量同口径，山海 wiki 逐字「普通能源输入上限为 Long.MAX 级别」）——
-         * 身份缺失时 {@link #getEnergyStored()} 仍如实报 0 ⇒ 配方匹配阶段照样
-         * {@code FAIL_NO_ENOUGH_EU_IN}、机器**原地等电**（不退进度、不掉料），
-         * 而不是"悄悄改成必须有能源仓"。
-         *
-         * <p>本项**不是**装饰：{@code WorkableElectricMultiblockMachine.getOverclockVoltage()} 读
-         * {@code getInputVoltage()}，而本机 {@code buildRecipe()} 第一句是
-         * {@code if (getOverclockVoltage() <= 0) return null;}（{@code :3311-3315}）
-         * ⇒ 输入电压为 0 时一条配方都 build 不出来。
-         */
-        public long getEnergyCapacity() {
-            if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
-                return Long.MAX_VALUE;
-            }
-            return GTLModularConfig.isNanochipGridPowerEnabled() ? 0x3FFFFFFFFFFFFFFFL : 0L;
-        }
-
-        /**
-         * 同 {@link #getEnergyCapacity()}：开关开着就报哨兵电压（喂 {@code getOverclockVoltage()}）。
-         *
-         * <p>★ 2026-11-13【与"无线电网输入终端"对齐】：哨兵值由 {@code ON_DEMAND_POWER_FLOOR_EU}
-         * （= {@code Long.MAX_VALUE / 2} = 2^62 ⇒ 面板显示 {@code MAX+15}）改为
-         * {@code Long.MAX_VALUE}（⇒ 面板显示 {@code MAX+16}）。
-         * 依据：gtladditions 无线电网输入终端的官方 tooltip 逐字为
-         * {@code providing up to Long.MAX input power}（{@code strings_gtladditions-…txt:628-632}），
-         * 且 GTCEu 的 {@code GTValues.VEX[30] = Long.MAX_VALUE} 对应档名 {@code MAX+16}
-         * （{@code VEX}/{@code VNF} 均 31 项，{@code MAX}=14）。
-         *
-         * <p>本改动**只影响显示**：扣电走 {@code changeEnergy()}、配方结算走 capabilities proxy、
-         * 超频被 {@code MAX_OVERCLOCKS=2} 封顶，三者都不读本值。
-         * 唯一的例外是模块侧 {@code hatchTier = getTierByVoltage(...)}（29 → 30，可能多一次超频，
-         * 中置信待实测，且受时长/功率闸约束）。{@code ON_DEMAND_POWER_FLOOR_EU} 常量与起跑阈值
-         * （{@code :4894}）**保持不动** —— 那个才真影响起跑闸。
-         */
-        public long getInputVoltage() {
-            return GTLModularConfig.isNanochipGridPowerEnabled() || GTLModularConfig.isNanochipFreeEnergyEnabled() ? Long.MAX_VALUE : 0L;
-        }
-
-        public long getInputAmperage() {
-            return 1L;
-        }
-
-        public long getOutputVoltage() {
-            return 0L;
-        }
-
-        public long getOutputAmperage() {
-            return 0L;
-        }
-
-        public boolean inputsEnergy(Direction side) {
-            return false;
-        }
-
-        public long acceptEnergyFromNetwork(Direction side, long voltage, long amperage) {
-            return 0L;
-        }
-
-        /**
-         * <b>唯一的取电点</b>：负值 = 扣电，正值 = 不退（NAC 从不回充电网）。
-         *
-         * <p>语义三条（都为了"记账与真扣一致"）：
-         * <ol>
-         *   <li>{@code amount >= 0} ⇒ 返回 0（不回充）；</li>
-         *   <li>没有取电身份 ⇒ 返回 0 并打一条限流 WARN（<b>绝不静默</b>）；</li>
-         *   <li>余额不够 ⇒ 只扣 {@code min(need, 余额)}，返回<b>真实扣到的量</b>
-         *       （扣不到就 0）⇒ 剩下的额度由列表后面的能源仓兜底；
-         *       一点都扣不到时调用方读到的就是 0 ＝ "等电"。</li>
-         * </ol>
-         *
-         * <p>★ 为什么'只扣能扣的部分'是对的：{@code EnergyContainerList.changeEnergy} 的循环
-         * 判据是"加够了没"，所以本容器<b>必须如实返回自己真扣到的量</b>，
-         * 否则"承诺扣了但没扣"会让机器带着假电记账（风险 C 的反面）。
-         */
-        public long changeEnergy(long amount) {
-            long need;
-            if (amount >= 0L) {
-                return 0L;
-            }
-            if (GTLModularConfig.isNanochipFreeEnergyEnabled()) {
-                return amount;
-            }
-            if (!GTLModularConfig.isNanochipGridPowerEnabled()) {
-                return 0L;
-            }
-            UUID u = this.user();
-            if (u == null) {
-                this.machine.warnGridDrawWithoutUser("\u7535\u7f51\u5bb9\u5668\u6263\u7535");
-                return 0L;
-            }
-            long l = need = amount == Long.MIN_VALUE ? Long.MAX_VALUE : -amount;
-            if (need <= 0L) {
-                return 0L;
-            }
-            long paid = Math.min(need, this.wireEu());
-            if (paid <= 0L) {
-                return 0L;
-            }
-            if (!WirelessEnergyManager.addEUToGlobalEnergyMap((UUID)u, (long)(-paid), (MetaMachine)this.machine)) {
-                return 0L;
-            }
-            this.cachedEu = Math.max(0L, this.cachedEu - paid);
-            return -paid;
-        }
-
-        /** 本处理器结算的通道：EU（`RecipeCapability<Long>`）。 */
-        public RecipeCapability<Long> getCapability() {
-            return EURecipeCapability.CAP;
-        }
-
-        /**
-         * 本处理器"此刻有多少" —— 上游的并行/可行性计算（gtlcore `IParallelLogic`）读它。
-         * 报真值：余额 0 就是 0（不报哨兵），否则会造出"匹配过了却扣不到"的假电。
-         *
-         * <p>⚠️ 返回类型必须是 {@code List<Object>}（不是 {@code List<Long>}）——这是接口的签名。
-         * 逐字对齐本仓**已编译进主源集**的同款 EU 处理器
-         * {@code IndustrialSteamPlatformMachine.SteamCacheEnergyHandler#getContents()}
-         * （{@code _census/enhancedcore-src/src/main/java/com/gtl/enhancedcore/common/machine/IndustrialSteamPlatformMachine.java:436-438}）。
-         */
-        public List<Object> getContents() {
-            return Collections.singletonList(this.user() == null ? 0L : this.wireEu());
-        }
-
-        /** 同上，供按容量算并行的调用方读（double 口径）。 */
-        public double getTotalContentAmount() {
-            return this.user() == null ? 0.0 : (double)this.wireEu();
-        }
-
-        public List<Long> handleRecipeInner(IO io, GTRecipe recipe, List<Long> left, @Nullable String slot, boolean simulate) {
-            long paidSigned;
-            if (io != IO.IN || left == null || left.isEmpty()) {
-                return left;
-            }
-            long need = 0L;
-            for (Long v : left) {
-                if (v == null || v <= 0L) continue;
-                need = need > Long.MAX_VALUE - v ? Long.MAX_VALUE : need + v;
-            }
-            if (need <= 0L) {
-                return null;
-            }
-            long paid = simulate ? (this.user() == null ? 0L : Math.min(need, this.wireEu())) : ((paidSigned = this.changeEnergy(-need)) >= 0L ? 0L : -paidSigned);
-            long remain = need - paid;
-            return remain <= 0L ? null : List.of(Long.valueOf(remain));
-        }
-    }
-
-    private static final class NanochipRecipeLogic
-    extends GTLAddMultipleTypeRecipesLogic {
-        private final NanochipAssemblyComplexMachine nac;
-        /**
-         * 上一次选中的最后一条配方的 id（{@link FairCandidateSelector} 的轮转游标）。
-         *
-         * <p>为什么由本类持有而不是选择器内部持有：本类的生命周期与机器一致，
-         * 而选择器是纯函数（无状态、可单测）；游标放这里也让「机器重建 ⇒ 轮转重新开始」这件事显式可见。
-         */
-        private String lastSelectedRecipeId;
-        /** {@link #plannedRecipeTotalEu} 的缓存位（identity + duration ⇒ total；transient，不进存档）。 */
-        private transient GTRecipe prechargeCachedRecipe;
-        private transient int prechargeCachedDuration = -1;
-        private transient long prechargeCachedTotalEu;
-
-        NanochipRecipeLogic(NanochipAssemblyComplexMachine nac) {
-            super((GTLAddWorkableElectricMultipleRecipesMachine)nac, machine -> true);
-            this.nac = nac;
-        }
-
-        public void serverTick() {
-            this.nac.tickSync();
-            super.serverTick();
-        }
-
-        public void onRecipeFinish() {
-            GTRecipe last = this.getLastRecipe();
-            this.nac.recordProduction(last);
-            this.nac.logCraftedRecipe(last);
-            super.onRecipeFinish();
-        }
-
-        /**
-         * ★ 2026-10-28【独立跨配方线程】<b>把父类的候选校验「加宽成 public」暴露出去</b>
-         * —— 机器侧（{@code nanochipCandidateUsable}）与新逻辑都要用它。
-         *
-         * <h4>为什么必须加这一个覆写（不写就编译不过）</h4>
-         * 父类那一份的可见性是 {@code protected}（同族旁证：星律
-         * {@code SelectableRecipeTypeSetRecipeLogic.java:179}、Enhancedcore
-         * {@code ThreadLimitedRecipeLogic.java:245} 都是 {@code @Override protected boolean checkRecipe(GTRecipe)}）。
-         * 而<b>机器类在另一个包</b>（{@code com.gtlmodular.common.machine.nanochip} 之外的调用点
-         * 只能通过本类的公开方法转一手）⇒ 机器侧对 {@code legacy.checkRecipe(...)} 的调用
-         * <b>不是一个合法访问</b>（Java 的 protected 只对「本类及其子类内部」或同包开放）。
-         * 所以这里把可见性<b>加宽到 public</b>（覆写只能加宽不能收窄，所以这是唯一安全方向），
-         * 语义一字未改（方法体只有一句 {@code super}）。
-         *
-         * <h4>为什么机器侧不干脆自己写一份判定</h4>
-         * 「一条候选能不能跑」全机只该有<b>一个</b>口径 —— 见
-         * {@code NanochipAssemblyComplexMachine.nanochipCandidateUsable} 的注释：
-         * 两份写法迟早走岔，而走岔的表现是「同一条样板在两条派活通路上一次能跑、一次不能跑」。
-         *
-         * <h4>回退</h4>
-         * 删掉本方法即可（连同机器侧那个调用点一起回退到别处）。
-         */
-        public boolean checkRecipe(GTRecipe recipe) {
-            return super.checkRecipe(recipe);
-        }
-
-        /**
-         * <b>起跑前的「整条配方电量」闸</b> —— 把模块侧已有的语义补到主机侧（用户要求，逐字见
-         * {@link #NAC_PRECHARGE_WHOLE_RECIPE}）。
-         *
-         * <h3>为什么插在 {@code setupRecipe}</h3>
-         * gtlcore {@code MultipleRecipesLogic.findAndHandleRecipe()}（本机基类血统）的配方落地口
-         * 只有一个：它<b>先</b> {@code getRecipe()} 拿到最终配方（并行已在
-         * {@code buildFinalNormalRecipe} 里摊好），<b>再</b> {@code RecipeRunnerHelper.matchRecipeOutput(...)}
-         * 通过后调用 {@code setupRecipe(recipe)}（逐字证据：{@code _census/_javap_simple_multirecipes.txt:108-133}
-         * —— {@code 42: invokevirtual setupRecipe}）。
-         * 在 {@code setupRecipe} 的最前面一票否决 ⇒ 材料没被扣（本类的
-         * {@code calculateParallels} 与父类的 {@code buildFinalNormalRecipe} 在本方法之前，
-         * 它们只做「算」和「置 realParallels」；真正扣料发生在 {@code super.setupRecipe} 的
-         * {@code handleRecipeIO(recipe, IO.IN)}，见 {@code _census/_javap_simple_recipelogic.txt:729-733}）
-         * ⇒ <b>不会跑到一半断电</b>，也不会出现「料下了但机器不动」。
-         * 这同时满足任务书里「不动 {@code calculateParallels} 那一整块」的约束：本覆写是它<b>之后</b>的
-         * 独立一刀，与那一块零耦合（两者唯一的联系是「都用同一份最终 {@code recipe} 对象」）。
-         *
-         * <h3>整条配方需要多少电（与模块同源）</h3>
-         * 取父类 gtlcore {@code MultipleRecipesLogic.getTotalEuOfRecipe(recipe)} 的<b>同一算法</b>：
-         * {@code RecipeHelper.getInputEUt(recipe) × recipe.duration}（逐字证据：
-         * {@code _census/_javap_simple_multirecipes.txt:135-144}）。它与模块侧
-         * {@code NanochipModuleMachine.handeRecipeWorking} 的 {@code perTick × duration}
-         * （同文件 :1318-1319）逐字同源 ⇒ 两侧口径永远一致、可对照维护。
-         * 缓存与性能依据见 {@link #plannedRecipeTotalEu}。
-         *
-         * <h3>放行 / 拦住的完整口径</h3>
-         * 见 {@link #hostAffordableWhole(RecipeLogic, long)} 的三条判定（含「按需现取能源直接放行」
-         * 与「无法判定 ⇒ 放行」）。本方法只负责「拦住之后怎么显示」。
-         *
-         * <h3>不破坏现有行为</h3>
-         * 闸放行时本方法<b>逐字</b>走原来的 {@code super.setupRecipe(recipe)} 那一句（前面只多算了几个
-         * long 加减）⇒ 蓄够之后的表现与改动前完全一致。拦住时只做两件事：不改 {@code lastRecipe}、
-         * 不扣料，并让界面显示与模块同风格的等待提示。
-         */
-        public void setupRecipe(GTRecipe recipe) {
-            long full;
-            if (recipe != null && (full = this.plannedRecipeTotalEu(recipe)) > 0L && !this.hostAffordableWhole((RecipeLogic)this, full)) {
-                this.setWaiting((Component)Component.translatable((String)"gtlmodular.nanochip.host.buffer", (Object[])new Object[]{FormattingUtil.formatNumbers((long)full), FormattingUtil.formatNumbers((long)this.nac.getTotalStoredEU())}));
-                this.nac.noteHostPrechargeWaiting(full, this.nac.getTotalStoredEU());
-                if (this.getStatus() == RecipeLogic.Status.WAITING) {
-                    this.doDamping();
-                }
-                return;
-            }
-            super.setupRecipe(recipe);
-        }
-
-        /**
-         * <b>本条最终配方整条需要多少 EU</b> —— 用 gtlcore 自己那份算法，附「按配方对象身份」的单项缓存。
-         *
-         * <h3>算法（与模块同源，逐字）</h3>
-         * {@code RecipeHelper.getInputEUt(recipe) × recipe.duration}；
-         * 下限各自按 1 兜（电压为 0 / 时长为 0 的畸形配方不会算出 0 而被当成"已蓄够"）。
-         * 这三行与父类 gtlcore {@code MultipleRecipesLogic.getTotalEuOfRecipe(GTRecipe)}
-         * 的字节码<b>逐字一致</b>（{@code getInputEUt → l2d}；{@code recipe.duration → i2d}；{@code dmul}；
-         * 出处 {@code _census/_javap_simple_multirecipes.txt:135-144}），
-         * 也与模块侧 {@code NanochipModuleMachine:1318-1319} 一致。
-         * ★ <b>为什么写成 inline 而不是调 {@code super.getTotalEuOfRecipe(...)}</b>：
-         * 父类那份返回 {@code double}（{@code dmul}/{@code dreturn}）。整条电量会到 1e14~1e18 量级，
-         * double 只有 53 位有效位 ⇒ 直接比较会在「刚好差几 EU」上判错（本包已在
-         * {@code scaleRecipePrecisely} / 并行那条路上因为同一理由拒绝 double，见该类注释）。
-         * 故这里保留同一算式但走 {@code long} 饱和乘法；语义相同、精度更严。
-         *
-         * <h3>性能依据（为什么不每 tick 重算大对象）</h3>
-         * 这条判定每 tick 都会被问一次（父类 {@code findAndHandleRecipe} 每 tick 重新搜/重新 build），
-         * 而 {@code getTotalEuOfRecipe} 要走一次 {@code getInputEUt}（{@code tickInputs} 的 Map 取 + 
-         * {@code Content.getAmount()}）。稳态下每 tick 问的是<b>同一个配方对象</b>
-         * （父类每次 tick {@code ofRaw().buildRawRecipe()} 出来的新对象，但同一 tick 内
-         * {@code findAndHandleRecipe} 与 {@code setupRecipe} 拿到的是同一个实例）——
-         * 所以命中条件是 {@code (identity, duration)} 全等。<b>缓存不跨 tick</b>：父类每 tick 都会
-         * 重新 build 一份新配方对象 ⇒ identity 每 tick 都不同 ⇒ 这条缓存只在本 tick 内、
-         * 以及同一对象被重复问时生效，<b>不会</b>把过期数据留到下一 tick（换配方/改并行/改超频
-         * 都会让 identity 与 duration 同时变）。命中时只做两次 {@code long} 比较，零分配。
-         *
-         * <p><b>诚实边界</b>：缓存是 transient 字段，不是 {@code @Persisted}，不进存档。
-         */
-        private long plannedRecipeTotalEu(GTRecipe recipe) {
-            if (recipe == null) {
-                return 0L;
-            }
-            int duration = Math.max(1, recipe.duration);
-            if (this.prechargeCachedRecipe == recipe && this.prechargeCachedDuration == duration) {
-                return this.prechargeCachedTotalEu;
-            }
-            long perTick = Math.max(1L, RecipeHelper.getInputEUt((GTRecipe)recipe));
-            long total = NanochipAssemblyComplexMachine.saturatingMul(perTick, duration);
-            this.prechargeCachedRecipe = recipe;
-            this.prechargeCachedDuration = duration;
-            this.prechargeCachedTotalEu = total;
-            return total;
-        }
-
-        /**
-         * <b>主机能不能在不跳电的前提下跑完这一整条配方</b>（{@link #setupRecipe} 的唯一判据）。
-         *
-         * <p>三条判定按顺序短路，<b>每一条的"不确定"都倒向放行</b>：
-         *
-         * <h4>① 按需现取能源 ⇒ 视为已充足、直接放行（不因为"已存 0"卡死）</h4>
-         * ★ <b>判据直接复用同事那一套</b>（同一文件里已存在，不再另写一份）：
-         * {@code NanochipAssemblyComplexMachine#isEnergySourceEffectivelyUnlimited()} 与
-         * {@code NanochipAssemblyComplexMachine#getObtainableEnergyEU()}，
-         * 其哨兵是 {@code NanochipAssemblyComplexMachine#ON_DEMAND_POWER_FLOOR_EU}
-         * （{@code Long.MAX_VALUE / 2}）。覆盖两类真实能源：
-         * <ul>
-         *   <li><b>GTL Additions 无线电网输入终端</b>
-         *       （{@code WirelessEnergyNetworkTerminalPartMachine} → 内在
-         *       {@code NetworkEnergyContainer}，Kotlin 类，签名逐字：
-         *       {@code NotifiableRecipeHandlerTrait<Long> + IEnergyContainer + IInt128EnergyContainer}，
-         *       出处 {@code _census/_probe_nacmat_evidence/strings_gtladditions-3.2.8Custom_SubSpace-fix1.txt:13898}）；
-         *       它的 {@code getEnergyCapacity}/{@code getInputVoltage} 是 Long.MAX 量级 ——
-         *       官方 wiki 逐字：「普通能源输入上限为 Long.MAX 级别」
-         *       （{@code _census/_gtlcompat/add_fix1/assets/gtladditions/guides/.../wireless_energy_network_terminal.md:36}）；</li>
-         *   <li><b>创造能源仓</b>等创造级能源（GTMThings {@code creative_energy_hatch}，同为无限容量）。</li>
-         * </ul>
-         * 这两类能源的原理就是「不储能、按需现取」⇒ <b>已存 0 也不能当成没电</b>
-         * （这正是另一位同事在模块读取口径那条线上处理的现象，见
-         * {@code NanochipModuleMachine.getEnergyContainer()} 的 {@code HostEnergyContainer}：
-         * 它把主机蓄电透给模块，终端不储能时读到的就是 0）。
-         * 本判定<b>不按类名硬编码</b>，只读能源容器自报的上限 ⇒ 与那位同事改的读取口径
-         * <b>不碰同一处</b>（他改模块怎么读，本处改主机要不要等）。
-         *
-         * <h4>② 储能式能源 ⇒ 要求「已存 + 20 tick 内可补」覆盖整条配方</h4>
-         * {@code stored + getMaxInputPower() × 20 ≥ need}。普通能源仓/激光仓走这条：
-         * 复合体的蓄电由能源仓灌入，一格 20 tick 补一次（本类
-         * {@code ENERGY_DISTRIBUTE_INTERVAL = 20}，见 {@link #distributeModuleEnergy}）⇒
-         * 用「20 tick 的补充量」当容差，既不会把「正在补电、马上就够」的主机误判成没电，
-         * 也不会把「连一格补充都远远不够」的主机放过去。
-         * <b>真无电时仍然拦得住</b>：{@code getMaxInputPower() == 0}（没插任何能源仓 / 能源仓为 0 压）
-         * 且 {@code getObtainableEnergyEU() == 0}（容量与存量都是 0）⇒ 左边恒为 0 &lt; {@code need}
-         * ⇒ 拦住（见报告 ⑤ 的逐例推演）。
-         * <p>★ 这一条也是「超容量长配方但不跳电」的<b>已知边界</b>：若某条配方的整条电量
-         * 严格大于复合体蓄电上限，而按需现取又不成立，那它会一直等（本次改动<b>之前</b>是
-         * 「开工 → 跑到一半停住」）。这属于用户明确要求的保守一侧；不建议为了绕开它而放松本条。
-         *
-         * <h4>③ 无法判定 ⇒ 放行（保守第一）</h4>
-         * 能源容器读不到（未成形 / {@code getEnergyContainer() == null}）、总量算不出（{@code need <= 0}）
-         * 等一切「测不准」的情况，本方法返回 {@code true} ⇒ <b>宁可开工，不要卡死</b>。
-         * 这也是与模块侧同一取舍（模块侧 {@code ensureBufferCovers} 在容量未定过时同样不拦，
-         * 见 {@code NanochipModuleMachine:605-608}）。
-         */
-        private boolean hostAffordableWhole(RecipeLogic logic, long need) {
-            long supplyPerTick;
-            long supplyInterval;
-            if (need <= 0L) {
-                return true;
-            }
-            EnergyContainerList e = this.nac.getEnergyContainer();
-            if (e == null) {
-                return true;
-            }
-            long obtainable = Math.max(0L, this.nac.getObtainableEnergyEU());
-            long available = NanochipAssemblyComplexMachine.saturatingAdd(obtainable, supplyInterval = NanochipAssemblyComplexMachine.saturatingMul(supplyPerTick = Math.max(0L, this.nac.getMaxInputPower()), 20L));
-            if (available >= need) {
-                return true;
-            }
-            return logic.isSuspend();
-        }
-
-        /**
-         * <b>把一次配方搜索的候选集截断到线程数</b> —— 这是「真实多线程」里唯一决定
-         * <b>实际并发条数</b>的地方，缺了它 {@code getMultipleThreads()} 只影响显示。
-         *
-         * <h3>照抄来源（逐行对照，可回退）</h3>
-         * Enhancedcore {@code ThreadLimitedRecipeLogic.java:306-320}：
-         * <pre>
-         *   @Override
-         *   protected Set&lt;GTRecipe&gt; lookupRecipeIterator() {
-         *       if (isLock() &amp;&amp; getLockRecipe() != null) return checkRecipe(getLockRecipe()) ? Set.of(getLockRecipe()) : Set.of();
-         *       var iterator = machine.getRecipeType().getLookup().getRecipeIterator(machine, recipe -&gt; true);
-         *       ((IAdditionalRecipeIterator) iterator).setUseDiveIngredientTreeFind(true);
-         *       Set&lt;GTRecipe&gt; candidates = new LinkedHashSet&lt;&gt;();
-         *       while (iterator.hasNext()) { GTRecipe c = iterator.next(); if (c != null &amp;&amp; checkRecipe(c)) candidates.add(c); }
-         *       var selected = selector.select(candidates, isLock() ? 1 : getMultipleThreads(), recipe -&gt; recipe.id.toString());
-         *       ...
-         *   }
-         * </pre>
-         * 与本实现的差别只有两处（都是「不引入新机制」的收敛）：
-         * <ol>
-         *   <li><b>不做锁定配方分支</b>（{@code isLock()} / {@code pendingLock}）：NAC 的配方锁是
-         *       gtladd 基类自己的 {@code ILockRecipe} 机制，其 {@code lookupRecipeIterator} 里
-         *       <b>是否</b>需要特判锁定配方，取决于该版本的实现（✗ 未取证）；不复制这一段
-         *       ⇒ 即使版本差异，也只是「锁定时也按线程数轮转」这一种较弱行为，不会破坏锁本身。</li>
-         *   <li><b>不调用 {@code getRecipeOutputChance}</b>：那是概率产出结算，属于父类
-         *       {@code buildFinalNormalRecipe} 的职责，候选阶段调用会把结算做两遍。</li>
-         * </ol>
-         *
-         * <h3>「显示即事实」为什么因此成立（三步闭环）</h3>
-         * <ol>
-         *   <li>本方法返回的集合大小 <b>≤</b> {@code getMultipleThreads()}（
-         *       {@link FairCandidateSelector#select} 里 {@code count = min(候选数, max(1, requested))}）；</li>
-         *   <li>并行分配只对<b>本方法返回的那些</b>配方做，于是「同时挂起的配方条数」≤ 集合大小。
-         *       ⚠️ 2026-10-07 起分配方改由本类的 {@code calculateParallels()} 自己算
-         *       （原因见那边的长注释：预算驱动的并行会算出「放不下」的值 ⇒ 起跑前被挡 ⇒ 0%），
-         *       但它<b>仍然以本方法的返回值为候选集</b>，所以这条闭环不变；</li>
-         *   <li>界面/Jade 那行「拥有 N 个跨配方线程」由 gtladditions 父类的 {@code addDisplayText}
-         *       输出（本类自己那行已于 2026-10-07 删除，见 {@link #addDisplayText}）⇒
-         *       <b>显示的 N ≈ 实际挂起的条数（上限 N）</b>。</li>
-         * </ol>
-         * <b>诚实边界</b>：候选集本身可能不足 N 条（料不够 / 只匹配上少数配方）⇒ 实际条数 &lt; N。
-         * 这属于「供应不足」，不是「显示撒谎」；N 是<b>上限</b>而不是保证值。
-         * <p>★ 2026-10-07 追加的第二条边界：候选进了集合<b>也不保证</b>一定挂起 ——
-         * {@code calculateParallels()} 还会按「真正放得下」再淘汰一遍（放不下就跳过）。
-         * 于是「显示 N / 实际挂起 M ≤ N」这个不等式仍然成立，只是 M 多了一个下压因素。
-         *
-         * <h3>为什么还要按 {@code checkRecipe} 逐条校验</h3>
-         * 与 Enhancedcore 同款理由：把「条件不满足 / 供压不够 / 输入输出放不下」的配方
-         * 先剔掉，<b>否则它们会白占一个线程位</b>（线程数是有限的，占位不干活就等于并发下降）。
-         * 代价 = 每 tick 对候选做一次条件校验（Enhancedcore 也是这么付的；
-         * 现状文档 §5.1 已把「单机 CPU 上升」登记为中等风险，须实机看 TPS）。
-         *
-         * <h3>异常安全</h3>
-         * 拿不到配方表 / 迭代器抛异常 ⇒ 返回空集（= 本 tick 不开工），
-         * <b>绝不外抛</b>：配方逻辑抛异常会让整台机器停摆。
-         *
-         * <h3>★ 可见性必须是 public（2026-10-02 编译期修正）</h3>
-         * 父类 gtladditions 把 {@code lookupRecipeIterator()} 提升成了可覆写 API，
-         * 且可见性是 <b>public</b>；覆写只能加宽、不能收窄 ⇒ 原来的
-         * {@code protected Set&lt;GTRecipe&gt; lookupRecipeIterator()} 会报
-         * 「method does not override or implement a method from a supertype」。
-         * 同族的 {@code createRecipeLogic} 也是 public（{@code API标准.md:126} 明文：
-         * 「GTLAdd 基类 createRecipeLogic 是 public，子类覆写必须保持 public」）。
-         */
-        public Set<GTRecipe> lookupRecipeIterator() {
-            try {
-                return this.lookupRecipeIteratorInternal();
-            }
-            catch (RuntimeException e) {
-                GTLModular.LOGGER.debug("[gtlmodular] NAC \u914d\u65b9\u641c\u7d22\u5f02\u5e38\uff08\u5916\u5c42\u515c\u5e95\uff09\uff0c\u672c\u6b21\u4e0d\u5f00\u5de5\uff1a{}", (Object)e.toString());
-                return Set.of();
-            }
-        }
-
-        private Set<GTRecipe> lookupRecipeIteratorInternal() {
-            Set<GTRecipe> selected;
-            String[] cursor = new String[]{this.lastSelectedRecipeId};
-            try {
-                selected = NanochipCandidateSearch.search(this.machine, this.multiTypeRecipeTypes(), this.machine.getRecipeType(), this::checkRecipe, this.nac.getMultipleThreads(), cursor);
-            }
-            catch (RuntimeException e) {
-                GTLModular.LOGGER.debug("[gtlmodular] NAC \u914d\u65b9\u641c\u7d22\u5f02\u5e38\uff0c\u672c\u6b21\u4e0d\u5f00\u5de5\uff1a{}", (Object)e.toString());
-                return Set.of();
-            }
-            this.lastSelectedRecipeId = cursor[0];
-            return selected;
-        }
-
-        /**
-         * ★ 2026-10-19【复合型机器】「要搜哪些配方类型」的唯一取数口。
-         *
-         * <p>返回 {@link NanochipAssemblyComplexMachine#getRecipeTypes()} 的当前快照 —— 简单模式下即
-         * 「主机电路组装表 + 换算表」，原版模式即父类原样数组（配置为 false 时那个方法直接返回父类
-         * 数组实例，逐字节不变）。
-         *
-         * <p><b>为什么单独包一层</b>：{@code getRecipeTypes()} 是上游（gtladditions 父类）提供的
-         * 可覆写方法，读它本身可能抛（例如机器尚未成形 / 类型表未注册完）；调用点又在一个
-         * 「绝不外抛进 tick」的方法里 ⇒ 这里把它包成「抛了就返回空数组 ⇒ 本 tick 不开工」，
-         * 后半个 try 块的语义（放弃本次搜索）因此对多类型路径也成立。
-         *
-         * <p>返回类型用 {@code GTRecipeType[]} 而不是 {@code List}：零装箱、零额外分配，
-         * 且与 {@code getRecipeTypes()} 逐字同型（不需要任何强转）。
-         *
-         * <p><b>未取证</b>：父类把 {@code getRecipeTypes()} 的可见性/签名写成什么样没有 javap 级证据，
-         * 但<b>本类自己</b>已经在同一份文件的同名覆写上
-         * （{@code @Override public GTRecipeType[] getRecipeTypes()}）编译通过（同一个 gtladditions 血统）
-         * ⇒ 该签名在编译期已被验证，这里只做调用、不做覆写。
-         */
-        private GTRecipeType[] multiTypeRecipeTypes() {
-            try {
-                GTRecipeType[] types = this.machine.getRecipeTypes();
-                return types == null ? new GTRecipeType[]{} : types;
-            }
-            catch (RuntimeException e) {
-                GTLModular.LOGGER.debug("[gtlmodular] NAC \u591a\u7c7b\u578b\u914d\u65b9\u8868\u8bfb\u53d6\u5931\u8d25\uff0c\u672c tick \u4e0d\u5f00\u5de5\uff1a{}", (Object)e.toString());
-                return new GTRecipeType[0];
-            }
-        }
-
-        /**
-         * ★ 2026-10-19【复合型机器】把<b>某一个</b>配方类型下的候选收进 {@code candidates}。
-         *
-         * <p>逐字保留改动前那段「取迭代器 → 逐条 {@code checkRecipe} → 收进集合」的全部语义与注释依据
-         * （唯一差别是类型从「当前激活的那一条」变成「入参给的那一条」）：
-         * {@code GTRecipeLookup.getRecipeIterator(holder, predicate)} 的返回值可直接落到
-         * {@code Iterator<GTRecipe>}（同一写法在上游已被验证两处：星律
-         * {@code SelectableRecipeTypeSetRecipeLogic.java:314} 与 {@code NebulaSiphonLogic.java:40-41}）。
-         * 注意：{@code IAdditionalRecipeIterator} 与 {@code GTRecipeLookup.RecipeIterator} 是<b>平级</b>的
-         * 两个类型（前者在 gtlcore 的 {@code ...api.recipe} 包，是对<b>增强搜索</b>的统一访问口），
-         * 所以这里<b>不能</b>对 {@code RecipeIterator} 直接写 {@code instanceof IAdditionalRecipeIterator}
-         * （javac 会判"两个操作数类型不匹配"）；要判定就先用 {@code Object} 中转。
-         * 本实现<b>不</b>做这个增强搜索开关：候选集本身已由 {@code checkRecipe} 逐条校验，
-         * 少开一个搜索增强换来的只是"候选可能略少"，属于保守一侧，不影响并发条数与正确性。
-         *
-         * <p><b>「本次搜索放弃」的边界</b>：本助手<b>不</b>自吞异常 —— 某个类型搜索时抛出的
-         * {@code RuntimeException} 会照原样冒到调用方的 {@code catch}，即「放弃本次搜索、本 tick 不开工」，
-         * 与改动前「唯一那个类型抛了就不开工」语义一致（不是「跳过该类型继续搜别的」——
-         * 那会静默改变错误可见性，本轮不做）。
-         *
-         * <p>★ 2026-10-28【独立跨配方线程】：本方法<b>当前不被调用</b>——同一段逻辑已逐字搬进
-         * {@link NanochipCandidateSearch#search}（新逻辑 {@code NanochipThreadedRecipeLogic}
-         * 与旧逻辑共用那一份）。这里<b>刻意保留</b>：它是 {@link #lookupRecipeIteratorInternal()}
-         * 回退成「原来那三段」时要用到的那一块，删掉会让回退多一步（要重写迭代器那段）。
-         * 保留一个私有未调用方法在 javac 下只是未使用警告、不是错误，且无运行期成本。
-         */
-        private void collectCandidatesFromType(GTRecipeType type, Set<GTRecipe> candidates) {
-            RecipeIterator iterator = type.getLookup().getRecipeIterator((IRecipeCapabilityHolder)this.machine, recipe -> true);
-            while (iterator.hasNext()) {
-                GTRecipe candidate = (GTRecipe)iterator.next();
-                if (candidate == null || !this.checkRecipe(candidate)) continue;
-                candidates.add(candidate);
-            }
-        }
-
-        /**
-         * <b>把「并行预算」换成「每条配方真正放得下的最大并行」</b> —— 本任务的第二刀。
-         *
-         * <h3>★ 为什么必须覆写它（0% 的根因复核）</h3>
-         * 父类 {@code GTLAddMultipleRecipesLogic.calculateParallels()} 拿到的并行数是
-         * <b>「预算驱动」</b>的：由机器的 {@code getMaxParallel()}（全流程档 =
-         * {@link #FULL_PARALLEL_CAP}，★ 2026-10-27 起 = {@code Integer.MAX_VALUE}，即
-         * {@code Long.MAX_VALUE} 在 int 接口上的饱和截断值 —— 不再是人为压低的 8388607）乘上线程数当总预算，再逐条配方按预算摊。
-         * 该值<b>未必真的放得下</b>：一旦放大后的产出超出输出仓/AE 的可容纳量，下游就会在
-         * <b>起跑前</b>被 {@code RecipeRunnerHelper.matchRecipeOutput} 挡掉
-         * （判定点：gtlcore {@code MultipleRecipesLogic.findAndHandleRecipe}
-         *  → {@code matchRecipeOutput} 失败即 <b>不调 setupRecipe</b>，
-         *  逐字证据见 {@code _census/_javap_simple_multirecipes.txt:116-133}）——
-         * 表现就是<b>「找不到可运行配方、进度恒 0%」</b>：配方不是跑不动，是<b>根本没起跑</b>。
-         *
-         * <h3>★ 解法（与星律超限模式同源，出处逐条给出）</h3>
-         * <ol>
-         *   <li>{@code getMaxParallel(recipe, limit)} 先得到<b>输入侧</b>真正的上限
-         *       （gtlcore 公开接口 {@code IParallelLogic.getMaxParallel(holder, recipe, long)}
-         *        —— 出处：星律 {@code PrimordialModuleRecipeLogic.java:228}）；</li>
-         *   <li>再用{@link #scaleRecipePrecisely}做<b>精确 long 缩放</b>（不用 double！
-         *       gtladd 的 {@code multipleRecipe(long)} 会先把倍率转成 double，
-         *       超过 2^53 后物品/流体数量会被四舍五入 —— 出处：星律
-         *       {@code PrimordialModuleRecipeLogic.java:395-407} 与 {@code :230-232} 的原注释）；</li>
-         *   <li>对缩放后的配方<b>实证</b>「输入放得下 && 产出放得下」，用
-         *       {@link #findHighestMatchableParallel} 从上限往下<b>二分找最大的可行值</b>
-         *       （出处：星律 {@code PrimordialModuleRecipeLogic.java:409-438} 的 long 二分，
-         *       逐字同构：先试 requested → 再试 requested-1 → 再标准二分）。
-         *       <b>关键差别</b>：并行值只在<b>真的放得下</b>时才被采用 ⇒ 不可能再出现
-         *       「算出天文数字并行 ⇒ 起跑前被挡 ⇒ 永远不开工」这条路。</li>
-         * </ol>
-         *
-         * <h3>为什么不改 {@link #getMaxParallel()} 的取数来源（★ 2026-10-27 只改了它的「钳法」）</h3>
-         * 那条「并行 × 线程」的乘法通路 NAC 已改走 64 位饱和乘法
-         * （{@link #saturatingMul(long, long)}；此前是「成对钳制」的硬压并行，已退役，
-         * 见 {@link #FULL_PARALLEL_CAP} 与 {@link #NAC_SATURATING_PARALLEL}），
-         * 本覆写是<b>另一条通路</b>（产出放不下）。这也是调查报告 §3.5 的结论：
-         * 「0% 不在乘法钳制那条通路上」。两者互不替代、也互不干扰。
-         *
-         * <h3>诚实边界（回退方式逐条写死）</h3>
-         * <ul>
-         *   <li>{@code calculateParallels()} 的<b>可见性/签名</b>按「星律在同一套 gtladditions 血统的
-         *       {@code GTLAddMultipleRecipesLogic} 上以 {@code @Override protected ParallelData
-         *       calculateParallels()} 编译通过」推定（出处：星律
-         *       {@code common/machine/primordial/PrimordialModuleRecipeLogic.java:162-164}、
-         *       {@code api/machine/SelectableRecipeTypeSetRecipeLogic.java:396-398}）；
-         *       若本机上游把它改成 {@code private}/{@code final}，编译期会直接报
-         *       「method does not override…」。</li>
-         *   <li>★ <b>回退方式</b>：删掉本覆写（{@code calculateParallels}）与它下面的
-         *       {@code parallelBudget / findFitParallel / canFit / scaleRecipePrecisely /
-         *       findHighestMatchableParallel / FitProbe} 整块（★ 2026-10-27 前的 {@code saturatedMultiply}
-         *       副本已并入外层类的 {@code saturatingMul}，见那里的注释），
-         *       行为立刻逐字回到父类那条路径（= 本次修改前的 NAC）；
-         *       {@code nac.noteNoFit(...)} 那一行要一起删（否则调用点悬空），
-         *       而机器侧的 {@code noteNoFit} 方法留着无害（无人调用）。
-         *       全部改动不涉及存档、不涉及 mixin ⇒ 回退是纯代码层、可随时做。</li>
-         *   <li>本覆写<b>不再调用父类那份公平分配</b>（父类把 {@code totalParallel / recipes.size()}
-         *       均分）：这里给每条配方<b>各自独立</b>算自己的可容纳上限，与星律
-         *       {@code PrimordialModuleRecipeLogic.java:162-200} 的取舍逐条一致
-         *       （它的原注释：「每个配方各自独立吃满自己的上限……而不是从一个共享池里分蛋糕」）。</li>
-         *   <li><b>性能</b>：二分是对数级（预算 8.3M ⇒ 最多 ~23 次试探，且
-         *       {@link #findHighestMatchableParallel} 的「先试 requested」在常见情况下一次命中）；
-         *       只在配方搜索（不是每 tick 的进度推进）里跑。
-         *       ✗ <b>未取证</b>：本机 {@code IParallelLogic.getMaxParallel} 内部
-         *       （{@code binarySearchMaxParallel} / {@code getMinParallel}）对输出容量用的
-         *       是不是 double 精度 —— 若它自己在 double 上就判出「放不下」，本覆写会拿到
-         *       {@code inputMax <= 0} 而直接放弃该配方（保守一侧：不开工，不会吞料）。
-         *       这也是本实现<b>没有</b>直接把 {@code IParallelLogic} 的结果当最终值的原因。</li>
-         * </ul>
-         */
-        protected ParallelData calculateParallels() {
-            Set<GTRecipe> recipes = this.lookupRecipeIterator();
-            if (recipes.isEmpty()) {
-                return null;
-            }
-            long perRecipeLimit = this.perRecipeParallelLimit();
-            long[] parallels = new long[recipes.size()];
-            ArrayList<GTRecipe> recipeList = new ArrayList<GTRecipe>(recipes.size());
-            int index = 0;
-            for (GTRecipe recipe : recipes) {
-                long fit = this.findFitParallel(recipe, perRecipeLimit);
-                if (fit <= 0L) continue;
-                recipeList.add(recipe);
-                parallels[index] = fit;
-                ++index;
-            }
-            if (recipeList.isEmpty()) {
-                this.nac.noteNoFit(perRecipeLimit, recipes.size());
-                return null;
-            }
-            return new ParallelData(recipeList, parallels, true, null);
-        }
-
-        /** 本机当前的并行预算（= 机器并行上限 × 真正生效的跨配方线程数，饱和乘，绝不溢出）。 */
-        private long parallelBudget() {
-            return NanochipAssemblyComplexMachine.saturatingMul(Math.max(1L, (long)this.nac.getMaxParallel()), Math.max(1L, (long)this.nac.getMultipleThreads()));
-        }
-
-        /**
-         * <b>单条配方的并行上限</b> —— 去总池后的唯一取数口（★ 开关见
-         * {@link #NAC_PER_THREAD_FULL_PARALLEL}）。
-         *
-         * <h4>{@code true}（默认）：作者口径「每个配方线程都分 {@code Long.MAX_VALUE} 并行」</h4>
-         * 直接返 {@link Long#MAX_VALUE} ⇒ <b>不乘、也没有「总池」这个中间量</b>；
-         * 每条配方<b>各自</b>拿它当上限，真正的上限由
-         * {@link #findHighestMatchableParallel} 的二分（输入放得下 && 产出放得下）收敛。
-         *
-         * <h4>为什么敢给 {@code Long.MAX_VALUE}（三条，逐条可核）</h4>
-         * <ol>
-         *   <li><b>它不参与乘法</b>：会回绕成负数的那条通路是旧口径的
-         *       {@code getMaxParallel() × getMultipleThreads()}（{@link #parallelBudget()}），
-         *       本值只是往上游 {@code IParallelLogic.getMaxParallel(machine, recipe, limit)} 传的
-         *       {@code limit} ⇒ <b>没有乘积可溢出</b>；</li>
-         *   <li><b>上游同源、同接口、同值</b>：星律 {@code PrimordialModuleRecipeLogic.java:202-211}
-         *       在超限模式下 {@code getTotalParallelLimit()} 直接 {@code return Long.MAX_VALUE}，
-         *       再由同文件 {@code :225-234} 的二分收敛 —— 作者自己验证过的写法；</li>
-         *   <li><b>数值不会膨胀</b>：二分用 {@code low + ((high - low) &gt;&gt;&gt; 1)}（不会 {@code low+high} 溢出），
-         *       每次试探都走 {@code scaleRecipePrecisely} 的<b>精确 long 缩放</b>，
-         *       参与运算的量级由「库存 / 输出容量」决定，<b>不由</b> {@code Long.MAX_VALUE} 决定
-         *       —— 这也是作者说的「不能让数值太膨胀」，所以我们<b>不引入</b> {@code BigInteger}。</li>
-         * </ol>
-         * ✗ <b>未取证</b>：上游 {@code IParallelLogic.getMaxParallel(holder, recipe, limit)} 内部
-         * 如何消费这个 {@code limit}（是否对 {@code Long.MAX_VALUE} 有保护）——
-         * 本轮 {@code pwsh}/javap 被沙箱拒绝（{@code sandbox-local windows-acl temp grant materialization failed}），
-         * 无法补证；仅有「星律对同一接口传的也是 {@code Long.MAX_VALUE}」这一条旁证。
-         */
-        private long perRecipeParallelLimit() {
-            return Long.MAX_VALUE;
-        }
-
-        /**
-         * 求某条配方在 {@code budget} 之内<b>真正放得下的最大并行</b>；0 = 一个都放不下。
-         *
-         * <p>★ 2026-10-27【并行「去总池」】：{@code budget} 的来路由调用方决定 —— 默认
-         * （{@link #NAC_PER_THREAD_FULL_PARALLEL} = {@code true}）走
-         * {@code perRecipeParallelLimit()} = {@code Long.MAX_VALUE}，即<b>每条配方各自满并行</b>；
-         * 关掉开关才是旧的「总池」（{@code parallelBudget()}）。
-         * 两种口径下<b>本方法的二分逻辑一字不变</b>（它是防「放不下 ⇒ 永远 0%」的那一刀）。
-         *
-         * <p>与星律 {@code findMaxMatchableScaledRecipe}（{@code PrimordialModuleRecipeLogic.java:225-234}）
-         * 同构：先取输入侧上限，再做「精确缩放 + 输出容量」的二分。
-         *
-         * <h4>试探缓存的作用域（★ 必须按配方隔离）</h4>
-         * 二分会对<b>同一条配方</b>的同一个候选值问 2~3 次（先试 {@code requested}、
-         * 再试 {@code requested - 1}、再标准二分），缓存把重复试探降到一次。
-         * 但并行数<b>不是跨配方的可比量</b>（同一条配方在不同库存下可容纳量也不同），
-         * 所以这个 Map <b>只活在本方法的一次调用里</b>，绝不上提到字段级。
-         *
-         * <p><b>诚实边界</b>：这里缩放出来的那份配方，最终<b>不会</b>被交到下游 —— 父类
-         * {@code buildFinalNormalRecipe} 只接收「并行数」并用它自己那条路径再缩放一次，
-         * 也就是说上游会多付一次缩放。这是父类 API 形状决定的（{@code ParallelData}
-         * 只带 {@code long[] parallels}，带不了配方对象），本实现省不掉。
-         */
-        private long findFitParallel(GTRecipe recipe, long budget) {
-            if (recipe == null || budget <= 0L) {
-                return 0L;
-            }
-            long inputMax = IParallelLogic.getMaxParallel((IRecipeCapabilityHolder)this.machine, recipe, budget);
-            if (inputMax <= 0L) {
-                return 0L;
-            }
-            HashMap probes = new HashMap();
-            long matchable = NanochipRecipeLogic.findHighestMatchableParallel(inputMax, candidate -> this.canFit(probes, recipe, candidate));
-            return matchable <= 0L ? 0L : Math.min(matchable, budget);
-        }
-
-        /** 缩放后的配方「输入放得下 && 产出放得下」的实证判定（带本条配方专属的试探缓存）。 */
-        private boolean canFit(Map<Long, FitProbe> probes, GTRecipe recipe, long parallel) {
-            if (parallel <= 0L) {
-                return false;
-            }
-            FitProbe cached = probes.get(parallel);
-            if (cached != null) {
-                return cached.fits;
-            }
-            GTRecipe scaled = this.scaleRecipePrecisely(recipe, parallel);
-            boolean fits = RecipeRunnerHelper.matchRecipeInput((IRecipeCapabilityHolder)this.machine, scaled) && RecipeRunnerHelper.matchRecipeOutput((IRecipeCapabilityHolder)this.machine, scaled);
-            probes.put(parallel, new FitProbe(fits, (GTRecipe)(fits ? scaled : null)));
-            return fits;
-        }
-
-        /**
-         * <b>精确 long 缩放</b> —— 逐行照抄星律 {@code PrimordialModuleRecipeLogic.java:395-407}
-         * （{@code scaleRecipePrecisely}），只去掉星律自己那层「放大产出」的包装。
-         *
-         * <p>为什么不能像父类/上游那样写 {@code recipe.copy(ContentModifier.multiplier((double) parallel), false)}：
-         * {@code ContentModifier.multiplier} 收的是 <b>double</b>，超过 2^53 的并行数在缩放时
-         * 会把物品/流体数量四舍五入（星律在同一处写明这是它主要动机之一，见 {@code :230-232}）。
-         * {@link IAdvancedContentModifier#preciseMultiplier(long)} 收 <b>long</b>，
-         * 数量走整数倍乘 ⇒ 校验与扣料看到的是同一个数字。
-         *
-         * @return {@code parallel <= 1} 时原样返回（不复制，省一次分配，与星律一致）
-         */
-        private GTRecipe scaleRecipePrecisely(GTRecipe recipe, long parallel) {
-            if (parallel <= 1L) {
-                return recipe;
-            }
-            GTRecipe scaled = recipe.copy(IAdvancedContentModifier.preciseMultiplier(parallel), false);
-            RecipeExtensionCopier.copy(recipe, scaled);
-            IGTRecipe.of(scaled).setRealParallels(parallel);
-            return scaled;
-        }
-
-        /**
-         * <b>「从一个上限往下，找最大的、真正放得下的并行值」</b> —— 逐字照抄星律
-         * {@code PrimordialModuleRecipeLogic.java:409-438}（{@code findHighestMatchableParallel}）。
-         *
-         * <p>三步（与星律一字不差）：
-         * <ol>
-         *   <li>先试 {@code requested}（常见情况直接命中，零额外试探 ⇒ 二分只是兜底）；</li>
-         *   <li>再试 {@code requested - 1}（躲开「差一点点」的容量边界抖动）；</li>
-         *   <li>标准 long 二分：[1, requested-2]，用 {@code low + ((high - low) >>> 1)} 防溢出。</li>
-         * </ol>
-         * 返回 0 = 连 1 都放不下。
-         *
-         * @param requestedParallel 上限（调用方已用 {@code IParallelLogic} 收过输入侧）
-         * @param canMatch          对某个候选并行数做「真的放得下吗」的实证判定
-         */
-        private static long findHighestMatchableParallel(long requestedParallel, LongPredicate canMatch) {
-            if (requestedParallel <= 0L || canMatch == null) {
-                return 0L;
-            }
-            if (canMatch.test(requestedParallel)) {
-                return requestedParallel;
-            }
-            if (requestedParallel == 1L) {
-                return 0L;
-            }
-            long oneLess = requestedParallel - 1L;
-            if (canMatch.test(oneLess)) {
-                return oneLess;
-            }
-            long low = 1L;
-            long high = requestedParallel - 2L;
-            long best = 0L;
-            while (low <= high) {
-                long middle = low + (high - low >>> 1);
-                if (canMatch.test(middle)) {
-                    best = middle;
-                    low = middle + 1L;
-                    continue;
-                }
-                high = middle - 1L;
-            }
-            return best;
-        }
-
-        private static final class FitProbe {
-            private final boolean fits;
-            private final GTRecipe scaledRecipe;
-
-            private FitProbe(boolean fits, GTRecipe scaledRecipe) {
-                this.fits = fits;
-                this.scaledRecipe = scaledRecipe;
-            }
-        }
-    }
 }
 

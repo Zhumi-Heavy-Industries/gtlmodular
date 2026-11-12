@@ -164,6 +164,18 @@ public final class ConcurrentRecipeEngine {
     }
 
     /**
+     * ★ 2026-11-08：{@code ThreadedRecipeLogic.updateEngineGate()} 交回「原逻辑」时调用 ——
+     * 语义与 {@link #clear()} 相同（批次清空、<b>已扣料不退</b>，与 GTCEu {@code resetRecipeLogic()} 一致）。
+     *
+     * <p>存在的意义只是给调用方一个「语义明确」的名字：它不是存档/读档用的清空，
+     * 而是「引擎让位给原逻辑」这条闸门上的清空。扫描冷却/游标由 {@code BatchFinder} 持有，
+     * 下一次真正开扫时会自然失效（冷却 ≤ 80 tick）；本方法只负责批次表。
+     */
+    public void resetRecipeLogic() {
+        batches.clear();
+    }
+
+    /**
      * 每个 server tick 调一次：<b>推进 → 摘掉涨满的 → 有空位就补</b>（详见类注释的三步）。
      *
      * <p><b>不用 for-each</b>：第②步要在遍历中摘元素，用 {@link Iterator#remove()} 才安全。

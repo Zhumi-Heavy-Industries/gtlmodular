@@ -63,7 +63,12 @@ import java.util.function.BiPredicate;
  */
 public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<M>>
         extends CoilWorkableElectricMultipleRecipesMachine
-        implements IModularMachineModule<MoltenModuleHostMachine, M>, IMachineLife {
+        implements IModularMachineModule<MoltenModuleHostMachine, M>, IMachineLife,
+        // ★ 2026-11-09：必须显式实现这个 gtladditions 接口 —— 否则本类的
+        //   MoltenModuleRecipeLogic（extends gtlcore MultipleRecipesLogic）在构造时，
+        //   gtladditions 的 mixin 会把机器强转成它 ⇒ 加载熔融模块即 ClassCastException
+        //   （与奈亚 0.3.358 崩溃同源）。该接口方法全是 default，父类已有 getMaxParallel。
+        com.gtladd.gtladditions.api.machine.IWirelessThreadModifierParallelMachine {
 
     /** 同步字段（原价/实付 EUt）必须挂到自己的 ManagedFieldHolder 上才会同步到客户端。 */
     public static final ManagedFieldHolder MANAGED_FIELD_HOLDER =
@@ -1074,6 +1079,8 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         }
         connectToHost(best);
         onHostLinked();
+        // 模块自连主机这条路径同样要触发 AE 无线广播（与主机侧 scanModules 的调用等价、幂等）
+        best.onModuleConnected(this);
         return true;
     }
 
@@ -1086,12 +1093,20 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     @Override
     public void onStructureInvalid() {
         super.onStructureInvalid();
-        removeFromHost(getHost());
+        MoltenModuleHostMachine host = getHost();
+        removeFromHost(host);
+        if (host != null) {
+            host.onModuleDisconnected(this);
+        }
     }
 
     /** 方块被破坏/移除：断开主机链接。 */
     @Override
     public void onMachineRemoved() {
-        removeFromHost(getHost());
+        MoltenModuleHostMachine host = getHost();
+        removeFromHost(host);
+        if (host != null) {
+            host.onModuleDisconnected(this);
+        }
     }
 }

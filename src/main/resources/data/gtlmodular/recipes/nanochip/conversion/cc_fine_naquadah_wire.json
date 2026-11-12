@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:fine_naquadah_wire"
+            "item": "gtceu:naquadah_fine_wire"
           }
         }
       }
