@@ -59,9 +59,6 @@ public final class NyarlathotepsTentacleMachines {
             new ResourceLocation("gtceu", "suprachronal_assembly_line"),
             new ResourceLocation("gtceu", "assembly_line"),
             new ResourceLocation("gtceu", "circuit_assembly_line"),
-            // 「零部件加工」：本模组自建的表，不共用 gtlcore:component_assembly_line，
-            // 以免零件配方连带改写部件组装机。
-            ComponentPartsRecipeTypes.id("component_parts"),
     };
 
     /** 控制器外壳贴图 = 分子机械方块（与 GTO 的 {@code workableCasingRenderer} 一致）。 */
@@ -86,6 +83,9 @@ public final class NyarlathotepsTentacleMachines {
                 types.add(type);
             }
         }
+        // 「零部件加工」：按产出种类数拆成 MAX_KINDS 张表，每张表的输出格数正好等于该组配方的产出数，
+        // 界面不会拖一串空槽。本模组自建，不共用 gtlcore:component_assembly_line。
+        types.addAll(ComponentPartsRecipeTypes.all());
         if (types.isEmpty()) {
             GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：配方表一张都取不到");
             return;
