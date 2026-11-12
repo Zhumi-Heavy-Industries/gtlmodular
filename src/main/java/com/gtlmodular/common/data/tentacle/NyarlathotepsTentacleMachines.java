@@ -23,12 +23,14 @@ import java.util.List;
  * 奈亚拉托提普之触的注册（{@code gtlmodular:nyarlathoteps_tentacle}）—— GTO
  * {@code gtocore:nyarlathoteps_tentacle} 的移植体。
  *
- * <h2>三张配方表（GTO 原机的 {@code recipeTypes}）</h2>
+ * <h2>配方表（GTO 原机的 {@code recipeTypes}，外加本包增补）</h2>
  * <p>GTO：{@code SUPRACHRONAL_ASSEMBLY_LINE_RECIPES, ASSEMBLY_LINE_RECIPES, CIRCUIT_ASSEMBLY_LINE_RECIPES}。
- * 本整合包三张表都在（gtlcore 注册了前两张的 {@code gtceu:} 命名空间版本：
+ * 本整合包这几张表都在（gtlcore 注册了前两张的 {@code gtceu:} 命名空间版本：
  * {@code gtceu:suprachronal_assembly_line} / {@code gtceu:circuit_assembly_line}，
  * {@code gtceu:assembly_line} 是 GTCEu 原版），按 id 现取；取不到的自动跳过并告警，
  * 一张都取不到时才放弃注册（不崩服）。
+ * <p>另外挂上了 gtlcore 的 {@code gtlcore:component_assembly_line}，
+ * 使它多出一个「零部件加工」模式（一锭出全套零件的批量零件配方）。
  *
  * <h2>与原机一致的注册口径</h2>
  * <ul>
@@ -47,11 +49,18 @@ import java.util.List;
  */
 public final class NyarlathotepsTentacleMachines {
 
-    /** GTO 原机的三张配方表（按 id 现取，避免本模组硬依赖 gtlcore 的类）。 */
+    /**
+     * GTO 原机的三张配方表，外加 gtlcore 的零件工厂表。
+     *
+     * <p>按 id 现取而不是直接引用 {@code GTLRecipeTypes}，是为了在本模组未与 gtlcore 同时加载时
+     * 也能正常注册（取不到的那张会在 {@link #register()} 里被跳过）。</p>
+     */
     private static final ResourceLocation[] RECIPE_TYPE_IDS = {
             new ResourceLocation("gtceu", "suprachronal_assembly_line"),
             new ResourceLocation("gtceu", "assembly_line"),
             new ResourceLocation("gtceu", "circuit_assembly_line"),
+            // 「零部件加工」模式：跑 GTE 零件工厂规格的一锭出全套零件配方
+            new ResourceLocation("gtlcore", "component_assembly_line"),
     };
 
     /** 控制器外壳贴图 = 分子机械方块（与 GTO 的 {@code workableCasingRenderer} 一致）。 */
@@ -77,7 +86,7 @@ public final class NyarlathotepsTentacleMachines {
             }
         }
         if (types.isEmpty()) {
-            GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：三张配方表一张都取不到");
+            GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：配方表一张都取不到");
             return;
         }
 
