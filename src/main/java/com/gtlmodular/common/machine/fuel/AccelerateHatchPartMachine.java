@@ -97,13 +97,32 @@ public class AccelerateHatchPartMachine extends TieredPartMachine implements IMu
      * 按百分比缩短配方耗时。这是本仓接入多方块的唯一入口
      * （{@code WorkableMultiblockMachine#doModifyRecipe} 会遍历所有部件调它）。
      *
-     * <p>只有能工作于该配方的机器才改（{@link TieredPartMachine} 不区分机器类型，
-     * 这里通过 {@code recipe.tier} 与自身 tier 比对来做低等级惩罚）。
+     * <p>换算公式本身在 {@link #applyTo}：另一条不经过 {@code doModifyRecipe} 的配方逻辑
+     * （gtlcore 的 {@code MultipleRecipesLogic}）走 {@link AccelerateHatchLogic}，
+     * 两边用的是同一份公式，不会出现两种加速口径。
      */
     @Override
     public GTRecipe modifyRecipe(@NotNull GTRecipe recipe) {
-        int reduction = getPercentage();
-        int t = com.gregtechceu.gtceu.api.recipe.RecipeHelper.getRecipeEUtTier(recipe) - getTier();
+        return applyTo(recipe, getPercentage(), getTier());
+    }
+
+    /**
+     * 加速仓的<b>唯一</b>换算公式。
+     *
+     * <pre>
+     *   t = 配方电压档 - 仓电压档
+     *   if (t &gt; 0) reduction = min(100, reduction + 20 × t)   // 仓每低一级，加速效果 -20%
+     *   duration = max(1, duration × reduction / 100)
+     * </pre>
+     *
+     * @param recipe     要缩时长的配方（直接改 {@code duration}，与 GTCEu 一致）
+     * @param percentage 玩家设定的百分比（已在 [min, 100] 内）
+     * @param tier       加速仓自身的电压档
+     * @return 同一个配方对象
+     */
+    public static GTRecipe applyTo(@NotNull GTRecipe recipe, int percentage, int tier) {
+        int reduction = percentage;
+        int t = com.gregtechceu.gtceu.api.recipe.RecipeHelper.getRecipeEUtTier(recipe) - tier;
         if (t > 0) {
             reduction = Math.min(100, reduction + 20 * t);
         }

@@ -922,6 +922,36 @@ public final class GTLModularConfig {
                             "线圈等级不够时使用（GTO 原版就是这样：线圈跟不上配方等级 ⇒ 只有普通超频）。")
                     .defineInRange("lcrCoil.normalOverclockDurationFactor", 0.5D, 0.01D, 1.0D);
 
+    // ==================================================================
+    // 加速仓 · 装得上任何多方块（结构侧兜底分支）
+    //   所有多方块结构都走 Predicates.abilities(...) 声明「哪一格能放仓」，
+    //   在它的返回值上追加一个加速仓分支，等于给所有结构多留一格。
+    //   关掉即逐字回到结构作者自己写的范围。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue ACCELERATE_HATCH_ANY_MULTIBLOCK =
+            BUILDER.comment("加速仓是否允许装到任何多方块上（默认开）",
+                            "Allow the accelerate hatch in every multiblock structure (default true).",
+                            "开：所有多方块（含 gtceu / gtlcore / 增强版核心 / 第三方附属）的仓室位都接受加速仓；",
+                            "关：只接受结构作者自己声明过的位置。",
+                            "只影响能否安装，不影响加速幅度。")
+                    .define("accelerateHatch.anyMultiblock", true);
+
+    // ==================================================================
+    // 线程仓 / 超频仓 · 只装到增强版核心的机器上
+    //   范围口径与加速仓不同：增强版自己注册的机器 + 它改写过的机器，
+    //   不包括 gtceu / gtlcore 原生机器和第三方附属。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue EXTEND_HATCHES_ENABLED =
+            BUILDER.comment("线程仓 / 超频仓是否允许装到增强版核心的机器上（默认开）",
+                            "Allow the thread hatch and overclock hatch on GTL-Extend machines (default true).",
+                            "只作用于增强版核心（命名空间 gtl_extend）及其改写过的机器，不影响其它多方块。",
+                            "Thread hatch 需要线程引擎接管才有意义，见独立线程配置。")
+                    .define("extendHatches.enabled", true);
+
     public static final ForgeConfigSpec SPEC = BUILDER.build();
 
     // ---- 奈亚中央黑日：运行期读取入口（每帧 / 每轮现读，改完重进即生效） ----
@@ -1620,6 +1650,30 @@ public final class GTLModularConfig {
             return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.get();
         } catch (IllegalStateException notLoaded) {
             return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.getDefault();
+        }
+    }
+
+    /**
+     * 加速仓是否装得上任何多方块。
+     *
+     * <p>结构谓词在启动期构建一次，所以改完这一项要重启游戏；运行期判断一律读这里，
+     * 保证「结构放行」和「实际加速」用的是同一个开关。
+     */
+    public static boolean isAccelerateHatchAnyMultiblock() {
+        try {
+            return ACCELERATE_HATCH_ANY_MULTIBLOCK.get();
+        } catch (IllegalStateException notLoadedYet) {
+            // 结构构建早于配置加载时按默认（开）放行，避免开档瞬间结构少一格。
+            return true;
+        }
+    }
+
+    /** 线程仓 / 超频仓是否允许装到增强版核心的机器上。 */
+    public static boolean isExtendHatchesEnabled() {
+        try {
+            return EXTEND_HATCHES_ENABLED.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return true;
         }
     }
 }
