@@ -1,40 +1,21 @@
 {
-  "type": "gtceu:assembly_line",
+  "type": "gtceu:assembler_module",
   "conditions": [
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
-    },
-    {
-      "type": "forge:mod_loaded",
-      "modid": "gtlcore"
     }
   ],
-  "duration": 2400,
+  "duration": 1200,
+  "data": {
+    "SEPMTier": 1
+  },
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "tag": "gtceu:circuits/uhv"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtlmodular:nanochip_computational_matrix_casing"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
+          "count": 1,
           "ingredient": {
             "item": "gtlmodular:nanochip_mesh_interface_casing"
           }
@@ -43,18 +24,63 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 12,
+          "count": 4,
           "ingredient": {
-            "item": "gtceu:naquadah_coil_block"
+            "tag": "gtceu:circuits/uev"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 2,
+          "count": 16,
           "ingredient": {
-            "item": "gtceu:assembly_line_casing"
+            "item": "gtlmodular:nanochip_vacuum_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:assembler_module"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:pcb_factory"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:large_chemical_bath"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:nano_cpu_chip"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "item": "gtceu:qbit_cpu_chip"
           }
         }
       }
@@ -62,17 +88,17 @@
     "fluid": [
       {
         "content": {
-          "amount": 1440,
+          "amount": 4608,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:mutated_living_solder"
           }
         }
       },
       {
         "content": {
-          "amount": 720,
+          "amount": 4608,
           "value": {
-            "fluid": "gtceu:polyetheretherketone"
+            "fluid": "gtceu:tritanium"
           }
         }
       }
@@ -94,7 +120,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 524288
+        "content": 2097152
       }
     ]
   }

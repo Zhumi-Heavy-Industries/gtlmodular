@@ -1,40 +1,21 @@
 {
-  "type": "gtceu:assembly_line",
+  "type": "gtceu:assembler_module",
   "conditions": [
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
-    },
-    {
-      "type": "forge:mod_loaded",
-      "modid": "gtlcore"
     }
   ],
-  "duration": 3600,
+  "duration": 1200,
+  "data": {
+    "SEPMTier": 1
+  },
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
-          "ingredient": {
-            "tag": "gtceu:circuits/uhv"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 4,
-          "ingredient": {
-            "item": "gtlmodular:nanochip_computational_matrix_casing"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 4,
+          "count": 1,
           "ingredient": {
             "item": "gtlmodular:nanochip_mesh_interface_casing"
           }
@@ -43,27 +24,63 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 7,
-          "ingredient": {
-            "item": "gtceu:superconducting_coil"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
           "count": 4,
           "ingredient": {
-            "item": "gtceu:advanced_smd_capacitor"
+            "tag": "gtceu:circuits/uev"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 2,
+          "count": 16,
           "ingredient": {
-            "item": "gtceu:assembly_line_casing"
+            "item": "gtlmodular:nanochip_vacuum_pipe"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:assembler_module"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:precision_assembler"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:circuit_assembly_line"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "item": "gtceu:dense_naquadah_alloy_plate"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:silver_nanoswarm"
           }
         }
       }
@@ -71,17 +88,25 @@
     "fluid": [
       {
         "content": {
-          "amount": 2880,
+          "amount": 4608,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:mutated_living_solder"
           }
         }
       },
       {
         "content": {
-          "amount": 1440,
+          "amount": 4608,
           "value": {
-            "fluid": "gtceu:polyetheretherketone"
+            "fluid": "gtceu:naquadah_alloy"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 4608,
+          "value": {
+            "fluid": "gtceu:infinity"
           }
         }
       }
@@ -103,7 +128,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 8388608
+        "content": 2097152
       }
     ]
   }

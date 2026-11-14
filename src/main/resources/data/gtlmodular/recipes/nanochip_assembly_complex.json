@@ -4,21 +4,71 @@
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
-    },
-    {
-      "type": "forge:mod_loaded",
-      "modid": "gtlcore"
     }
   ],
-  "duration": 7200,
+  "duration": 2400,
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 32,
+          "count": 8,
+          "ingredient": {
+            "tag": "gtceu:circuits/uev"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
           "ingredient": {
             "tag": "gtceu:circuits/uhv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 32,
+          "ingredient": {
+            "tag": "gtceu:circuits/uv"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:crystal_cpu"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:advanced_computer_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:research_station"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtceu:data_bank"
           }
         }
       },
@@ -36,6 +86,15 @@
           "type": "gtceu:sized",
           "count": 16,
           "ingredient": {
+            "item": "gtlmodular:nanochip_reinforcement_casing"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
             "item": "gtlmodular:nanochip_computational_matrix_casing"
           }
         }
@@ -43,36 +102,36 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
+          "count": 4,
           "ingredient": {
-            "item": "gtceu:superconducting_coil"
+            "item": "gtlmodular:nanochip_firewall_projection_casing"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
+          "count": 1,
           "ingredient": {
-            "item": "gtceu:assembly_line_casing"
+            "item": "gtceu:zpm_field_generator"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
+          "count": 4,
           "ingredient": {
-            "item": "gtceu:advanced_smd_capacitor"
+            "item": "gtceu:uev_sensor"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
+          "count": 4,
           "ingredient": {
-            "item": "gtceu:advanced_smd_resistor"
+            "item": "gtceu:uev_emitter"
           }
         }
       }
@@ -80,17 +139,33 @@
     "fluid": [
       {
         "content": {
-          "amount": 5760,
+          "amount": 36864,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:mutated_living_solder"
           }
         }
       },
       {
         "content": {
-          "amount": 2880,
+          "amount": 9216,
           "value": {
-            "fluid": "gtceu:polyetheretherketone"
+            "fluid": "gtceu:celestialtungsten_plasma"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 9216,
+          "value": {
+            "fluid": "gtceu:chaos_plasma"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 9216,
+          "value": {
+            "fluid": "gtceu:astraltitanium_plasma"
           }
         }
       }
@@ -112,7 +187,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 8388608
+        "content": 31457280
       }
     ]
   }
