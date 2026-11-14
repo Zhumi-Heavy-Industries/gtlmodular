@@ -141,6 +141,13 @@ public final class GTLModular {
         //   纯 JSON 表达不了，所以跟奈亚之触同一套运行期注入。
         com.gtlmodular.common.data.coolingtower.CoolingTowerRecipe.register();
 
+        // ★ 2026-11-14：恒星炎炀锻炉的 31 条配方从 KubeJS 脚本迁入模组本体。
+        //   缘由：server_scripts/gtlmodular_stellar_forge_materials.js 在实例里被删除后，
+        //   材料仍在（Java 注册）但三味合金熔炼 / 形态链 / 陶瓷链 / 机壳配方全部消失，
+        //   玩家报「巴氏合金锭 / 贫铀合金锭 / 碳化凯金硅岩合金锭 合不出来」。
+        //   迁入后配方不再随 KubeJS 脚本的存亡而消失。
+        com.gtlmodular.common.data.stellar.StellarForgeRecipes.register();
+
         // ★ 2026-09-27：GTL-Enhancedcore 兼容 mixin 的**条件注册**（见 registerEnhancedcoreMixins）。
         // [2026-10-01 停用：反射+ignoreRequired 方案不采用，见 _enhcore/实施.md] registerEnhancedcoreMixins();
 
