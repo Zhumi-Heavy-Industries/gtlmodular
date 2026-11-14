@@ -160,7 +160,6 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         }
 
         if (player.isShiftKeyDown()) {
-            boolean orderStarted = false;
             if (rejectOutOfBuildHeight(serverPlayer, terminal, plan)) {
                 return InteractionResult.FAIL;
             }
@@ -201,7 +200,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                 com.gtlmodular.GTLModular.LOGGER.info("终端使用逐材料订单路径（先扣 AE 库存，再计算缺口）");
             }
             // 旧多缺口逐单逻辑（订单服务不可用时的回退）
-            requestMissingOrders(serverPlayer, terminal, plan, ae);
+            boolean orderStarted = requestMissingOrders(serverPlayer, terminal, plan, ae);
             if (ShanhaiTerminalCraftingManager.phase(terminal)
                     == ShanhaiTerminalCraftingManager.Phase.READY_TO_BUILD) {
                 // 旧计划可能因结构变化导致 fingerprint 不匹配；用当前扫描重新 arm，
@@ -224,20 +223,22 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                     .anyMatch(entry -> entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
                             || entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE);
             var preflight = materials.preflight(plan, serverPlayer, ae);
-            boolean waitingOrders = orderStarted && ae != null
-                    && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)
-                    && !preflight.success();
+            // 只要开了下单功能且 AE 在线，缺口就算“有订单在等”：即使全部缺口都没有样板
+            // （AE 不会真正提交任何 job），也必须登记自动施工，否则材料永远不会被放进结构。
+            boolean orderMode = ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal);
+            boolean waitingOrders = orderMode && (!preflight.success() || orderStarted);
             if (hasReplacement || waitingOrders || !preflight.success()) {
-                ShanhaiTerminalCraftingManager.armDirectBuild(serverPlayer, terminal, plan);
-                boolean auto = ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal);
-                if (auto) {
+                if (!waitingOrders) {
+                    ShanhaiTerminalCraftingManager.armDirectBuild(serverPlayer, terminal, plan);
+                }
+                if (orderMode) {
                     com.gtlmodular.common.item.terminal.TerminalAutoBuildService.register(
-                            serverPlayer, terminal, plan);
+                            serverPlayer, terminal, plan, true);
                 }
                 serverPlayer.sendSystemMessage(Component.literal(hasReplacement
                         ? "§e[哦鲸鲸终端] 替换计划已准备；再次潜行右击确认施工"
                         : "§e[哦鲸鲸终端] 施工计划已准备；再次潜行右击按现有材料施工（缺料位置跳过）"
-                                + (auto ? "；订单已登记，材料齐后自动施工" : "")));
+                                + (orderMode ? "；订单已登记，材料齐后自动施工" : "")));
                 return InteractionResult.SUCCESS;
             }
             ShanhaiStructureExecutor.Result result = executeBuild(serverPlayer, plan, ae);
@@ -327,18 +328,18 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         return ShanhaiTerminalAeBinding.resolve(player, terminal);
     }
 
-    private void requestMissingOrders(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
-                                      ShanhaiTerminalAeBinding.Context ae) {
+    private boolean requestMissingOrders(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
+                                         ShanhaiTerminalAeBinding.Context ae) {
         if (!ShanhaiUltimateTerminalConfig.isAeMode(terminal)
-                || !ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) return;
+                || !ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) return false;
         if (ae == null) {
             if (!materials.preflight(plan, player, null).success()) {
                 player.sendSystemMessage(Component.literal(
                         "§e[哦鲸鲸终端] AE 网络未绑定或离线，无法下单缺口"));
             }
-            return;
+            return false;
         }
-        ShanhaiTerminalCraftingManager.begin(player, terminal, plan, ae, materials);
+        return ShanhaiTerminalCraftingManager.begin(player, terminal, plan, ae, materials);
     }
 
     private boolean rejectOutOfBuildHeight(ServerPlayer player, ItemStack terminal,

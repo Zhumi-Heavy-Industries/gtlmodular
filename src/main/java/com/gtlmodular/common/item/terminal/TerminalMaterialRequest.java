@@ -21,10 +21,18 @@ public final class TerminalMaterialRequest {
 
     private TerminalMaterialRequest(ShanhaiStructurePlan plan, Map<AEKey, Long> shortages) {
         this.plan = plan;
-        this.shortages = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(shortages));
-        List<GenericStack> list = new ArrayList<>(shortages.size());
-        long total = 0L;
+        // 处理样板输入必须“每个 key 一条”：同一个 AEKey 分裂成多个 GenericStack 时，
+        // AE 解码出来的样板会重复吃同一份材料，规划直接失败。这里再做一次归并兜底。
+        Map<AEKey, Long> merged = new java.util.LinkedHashMap<>();
         for (Map.Entry<AEKey, Long> entry : shortages.entrySet()) {
+            if (entry.getKey() == null || entry.getValue() == null || entry.getValue() <= 0) continue;
+            merged.merge(entry.getKey(), entry.getValue(),
+                    (left, right) -> Math.min(Long.MAX_VALUE, left + right));
+        }
+        this.shortages = Collections.unmodifiableMap(merged);
+        List<GenericStack> list = new ArrayList<>(merged.size());
+        long total = 0L;
+        for (Map.Entry<AEKey, Long> entry : merged.entrySet()) {
             list.add(new GenericStack(entry.getKey(), entry.getValue()));
             total = Math.min(Long.MAX_VALUE, total + Math.max(0L, entry.getValue()));
         }

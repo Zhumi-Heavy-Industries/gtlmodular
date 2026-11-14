@@ -92,6 +92,11 @@ public final class TerminalOrderService {
                     "§e[哦鲸鲸终端] 没有可用的合成 CPU，已回退普通下单"));
             return false;
         }
+        if (!isDirectlySubmittable(orderCpu)) {
+            // 网络里只有一个“空闲占位 CPU”（ECO 网络代表会返回一个没有任务的 fake CPU），
+            // 此时指定它会直接 CPU_OFFLINE/NO_SUITABLE，交给 AE 自己选更稳。
+            orderCpu = null;
+        }
         List<GenericStack> inputs = request.inputs();
         long totalAmount = request.totalAmount();
         GTLModular.LOGGER.info("终端订单样板输入: {} 种材料，共 {} 份: {}",
@@ -203,19 +208,48 @@ public final class TerminalOrderService {
                         : "§c[哦鲸鲸终端] " + reason + "，且逐材料下单也未启动"));
     }
 
-    /** 标准 AE CPU 优先；没有时使用 ECO CPU（由 ECO 专用 mixin 收尾）。 */
+    /**
+     * 标准 AE CPU 优先；没有时退到 ECO CPU。
+     *
+     * <p>注意：AE2 的 getCpus() 只含 CraftingCPUCluster，而 ECO 通过 mixin 往同一个返回里
+     * 追加 ECOCraftingCPU（包括网络代表专用的空闲 fake CPU），所以这里要按类型判断，
+     * 而不是只认 CraftingCPUCluster 类名；同时必须跳过空闲占位 CPU，否则会选中 fake CPU。
+     */
     private static ICraftingCPU selectOrderCpu(ICraftingService service) {
+        ICraftingCPU ae = null;
         ICraftingCPU eco = null;
         for (ICraftingCPU cpu : service.getCpus()) {
             String name = cpu.getClass().getName();
             if (name.startsWith("appeng.me.cluster.implementations.CraftingCPUCluster")) {
-                return cpu;
-            }
-            if (name.contains("neoecoae") && name.contains("ECOCraftingCPU")) {
-                eco = cpu;
+                // 标准 CPU：空闲的优先，忙的作为最后选择（submitJob 会报 CPU_BUSY）。
+                if (ae == null || (ae.isBusy() && !cpu.isBusy())) ae = cpu;
+            } else if (name.startsWith("cn.dancingsnow.neoecoae.crafting.execution.ECOCraftingCPU")) {
+                // ECO CPU：先排除 fake/占位 CPU，再按空闲优先挑。
+                if (!isDirectlySubmittable(cpu)) continue;
+                if (eco == null || (eco.isBusy() && !cpu.isBusy())) eco = cpu;
             }
         }
-        return eco;
+        return ae != null ? ae : eco;
+    }
+
+    /** CPU 是否是一个真实可提交的 CPU（非 fake 占位、在线、能装下普通计划）。 */
+    private static boolean isDirectlySubmittable(ICraftingCPU cpu) {
+        if (cpu == null) return false;
+        String name = cpu.getClass().getName();
+        if (name.startsWith("appeng.me.cluster.implementations.CraftingCPUCluster")) return true;
+        if (!name.startsWith("cn.dancingsnow.neoecoae.crafting.execution.ECOCraftingCPU")) return false;
+        // ECO 的 fake CPU 与网络已满载时用同一个“没在跑任务”的空壳；两者都不该被指定。
+        // 真 CPU 在空闲时也会 isBusy()==false，所以改用底层 cluster 是否登记了它来判断。
+        try {
+            Object cluster = cpu.getClass().getMethod("getCluster").invoke(cpu);
+            if (cluster == null) return false;
+            Object fake = cluster.getClass().getMethod("getFakeCPU").invoke(cluster);
+            if (fake == cpu) return false;
+            Object active = cluster.getClass().getMethod("getActiveCPUs").invoke(cluster);
+            return active instanceof java.util.Collection<?> list && list.contains(cpu);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private static Component describeMissing(ICraftingPlan plan) {
