@@ -235,6 +235,7 @@ public class GTLModularAddon implements IGTAddon {
                 .iconSet(MaterialIconSet.METALLIC)
                 .dust()
                 .ingot()
+                .fluid()
                 .blastTemp(3000)
                 .flags(MaterialFlags.GENERATE_FRAME)
                 .buildAndRegister();
@@ -245,6 +246,7 @@ public class GTLModularAddon implements IGTAddon {
                 .secondaryColor(0x8A8A96)
                 .iconSet(MaterialIconSet.METALLIC)
                 .dust()
+                .fluid()
                 .flags(MaterialFlags.GENERATE_FRAME)
                 .buildAndRegister();
 
@@ -262,6 +264,7 @@ public class GTLModularAddon implements IGTAddon {
                 .iconSet(MaterialIconSet.METALLIC)
                 .dust()
                 .ingot()
+                .fluid()
                 .blastTemp(10800)
                 .flags(MaterialFlags.GENERATE_FRAME)
                 .buildAndRegister();
