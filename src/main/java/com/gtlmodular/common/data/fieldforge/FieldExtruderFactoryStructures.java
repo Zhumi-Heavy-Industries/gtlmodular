@@ -15,7 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.registries.ForgeRegistries;
 
 /**
- * 力场压模工厂（{@code gtlmodular:field_extruder_factory}）的结构 —— GTO
+ * 力场压模零件工厂（{@code gtlmodular:field_extruder_factory}）的结构 —— GTO
  * {@code gtocore:field_extruder_factory} 的 <b>1:1 照搬</b>（方块替换见下表）。
  *
  * <h2>取证</h2>
@@ -24,15 +24,35 @@ import net.minecraftforge.registries.ForgeRegistries;
  *   <li>格式：{@code FF FF FF FF | 0F | ver=1 | charDir=5 | stringDir=0 | aisleDir=2 |
  *       LEB(aisleCount=29) | LEB(stringsPerAisle=15)}，随后每行 {@code [0x00][1 字节长度][字符]}，
  *       片与片之间插 1 字节标记（0x0f）。解析器 {@code _scratch/tentacle/parse_mbs.py}
- *       ⇒ <b>0 字节剩余</b>（解析完整），15 (X) × 15 (Y) × 29 (Z)。</li>
+ *       ⇒ <b>0 字节剩余</b>（解析完整）。mbs 的 char/row/aisle 跨度 = 15 / 15 / 29。</li>
  *   <li>谓词绑定：{@code _gto_src/.../machines/MultiBlockF.java:249} 的 {@code FIELD_EXTRUDER_FACTORY}。</li>
- *   <li>朝向：直转，不做任何轴颠倒 —— 第 1 片 = 最背面（z=0），第 29 片 = 正面（z=28）；
- *       每片第 1 行 = 最低层（y=0）；每行第 1 个字符 = x 最小侧。
- *       控制器 {@code a} 在 <b>x=0, y=7, z=14</b>（侧面正中，不是正面 —— 与 GTO 一致）。</li>
+ *   <li><b>轴向：★ 必须按 mbs 头部的方向字节重排，不能直转（2026-11-14 修正）</b>。
+ *       本文件的头 3 字节是 {@code 05 00 02} = {@code charDir=BACK, stringDir=UP, aisleDir=LEFT}。
+ *       GTO 的 {@code RelativeDirection} 枚举序号（{@code struct_报告.md §3.1}）：
+ *       {@code 0=UP, 1=DOWN, 2=LEFT, 3=RIGHT, 4=FRONT, 5=BACK}；
+ *       {@code Orientation.VEC}：{@code BACK=(0,0,+1)}、{@code UP=(0,+1,0)}、{@code LEFT=(-1,0,0)}。
+ *       代入 {@code CompiledPiece} 的公式
+ *       {@code x = char*vecChar[0] + row*vecString[0] + aisle*vecAisle[0]}（y、z 同理）得：
+ *       <pre>x = -aisle　　y = row　　z = char</pre>
+ *       ⇒ <b>mbs 的 aisle 轴对应世界 X（29 格），char 轴对应世界 Z（15 格）</b>，
+ *       即 29 (X) × 15 (Y) × 15 (Z)。
+ *       <br><b>踩过的坑</b>：初版照抄奈亚那份 mbs（头是 {@code 02 00 04} = LEFT/UP/FRONT，
+ *       恰好「直转不颠倒」）的做法，把本文件也按直转处理 ⇒ X/Z 两轴互换，
+ *       控制器被摆到 {@code x=0,z=14}（结构侧面内部），正脸埋进机体里。现已按上式重排。</li>
  * </ul>
  *
  * <h2>尺寸与符号</h2>
- * <p><b>15 (X) × 15 (Y) × 29 (Z) = 6,525 格</b>，其中实心 3,261 格、空气 3,264 格、控制器 1 格。
+ * <p><b>29 (X) × 15 (Y) × 15 (Z) = 6,525 格</b>，其中实心 3,261 格、空气 3,264 格、控制器 1 格。
+ *
+ * <p><b>控制器位置（修正后）</b>：mbs {@code (char=0, row=7, aisle=14)} ⇒ 世界坐标
+ * {@code x=14, y=7, z=14}（在我们 {@code SLICES[z][y]} 的写法里是 {@code SLICES[14][7]} 的第 14 个字符，
+ * 即 {@code "    DBCBD   DBMBD   DBCBD    "} 里那个 {@code M}；
+ * 写进 {@link #SLICES} 时按奈亚同口径换成 {@code a}，由 {@code .where('a', controller)} 绑定）。
+ * 它落在<b>正面端面的正中</b> —— 最后一片（{@code SLICES[14]}）是三组并排的圆形端盖，
+ * 控制器就在中间那组的圆心；背面（{@code SLICES[0]}）同形状但中间是空的。
+ * <br><b>Z 轴方向</b>：按 GTCEu 原版惯例，<b>{@code .aisle(...)} 的最后一片 = 正面</b>
+ * （与 {@code FactoryBlockPattern} 的 {@code structureDir} 一致：aisle 增 → 朝正面）。
+ * 所以数据里控制器必须落在<b>最后一片</b>，否则控制器会朝进结构内部、正脸被埋。
  *
  * <table border="1">
  *   <caption>符号表（GTO 方块 → 我方方块；缺的 3 件见下注）</caption>
@@ -43,7 +63,7 @@ import net.minecraftforge.registries.ForgeRegistries;
  *   <tr><td>C</td><td>76</td><td>遏制场发生器</td><td>{@code kubejs:containment_field_generator}</td></tr>
  *   <tr><td>D</td><td>1026</td><td>分子机械方块</td><td>{@code gtlcore:molecular_casing}</td></tr>
  *   <tr><td>E</td><td>112</td><td>氧化锂陶瓷防热抗震机械方块</td><td><b>{@code gtlmodular:lithium_oxide_ceramic_heat_resistant_shock_resistant_mechanical_cube}（新造）</b></td></tr>
- *   <tr><td>F</td><td>288</td><td>硼硅酸盐玻璃</td><td>{@code gtceu:borosilicate_glass}</td></tr>
+ *   <tr><td>F</td><td>288</td><td>硼硅酸盐玻璃</td><td>{@code gtceu:borosilicate_glass_block}</td></tr>
  *   <tr><td>G</td><td>48</td><td>超能核心</td><td>{@code gtlcore:hyper_core}</td></tr>
  *   <tr><td>H</td><td>108</td><td>加速管道</td><td>{@code kubejs:accelerated_pipeline}（整合包已有，贴图与 GTO 逐字节相同）</td></tr>
  *   <tr><td>I</td><td>102</td><td>电解器</td><td>{@code gtceu:electrolytic_cell}</td></tr>
@@ -76,521 +96,297 @@ import net.minecraftforge.registries.ForgeRegistries;
  */
 public final class FieldExtruderFactoryStructures {
 
-    static final int WIDTH = 15;
+    static final int WIDTH = 29;
     static final int HEIGHT = 15;
-    static final int LENGTH = 29;
+    static final int LENGTH = 15;
 
     private FieldExtruderFactoryStructures() {
     }
 
-    /** 29 片 Z 层数据（{@code slices[z][y]}，{@code z=0} 最背面、{@code z=28} 正面）。 */
+    /** 15 片 Z 层数据（{@code slices[z][y]}，{@code z=0} 最背面、{@code z=14} 正面 = 控制器所在）。 */
     public static String[][] slices() {
         return SLICES;
     }
 
-    /** 29 片 Z 层，每层 15 行（Y=0 在前），行宽 15。数据来自 GTO 的 .mbs，直转无颠倒。 */
+    /**
+     * 15 片 Z 层，每层 15 行（Y=0 在前），行宽 <b>29</b>。数据来自 GTO 的 .mbs，
+     * <b>已按 mbs 头部方向字节重排</b>（见 {@link #build} 上方注释与类注释「轴向」一节）。
+     */
     private static final String[][] SLICES = {
             { // Z=0
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   ABBBBBBBA   ", // Y=2
-                    "  AACCDDDCCAA  ", // Y=3
-                    " AAABBBBBBBAAA ", // Y=4
-                    " AAAAAAAAAAAAA ", // Y=5
-                    " EEFFFFFFFFFEE ", // Y=6
-                    "               ", // Y=7
-                    " EEFFFFFFFFFEE ", // Y=8
-                    " AAAAAAAAAAAAA ", // Y=9
-                    " AAABBBBBBBAAA ", // Y=10
-                    "  AACCDDDCCAA  ", // Y=11
-                    "   ABBBBBBBA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=1
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=2
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=3
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=4
+                    "    LDLDL   DDDDD   LDLDL    ", // Y=5
+                    "    DBCBD   D   D   DBCBD    ", // Y=6
+                    "    DBCBD   D   D   DBCBD    ", // Y=7
+                    "    DBCBD   D   D   DBCBD    ", // Y=8
+                    "    LDLDL   DDDDD   LDLDL    ", // Y=9
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=10
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=11
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=12
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
             { // Z=1
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    DD DD   DD DD   DD DD    ", // Y=1
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=2
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=3
+                    "AAAAADDDAAAAADDDAAAAADDDAAAAA", // Y=4
+                    "AFFFADDDAFFFADDDAFFFADDDAFFFA", // Y=5
+                    "E   EDDDE   EDDDE   EDDDE   E", // Y=6
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=7
+                    "E   EDDDE   EDDDE   EDDDE   E", // Y=8
+                    "AFFFADDDAFFFADDDAFFFADDDAFFFA", // Y=9
+                    "AAAAADDDAAAAADDDAAAAADDDAAAAA", // Y=10
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=11
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=12
+                    "    DD DD   DD DD   DD DD    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
             { // Z=2
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=1
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=2
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=3
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=4
+                    "AFFFAFFFAFFFAFFFAFFFAFFFAFFFA", // Y=5
+                    "EEEEE   EEEEE   EEEEE   EEEEE", // Y=6
+                    "                             ", // Y=7
+                    "EEEEE   EEEEE   EEEEE   EEEEE", // Y=8
+                    "AFFFAFFFAFFFAFFFAFFFAFFFAFFFA", // Y=9
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=10
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=11
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=12
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
             { // Z=3
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=0
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=1
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=2
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=3
+                    "AIIIA   AIIIA   AIIIA   AIIIA", // Y=4
+                    "A   A   A   A   A   AFFFA   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   AFFFA   A   A   A   A   A", // Y=9
+                    "AIIIA   AIIIA   AIIIA   AIIIA", // Y=10
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=11
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=12
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=13
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=14
             },
             { // Z=4
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "LAAAAAAAAAAAAAL", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "LAAAAAAAAAAAAAL", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "BAAAD   DAAAD   DAAAD   DAAAB", // Y=2
+                    "C   C   C   C   C   C   C   C", // Y=3
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=10
+                    "C   C   C   C   C   C   C   C", // Y=11
+                    "BAAAD   DAAAD   DAAAD   DAAAB", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=14
             },
             { // Z=5
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDF        FFDD", // Y=5
-                    "BD           DB", // Y=6
-                    "BD           DB", // Y=7
-                    "BD           DB", // Y=8
-                    "DDFF        FDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
+                    "                             ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "B   D   D   D   D   D   D   B", // Y=2
+                    "CGGGC   CGGGC   CGGGC   CGGGC", // Y=3
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=10
+                    "CGGGC   CGGGC   CGGGC   CGGGC", // Y=11
+                    "B   D   D   D   D   D   D   B", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "                             ", // Y=14
             },
             { // Z=6
-                    "LLLDD     DDLLL", // Y=0
-                    "L DD       DD L", // Y=1
-                    "LDD         DDL", // Y=2
-                    "LD    HIH    DL", // Y=3
-                    "LD           DL", // Y=4
-                    "LDF        FFDL", // Y=5
-                    "CD           DC", // Y=6
-                    "CD           DC", // Y=7
-                    "CD           DC", // Y=8
-                    "LDFF        FDL", // Y=9
-                    "LD           DL", // Y=10
-                    "LD    HIH    DL", // Y=11
-                    "LDD         DDL", // Y=12
-                    "L DD       DD L", // Y=13
-                    "LLLDD     DDLLL", // Y=14
+                    "                             ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "B   D   D   D   D   D   D   B", // Y=2
+                    "DHHHHHHHHHHHHHHHHHHHHHHHHHHHD", // Y=3
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=10
+                    "DHHHHHHHHHHHHHHHHHHHHHHHHHHHD", // Y=11
+                    "B   D   D   D   D   D   D   B", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "                             ", // Y=14
             },
             { // Z=7
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDF        FFDD", // Y=5
-                    "BD           DB", // Y=6
-                    "BD           DB", // Y=7
-                    "BD           DB", // Y=8
-                    "DDFF        FDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
+                    "                             ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "B   D   D   D   D   D   D   B", // Y=2
+                    "DIIIIIIIIIIIIIIIIIIIIIIIIIIID", // Y=3
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=10
+                    "DIIIIIIIIIIIIIIIIIIIIIIIIIIID", // Y=11
+                    "B   D   D   D   D   D   D   B", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "                             ", // Y=14
             },
             { // Z=8
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "LAAAAAAAAAAAAAL", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "LAAAAAAAAAAAAAL", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
+                    "                             ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "B   D   D   D   D   D   D   B", // Y=2
+                    "DHHHHHHHHHHHHHHHHHHHHHHHHHHHD", // Y=3
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BKKKD   DKKKD   DKKKD   DKKKB", // Y=10
+                    "DHHHHHHHHHHHHHHHHHHHHHHHHHHHD", // Y=11
+                    "B   D   D   D   D   D   D   B", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "                             ", // Y=14
             },
             { // Z=9
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "                             ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "B   D   D   D   D   D   D   B", // Y=2
+                    "CGGGC   CGGGC   CGGGC   CGGGC", // Y=3
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=10
+                    "CGGGC   CGGGC   CGGGC   CGGGC", // Y=11
+                    "B   D   D   D   D   D   D   B", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "                             ", // Y=14
             },
             { // Z=10
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=0
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=1
+                    "BAAAD   DAAAD   DAAAD   DAAAB", // Y=2
+                    "C   C   C   C   C   C   C   C", // Y=3
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=4
+                    "A   A   A   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   A   A   A", // Y=9
+                    "BJJJD   DJJJD   DJJJD   DJJJB", // Y=10
+                    "C   C   C   C   C   C   C   C", // Y=11
+                    "BAAAD   DAAAD   DAAAD   DAAAB", // Y=12
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=13
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=14
             },
             { // Z=11
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=0
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=1
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=2
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=3
+                    "AIIIA   AIIIA   AIIIA   AIIIA", // Y=4
+                    "A   AFFFA   A   A   A   A   A", // Y=5
+                    "F   F   F   F   F   F   F   F", // Y=6
+                    "                             ", // Y=7
+                    "F   F   F   F   F   F   F   F", // Y=8
+                    "A   A   A   A   A   AFFFA   A", // Y=9
+                    "AIIIA   AIIIA   AIIIA   AIIIA", // Y=10
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=11
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=12
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=13
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=14
             },
             { // Z=12
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "DAAAAAAAAAAAAAD", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "DAAAAAAAAAAAAAD", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=1
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=2
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=3
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=4
+                    "AFFFAFFFAFFFAFFFAFFFAFFFAFFFA", // Y=5
+                    "EEEEE   EEEEE   EEEEE   EEEEE", // Y=6
+                    "                             ", // Y=7
+                    "EEEEE   EEEEE   EEEEE   EEEEE", // Y=8
+                    "AFFFAFFFAFFFAFFFAFFFAFFFAFFFA", // Y=9
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=10
+                    "AAAAA   AAAAA   AAAAA   AAAAA", // Y=11
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=12
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
             { // Z=13
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDF         FDD", // Y=5
-                    "BD           D ", // Y=6
-                    "BD           D ", // Y=7
-                    "BD           D ", // Y=8
-                    "DDF         FDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    DD DD   DD DD   DD DD    ", // Y=1
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=2
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=3
+                    "AAAAADDDAAAAADDDAAAAADDDAAAAA", // Y=4
+                    "AFFFADDDAFFFADDDAFFFADDDAFFFA", // Y=5
+                    "E   EDDDE   EDDDE   EDDDE   E", // Y=6
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=7
+                    "E   EDDDE   EDDDE   EDDDE   E", // Y=8
+                    "AFFFADDDAFFFADDDAFFFADDDAFFFA", // Y=9
+                    "AAAAADDDAAAAADDDAAAAADDDAAAAA", // Y=10
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=11
+                    "    DDDDD   DDDDD   DDDDD    ", // Y=12
+                    "    DD DD   DD DD   DD DD    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
             { // Z=14
-                    "LLLDD     DDLLL", // Y=0
-                    "L DD       DD L", // Y=1
-                    "LDD         DDL", // Y=2
-                    "LD    HIH    DL", // Y=3
-                    "LD           DL", // Y=4
-                    "DDF         FDD", // Y=5
-                    "BD           D ", // Y=6
-                    "aD           D ", // Y=7
-                    "BD           D ", // Y=8
-                    "DDF         FDD", // Y=9
-                    "LD           DL", // Y=10
-                    "LD    HIH    DL", // Y=11
-                    "LDD         DDL", // Y=12
-                    "L DD       DD L", // Y=13
-                    "LLLDD     DDLLL", // Y=14
-            },
-            { // Z=15
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDF         FDD", // Y=5
-                    "BD           D ", // Y=6
-                    "BD           D ", // Y=7
-                    "BD           D ", // Y=8
-                    "DDF         FDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
-            },
-            { // Z=16
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "DAAAAAAAAAAAAAD", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "DAAAAAAAAAAAAAD", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
-            },
-            { // Z=17
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=18
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=19
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=20
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "LAAAAAAAAAAAAAL", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "LAAAAAAAAAAAAAL", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
-            },
-            { // Z=21
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDFF        FDD", // Y=5
-                    "BD           DB", // Y=6
-                    "BD           DB", // Y=7
-                    "BD           DB", // Y=8
-                    "DDF        FFDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
-            },
-            { // Z=22
-                    "LLLDD     DDLLL", // Y=0
-                    "L DD       DD L", // Y=1
-                    "LDD         DDL", // Y=2
-                    "LD    HIH    DL", // Y=3
-                    "LD           DL", // Y=4
-                    "LDFF        FDL", // Y=5
-                    "CD           DC", // Y=6
-                    "CD           DC", // Y=7
-                    "CD           DC", // Y=8
-                    "LDF        FFDL", // Y=9
-                    "LD           DL", // Y=10
-                    "LD    HIH    DL", // Y=11
-                    "LDD         DDL", // Y=12
-                    "L DD       DD L", // Y=13
-                    "LLLDD     DDLLL", // Y=14
-            },
-            { // Z=23
-                    "DDDDD     DDDDD", // Y=0
-                    "DDDD       DDDD", // Y=1
-                    "DDD         DDD", // Y=2
-                    "DD    HIH    DD", // Y=3
-                    "DD           DD", // Y=4
-                    "DDFF        FDD", // Y=5
-                    "BD           DB", // Y=6
-                    "BD           DB", // Y=7
-                    "BD           DB", // Y=8
-                    "DDF        FFDD", // Y=9
-                    "DD           DD", // Y=10
-                    "DD    HIH    DD", // Y=11
-                    "DDD         DDD", // Y=12
-                    "DDDD       DDDD", // Y=13
-                    "DDDDD     DDDDD", // Y=14
-            },
-            { // Z=24
-                    "LLLDD     DDLLL", // Y=0
-                    "LDDDAAAAAAADDDL", // Y=1
-                    "LDDADDDDDDDADDL", // Y=2
-                    "LDAACCHIHCCAADL", // Y=3
-                    "LAAADDDDDDDAAAL", // Y=4
-                    "LAAAAAAAAAAAAAL", // Y=5
-                    "DEEFFFFFFFFFEED", // Y=6
-                    "DD           DD", // Y=7
-                    "DEEFFFFFFFFFEED", // Y=8
-                    "LAAAAAAAAAAAAAL", // Y=9
-                    "LAAADDDDDDDAAAL", // Y=10
-                    "LDAACCHIHCCAADL", // Y=11
-                    "LDDADDDDDDDADDL", // Y=12
-                    "LDDDAAAAAAADDDL", // Y=13
-                    "LLLDD     DDLLL", // Y=14
-            },
-            { // Z=25
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=26
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=27
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   AA     AA   ", // Y=2
-                    "  AA GHIHG AA  ", // Y=3
-                    " AAIJJKKKJJIAA ", // Y=4
-                    " FF         FF ", // Y=5
-                    "  E         E  ", // Y=6
-                    "               ", // Y=7
-                    "  E         E  ", // Y=8
-                    " FF         FF ", // Y=9
-                    " AAIJJKKKJJIAA ", // Y=10
-                    "  AA GHIHG AA  ", // Y=11
-                    "   AA     AA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
-            },
-            { // Z=28
-                    "               ", // Y=0
-                    "    AAAAAAA    ", // Y=1
-                    "   ABBBBBBBA   ", // Y=2
-                    "  AACCDDDCCAA  ", // Y=3
-                    " AAABBBBBBBAAA ", // Y=4
-                    " AAAAAAAAAAAAA ", // Y=5
-                    " EEFFFFFFFFFEE ", // Y=6
-                    "               ", // Y=7
-                    " EEFFFFFFFFFEE ", // Y=8
-                    " AAAAAAAAAAAAA ", // Y=9
-                    " AAABBBBBBBAAA ", // Y=10
-                    "  AACCDDDCCAA  ", // Y=11
-                    "   ABBBBBBBA   ", // Y=12
-                    "    AAAAAAA    ", // Y=13
-                    "               ", // Y=14
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=0
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=1
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=2
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=3
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=4
+                    "    LDLDL   DDDDD   LDLDL    ", // Y=5
+                    "    DBCBD   DBBBD   DBCBD    ", // Y=6
+                    "    DBCBD   DBaBD   DBCBD    ", // Y=7
+                    "    DBCBD   DBBBD   DBCBD    ", // Y=8
+                    "    LDLDL   DDDDD   LDLDL    ", // Y=9
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=10
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=11
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=12
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=13
+                    "    LDLDL   LDLDL   LDLDL    ", // Y=14
             },
     };
 
+
     /**
-     * 构建结构。控制器格 = <b>x=0, y=7, z=14</b>。
+     * 构建结构。控制器格 = <b>x=14, y=7, z=14</b>（最后一片 = 正面端面正中）。
      *
      * <p>符号映射逐条对齐 {@code MultiBlockF.java:257~275}（见类注释的符号表）。</p>
      */
     public static BlockPattern build(MultiblockMachineDefinition definition) {
+        // ★ 2026-11-14 前置自检：结构数据里出现的每个符号，下面都必须有对应的 .where(...)。
+        //   否则 GTCEu 会在 FactoryBlockPattern.build() 里抛
+        //   `IllegalStateException: Predicates for character(s) X are missing`，
+        //   而那个异常是从 JEI 取 tooltip 时才触发的 —— 表现为「获取原料提示框时崩溃」，
+        //   日志里只有一句 JEI 的 `Caught an error getting an Ingredient's tooltip`，
+        //   排查成本极高。实测踩过：重排坐标时把 mbs 的 'M'（控制器）原样写进了数据，
+        //   而 where 绑的是 'a' ⇒ 整个物品的 tooltip 一碰就崩。
+        //   这里在交给 GTCEu 之前先自己点一遍名，报错直指「哪个字符没绑定」。
+        verifySymbols();
+
         TraceabilityPredicate hatchCasing = blocksOf("gtceu", "high_power_casing")
                 // —— 常规 IO：GTO 用 autoThreadLaserAbilities(...)，这里展开成逐条能力。
                 .or(ability(PartAbility.IMPORT_ITEMS).setPreviewCount(1))
@@ -612,7 +408,7 @@ public final class FieldExtruderFactoryStructures {
                 .or(ability(PartAbility.MAINTENANCE).setExactLimit(1));
 
         return FactoryBlockPattern.start()
-                .aisle(SLICES[0])
+                                .aisle(SLICES[0])
                 .aisle(SLICES[1])
                 .aisle(SLICES[2])
                 .aisle(SLICES[3])
@@ -627,20 +423,6 @@ public final class FieldExtruderFactoryStructures {
                 .aisle(SLICES[12])
                 .aisle(SLICES[13])
                 .aisle(SLICES[14])
-                .aisle(SLICES[15])
-                .aisle(SLICES[16])
-                .aisle(SLICES[17])
-                .aisle(SLICES[18])
-                .aisle(SLICES[19])
-                .aisle(SLICES[20])
-                .aisle(SLICES[21])
-                .aisle(SLICES[22])
-                .aisle(SLICES[23])
-                .aisle(SLICES[24])
-                .aisle(SLICES[25])
-                .aisle(SLICES[26])
-                .aisle(SLICES[27])
-                .aisle(SLICES[28])
                 .where('a', Predicates.controller(Predicates.blocks(definition.get())))
                 // 高能耐压机械方块（gtocore 专有 ⇒ 本模组自造）
                 .where('A', Predicates.blocks(FieldExtruderFactoryBlocks.HIGH_PRESSURE_RESISTANT_CASING.get()))
@@ -650,7 +432,7 @@ public final class FieldExtruderFactoryStructures {
                 // 氧化锂陶瓷防热抗震机械方块（gtocore 专有 ⇒ 本模组自造）
                 .where('E', Predicates.blocks(
                         FieldExtruderFactoryBlocks.LITHIUM_OXIDE_CERAMIC_HEAT_RESISTANT_SHOCK_RESISTANT_MECHANICAL_CUBE.get()))
-                .where('F', blocksOf("gtceu", "borosilicate_glass"))
+                .where('F', blocksOf("gtceu", "borosilicate_glass_block"))
                 .where('G', blocksOf("gtlcore", "hyper_core"))
                 // 加速管道（整合包已有 kubejs:accelerated_pipeline，贴图与 GTO 逐字节相同）
                 .where('H', blocksOf("kubejs", "accelerated_pipeline"))
@@ -660,6 +442,56 @@ public final class FieldExtruderFactoryStructures {
                 .where('L', blocksOf("gtceu", "tritanium_frame"))
                 .where(' ', Predicates.any())
                 .build();
+    }
+
+    /**
+     * 结构数据用到的符号全集（必须与 {@link #build} 里的 {@code .where(...)} 一一对应）。
+     *
+     * <p>加字符时两处都要改：数据里出现它，且这里列进去并在 {@code build} 里绑谓词。
+     * {@code ' '}（空气/任意）也是符号，同样在 {@code build} 里绑了 {@code Predicates.any()}。</p>
+     */
+    private static final String DECLARED_SYMBOLS = "aABCDEFGHIJKL ";
+
+    /**
+     * 自检：{@link #SLICES} 里出现的每个字符都必须在 {@link #DECLARED_SYMBOLS} 里。
+     *
+     * <p>失败即抛 {@link IllegalStateException} 并列出具体字符与首次出现位置，
+     * 免得又变成「JEI 取 tooltip 时崩溃」这种难查的间接症状。</p>
+     */
+    private static void verifySymbols() {
+        for (int z = 0; z < SLICES.length; z++) {
+            String[] rows = SLICES[z];
+            for (int y = 0; y < rows.length; y++) {
+                String row = rows[y];
+                for (int x = 0; x < row.length(); x++) {
+                    char c = row.charAt(x);
+                    if (DECLARED_SYMBOLS.indexOf(c) < 0) {
+                        throw new IllegalStateException(String.format(
+                                "力场压模零件工厂结构：符号 '%c'（0x%02X）在 SLICES[%d][%d] 第 %d 列出现，"
+                                        + "但没有对应的 .where(...) 绑定。"
+                                        + "DECLARED_SYMBOLS=%s。"
+                                        + "请在该类里补 where 并把它加进 DECLARED_SYMBOLS。",
+                                c, (int) c, z, y, x, DECLARED_SYMBOLS));
+                    }
+                }
+            }
+        }
+        if (SLICES.length != LENGTH) {
+            throw new IllegalStateException(String.format(
+                    "力场压模零件工厂结构：SLICES 有 %d 片，但 LENGTH=%d", SLICES.length, LENGTH));
+        }
+        for (String[] rows : SLICES) {
+            if (rows.length != HEIGHT) {
+                throw new IllegalStateException(String.format(
+                        "力场压模零件工厂结构：某片有 %d 行，但 HEIGHT=%d", rows.length, HEIGHT));
+            }
+            for (String row : rows) {
+                if (row.length() != WIDTH) {
+                    throw new IllegalStateException(String.format(
+                            "力场压模零件工厂结构：某行宽 %d，但 WIDTH=%d", row.length(), WIDTH));
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -676,10 +508,17 @@ public final class FieldExtruderFactoryStructures {
     private static TraceabilityPredicate blocksOf(String namespace, String path) {
         Block block = blockById(new ResourceLocation(namespace, path));
         if (block == null) {
-            GTLModular.LOGGER.error(
-                    "[gtlmodular] 力场压模工厂结构：方块 {}/{} 取不到（该符号将永不匹配，请检查模组加载顺序）",
-                    namespace, path);
-            return new TraceabilityPredicate(state -> false, () -> new com.lowdragmc.lowdraglib.utils.BlockInfo[0]);
+            // ★ 2026-11-14：这里**必须炸**，不能只记 error 然后返回「永不匹配」的谓词。
+            //   踩过的坑：F 位写成了 gtceu:borosilicate_glass（真实 id 是 ..._block），
+            //   于是 F 位 288 格玻璃永远判不中 ⇒ 机器**怎么摆都不成形**，
+            //   而现场表现只是「放了方块但结构不认」，日志里那条 error 很容易被忽略。
+            //   结构配置错属于「代码 bug」，应该在第一次判定/预览时就以异常形式暴露出来。
+            throw new IllegalStateException(String.format(
+                    "力场压模零件工厂结构：方块 %s:%s 在注册表里取不到。"
+                            + "该符号对应的格子将永远判不中、机器无法成形。"
+                            + "请核对方块 id（注意 GTCEu 有些方块带 _block 后缀，"
+                            + "如 borosilicate_glass_block）。",
+                    namespace, path));
         }
         TraceabilityPredicate predicate = Predicates.blocks(block);
         com.lowdragmc.lowdraglib.utils.BlockInfo[] candidates = {
@@ -701,7 +540,7 @@ public final class FieldExtruderFactoryStructures {
     private static TraceabilityPredicate ability(PartAbility ability) {
         if (ability.getAllBlocks().isEmpty()) {
             GTLModular.LOGGER.error(
-                    "[gtlmodular] 力场压模工厂结构：PartAbility[{}] 下没有任何方块（该能力退化为永不匹配）",
+                    "[gtlmodular] 力场压模零件工厂结构：PartAbility[{}] 下没有任何方块（该能力退化为永不匹配）",
                     ability.getName());
             return new TraceabilityPredicate(state -> false, () -> new com.lowdragmc.lowdraglib.utils.BlockInfo[0]);
         }

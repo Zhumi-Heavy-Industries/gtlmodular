@@ -83,12 +83,11 @@ public final class NyarlathotepsTentacleMachines {
                 types.add(type);
             }
         }
-        // 「零部件加工」：本模组自建的单一配方表，不共用 gtlcore:component_assembly_line
-        // （那张表同时被部件组装机使用，挂上去会连带改写部件组装机）。
-        GTRecipeType partsType = ComponentPartsRecipeTypes.COMPONENT_PARTS();
-        if (partsType != null) {
-            types.add(partsType);
-        }
+        // ★ 2026-11-14：**撤下「零部件加工」**。
+        //   2026-11-14 早先这张表是挂给奈亚的（当时还没有别的机器用它）；
+        //   现在队长把这张表划给了新移植的「力场压模工厂」(gtlmodular:field_extruder_factory)，
+        //   奈亚回到 GTO 原样：只跑 超时空装配线 / 装配线 / 电路装配线 三张表。
+        //   表本身仍在 ComponentPartsRecipeTypes 注册（不删），由 FieldExtruderFactoryMachines 引用。
         if (types.isEmpty()) {
             GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：配方表一张都取不到");
             return;

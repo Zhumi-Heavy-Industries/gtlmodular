@@ -141,6 +141,11 @@ public final class GTLModular {
         //   纯 JSON 表达不了，所以跟奈亚之触同一套运行期注入。
         com.gtlmodular.common.data.coolingtower.CoolingTowerRecipe.register();
 
+        // ★ 2026-11-14：力场压模零件工厂的获取配方 —— 装配线 UEV + 研究门，
+        //   数值逐项照搬 GTO（{@code nanotechnology.js:45} 那条），只把产出改成我们的 id。
+        //   同样带研究门 ⇒ 跟超级大冰箱 / 奈亚之触同一套运行期注入。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryRecipe.register();
+
         // ★ 2026-11-14：恒星炎炀锻炉的 31 条配方从 KubeJS 脚本迁入模组本体。
         //   缘由：server_scripts/gtlmodular_stellar_forge_materials.js 在实例里被删除后，
         //   材料仍在（Java 注册）但三味合金熔炼 / 形态链 / 陶瓷链 / 机壳配方全部消失，

@@ -8,7 +8,7 @@ import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 
 /**
- * GTO「力场压模工厂」（{@code gtocore:field_extruder_factory}）结构里
+ * GTO「力场压模零件工厂」（{@code gtocore:field_extruder_factory}）结构里
  * <b>本整合包没有的 2 种机壳方块</b> —— 与 {@link com.gtlmodular.common.data.stellar.StellarForgeBlocks}
  * 同一套「只补缺件」口径：结构里其余符号位全部落到整合包已有的方块上。
  *
@@ -35,7 +35,7 @@ import net.minecraft.world.level.block.state.BlockBehaviour;
  * 并在 {@code server_scripts/circuit_boards.js:241} 挂了装配机产能配方。
  * ⇒ 结构 H 位直接引用 {@code kubejs:accelerated_pipeline}，无需再造。</p>
  *
- * <p><b>为什么这 2 件必须自造</b>：GTO（{@code gtocore}）并不在整合包里，它把力场压模工厂的
+ * <p><b>为什么这 2 件必须自造</b>：GTO（{@code gtocore}）并不在整合包里，它把力场压模零件工厂的
  * 机壳符号位绑到了自己的方块上；整合包只有 {@code gtlcore} / {@code gtladditions}。
  * 逐 id 在实例 {@code logs/debug.log} 与 gtlcore / gtladditions jar 里核过，两个模组都没有这两个方块。</p>
  *
@@ -80,7 +80,7 @@ public final class FieldExtruderFactoryBlocks {
     /** 强制类加载（在机器注册链里调一次）。 */
     public static void init() {
         com.gtlmodular.GTLModular.LOGGER.info(
-                "[gtlmodular] 力场压模工厂·结构缺件方块已注册 2 个："
+                "[gtlmodular] 力场压模零件工厂·结构缺件方块已注册 2 个："
                         + "高能耐压机械方块 / 氧化锂陶瓷防热抗震机械方块"
                         + "（加速管道复用整合包已有的 kubejs:accelerated_pipeline）");
     }

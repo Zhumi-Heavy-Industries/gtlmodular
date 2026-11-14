@@ -212,7 +212,7 @@ public final class GTLModularMachines {
         //   线程数由结构里的 GTO 线程仓（7 档）给出，没有线程仓时 1 条。
         //   结构里缺的 4 件方块见 common/data/tentacle/TentacleBlocks（在 initBlocks 里建）。
         com.gtlmodular.common.data.tentacle.NyarlathotepsTentacleMachines.register();
-        // ★ 2026-11-14：GTO 力场压模工厂 —— 15×15×29 结构 1:1 照搬（缺的 3 件方块换成
+        // ★ 2026-11-14：GTO 力场压模工厂 —— 29×15×15 结构 1:1 照搬（缺的 3 件方块换成
         //   本整合包的语义等价物，见 FieldExtruderFactoryStructures 类注释的符号表）。
         //   ★ 配方表按队长口径改为本模组自建的「零部件加工」(gtlmodular:component_parts)，
         //   不再是 GTO 的压模机表。结构 B 位开放 线程/超频/加速/并行/维护 仓。

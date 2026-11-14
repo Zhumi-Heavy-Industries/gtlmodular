@@ -1176,9 +1176,15 @@ public final class TentacleRecipes {
             encoded.setCount(1);
             encoded.getOrCreateTag().put("assembly_line_research", research);
 
+            // ★ 2026-11-15：**顺序必须是「数据模块 → 研究样本」**，不能反过来。
+            //   取证：GTCEu ResearchManager（javap 反汇编）生成研究站配方时是
+            //     .inputItems(<dataStack>.getItem())  ← 先：数据模块
+            //     .inputItems(<researchStack>)        ← 后：研究样本
+            //   研究站界面「中心格」取第一个输入 ⇒ 数据模块在中心、样本在右上（JEI 里的正常形态）。
+            //   原先写成「样本 → 数据」会让样本跑到中心，看起来就是「反了」。
             GTRecipeBuilder builder = GTRecipeTypes.RESEARCH_STATION_RECIPES.recipeBuilder(id)
-                    .inputItems(researchStack.getItem())
                     .inputItems(dataStack)
+                    .inputItems(researchStack.getItem())
                     .outputItems(encoded)
                     .EUt(entry.EUt())
                     .CWUt(entry.CWUt())
