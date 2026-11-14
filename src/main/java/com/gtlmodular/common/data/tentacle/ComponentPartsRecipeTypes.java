@@ -35,6 +35,12 @@ public final class ComponentPartsRecipeTypes {
      */
     public static final int MAX_OUTPUTS = 12;
 
+    /**
+     * 流体输入槽数。末影珍珠 / 末影之眼 / echo shard 在本整合包里只有流体形态、没有宝石物品，
+     * 这三条配方以液体作为输入，因此需要 1 个流体输入槽。
+     */
+    public static final int MAX_FLUID_INPUTS = 1;
+
     private static final String GROUP_MULTIBLOCK = "multiblock";
 
     private static GTRecipeType type;
@@ -67,7 +73,7 @@ public final class ComponentPartsRecipeTypes {
         }
         type = new GTRecipeType(id(), GROUP_MULTIBLOCK, new RecipeType<?>[0]);
         type.setEUIO(IO.IN);
-        type.setMaxIOSize(1, MAX_OUTPUTS, 0, 0);
+        type.setMaxIOSize(1, MAX_OUTPUTS, MAX_FLUID_INPUTS, 0);
         type.setMaxTooltips(4);
         type.setXEIVisible(true);
         type.setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT);
