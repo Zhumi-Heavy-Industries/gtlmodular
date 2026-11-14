@@ -20,6 +20,7 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.GTLModular;
+import com.gtlmodular.common.machine.engine.HostTableRule;
 import com.gtlmodular.common.compat.EnhancedcoreIvModeCompat;
 import com.gtlmodular.common.compat.SupbMutableMachineCompat;
 import com.gtlmodular.common.config.GTLModularConfig;
@@ -4101,6 +4102,8 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         this.lastScanCandidateMask = 0L;
         int matched = MATCH_NONE;
         GTRecipe firstMatchedRecipe = null;
+        // 引擎侧规则：表里有 ASSEMBLY_COMPLEX 用它，没有则退化到下标 0
+        int hostIndex = HostTableRule.indexIn(types);
         for (int i = 0; i < types.size(); i++) {
             GTRecipeType type = types.get(i);
             if (type == null) {
@@ -4109,7 +4112,10 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             if (allowedMask != 0L && i < Long.SIZE - 1 && (allowedMask & (1L << i)) == 0L) {
                 continue;   // 样板声明了类型 ⇒ 声明之外的表不参与
             }
-            boolean isHostTable = type == com.gtlmodular.common.data.nanochip.NanochipRecipeTypes.ASSEMBLY_COMPLEX;
+            // ★ 2026-11-15：主机表口径交由引擎统一裁决（HostTableRule）。
+            //   旧写法硬编码 ASSEMBLY_COMPLEX，对不含该表的多类型机器（如奈亚的 3 张装配线表）
+            //   第二遍恒 MATCH_NONE ⇒ 样板认不出 ⇒ 机器死锁在 IDLE。
+            boolean isHostTable = HostTableRule.isHost(hostIndex, i);
             if (isHostTable == skipHostTable) {
                 continue;   // 第一遍跳过主机表；第二遍只看主机表
             }
