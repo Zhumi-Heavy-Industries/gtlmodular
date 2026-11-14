@@ -30,10 +30,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 也是紧接着调用 {@code IMultiPart#modifyRecipe} 的地方（加速仓的原生存口）。
  * {@code getRealRecipe} 在该类里<b>只是参数名</b>，不是方法，不能作为注入点。
  *
- * <h2>只作用于增强版的机器</h2>
- * <p>{@link OverclockHatchLogic#shouldApply} 核对机器是不是增强版（{@code gtl_extend}）
- * —— 这正是本仓口径：超频仓只覆盖增强版的机器，不铺到所有多方块。
- * 没装超频仓、或不属于增强版的机器立即返回，一个字段都不碰。
+ * <h2>生效范围 = 装了超频仓的机器</h2>
+ * <p>{@link OverclockHatchLogic#shouldApply} 只看「结构里有没有超频仓」，
+ * 不再按模组或名单限定：超频仓装在谁身上，就该在谁身上生效。
+ * 没装超频仓的机器立即返回，一个字段都不碰。
  */
 @Mixin(value = WorkableMultiblockMachine.class, remap = false)
 public abstract class WorkableMultiblockOverclockMixin {

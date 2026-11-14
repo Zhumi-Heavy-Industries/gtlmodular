@@ -136,8 +136,18 @@ import java.util.List;
  * 落地位置：两开关都由引擎统一从部件现读（{@code IThreadedRecipeMachine#threadHatchRepeatedRecipes()} /
  * {@code threadHatchIndependent()}）—— 机器只要在结构里允许线程仓就直接生效，不需要任何额外适配。
  * 「用哪张配方表」不再归独立线程管：多表机器默认全部扫。
+ *
+ * <h2>为什么同时实现 gtladditions 的 {@code IThreadModifierPart}</h2>
+ * <p>「增强版核心」（GTL-Enhancedcore）接管机器线程时，只遍历部件表找
+ * {@code IThreadModifierPart} 并读它的 {@code getThreadCount()}（取证：
+ * {@code IvMachineScope} 的 {@code modifierThreads} 分支）。本仓以前只实现
+ * {@link IThreadHatchPart} ⇒ 在那套体系里它<b>完全看不见</b>，玩家装了也不生效。
+ *
+ * <p>两个接口在这里给的是同一个数（当前设定线程数），不会产生两套口径；
+ * 本模组自己的引擎仍然优先读 {@link IThreadHatchPart#getThreads()}，路径不变。
  */
-public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiPart, IThreadHatchPart {
+public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiPart, IThreadHatchPart,
+        com.gtladd.gtladditions.api.machine.feature.IThreadModifierPart {
 
     /**
      * LDLib 托管字段表：本类新挂的 {@code @DescSynced} 字段要靠它登记，
@@ -186,6 +196,16 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
     public int getThreads() {
         int max = getMaxThreads();
         return Math.max(1, Math.min(max, threadCount));
+    }
+
+    /**
+     * gtladditions {@code IThreadModifierPart} 的口子 —— 供「增强版核心」那套线程体系读取。
+     *
+     * <p>与 {@link #getThreads()} 同一个数，不另起口径：玩家在仓里调多少，两边就都是多少。
+     */
+    @Override
+    public int getThreadCount() {
+        return getThreads();
     }
 
     @Override

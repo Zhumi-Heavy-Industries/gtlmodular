@@ -15,10 +15,11 @@
         "gtceu.PredicatesExtendHatchMixin",
         "gtceu.MultiblockDefinitionExtendHatchMixin",
         "gtceu.WorkableMultiblockOverclockMixin",
-        "gtlextend.ExtendMultipleRecipesLogicAccelerateMixin",
         "order.TerminalTempPatternMixin",
         "order.TerminalOrderCpuMixin",
-        "order.TerminalOrderEcoCpuMixin"
+        "order.TerminalOrderEcoCpuMixin",
+        "gtladditions.GtlAddMultipleRecipesLogicAccelerateMixin",
+        "gtladditions.MutableRecipesLogicAccelerateMixin"
     ],
     "client": [
         "gtceu.MixinWorkableProgressBar",
