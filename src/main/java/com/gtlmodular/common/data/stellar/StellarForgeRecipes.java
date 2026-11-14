@@ -66,6 +66,15 @@ public final class StellarForgeRecipes {
     private static boolean byTypeFailed;
     private static Map<RecipeType<?>, Map<ResourceLocation, Recipe<?>>> byTypeMap;
 
+    /** 本次注入中 lookup.addRecipe 返回 false 的配方 id（便于日志定位）。 */
+    private static final List<String> failed = new ArrayList<>();
+
+    /** 本次成功进入 lookup 的配方 id（诊断用）。 */
+    private static final List<String> injected = new ArrayList<>();
+
+    /** install() 被调用的次数（诊断：ServerStartedEvent 在单人/局域网下可能触发多次）。 */
+    private static int installCount;
+
     private StellarForgeRecipes() {
     }
 
@@ -88,6 +97,11 @@ public final class StellarForgeRecipes {
         try {
             byTypeMap = byType(server.getRecipeManager());
             List<String> skipped = new ArrayList<>();
+            failed.clear();
+            injected.clear();
+            installCount++;
+            GTLModular.LOGGER.info("[gtlmodular] 恒星炎炀锻炉：第 {} 次注入（byType={}）",
+                    installCount, byTypeMap != null ? "可用" : "不可用");
             int ok = 0;
 
             ok += installAlloys(skipped);
@@ -100,6 +114,13 @@ public final class StellarForgeRecipes {
             if (!skipped.isEmpty()) {
                 GTLModular.LOGGER.warn("[gtlmodular] 恒星炎炀锻炉：被跳过的配方（依赖物品/流体缺失）：{}", skipped);
             }
+            // ★ 诊断（2026-11-14）：lookup.addRecipe 返回 false 的条目既不是「跳过」也不是「成功」，
+            //   2026-11-14 实机日志出现过 11/31 且 skipped=0 的情况，必须逐条列出才定位得到。
+            if (!failed.isEmpty()) {
+                GTLModular.LOGGER.warn("[gtlmodular] 恒星炎炀锻炉：{} 条未进入 lookup（addRecipe 返回 false）：{}",
+                        failed.size(), failed);
+            }
+            GTLModular.LOGGER.info("[gtlmodular] 恒星炎炀锻炉：成功注入的配方：{}", injected);
         } catch (Throwable t) {
             GTLModular.LOGGER.warn("[gtlmodular] 恒星炎炀锻炉：配方注入失败（已忽略，不影响启动）：{}", t.toString());
         }
@@ -404,6 +425,9 @@ public final class StellarForgeRecipes {
     /** 一条配方同时写 lookup 与 byType；返回成功条数（0/1）。 */
     private static int inject(GTRecipeType type, GTRecipe recipe) {
         if (recipe == null || type == null) {
+            // ★ 2026-11-14：buildRawRecipe() 可能返回 null（配方无效时），此前直接 return 0
+            //   导致「11/31 且 skipped=0」的静默丢失。现在必须记入 failed 以便定位。
+            failed.add("<null:" + (type != null ? type.registryName : "type=null") + ">");
             return 0;
         }
         try {
@@ -413,6 +437,11 @@ public final class StellarForgeRecipes {
             } else {
                 GTLModular.LOGGER.warn("[gtlmodular] 恒星炎炀锻炉：byType 不可用 ⇒ {} 只进 lookup（机器能跑，JEI 可能不显示）",
                         recipe.id);
+            }
+            if (!added) {
+                failed.add(recipe.id.toString());
+            } else {
+                injected.add(recipe.id.toString());
             }
             return added ? 1 : 0;
         } catch (Throwable t) {
