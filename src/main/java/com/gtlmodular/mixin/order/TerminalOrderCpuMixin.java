@@ -1,8 +1,5 @@
 package com.gtlmodular.mixin.order;
 
-import com.gtlmodular.common.item.terminal.TerminalAutoBuildService;
-import com.gtlmodular.common.item.terminal.TerminalOrderMarker;
-
 import appeng.api.networking.energy.IEnergyService;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
@@ -39,12 +36,14 @@ public abstract class TerminalOrderCpuMixin {
     @Inject(method = "tickCraftingLogic", at = @At("TAIL"), remap = false)
     private void gtlmodular$finishOrderJob(IEnergyService energy, CraftingService service, CallbackInfo ci) {
         GenericStack output = getFinalJobOutput();
-        if (!TerminalOrderMarker.isMarker(output)) return;
+        if (!OrderBridge.isMarker(output)) return;
         Set<AEKey> waiting = new HashSet<>();
         getAllWaitingFor(waiting);
         if (waiting.isEmpty()) {
             finishJob(true);
-            TerminalAutoBuildService.completeOrder(output);
+            // ★ 2026-11-14：改走反射桥接 —— 直接引用 TerminalAutoBuildService 会在
+            //   neoecoae 的 getFakeCPU 早期类加载窗口里抛 ClassMetadataNotFoundException 崩服。
+            OrderBridge.completeOrder(output);
         }
     }
 }

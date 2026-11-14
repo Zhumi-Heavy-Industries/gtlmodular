@@ -1,8 +1,5 @@
 package com.gtlmodular.mixin.order;
 
-import com.gtlmodular.common.item.terminal.TerminalAutoBuildService;
-import com.gtlmodular.common.item.terminal.TerminalOrderMarker;
-
 import appeng.api.networking.energy.IEnergyService;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
@@ -35,12 +32,13 @@ public abstract class TerminalOrderEcoCpuMixin {
     @Inject(method = "tickCraftingLogic", at = @At("TAIL"), remap = false)
     private void gtlmodular$finishEcoOrder(IEnergyService energy, CraftingService service, CallbackInfo ci) {
         GenericStack output = getFinalJobOutput();
-        if (!TerminalOrderMarker.isMarker(output)) return;
+        if (!OrderBridge.isMarker(output)) return;
         Set<AEKey> waiting = new HashSet<>();
         getAllWaitingFor(waiting);
         if (waiting.isEmpty()) {
             finishJob(true);
-            TerminalAutoBuildService.completeOrder(output);
+            // ★ 2026-11-14：改走反射桥接（同 TerminalOrderCpuMixin），避开早期类加载窗口崩服。
+            OrderBridge.completeOrder(output);
         }
     }
 }
