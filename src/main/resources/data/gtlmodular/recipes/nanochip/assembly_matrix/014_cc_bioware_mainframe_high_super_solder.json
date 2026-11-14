@@ -129,15 +129,6 @@
             "item": "gtlmodular:cc_processed_mithril_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtlmodular:cc_gtlmodular:cc_bioware_computer"
-          }
-        }
       }
     ],
     "fluid": [

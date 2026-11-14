@@ -212,6 +212,11 @@ public final class GTLModularMachines {
         //   线程数由结构里的 GTO 线程仓（7 档）给出，没有线程仓时 1 条。
         //   结构里缺的 4 件方块见 common/data/tentacle/TentacleBlocks（在 initBlocks 里建）。
         com.gtlmodular.common.data.tentacle.NyarlathotepsTentacleMachines.register();
+        // ★ 2026-11-14：GTO 力场压模工厂 —— 15×15×29 结构 1:1 照搬（缺的 3 件方块换成
+        //   本整合包的语义等价物，见 FieldExtruderFactoryStructures 类注释的符号表）。
+        //   ★ 配方表按队长口径改为本模组自建的「零部件加工」(gtlmodular:component_parts)，
+        //   不再是 GTO 的压模机表。结构 B 位开放 线程/超频/加速/并行/维护 仓。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryMachines.register();
         // ★ 2026-11-02：GTO 高维等离子聚变核心 —— 63×83×47 结构 1:1 照搬（新增独立机器，
         //   与 gtlcore 的 gtceu:dimensionally_transcendent_plasma_forge 并存）；
         //   配方表 = gtceu:dimensionally_transcendent_plasma_forge + gtceu:stellar_forge；
@@ -252,6 +257,9 @@ public final class GTLModularMachines {
         // ★ 2026-10-31：GTO 恒星炎炀锻炉（gtceu:stellar_forge 换壳）结构里我方缺的 6 件机壳
         //   （辐射吸收 / 碳化硼陶瓷 / 氧化镁陶瓷 / 磁力 / 等离子加热 / 中子稳定）—— 时序要求同上。
         com.gtlmodular.common.data.stellar.StellarForgeBlocks.init();
+        // ★ 2026-11-14：GTO 力场压模工厂结构里我方缺的 2 件机壳
+        //   （高能耐压 / 氧化锂陶瓷防热抗震；加速管道复用 kubejs:accelerated_pipeline）—— 时序要求同上。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryBlocks.init();
         // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
         // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
         // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。

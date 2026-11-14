@@ -147,15 +147,6 @@
             "item": "gtlmodular:cc_processed_double_naquadriatictaranium_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtlmodular:cc_gtlmodular:cc_cosmic_computer"
-          }
-        }
       }
     ],
     "fluid": [

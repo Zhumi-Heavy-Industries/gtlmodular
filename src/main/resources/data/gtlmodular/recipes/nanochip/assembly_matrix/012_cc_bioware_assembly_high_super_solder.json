@@ -111,15 +111,6 @@
             "item": "gtlmodular:cc_processed_duranium_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtlmodular:cc_gtlmodular:cc_bioware_processor"
-          }
-        }
       }
     ],
     "fluid": [

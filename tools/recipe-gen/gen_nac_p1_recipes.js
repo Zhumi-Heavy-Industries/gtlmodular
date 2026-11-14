@@ -285,6 +285,33 @@ function applyDualSolder(json, row, outId) {
  * 由“普通版”派生“超级版”：焊料换成超级突变活性焊料（量翻倍），**耗时减半**，其余一律不动。
  * 产量、输入物品、EU/t 全部保持原样 ⇒ 只是更省时间。
  */
+/** `_high` 文件的基名（报告/报错用）。 */
+function highBaseOf(fileName) { return fileName.replace(/\.json$/, '_high.json'); }
+
+/**
+ * 断言一条配方的所有物品引用里没有「命名空间重复拼接」的坏 id。
+ *
+ * <p>历史事故（2026-11-14 修复）：旧版生成器给 `_high` 版追加「上一级电路」输入时，
+ * 把已经是完整 id 的字符串（`gtlmodular:cc_exotic_assembly`）又当成了路径拼接一次，
+ * 产出 `gtlmodular:cc_gtlmodular:cc_exotic_assembly`。42 个 `*_high` / `*_high_super_solder`
+ * 文件各中 1 条，KubeJS 的 circuit_substitution.js 在 `Ingredient.of(...)`（第 86 行）
+ * 解析该 id 时抛错并整条配方退化。</p>
+ *
+ * <p>这里只做**生成期**检查；数据层已在同一轮修好（坏条目全部删除，
+ * 它们都是纯多余的重复条目 —— 同一条正确输入已在前面存在）。</p>
+ */
+function assertCleanIngredient(json, label) {
+    // 合法 id 形状：`namespace:path`（path 里不应再出现冒号）。
+    // 坏 id 形状：`gtlmodular:cc_gtlmodular:cc_exotic_assembly` —— 冒号出现 2 次以上。
+    const text = JSON.stringify(json);
+    const bad = (text.match(/"[^"]*:[^"]*:[^"]*"/g) || [])
+        .filter((s) => !s.includes('/') || /^"[a-z_]+:[a-z_0-9]+:/.test(s));
+    if (bad.length) {
+        throw new Error('[' + label + '] 物品 id 出现命名空间重复拼接：' + bad.slice(0, 3).join(', '));
+    }
+    return json;
+}
+
 function buildSuperSolderVersion(base) {
     const j = JSON.parse(JSON.stringify(base));
     const stage = (function () {
@@ -793,6 +820,12 @@ const AD_PROCESSORS = [
             if (!cands.length) continue;
             const src = path.join(matrixDir, cands[0]);
             const j = JSON.parse(fs.readFileSync(src, 'utf8'));
+            // ★ 2026-11-14 护栏：`_high` 是普通版的深拷贝，普通版本身必须干净。
+            //   历史事故：旧版生成器在 `cc_` 前缀上又叠了一次命名空间，产出
+            //   `gtlmodular:cc_gtlmodular:cc_exotic_assembly` 这类坏 id（42 个文件 ×1 条），
+            //   KubeJS 在 circuit_substitution.js#86 处解析失败并整条配方退化。
+            //   数据已修，这条断言防止再次生成出同样的坏 id。
+            assertCleanIngredient(j, highBaseOf(cands[0]));
             j.outputs.item[0].content.count = HIGH_YIELD[st];
             j.duration = j.duration * 2;
             const highBase = cands[0].replace(/\.json$/, '_high.json');

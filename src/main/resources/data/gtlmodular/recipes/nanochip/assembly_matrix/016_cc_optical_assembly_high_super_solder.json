@@ -111,15 +111,6 @@
             "item": "gtlmodular:cc_processed_highurabilityompoundteel_plate"
           }
         }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtlmodular:cc_gtlmodular:cc_optical_processor"
-          }
-        }
       }
     ],
     "fluid": [
