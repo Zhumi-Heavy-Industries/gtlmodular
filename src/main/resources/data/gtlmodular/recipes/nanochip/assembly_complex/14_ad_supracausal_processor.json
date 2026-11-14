@@ -27,15 +27,6 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:cc_processed_highly_advanced_soc"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
             "item": "gtlmodular:cc_processed_supracausal_processing_core"
           }
         }
@@ -48,12 +39,21 @@
             "item": "gtlmodular:cc_processed_cosmic_processing_unit_core"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_primary_soc"
+          }
+        }
       }
     ],
     "fluid": [
       {
         "content": {
-          "amount": 360,
+          "amount": 18,
           "value": {
             "fluid": "gtceu:mutated_living_solder"
           }

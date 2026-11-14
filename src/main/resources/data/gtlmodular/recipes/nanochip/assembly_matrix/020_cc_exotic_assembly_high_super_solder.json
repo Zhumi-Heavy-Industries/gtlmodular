@@ -120,6 +120,15 @@
             "item": "gtlmodular:cc_processed_infuscolium_plate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_exotic_processor"
+          }
+        }
       }
     ],
     "fluid": [

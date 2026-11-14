@@ -84,6 +84,15 @@
             "item": "gtlmodular:cc_processed_adv_smd_diode"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_crystal_computer"
+          }
+        }
       }
     ],
     "fluid": [

@@ -120,6 +120,15 @@
             "item": "gtlmodular:cc_processed_cinobite_plate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_cosmic_processor"
+          }
+        }
       }
     ],
     "fluid": [

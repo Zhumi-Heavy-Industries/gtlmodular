@@ -66,6 +66,15 @@
             "item": "gtlmodular:cc_processed_wire_niobium_titanium"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_crystal_processor"
+          }
+        }
       }
     ],
     "fluid": [

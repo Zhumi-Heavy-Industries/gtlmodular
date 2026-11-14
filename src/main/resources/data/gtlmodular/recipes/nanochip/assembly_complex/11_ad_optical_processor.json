@@ -27,15 +27,6 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:cc_processed_optical_soc"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
             "item": "gtlmodular:cc_processed_chip_optical_cpu"
           }
         }
@@ -48,12 +39,21 @@
             "item": "gtlmodular:cc_processed_fine_dubnium_wire"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_extraordinary_soc"
+          }
+        }
       }
     ],
     "fluid": [
       {
         "content": {
-          "amount": 144,
+          "amount": 18,
           "value": {
             "fluid": "gtceu:mutated_living_solder"
           }

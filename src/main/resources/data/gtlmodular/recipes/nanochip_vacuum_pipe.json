@@ -26,6 +26,15 @@
             "item": "gtceu:advanced_smd_capacitor"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtceu:steel_normal_fluid_pipe"
+          }
+        }
       }
     ],
     "fluid": [

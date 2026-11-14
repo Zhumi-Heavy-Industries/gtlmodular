@@ -147,6 +147,15 @@
             "item": "gtlmodular:cc_processed_double_technetium_plate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_exotic_computer"
+          }
+        }
       }
     ],
     "fluid": [

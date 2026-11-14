@@ -139,7 +139,14 @@ public final class NanochipCircuitComponents {
 
         @Override
         public void appendHoverText(ItemStack stack, @Nullable Level level, List<Component> tooltip, TooltipFlag flag) {
-            // CC/PC 件不显示描述；语言键保留（AGENTS 第 13 条不允许改已有语言键）。
+            // 语义照抄 NH CircuitComponentFakeItem.func_77624_a（base + cc.base / pc.base）
+            tooltip.add(Component.translatable("gtlmodular.cc.tooltip.base"));
+            tooltip.add(Component.translatable(entry.processed
+                    ? "gtlmodular.cc.tooltip.pc.base" : "gtlmodular.cc.tooltip.cc.base"));
+            // ★ 2026-09-18 玩家问「真的能生效吗」——补一行**怎么用**（原 tooltip 只说能/不能，没说前置条件：
+            //   仓必须染色、封装在控制室输出侧每 5 秒一次、还原要用输入侧的仓）。
+            tooltip.add(Component.translatable(entry.processed
+                    ? "gtlmodular.cc.tooltip.pc.howto" : "gtlmodular.cc.tooltip.cc.howto"));
             if (flag.isAdvanced()) {
                 tooltip.add(Component.literal("\u00a78" + entry.itemId + " / meta " + entry.metaId
                         + (entry.calibration == null ? "" : " / " + entry.calibration)));
@@ -149,7 +156,7 @@ public final class NanochipCircuitComponents {
 
     // ---------------------------------------------------------------- 表
     /**
-     * 按 metaId 升序的 366 条（NH 原始 176 − 退役 10 = 166；+ 本包自造段 200，metaId ≥ 2200）。
+     * 按 metaId 升序的 376 条（NH 原始 176 − 退役 10 = 166；+ 本包自造段 210，metaId ≥ 2200）。
      *
      * <p>★ 2026-09-19 队长指示「注销残留注册的物品」⇒ 369 → <b>368</b>：注销
      * {@code gtlmodular:cc_processed_chip_planck_pic}（{@code ProcessedChipPlanckPIC} metaId 710）——
@@ -164,7 +171,7 @@ public final class NanochipCircuitComponents {
      * 同批删掉 3 条配方（正/反换算 + wire_tracer 006）、模型与贴图、4 条 lang 键。
      * ⚠️ metaId 4 / 104 从此是**空号，不补位**（metaId 是 NH 假栈的 damage，挪号会破坏「按 NH metaId 查表」）。
      */
-    private static final List<Entry> ALL = new ArrayList<>(366);
+    private static final List<Entry> ALL = new ArrayList<>(376);
     private static final Map<Integer, Entry> BY_META = new LinkedHashMap<>();
     private static final Map<String, Entry> BY_ENUM = new LinkedHashMap<>();
     private static final Map<String, ItemEntry<CcItem>> REGISTERED = new LinkedHashMap<>();
@@ -213,12 +220,12 @@ public final class NanochipCircuitComponents {
     /** 强制类加载（接线用；注册已在静态块完成，重复调用无副作用）。 */
     public static void init() {
         // 触碰一下表，确保类已加载。
-        if (ALL.size() != 366) {
-            throw new IllegalStateException("NAC CC 物品层表异常：应为 366 条（NH 166 + 自造 200），实为 " + ALL.size());
+        if (ALL.size() != 376) {
+            throw new IllegalStateException("NAC CC 物品层表异常：应为 376 条（NH 166 + 自造 210），实为 " + ALL.size());
         }
     }
 
-    /** 全部 366 条（metaId 升序，只读）。 */
+    /** 全部 376 条（metaId 升序，只读）。 */
     public static List<Entry> all() { return Collections.unmodifiableList(ALL); }
 
     /** metaId → 物品。 */
@@ -245,7 +252,7 @@ public final class NanochipCircuitComponents {
         return e == null ? null : e.itemId;
     }
 
-    /** metaId → 枚举名（366 条全覆盖，未处理/已处理都能查到；注销件 4 / 104 / 710 不在表内 ⇒ 返回 null）。 */
+    /** metaId → 枚举名（376 条全覆盖，未处理/已处理都能查到；注销件 4 / 104 / 710 不在表内 ⇒ 返回 null）。 */
     public static Map<Integer, String> metaToName() {
         Map<Integer, String> m = new LinkedHashMap<>();
         for (Entry e : ALL) m.put(e.metaId, e.enumName);
@@ -258,7 +265,7 @@ public final class NanochipCircuitComponents {
     /** metaId → 表项；未登记返回 null。 */
     public static Entry byMetaId(int metaId) { return BY_META.get(metaId); }
 
-    // ---------------------------------------------------------------- 366 行数据（生成，勿手改）
+    // ---------------------------------------------------------------- 376 行数据（生成，勿手改）
     private static void addRows() {
 
         add("WireNiobiumTitanium", 0, false, "gt.circuitcomponent.wirenbti", "mat:niobium_titanium:fine_wire", null);   // Packaged Fine Niobium Titanium Wire  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
@@ -281,10 +288,10 @@ public final class NanochipCircuitComponents {
         add("WireInfinity", 6, false, "gt.circuitcomponent.wireinfinity", null, null);   // Packaged 1x Infinity Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("WireHypogen", 7, false, "gt.circuitcomponent.wirehypogen", null, null);   // Packaged Fine Hypogen Wire  [! 材质来自 GT++ 取件方法，未逐一解析（统一用 GTCEu DULL 母版）; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：细海珀珍导线）]
         add("WireMagMatter", 8, false, "gt.circuitcomponent.wiremagmatter", null, null);   // Packaged Fine Magmatter Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：细磁物质导线）]
-        add("ProcessedWireNiobiumTitanium", 100, true, "gt.circuitcomponent.processed.wirenbti", null, null);   // Spooled Niobium-Titanium Wire
-        add("ProcessedWireYttriumBariumCuprate", 101, true, "gt.circuitcomponent.processed.wireybc", null, null);   // Spooled Yttrium Barium Cuprate Wire
-        add("ProcessedWireLumiium", 102, true, "gt.circuitcomponent.processed.wirelumiium", null, null);   // Spooled Lumiium Wire
-        add("ProcessedWireProtoHalkonite", 103, true, "gt.circuitcomponent.processed.wireprotohalkonite", null, null);   // Spooled Proto-Halkonite Steel Wire
+        add("ProcessedWireNiobiumTitanium", 100, true, "gt.circuitcomponent.processed.wirenbti", null, null);   // Wire Niobium Titanium  [! NH lang 无键 gt.circuitcomponent.processed.wirenbti]
+        add("ProcessedWireYttriumBariumCuprate", 101, true, "gt.circuitcomponent.processed.wireybc", null, null);   // Wire Yttrium Barium Cuprate  [! NH lang 无键 gt.circuitcomponent.processed.wireybc]
+        add("ProcessedWireLumiium", 102, true, "gt.circuitcomponent.processed.wirelumiium", null, null);   // Wire Lumiium  [! NH lang 无键 gt.circuitcomponent.processed.wirelumiium]
+        add("ProcessedWireProtoHalkonite", 103, true, "gt.circuitcomponent.processed.wireprotohalkonite", null, null);   // Wire Proto Halkonite  [! NH lang 无键 gt.circuitcomponent.processed.wireprotohalkonite]
         // ★ 2026-09-21 同批注销（时空导线链）：本行原位置在 `ProcessedWireProtoHalkonite`(103) 与
         //    `ProcessedCableOpticalFiber`(105) 之间；metaId 104 从此是**空号，不补位**。
         //    原注册行 = ProcessedWireSpacetime / metaId 104 / 已处理 /
@@ -299,10 +306,10 @@ public final class NanochipCircuitComponents {
         //    同批删除落点：3 条配方 `nanochip/{conversion,conversion_reverse}/cc_wire_spacetime.json`
         //    + `nanochip/wire_tracer/006_cc_processed_wire_spacetime.json`；模型 + 贴图（含 .mcmeta）；
         //    lang(zh_cn/en_us) 各 2 键 ⇒ 共 4 键。
-        add("ProcessedCableOpticalFiber", 105, true, "gt.circuitcomponent.cable.processed.opticalfiber", null, null);   // Split Optical Fiber Cable
-        add("ProcessedWireInfinity", 106, true, "gt.circuitcomponent.processed.wireinfinity", null, null);   // Spooled Infinity Wire
-        add("ProcessedWireHypogen", 107, true, "gt.circuitcomponent.processed.wirehypogen", null, null);   // Spooled Hypogen Wire
-        add("ProcessedWireMagMatter", 108, true, "gt.circuitcomponent.processed.wiremagmatter", null, null);   // Spooled Magmatter Wire
+        add("ProcessedCableOpticalFiber", 105, true, "gt.circuitcomponent.cable.processed.opticalfiber", null, null);   // Cable Optical Fiber  [! NH lang 无键 gt.circuitcomponent.cable.processed.opticalfiber]
+        add("ProcessedWireInfinity", 106, true, "gt.circuitcomponent.processed.wireinfinity", null, null);   // Wire Infinity  [! NH lang 无键 gt.circuitcomponent.processed.wireinfinity]
+        add("ProcessedWireHypogen", 107, true, "gt.circuitcomponent.processed.wirehypogen", null, null);   // Wire Hypogen  [! NH lang 无键 gt.circuitcomponent.processed.wirehypogen]
+        add("ProcessedWireMagMatter", 108, true, "gt.circuitcomponent.processed.wiremagmatter", null, null);   // Wire Mag Matter  [! NH lang 无键 gt.circuitcomponent.processed.wiremagmatter]
         add("AdvSMDResistor", 210, false, "gt.circuitcomponent.asmd.resistor", "item:advanced_smd_resistor", null);   // Packaged Advanced SMD Resistor  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("AdvSMDTransistor", 211, false, "gt.circuitcomponent.asmd.transistor", "item:advanced_smd_transistor", null);   // Packaged Advanced SMD Transistor  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("AdvSMDInductor", 212, false, "gt.circuitcomponent.asmd.inductor", "item:advanced_smd_inductor", null);   // Packaged Advanced SMD Inductor  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
@@ -313,16 +320,16 @@ public final class NanochipCircuitComponents {
         add("OpticalSMDInductor", 222, false, "gt.circuitcomponent.xsmd.inductor", null, null);   // Packaged Optical SMD Inductor  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 光学贴片电感；解析出的材料 id=optical_smd_inductor）; ! 显示名以**实际真件**为准（NH 原名：null）]
         add("OpticalSMDCapacitor", 223, false, "gt.circuitcomponent.xsmd.capacitor", null, null);   // Packaged Optical SMD Capacitor  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 光学贴片电容；解析出的材料 id=optical_smd_capacitor）; ! 显示名以**实际真件**为准（NH 原名：null）]
         add("OpticalSMDDiode", 224, false, "gt.circuitcomponent.xsmd.diode", null, null);   // Packaged Optical SMD Diode  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 光学贴片二极管；解析出的材料 id=optical_smd_diode）; ! 显示名以**实际真件**为准（NH 原名：null）]
-        add("ProcessedAdvSMDResistor", 310, true, "gt.circuitcomponent.processed.asmd.resistor", null, null);   // Prepared Advanced SMD Resistor
-        add("ProcessedAdvSMDTransistor", 311, true, "gt.circuitcomponent.processed.asmd.transistor", null, null);   // Prepared Advanced SMD Transistor
-        add("ProcessedAdvSMDInductor", 312, true, "gt.circuitcomponent.processed.asmd.inductor", null, null);   // Prepared Advanced SMD Inductor
-        add("ProcessedAdvSMDCapacitor", 313, true, "gt.circuitcomponent.processed.asmd.capacitor", null, null);   // Prepared Advanced SMD Capacitor
-        add("ProcessedAdvSMDDiode", 314, true, "gt.circuitcomponent.processed.asmd.diode", null, null);   // Prepared Advanced SMD Diode
-        add("ProcessedOpticalSMDResistor", 320, true, "gt.circuitcomponent.processed.xsmd.resistor", null, null);   // Prepared Optical SMD Resistor
-        add("ProcessedOpticalSMDTransistor", 321, true, "gt.circuitcomponent.processed.xsmd.transistor", null, null);   // Prepared Optical SMD Transistor
-        add("ProcessedOpticalSMDInductor", 322, true, "gt.circuitcomponent.processed.xsmd.inductor", null, null);   // Prepared Optical SMD Inductor
-        add("ProcessedOpticalSMDCapacitor", 323, true, "gt.circuitcomponent.processed.xsmd.capacitor", null, null);   // Prepared Optical SMD Capacitor
-        add("ProcessedOpticalSMDDiode", 324, true, "gt.circuitcomponent.processed.xsmd.diode", null, null);   // Prepared Optical SMD Diode
+        add("ProcessedAdvSMDResistor", 310, true, "gt.circuitcomponent.processed.asmd.resistor", null, null);   // Adv SMD Resistor  [! NH lang 无键 gt.circuitcomponent.processed.asmd.resistor]
+        add("ProcessedAdvSMDTransistor", 311, true, "gt.circuitcomponent.processed.asmd.transistor", null, null);   // Adv SMD Transistor  [! NH lang 无键 gt.circuitcomponent.processed.asmd.transistor]
+        add("ProcessedAdvSMDInductor", 312, true, "gt.circuitcomponent.processed.asmd.inductor", null, null);   // Adv SMD Inductor  [! NH lang 无键 gt.circuitcomponent.processed.asmd.inductor]
+        add("ProcessedAdvSMDCapacitor", 313, true, "gt.circuitcomponent.processed.asmd.capacitor", null, null);   // Adv SMD Capacitor  [! NH lang 无键 gt.circuitcomponent.processed.asmd.capacitor]
+        add("ProcessedAdvSMDDiode", 314, true, "gt.circuitcomponent.processed.asmd.diode", null, null);   // Adv SMD Diode  [! NH lang 无键 gt.circuitcomponent.processed.asmd.diode]
+        add("ProcessedOpticalSMDResistor", 320, true, "gt.circuitcomponent.processed.xsmd.resistor", null, null);   // Optical SMD Resistor  [! NH lang 无键 gt.circuitcomponent.processed.xsmd.resistor]
+        add("ProcessedOpticalSMDTransistor", 321, true, "gt.circuitcomponent.processed.xsmd.transistor", null, null);   // Optical SMD Transistor  [! NH lang 无键 gt.circuitcomponent.processed.xsmd.transistor]
+        add("ProcessedOpticalSMDInductor", 322, true, "gt.circuitcomponent.processed.xsmd.inductor", null, null);   // Optical SMD Inductor  [! NH lang 无键 gt.circuitcomponent.processed.xsmd.inductor]
+        add("ProcessedOpticalSMDCapacitor", 323, true, "gt.circuitcomponent.processed.xsmd.capacitor", null, null);   // Optical SMD Capacitor  [! NH lang 无键 gt.circuitcomponent.processed.xsmd.capacitor]
+        add("ProcessedOpticalSMDDiode", 324, true, "gt.circuitcomponent.processed.xsmd.diode", null, null);   // Optical SMD Diode  [! NH lang 无键 gt.circuitcomponent.processed.xsmd.diode]
         add("BoardMultifiberglassElite", 400, false, "gt.circuitcomponent.board.multifiberelite", "item:multilayer_fiber_reinforced_circuit_board", null);   // Packaged Multi-layer Fiber-Reinforced Circuit Board  [! 真实物品为近似映射（Circuit_Board_Multifiberglass_Elite → multilayer_fiber_reinforced_circuit_board）; 真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("BoardWetwareLifesupport", 401, false, "gt.circuitcomponent.board.wetwarelifesupport", "item:wetware_circuit_board", null);   // Packaged Wetware Circuit Board  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("BoardBioMutated", 402, false, "gt.circuitcomponent.board.biomutated", null, null);   // Packaged Ultra Bio Mutated Circuit Board  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 超级生物突变电路板；解析出的材料 id=bio_mutated）; ! 显示名以**实际真件**为准（NH 原名：超级生物突变电路板）]
@@ -330,34 +337,34 @@ public final class NanochipCircuitComponents {
         add("NeuroProcessingUnit", 404, false, "gt.circuitcomponent.neuroprocessingunit", "item:neuro_processing_unit", null);   // Packaged Neuro Processing Unit  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 神经处理单元；解析出的材料 id=neuro_processing_unit）; ! 显示名以**实际真件**为准（NH 原名：null）]
         add("BioProcessingUnit", 405, false, "gt.circuitcomponent.bioprocessingunit", null, null);   // Packaged Bio Processing Unit  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 生物处理单元；解析出的材料 id=bio_processing_unit）; ! 显示名以**实际真件**为准（NH 原名：生物处理单元）]
         add("LivingBioChip", 406, false, "gt.circuitcomponent.livingbiochip", null, null);   // Packaged Living Bio Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 活体生物芯片；解析出的材料 id=living_bio_chip）; ! 显示名以**实际真件**为准（NH 原名：活体生物芯片）]
-        add("ProcessedBoardMultifiberglassElite", 500, true, "gt.circuitcomponent.processed.board.multifiberelite", null, null);   // Purified Elite Circuit Board
-        add("ProcessedBoardWetwareLifesupport", 501, true, "gt.circuitcomponent.processed.board.wetwarelifesupport", null, null);   // Purified Extreme Wetware Lifesupport Circuit Board
-        add("ProcessedBoardBioMutated", 502, true, "gt.circuitcomponent.processed.board.biomutated", null, null);   // Purified Ultra Bio Mutated Circuit Board
-        add("ProcessedBoardOptical", 503, true, "gt.circuitcomponent.processed.board.optical", null, null);   // Purified Optical Circuit Board
-        add("ProcessedNeuroProcessingUnit", 504, true, "gt.circuitcomponent.processed.neuroprocessingunit", null, null);   // Coordinated Neuro Processing Unit
-        add("ProcessedBioProcessingUnit", 505, true, "gt.circuitcomponent.processed.board.bioprocessingunit", null, null);   // Coordinated Bio Processing Unit
-        add("ProcessedLivingBioChip", 506, true, "gt.circuitcomponent.processed.board.livingbiochip", null, null);   // Coordinated Living Bio Chip
+        add("ProcessedBoardMultifiberglassElite", 500, true, "gt.circuitcomponent.processed.board.multifiberelite", null, null);   // Board Multifiberglass Elite  [! NH lang 无键 gt.circuitcomponent.processed.board.multifiberelite]
+        add("ProcessedBoardWetwareLifesupport", 501, true, "gt.circuitcomponent.processed.board.wetwarelifesupport", null, null);   // Board Wetware Lifesupport  [! NH lang 无键 gt.circuitcomponent.processed.board.wetwarelifesupport]
+        add("ProcessedBoardBioMutated", 502, true, "gt.circuitcomponent.processed.board.biomutated", null, null);   // Board Bio Mutated  [! NH lang 无键 gt.circuitcomponent.processed.board.biomutated]
+        add("ProcessedBoardOptical", 503, true, "gt.circuitcomponent.processed.board.optical", null, null);   // Board Optical  [! NH lang 无键 gt.circuitcomponent.processed.board.optical]
+        add("ProcessedNeuroProcessingUnit", 504, true, "gt.circuitcomponent.processed.neuroprocessingunit", null, null);   // Neuro Processing Unit  [! NH lang 无键 gt.circuitcomponent.processed.neuroprocessingunit]
+        add("ProcessedBioProcessingUnit", 505, true, "gt.circuitcomponent.processed.board.bioprocessingunit", null, null);   // Bio Processing Unit  [! NH lang 无键 gt.circuitcomponent.processed.board.bioprocessingunit]
+        add("ProcessedLivingBioChip", 506, true, "gt.circuitcomponent.processed.board.livingbiochip", null, null);   // Living Bio Chip  [! NH lang 无键 gt.circuitcomponent.processed.board.livingbiochip]
         add("ChipNanoCPU", 600, false, "gt.circuitcomponent.chipNanoCPU", "item:nano_cpu_chip", null);   // Packaged Nano CPU Chip  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("ChipRAM", 601, false, "gt.circuitcomponent.chipram", "item:ram_chip", null);   // Packaged RAM Chip  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("ChipNOR", 602, false, "gt.circuitcomponent.chipnor", "item:nor_memory_chip", null);   // Packaged NOR Memory Chip  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("ChipNAND", 603, false, "gt.circuitcomponent.chipnand", "item:nand_memory_chip", null);   // Packaged NAND Memory Chip  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("ChipASOC", 604, false, "gt.circuitcomponent.chipasoc", "item:advanced_soc", null);   // Packaged ASoC  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
-        add("ChipPikoPIC", 605, false, "gt.circuitcomponent.chippikopic", null, null);   // Packaged Piko Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 Piko 电源芯片；解析出的材料 id=piko_pic）; ! 显示名以**实际真件**为准（NH 原名：Piko 电源芯片）]
-        add("ChipQuantumPIC", 606, false, "gt.circuitcomponent.chipquantumpic", null, null);   // Packaged Quantum Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 量子电源芯片；解析出的材料 id=quantum_pic）; ! 显示名以**实际真件**为准（NH 原名：量子电源芯片）]
-        add("ChipAttoPIC", 607, false, "gt.circuitcomponent.chipattopic", null, null);   // Packaged Atto Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 阿托电源芯片；解析出的材料 id=atto_pic）; ! 显示名以**实际真件**为准（NH 原名：阿托电源芯片）]
-        add("ChipZeptoPIC", 608, false, "gt.circuitcomponent.chipzeptopic", null, null);   // Packaged Zepto Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 仄托电源芯片；解析出的材料 id=zepto_pic）; ! 显示名以**实际真件**为准（NH 原名：仄托电源芯片）]
-        add("ChipYoctoPIC", 609, false, "gt.circuitcomponent.chipyoctopic", null, null);   // Packaged Yocto Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 幺托电源芯片；解析出的材料 id=yocto_pic）; ! 显示名以**实际真件**为准（NH 原名：幺托电源芯片）]
-        add("ChipPlanckPIC", 610, false, "gt.circuitcomponent.chipplanckpic", null, null);   // Packaged Planck Power IC Chips  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 普朗克电源芯片；解析出的材料 id=planck_pic）; ! 显示名以**实际真件**为准（NH 原名：普朗克电源芯片）]
-        add("ProcessedChipNanoCPU", 700, true, "gt.circuitcomponent.processed.chipnanocpu", null, null);   // Cut Nanocomponent CPU Chips
-        add("ProcessedChipRAM", 701, true, "gt.circuitcomponent.processed.chipram", null, null);   // Cut Random Access Memory Chips
-        add("ProcessedChipNOR", 702, true, "gt.circuitcomponent.processed.chipnor", null, null);   // Cut NOR Memory Chips
-        add("ProcessedChipNAND", 703, true, "gt.circuitcomponent.processed.chipnand", null, null);   // Cut NAND Memory Chips
-        add("ProcessedChipASOC", 704, true, "gt.circuitcomponent.processed.chipasoc", null, null);   // Cut ASoC Chips
-        add("ProcessedChipPikoPIC", 705, true, "gt.circuitcomponent.processed.chippikopic", null, null);   // Cut Piko Power IC Chips
-        add("ProcessedChipQuantumPIC", 706, true, "gt.circuitcomponent.processed.chipquantumpic", null, null);   // Cut Quantum Power IC Chips
-        add("ProcessedChipAttoPIC", 707, true, "gt.circuitcomponent.processed.chipattopic", null, null);   // Cut Atto Power IC Chips
-        add("ProcessedChipZeptoPIC", 708, true, "gt.circuitcomponent.processed.chipzeptopic", null, null);   // Cut Zepto Power IC Chips
-        add("ProcessedChipYoctoPIC", 709, true, "gt.circuitcomponent.processed.chipyoctopic", null, null);   // Cut Yocto Power IC Chips
+        add("ChipPikoPIC", 605, false, "gt.circuitcomponent.chippikopic", null, null);   // Packaged Piko Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 Piko 电源芯片；解析出的材料 id=piko_pic）; ! 显示名以**实际真件**为准（NH 原名：Piko 电源芯片）]
+        add("ChipQuantumPIC", 606, false, "gt.circuitcomponent.chipquantumpic", null, null);   // Packaged Quantum Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 量子电源芯片；解析出的材料 id=quantum_pic）; ! 显示名以**实际真件**为准（NH 原名：量子电源芯片）]
+        add("ChipAttoPIC", 607, false, "gt.circuitcomponent.chipattopic", null, null);   // Packaged Atto Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 阿托电源芯片；解析出的材料 id=atto_pic）; ! 显示名以**实际真件**为准（NH 原名：阿托电源芯片）]
+        add("ChipZeptoPIC", 608, false, "gt.circuitcomponent.chipzeptopic", null, null);   // Packaged Zepto Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 仄托电源芯片；解析出的材料 id=zepto_pic）; ! 显示名以**实际真件**为准（NH 原名：仄托电源芯片）]
+        add("ChipYoctoPIC", 609, false, "gt.circuitcomponent.chipyoctopic", null, null);   // Packaged Yocto Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 幺托电源芯片；解析出的材料 id=yocto_pic）; ! 显示名以**实际真件**为准（NH 原名：幺托电源芯片）]
+        add("ChipPlanckPIC", 610, false, "gt.circuitcomponent.chipplanckpic", null, null);   // Packaged Planck Power IC Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 普朗克电源芯片；解析出的材料 id=planck_pic）; ! 显示名以**实际真件**为准（NH 原名：普朗克电源芯片）]
+        add("ProcessedChipNanoCPU", 700, true, "gt.circuitcomponent.processed.chipnanocpu", null, null);   // Chip Nano CPU  [! NH lang 无键 gt.circuitcomponent.processed.chipnanocpu]
+        add("ProcessedChipRAM", 701, true, "gt.circuitcomponent.processed.chipram", null, null);   // Chip RAM  [! NH lang 无键 gt.circuitcomponent.processed.chipram]
+        add("ProcessedChipNOR", 702, true, "gt.circuitcomponent.processed.chipnor", null, null);   // Chip NOR  [! NH lang 无键 gt.circuitcomponent.processed.chipnor]
+        add("ProcessedChipNAND", 703, true, "gt.circuitcomponent.processed.chipnand", null, null);   // Chip NAND  [! NH lang 无键 gt.circuitcomponent.processed.chipnand]
+        add("ProcessedChipASOC", 704, true, "gt.circuitcomponent.processed.chipasoc", null, null);   // Chip ASOC  [! NH lang 无键 gt.circuitcomponent.processed.chipasoc]
+        add("ProcessedChipPikoPIC", 705, true, "gt.circuitcomponent.processed.chippikopic", null, null);   // Chip Piko PIC  [! NH lang 无键 gt.circuitcomponent.processed.chippikopic]
+        add("ProcessedChipQuantumPIC", 706, true, "gt.circuitcomponent.processed.chipquantumpic", null, null);   // Chip Quantum PIC  [! NH lang 无键 gt.circuitcomponent.processed.chipquantumpic]
+        add("ProcessedChipAttoPIC", 707, true, "gt.circuitcomponent.processed.chipattopic", null, null);   // Chip Atto PIC  [! NH lang 无键 gt.circuitcomponent.processed.chipattopic]
+        add("ProcessedChipZeptoPIC", 708, true, "gt.circuitcomponent.processed.chipzeptopic", null, null);   // Chip Zepto PIC  [! NH lang 无键 gt.circuitcomponent.processed.chipzeptopic]
+        add("ProcessedChipYoctoPIC", 709, true, "gt.circuitcomponent.processed.chipyoctopic", null, null);   // Chip Yocto PIC  [! NH lang 无键 gt.circuitcomponent.processed.chipyoctopic]
         // ★ 2026-09-19 队长指示「把整合包里面残留注册的、合成根本用不到的物品注销掉」⇒ 本行整条注销：
         //    原注册行 = ProcessedChipPlanckPIC / metaId 710 / nameKey "gt.circuitcomponent.processed.chipplanckpic"
         //    （不在这里复写完整 `add(...)` 字面量 —— `_census/check_nac_cc_items.js` 规则②会把它当成第 369 条注册行）。
@@ -377,14 +384,14 @@ public final class NanochipCircuitComponents {
         add("ChipCrystalSoC", 801, false, "gt.circuitcomponent.chipcrystalsoc", "item:crystal_soc", null);   // Packaged Crystal SoC  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("ChipLivingCrystal", 802, false, "gt.circuitcomponent.chiplivingcrystal", null, null);   // Packaged Living Crystal Chip  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 活体晶体芯片；解析出的材料 id=living_crystal）; ! 显示名以**实际真件**为准（NH 原名：活体晶体芯片）]
         add("ChipRawAdvancedCrystal", 803, false, "gt.circuitcomponent.chiprawadvancedcrystal", "item:raw_crystal_chip", null);   // Packaged Raw Crystal Chip  [! 真实物品为近似映射（Circuit_Chip_CrystalSoC2 → raw_crystal_chip）; 真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 晶体芯片原料；解析出的材料 id=raw_advanced_crystal）; ! 显示名以**实际真件**为准（NH 原名：null）]
-        add("ProcessedChipCrystalCPU", 900, true, "gt.circuitcomponent.processed.chipcrystalcpu", null, null);   // Etched Crystal Processing Unit
-        add("ProcessedChipCrystalSoC", 901, true, "gt.circuitcomponent.processed.chipcrystalsoc", null, null);   // Etched Crystal SoC
-        add("ProcessedChipLivingCrystal", 902, true, "gt.circuitcomponent.processed.chiplivingcrystal", null, null);   // Coordinated Living Crystal Chip
-        add("ProcessedChipRawAdvancedCrystal", 903, true, "gt.circuitcomponent.processed.chiprawadvancedcrystal", null, null);   // Coordinated Raw Advanced Crystal Chip
+        add("ProcessedChipCrystalCPU", 900, true, "gt.circuitcomponent.processed.chipcrystalcpu", null, null);   // Chip Crystal CPU  [! NH lang 无键 gt.circuitcomponent.processed.chipcrystalcpu]
+        add("ProcessedChipCrystalSoC", 901, true, "gt.circuitcomponent.processed.chipcrystalsoc", null, null);   // Chip Crystal So C  [! NH lang 无键 gt.circuitcomponent.processed.chipcrystalsoc]
+        add("ProcessedChipLivingCrystal", 902, true, "gt.circuitcomponent.processed.chiplivingcrystal", null, null);   // Chip Living Crystal  [! NH lang 无键 gt.circuitcomponent.processed.chiplivingcrystal]
+        add("ProcessedChipRawAdvancedCrystal", 903, true, "gt.circuitcomponent.processed.chiprawadvancedcrystal", null, null);   // Chip Raw Advanced Crystal  [! NH lang 无键 gt.circuitcomponent.processed.chiprawadvancedcrystal]
         add("ChipOpticalCPU", 1000, false, "gt.circuitcomponent.opticalcpu", null, null);   // Packaged Optically Perfected CPU  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 光学完善处理器；解析出的材料 id=optical_cpu）; ! 显示名以**实际真件**为准（NH 原名：光学完善处理器）]
         add("OpticalRAM", 1001, false, "gt.circuitcomponent.opticalram", null, null);   // Packaged Optically Compatible Memory  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 光学兼容内存；解析出的材料 id=optical_ram）; ! 显示名以**实际真件**为准（NH 原名：光学兼容内存）]
-        add("ProcessedChipOpticalCPU", 1100, true, "gt.circuitcomponent.processed.opticalcpu", null, null);   // Organized Optically Perfected CPU
-        add("ProcessedOpticalRAM", 1101, true, "gt.circuitcomponent.processed.opticalram", null, null);   // Organized Optically Compatible Memory
+        add("ProcessedChipOpticalCPU", 1100, true, "gt.circuitcomponent.processed.opticalcpu", null, null);   // Chip Optical CPU  [! NH lang 无键 gt.circuitcomponent.processed.opticalcpu]
+        add("ProcessedOpticalRAM", 1101, true, "gt.circuitcomponent.processed.opticalram", null, null);   // Optical RAM  [! NH lang 无键 gt.circuitcomponent.processed.opticalram]
         add("SuperconductorLuV", 1200, false, "gt.circuitcomponent.superconductorluv", null, null);   // Packaged 1x Superconductor LuV Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xLuV 超导体导线；解析出的材料 id=superconductor_lu_v）; ! 显示名以**实际真件**为准（NH 原名：1xLuV 超导体导线）]
         add("SuperconductorZPM", 1201, false, "gt.circuitcomponent.superconductorzpm", null, null);   // Packaged 1x Superconductor ZPM Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xZPM 超导体导线；解析出的材料 id=superconductor_zpm）; ! 显示名以**实际真件**为准（NH 原名：1xZPM 超导体导线）]
         add("SuperconductorUV", 1202, false, "gt.circuitcomponent.superconductoruv", null, null);   // Packaged 1x Superconductor UV Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xUV 超导体导线；解析出的材料 id=superconductor_uv）; ! 显示名以**实际真件**为准（NH 原名：1xUV 超导体导线）]
@@ -392,38 +399,38 @@ public final class NanochipCircuitComponents {
         add("SuperconductorUEV", 1204, false, "gt.circuitcomponent.superconductoruev", null, null);   // Packaged 1x Superconductor UEV Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xUEV 超导体导线；解析出的材料 id=superconductor_uev）; ! 显示名以**实际真件**为准（NH 原名：1xUEV 超导体导线）]
         add("SuperconductorUIV", 1205, false, "gt.circuitcomponent.superconductoruiv", null, null);   // Packaged 1x Superconductor UIV Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xUIV 超导体导线；解析出的材料 id=superconductor_uiv）; ! 显示名以**实际真件**为准（NH 原名：1xUIV 超导体导线）]
         add("SuperconductorUMV", 1206, false, "gt.circuitcomponent.superconductorumv", null, null);   // Packaged 1x Superconductor UMV Wire  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! NH 期望名（尾巴）不是「形状+材料」结构，未做材料词修正（原文 1xUMV 超导体导线；解析出的材料 id=superconductor_umv）; ! 显示名以**实际真件**为准（NH 原名：1xUMV 超导体导线）]
-        add("ProcessedSuperconductorLuV", 1300, true, "gt.circuitcomponent.processed.superconductorluv", null, null);   // Attuned Superconductor LuV Wire
-        add("ProcessedSuperconductorZPM", 1301, true, "gt.circuitcomponent.processed.superconductorzpm", null, null);   // Attuned Superconductor ZPM Wire
-        add("ProcessedSuperconductorUV", 1302, true, "gt.circuitcomponent.processed.superconductoruv", null, null);   // Attuned Superconductor UV Wire
-        add("ProcessedSuperconductorUHV", 1303, true, "gt.circuitcomponent.processed.superconductoruhv", null, null);   // Attuned Superconductor UHV Wire
-        add("ProcessedSuperconductorUEV", 1304, true, "gt.circuitcomponent.processed.superconductoruev", null, null);   // Attuned Superconductor UEV Wire
-        add("ProcessedSuperconductorUIV", 1305, true, "gt.circuitcomponent.processed.superconductoruiv", null, null);   // Attuned Superconductor UIV Wire
-        add("ProcessedSuperconductorUMV", 1306, true, "gt.circuitcomponent.processed.superconductorumv", null, null);   // Attuned Superconductor UMV Wire
+        add("ProcessedSuperconductorLuV", 1300, true, "gt.circuitcomponent.processed.superconductorluv", null, null);   // Superconductor Lu V  [! NH lang 无键 gt.circuitcomponent.processed.superconductorluv]
+        add("ProcessedSuperconductorZPM", 1301, true, "gt.circuitcomponent.processed.superconductorzpm", null, null);   // Superconductor ZPM  [! NH lang 无键 gt.circuitcomponent.processed.superconductorzpm]
+        add("ProcessedSuperconductorUV", 1302, true, "gt.circuitcomponent.processed.superconductoruv", null, null);   // Superconductor UV  [! NH lang 无键 gt.circuitcomponent.processed.superconductoruv]
+        add("ProcessedSuperconductorUHV", 1303, true, "gt.circuitcomponent.processed.superconductoruhv", null, null);   // Superconductor UHV  [! NH lang 无键 gt.circuitcomponent.processed.superconductoruhv]
+        add("ProcessedSuperconductorUEV", 1304, true, "gt.circuitcomponent.processed.superconductoruev", null, null);   // Superconductor UEV  [! NH lang 无键 gt.circuitcomponent.processed.superconductoruev]
+        add("ProcessedSuperconductorUIV", 1305, true, "gt.circuitcomponent.processed.superconductoruiv", null, null);   // Superconductor UIV  [! NH lang 无键 gt.circuitcomponent.processed.superconductoruiv]
+        add("ProcessedSuperconductorUMV", 1306, true, "gt.circuitcomponent.processed.superconductorumv", null, null);   // Superconductor UMV  [! NH lang 无键 gt.circuitcomponent.processed.superconductorumv]
         add("FrameboxAluminium", 1400, false, "gt.circuitcomponent.frame.aluminium", "mat:aluminium:frame", null);   // Packaged Aluminium Frame  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FrameboxTritanium", 1401, false, "gt.circuitcomponent.frame.tritanium", "mat:tritanium:frame", null);   // Packaged Tritanium Frame  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FrameboxCelestialTungsten", 1402, false, "gt.circuitcomponent.frame.celestialtungsten", null, null);   // Packaged Celestial Tungsten Frame Box  [! 材质来自 GT++ 取件方法，未逐一解析（统一用 GTCEu DULL 母版）; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：天体钨框架）]
         add("FrameboxHypogen", 1403, false, "gt.circuitcomponent.frame.hypogen", null, null);   // Packaged Hypogen Frame Box  [! 材质来自 GT++ 取件方法，未逐一解析（统一用 GTCEu DULL 母版）; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：海珀珍框架）]
         add("FrameboxMagMatter", 1404, false, "gt.circuitcomponent.frame.magmatter", null, null);   // Packaged Magmatter Frame Box  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：磁物质框架）]
-        add("ProcessedFrameboxAluminium", 1500, true, "gt.circuitcomponent.processed.frame.aluminium", null, null);   // Spliced Aluminium Framebox
-        add("ProcessedFrameboxTritanium", 1501, true, "gt.circuitcomponent.processed.frame.tritanium", null, null);   // Spliced Tritanium Framebox
-        add("ProcessedFrameboxCelestialTungsten", 1502, true, "gt.circuitcomponent.processed.frame.celestialtungsten", null, null);   // Spliced Celestial Tungsten Framebox
-        add("ProcessedFrameboxHypogen", 1503, true, "gt.circuitcomponent.processed.frame.hypogen", null, null);   // Spliced Hypogen Framebox
-        add("ProcessedFrameboxMagMatter", 1504, true, "gt.circuitcomponent.processed.frame.magmatter", null, null);   // Spliced Magmatter Framebox
+        add("ProcessedFrameboxAluminium", 1500, true, "gt.circuitcomponent.processed.frame.aluminium", null, null);   // Framebox Aluminium  [! NH lang 无键 gt.circuitcomponent.processed.frame.aluminium]
+        add("ProcessedFrameboxTritanium", 1501, true, "gt.circuitcomponent.processed.frame.tritanium", null, null);   // Framebox Tritanium  [! NH lang 无键 gt.circuitcomponent.processed.frame.tritanium]
+        add("ProcessedFrameboxCelestialTungsten", 1502, true, "gt.circuitcomponent.processed.frame.celestialtungsten", null, null);   // Framebox Celestial Tungsten  [! NH lang 无键 gt.circuitcomponent.processed.frame.celestialtungsten]
+        add("ProcessedFrameboxHypogen", 1503, true, "gt.circuitcomponent.processed.frame.hypogen", null, null);   // Framebox Hypogen  [! NH lang 无键 gt.circuitcomponent.processed.frame.hypogen]
+        add("ProcessedFrameboxMagMatter", 1504, true, "gt.circuitcomponent.processed.frame.magmatter", null, null);   // Framebox Mag Matter  [! NH lang 无键 gt.circuitcomponent.processed.frame.magmatter]
         add("FoilSiliconeRubber", 1600, false, "gt.circuitcomponent.sheet.siliconerubber", "mat:silicone_rubber:foil", null);   // Packaged Silicone Rubber Foil  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FoilPolybenzimidazole", 1601, false, "gt.circuitcomponent.sheet.polybenzimidazole", "mat:polybenzimidazole:foil", null);   // Packaged Polybenzimidazole Foil  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FoilRadoxPolymer", 1602, false, "gt.circuitcomponent.sheet.radoxpolymer", null, null);   // Packaged Radox Polymer Foil  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FoilShirabon", 1603, false, "gt.circuitcomponent.sheet.shirabon", null, null);   // Packaged Shirabon Foil  [! 材质来自 GT++ 取件方法，未逐一解析（统一用 GTCEu DULL 母版）; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：调律源金箔）]
         add("FoilStyreneRubber", 1604, false, "gt.circuitcomponent.sheet.styrenebutadienerubber", "mat:styrene_butadiene_rubber:foil", null);   // Packaged Styrene Butadiene Rubber Foil  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("FoilEternity", 1605, false, "gt.circuitcomponent.sheet.eternity", null, null);   // Packaged Eternity Foil  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
-        add("ProcessedFoilSiliconeRubber", 1700, true, "gt.circuitcomponent.sheet.processed.siliconerubber", null, null);   // Silicone Rubber Wrapper Spool
-        add("ProcessedFoilPolybenzimidazole", 1701, true, "gt.circuitcomponent.sheet.processed.polybenzimidazole", null, null);   // Polybenzimidazole Wrapper Spool
-        add("ProcessedFoilRadoxPolymer", 1702, true, "gt.circuitcomponent.sheet.processed.radoxpolymer", null, null);   // Radox Polymer Wrapper Spool
-        add("ProcessedFoilShirabon", 1703, true, "gt.circuitcomponent.sheet.processed.shirabon", null, null);   // Shirabon Wrapper Spool
-        add("ProcessedFoilStyreneRubber", 1704, true, "gt.circuitcomponent.sheet.processed.styrenerubber", null, null);   // Styrene-Butadiene Rubber Wrapper Spool
-        add("ProcessedFoilEternity", 1705, true, "gt.circuitcomponent.sheet.processed.eternity", null, null);   // Eternity Wrapper Spool
-        add("ProcessedBasicMainframeCasing", 1800, true, "gt.circuitcomponent.casing.processed.basicmainframe", null, null);   // Basic Mainframe Circuit Encasement  [processed 无未处理件（NH componentForProcessed = null）]
-        add("ProcessedAdvancedMainframeCasing", 1801, true, "gt.circuitcomponent.casing.processed.advancedmainframe", null, null);   // Advanced Mainframe Circuit Encasement  [processed 无未处理件（NH componentForProcessed = null）]
-        add("ProcessedCoiledThermalSuperconductor", 1805, true, "gt.circuitcomponent.other.processed.coiledthermalsuperconductor", null, null);   // Coiled Thermal Superconductor  [processed 无未处理件（NH componentForProcessed = null）]
+        add("ProcessedFoilSiliconeRubber", 1700, true, "gt.circuitcomponent.sheet.processed.siliconerubber", null, null);   // Foil Silicone Rubber  [! NH lang 无键 gt.circuitcomponent.sheet.processed.siliconerubber]
+        add("ProcessedFoilPolybenzimidazole", 1701, true, "gt.circuitcomponent.sheet.processed.polybenzimidazole", null, null);   // Foil Polybenzimidazole  [! NH lang 无键 gt.circuitcomponent.sheet.processed.polybenzimidazole]
+        add("ProcessedFoilRadoxPolymer", 1702, true, "gt.circuitcomponent.sheet.processed.radoxpolymer", null, null);   // Foil Radox Polymer  [! NH lang 无键 gt.circuitcomponent.sheet.processed.radoxpolymer]
+        add("ProcessedFoilShirabon", 1703, true, "gt.circuitcomponent.sheet.processed.shirabon", null, null);   // Foil Shirabon  [! NH lang 无键 gt.circuitcomponent.sheet.processed.shirabon]
+        add("ProcessedFoilStyreneRubber", 1704, true, "gt.circuitcomponent.sheet.processed.styrenerubber", null, null);   // Foil Styrene Rubber  [! NH lang 无键 gt.circuitcomponent.sheet.processed.styrenerubber]
+        add("ProcessedFoilEternity", 1705, true, "gt.circuitcomponent.sheet.processed.eternity", null, null);   // Foil Eternity  [! NH lang 无键 gt.circuitcomponent.sheet.processed.eternity]
+        add("ProcessedBasicMainframeCasing", 1800, true, "gt.circuitcomponent.casing.processed.basicmainframe", null, null);   // Basic Mainframe Casing  [! NH lang 无键 gt.circuitcomponent.casing.processed.basicmainframe; processed 无未处理件（NH componentForProcessed = null）]
+        add("ProcessedAdvancedMainframeCasing", 1801, true, "gt.circuitcomponent.casing.processed.advancedmainframe", null, null);   // Advanced Mainframe Casing  [! NH lang 无键 gt.circuitcomponent.casing.processed.advancedmainframe; processed 无未处理件（NH componentForProcessed = null）]
+        add("ProcessedCoiledThermalSuperconductor", 1805, true, "gt.circuitcomponent.other.processed.coiledthermalsuperconductor", null, null);   // Coiled Thermal Superconductor  [! NH lang 无键 gt.circuitcomponent.other.processed.coiledthermalsuperconductor; processed 无未处理件（NH componentForProcessed = null）]
         add("BoltEnrichedHolmium", 1900, false, "gt.circuitcomponent.bolt.enrichedholmium", null, null);   // Packaged Enriched Holmium Bolt  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：富集钬螺栓）]
         add("BoltTranscendentMetal", 1901, false, "gt.circuitcomponent.bolt.transcendentmetal", null, null);   // Packaged Transcendent Metal Bolt  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：超时空金属螺栓）]
         add("BoltYttriumBariumCuprate", 1902, false, "gt.circuitcomponent.bolt.yttriumbariumcuprate", "mat:yttrium_barium_cuprate:bolt", null);   // Packaged Yttrium Barium Cuprate Bolt  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
@@ -442,16 +449,16 @@ public final class NanochipCircuitComponents {
         add("CasingEternity", 1915, false, "gt.circuitcomponent.casing.eternity", null, null);   // Packaged Eternity Casing  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：null）]
         add("ScrewUniversium", 1916, false, "gt.circuitcomponent.casing.universium", null, null);   // Packaged Universium Screw  [! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出; ! 显示名以**实际真件**为准（NH 原名：null）]
         add("ThermalSuperconductor", 1917, false, "gt.circuitcomponent.thermalsuperconductor", null, null);   // Packaged Thermal Superconductor  [! 无可用真实物品贴图，退化自造底板; ! 真实物品名拿不到 NH 资源（降级：自撰/退化）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
-        add("ProcessedBoltEnrichedHolmium", 2000, true, "gt.circuitcomponent.bolt.processed.enrichedholmium", null, null);   // Filed Enriched Holmium Bolt
-        add("ProcessedBoltTranscendentMetal", 2001, true, "gt.circuitcomponent.bolt.processed.transcendentmetal", null, null);   // Filed Transcendent Metal Bolt
-        add("ProcessedBoltYttriumBariumCuprate", 2002, true, "gt.circuitcomponent.bolt.processed.yttriumbariumcuprate", null, null);   // Filed Yttrium Barium Cuprate Bolt
-        add("ProcessedBoltCosmicNeutronium", 2003, true, "gt.circuitcomponent.bolt.processed.cosmicneutronium", null, null);   // Filed Cosmic Neutronium Bolt
-        add("ProcessedBoltChromaticGlass", 2004, true, "gt.circuitcomponent.bolt.processed.chromaticglass", null, null);   // Filed Chromatic Glass Bolt
-        add("ProcessedBoltUMVSuperconductor", 2005, true, "gt.circuitcomponent.bolt.processed.umvsuperconductor", null, null);   // Filed UMV Superconductor Base Bolt
-        add("ProcessedPlateMetastableOganesson", 2006, true, "gt.circuitcomponent.plate.processed.metastableoganesson", null, null);   // Stripped Metastable Oganesson Plate
-        add("ProcessedPlateRhugnor", 2007, true, "gt.circuitcomponent.plate.processed.rhugnor", null, null);   // Stripped Rhugnor Plate
-        add("ProcessedBoltWhiteDwarfMatter", 2008, true, "gt.circuitcomponent.bolt.processed.whitedwarfmatter", null, null);   // Filed White Dwarf Matter Bolt
-        add("ProcessedPlateHexanite", 2009, true, "gt.circuitcomponent.plate.processed.hexanite", null, null);   // Stripped Hexanite Plate
+        add("ProcessedBoltEnrichedHolmium", 2000, true, "gt.circuitcomponent.bolt.processed.enrichedholmium", null, null);   // Bolt Enriched Holmium  [! NH lang 无键 gt.circuitcomponent.bolt.processed.enrichedholmium]
+        add("ProcessedBoltTranscendentMetal", 2001, true, "gt.circuitcomponent.bolt.processed.transcendentmetal", null, null);   // Bolt Transcendent Metal  [! NH lang 无键 gt.circuitcomponent.bolt.processed.transcendentmetal]
+        add("ProcessedBoltYttriumBariumCuprate", 2002, true, "gt.circuitcomponent.bolt.processed.yttriumbariumcuprate", null, null);   // Bolt Yttrium Barium Cuprate  [! NH lang 无键 gt.circuitcomponent.bolt.processed.yttriumbariumcuprate]
+        add("ProcessedBoltCosmicNeutronium", 2003, true, "gt.circuitcomponent.bolt.processed.cosmicneutronium", null, null);   // Bolt Cosmic Neutronium  [! NH lang 无键 gt.circuitcomponent.bolt.processed.cosmicneutronium]
+        add("ProcessedBoltChromaticGlass", 2004, true, "gt.circuitcomponent.bolt.processed.chromaticglass", null, null);   // Bolt Chromatic Glass  [! NH lang 无键 gt.circuitcomponent.bolt.processed.chromaticglass]
+        add("ProcessedBoltUMVSuperconductor", 2005, true, "gt.circuitcomponent.bolt.processed.umvsuperconductor", null, null);   // Bolt UMV Superconductor  [! NH lang 无键 gt.circuitcomponent.bolt.processed.umvsuperconductor]
+        add("ProcessedPlateMetastableOganesson", 2006, true, "gt.circuitcomponent.plate.processed.metastableoganesson", null, null);   // Plate Metastable Oganesson  [! NH lang 无键 gt.circuitcomponent.plate.processed.metastableoganesson]
+        add("ProcessedPlateRhugnor", 2007, true, "gt.circuitcomponent.plate.processed.rhugnor", null, null);   // Plate Rhugnor  [! NH lang 无键 gt.circuitcomponent.plate.processed.rhugnor]
+        add("ProcessedBoltWhiteDwarfMatter", 2008, true, "gt.circuitcomponent.bolt.processed.whitedwarfmatter", null, null);   // Bolt White Dwarf Matter  [! NH lang 无键 gt.circuitcomponent.bolt.processed.whitedwarfmatter]
+        add("ProcessedPlateHexanite", 2009, true, "gt.circuitcomponent.plate.processed.hexanite", null, null);   // Plate Hexanite  [! NH lang 无键 gt.circuitcomponent.plate.processed.hexanite]
         add("CrystalProcessor", 2100, false, "gt.circuitcomponent.crystalprocessor", "item:crystal_processor", "CRYSTAL");   // Packaged Crystal Processor  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 校准族 CRYSTAL（本波只登记，不做配方）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("CrystalAssembly", 2101, false, "gt.circuitcomponent.crystalasssembly", "item:crystal_processor_assembly", "CRYSTAL");   // Packaged Crystal Processor Assembly  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 校准族 CRYSTAL（本波只登记，不做配方）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
         add("CrystalComputer", 2102, false, "gt.circuitcomponent.crystalcomputer", "item:crystal_processor_computer", "CRYSTAL");   // Packaged Crystal Processor Supercomputer  [真实物品名由 GTCEu 1.20.1 资源组合（NH 侧该真实物品在 1.20.1 不存在）; 校准族 CRYSTAL（本波只登记，不做配方）; 未处理件的「真实物品」在 1.20.1 不存在，显示名按降级规则给出]
@@ -668,5 +675,15 @@ public final class NanochipCircuitComponents {
         add("ExoticMainframe", 2397, false, "gtlmodular.cc.cc_exotic_mainframe.name", "itemns:kubejs:exotic_mainframe", "EXOTIC");   // Packaged Exotic Mainframe  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
         add("CosmicMainframe", 2398, false, "gtlmodular.cc.cc_cosmic_mainframe.name", "itemns:kubejs:cosmic_mainframe", "COSMIC");   // Packaged Cosmic Mainframe  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
         add("SupracausalMainframe", 2399, false, "gtlmodular.cc.cc_supracausal_mainframe.name", "itemns:kubejs:supracausal_mainframe", "SUPRACAUSAL");   // Packaged Supracausal Mainframe  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("OutstandingSoc", 2400, false, "gtlmodular.cc.cc_outstanding_soc.name", "itemns:gtladditions:outstanding_soc", "OUTSTANDING");   // Packaged Outstanding SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ProcessedOutstandingSoc", 2401, true, "gtlmodular.cc.cc_processed_outstanding_soc.name", "itemns:gtladditions:outstanding_soc", "OUTSTANDING");   // Cut Outstanding SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ExtraordinarySoc", 2402, false, "gtlmodular.cc.cc_extraordinary_soc.name", "itemns:gtladditions:extraordinary_soc", "EXTRAORDINARY");   // Packaged Extraordinary SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ProcessedExtraordinarySoc", 2403, true, "gtlmodular.cc.cc_processed_extraordinary_soc.name", "itemns:gtladditions:extraordinary_soc", "EXTRAORDINARY");   // Cut Extraordinary SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ChaosSoc", 2404, false, "gtlmodular.cc.cc_chaos_soc.name", "itemns:gtladditions:chaos_soc", "CHAOS");   // Packaged Chaos SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ProcessedChaosSoc", 2405, true, "gtlmodular.cc.cc_processed_chaos_soc.name", "itemns:gtladditions:chaos_soc", "CHAOS");   // Cut Chaos SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("SpacetimeSoc", 2406, false, "gtlmodular.cc.cc_spacetime_soc.name", "itemns:gtladditions:spacetime_soc", "SPACETIME");   // Packaged Spacetime SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ProcessedSpacetimeSoc", 2407, true, "gtlmodular.cc.cc_processed_spacetime_soc.name", "itemns:gtladditions:spacetime_soc", "SPACETIME");   // Cut Spacetime SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("PrimarySoc", 2408, false, "gtlmodular.cc.cc_primary_soc.name", "itemns:gtladditions:primary_soc", "PRIMARY");   // Packaged Primary SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
+        add("ProcessedPrimarySoc", 2409, true, "gtlmodular.cc.cc_processed_primary_soc.name", "itemns:gtladditions:primary_soc", "PRIMARY");   // Cut Primary SoC  [wave2; ! 无书面 en 证据（kubejs 侧只有 zh_cn）]
     }
 }

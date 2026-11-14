@@ -27,15 +27,6 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:cc_processed_highly_advanced_soc"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
             "item": "gtlmodular:cc_processed_supracausal_processing_core"
           }
         }
@@ -46,6 +37,15 @@
           "count": 4,
           "ingredient": {
             "item": "gtlmodular:cc_processed_cosmic_processing_unit_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_primary_soc"
           }
         }
       }

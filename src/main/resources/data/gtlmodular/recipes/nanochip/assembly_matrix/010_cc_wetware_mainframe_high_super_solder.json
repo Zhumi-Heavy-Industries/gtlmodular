@@ -111,6 +111,15 @@
             "item": "gtlmodular:cc_processed_europium_plate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_wetware_computer"
+          }
+        }
       }
     ],
     "fluid": [

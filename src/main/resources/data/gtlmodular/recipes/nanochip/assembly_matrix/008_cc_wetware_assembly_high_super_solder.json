@@ -66,6 +66,15 @@
             "item": "gtlmodular:cc_processed_wire_yttrium_barium_cuprate"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtlmodular:cc_gtlmodular:cc_wetware_processor"
+          }
+        }
       }
     ],
     "fluid": [

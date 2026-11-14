@@ -27,15 +27,6 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtlmodular:cc_processed_highly_advanced_soc"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
             "item": "gtlmodular:cc_processed_cosmic_processing_core"
           }
         }
@@ -46,6 +37,15 @@
           "count": 8,
           "ingredient": {
             "item": "gtlmodular:cc_processed_fine_cinobite_wire"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 1,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_spacetime_soc"
           }
         }
       }
