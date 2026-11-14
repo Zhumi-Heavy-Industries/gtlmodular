@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "kubejs:supracausal_printed_circuit_board"
+            "item": "gtlmodular:cc_processed_supracausal_printed_circuit_board"
           }
         }
       },
@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtladditions:primary_soc"
+            "item": "gtlmodular:cc_processed_highly_advanced_soc"
           }
         }
       },
@@ -36,16 +36,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:hypogen_double_wire"
+            "item": "gtlmodular:cc_processed_supracausal_processing_core"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 4,
           "ingredient": {
-            "item": "gtceu:draconiumawakened_ingot"
+            "item": "gtlmodular:cc_processed_cosmic_processing_unit_core"
           }
         }
       }

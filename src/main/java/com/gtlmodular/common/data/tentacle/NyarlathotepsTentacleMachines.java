@@ -83,9 +83,12 @@ public final class NyarlathotepsTentacleMachines {
                 types.add(type);
             }
         }
-        // 「零部件加工」：按产出种类数拆成 MAX_KINDS 张表，每张表的输出格数正好等于该组配方的产出数，
-        // 界面不会拖一串空槽。本模组自建，不共用 gtlcore:component_assembly_line。
-        types.addAll(ComponentPartsRecipeTypes.all());
+        // 「零部件加工」：本模组自建的单一配方表，不共用 gtlcore:component_assembly_line
+        // （那张表同时被部件组装机使用，挂上去会连带改写部件组装机）。
+        GTRecipeType partsType = ComponentPartsRecipeTypes.COMPONENT_PARTS();
+        if (partsType != null) {
+            types.add(partsType);
+        }
         if (types.isEmpty()) {
             GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：配方表一张都取不到");
             return;

@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "kubejs:exotic_printed_circuit_board"
+            "item": "gtlmodular:cc_processed_exotic_printed_circuit_board"
           }
         }
       },
@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtladditions:chaos_soc"
+            "item": "gtlmodular:cc_processed_highly_advanced_soc"
           }
         }
       },
@@ -36,16 +36,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:cinobite_ingot"
+            "item": "gtlmodular:cc_processed_exotic_processing_core"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 8,
           "ingredient": {
-            "item": "gtceu:hastelloy_x_ingot"
+            "item": "gtlmodular:cc_processed_fine_cinobite_wire"
           }
         }
       }

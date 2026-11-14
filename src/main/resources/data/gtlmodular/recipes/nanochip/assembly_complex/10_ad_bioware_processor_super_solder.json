@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "kubejs:bioware_printed_circuit_board"
+            "item": "gtlmodular:cc_processed_board_bio_mutated"
           }
         }
       },
@@ -27,25 +27,25 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtladditions:outstanding_soc"
+            "item": "gtlmodular:cc_processed_highly_advanced_soc"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 2,
           "ingredient": {
-            "item": "gtceu:naquadah_ingot"
+            "item": "gtlmodular:cc_processed_qbit_cpu_chip"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 8,
           "ingredient": {
-            "item": "gtceu:quantanium_ingot"
+            "item": "gtlmodular:cc_processed_fine_naquadah_wire"
           }
         }
       }

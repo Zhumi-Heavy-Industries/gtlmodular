@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "kubejs:cosmic_printed_circuit_board"
+            "item": "gtlmodular:cc_processed_cosmic_printed_circuit_board"
           }
         }
       },
@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtladditions:spacetime_soc"
+            "item": "gtlmodular:cc_processed_highly_advanced_soc"
           }
         }
       },
@@ -36,7 +36,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:crystalmatrix_plate"
+            "item": "gtlmodular:cc_processed_cosmic_processing_core"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 8,
+          "ingredient": {
+            "item": "gtlmodular:cc_processed_fine_cinobite_wire"
           }
         }
       }

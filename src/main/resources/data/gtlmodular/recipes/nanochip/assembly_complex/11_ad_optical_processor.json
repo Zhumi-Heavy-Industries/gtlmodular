@@ -18,7 +18,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "kubejs:optical_printed_circuit_board"
+            "item": "gtlmodular:cc_processed_board_optical"
           }
         }
       },
@@ -27,7 +27,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtladditions:extraordinary_soc"
+            "item": "gtlmodular:cc_processed_optical_soc"
           }
         }
       },
@@ -36,16 +36,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:dubnium_ingot"
+            "item": "gtlmodular:cc_processed_chip_optical_cpu"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 8,
           "ingredient": {
-            "item": "gtceu:vibranium_ingot"
+            "item": "gtlmodular:cc_processed_fine_dubnium_wire"
           }
         }
       }
