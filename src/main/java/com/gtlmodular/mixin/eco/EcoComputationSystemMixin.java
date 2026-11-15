@@ -16,6 +16,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * {@code isPlayerCloseEnough(level,pos,player)}（8 格），只绕过 BlockUIHolder 不够。
  *
  * <p>持有「哦鲸鲸终端」时让这个静态判定直接返回 true，主机 UI 才能在远处创建。
+
+ * <p><b>★ 当前状态：未登记进 gtlmodular.mixins.json（不生效）。</b>
+ *   原因：{@code EcoMixinPlugin.shouldApplyMixin} 对 {@code .eco.} 包下的 mixin 一律返回
+ *   {@code false}（2026-10-27 起临时停用，用于排查 AE 下单卡住）。要启用需同时：
+ *   ① 把本类加进 mixins.json；② 移除插件里 {@code .eco.} 的高度拦截。
+ *   目标 API 已核实存在（neoecoae 20.5.7），恢复时无需改注入点。
  */
 @Mixin(targets = "cn.dancingsnow.neoecoae.blocks.computation.ECOComputationSystem", remap = false)
 public abstract class EcoComputationSystemMixin {

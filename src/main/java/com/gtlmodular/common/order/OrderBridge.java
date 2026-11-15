@@ -1,4 +1,4 @@
-package com.gtlmodular.mixin.order;
+package com.gtlmodular.common.order;
 
 import appeng.api.stacks.GenericStack;
 
@@ -12,6 +12,13 @@ import appeng.api.stacks.GenericStack;
  *   at MixinPreProcessorStandard.transformMethod
  *   at CraftingService.getCpus ← NEComputationCluster.getFakeCPU (neoecoae)
  * </pre>
+ * <p><b>★ 为什么本类必须住在 {@code common.order} 而不是 mixin 包</b>（2026-11-15 实机崩溃）：
+ * {@code gtlmodular.mixins.json} 把 {@code com.gtlmodular.mixin.*} 声明为<b>专属 mixin 包</b>；
+ * Mixin 会拒绝任何对该包内类的「直接引用」（{@code IllegalClassLoadError: ... is in a defined
+ * mixin package ... and cannot be referenced directly}）。把本类放在 {@code mixin.order} 里时，
+ * {@code CraftingCpuLogic} 的注入方法体一访问它就直接崩服（AE 合成任务结束时必崩）。
+ * ⇒ 普通工具类绝不能放进 mixin 包。
+ *
  * {@link TerminalOrderCpuMixin} / {@link TerminalOrderEcoCpuMixin} 织入
  * {@code CraftingService} / {@code CraftingCpuLogic}，而 NeoSecoEcoAE 的
  * {@code getFakeCPU} 会在<b>极早的类加载窗口</b>触发 {@code CraftingService.getCpus}。

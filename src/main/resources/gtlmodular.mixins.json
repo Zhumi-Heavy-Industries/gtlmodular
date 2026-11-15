@@ -23,7 +23,8 @@
     ],
     "client": [
         "gtceu.MixinWorkableProgressBar",
-        "gtceu.MachineModeTooltipMixin"
+        "gtceu.MachineModeTooltipMixin",
+        "ConfiguratorPanelTabMixin"
     ],
     "injectors": {
         "defaultRequire": 0

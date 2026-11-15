@@ -1,5 +1,6 @@
 package com.gtlmodular.mixin.order;
 
+import com.gtlmodular.common.order.OrderBridge;
 import appeng.api.networking.energy.IEnergyService;
 import appeng.api.stacks.AEKey;
 import appeng.api.stacks.GenericStack;
