@@ -6,6 +6,7 @@ import com.gregtechceu.gtceu.api.pattern.BlockPattern;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.data.fuel.OverclockHatches;
 import com.gtlmodular.common.data.tentacle.ThreadHatchMachines;
 import net.minecraft.resources.ResourceLocation;
 
