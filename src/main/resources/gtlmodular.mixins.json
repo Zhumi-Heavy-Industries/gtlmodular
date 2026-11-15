@@ -11,7 +11,7 @@
         "gtlcore.MultipleRecipesLogicAccelerateMixin",
         "gtceu.MixinRecipeOutputProvider",
         "gtceu.StellarForgePatternMixin",
-        "gtceu.PredicatesAbilitiesMixin",
+        "gtceu.FactoryBlockPatternGainHatchQuotaMixin",
         "gtceu.PredicatesExtendHatchMixin",
         "gtceu.MultiblockDefinitionExtendHatchMixin",
         "gtceu.WorkableMultiblockOverclockMixin",

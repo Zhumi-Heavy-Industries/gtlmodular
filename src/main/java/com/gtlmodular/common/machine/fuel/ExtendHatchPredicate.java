@@ -54,6 +54,11 @@ public final class ExtendHatchPredicate {
             "mega_extractor",
             "mega_presser",
             "mega_distillery",
+            // 以下三台同样被增强版的 GtlMegastructurePatterns 改写结构
+            // （见其 structures/gtl/manifest.json），漏掉会让加速仓漏放进来。
+            "mega_canner",
+            "mega_wiremill",
+            "dimensional_focus_engraving_array",
             "super_blast_smelter",
             "huge_incubator",
             "holy_separator",
@@ -94,7 +99,11 @@ public final class ExtendHatchPredicate {
     public static BlockPattern buildWithCredential(ResourceLocation id, Supplier<BlockPattern> original) {
         BUILDING.push(id);
         try {
-            return original.get();
+            BlockPattern pattern = original.get();
+            // 窗口内收尾：此刻 inExtendBuild() 为真 ⇒ 加速仓兜底不会追加，
+            // 只需把增益仓的数量/下限修正到「最多 1 台、非必需」。
+            HatchQuotaRepair.normalizePattern(pattern, false);
+            return pattern;
         } finally {
             BUILDING.pop();
         }
