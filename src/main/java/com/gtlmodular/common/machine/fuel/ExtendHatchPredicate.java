@@ -7,7 +7,7 @@ import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.fuel.OverclockHatches;
-import com.gtlmodular.common.data.tentacle.ThreadHatchMachines;
+import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayDeque;
@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * 「线程仓 / 超频仓装到<b>增强版核心接管的机器</b>上」的结构侧策略。
+ * 「超频仓装到<b>增强版核心接管的机器</b>上」的结构侧策略。
  *
  * <h2>增强版核心接管哪些机器</h2>
  * <p>GTL-Enhancedcore 在 {@code IvMachineScope} 里用<b>固定的 id 名单</b>决定接管范围
@@ -101,9 +101,9 @@ public final class ExtendHatchPredicate {
     }
 
     /**
-     * 是否要给这次 {@code abilities(...)} 追加线程仓 / 超频仓分支。
+     * 是否要给这次 {@code abilities(...)} 追加超频仓分支。
      *
-     * <p>条件：开关开 + 处在增强版机器的结构构建窗口内 + 结构作者自己没写过这两个能力
+     * <p>条件：开关开 + 处在增强版机器的结构构建窗口内 + 结构作者自己没写过超频仓
      * （写过就不叠，避免同一能力两条 limited 分支把全局配额算两次）。
      */
     public static boolean shouldExtend(PartAbility[] abilities) {
@@ -114,8 +114,7 @@ public final class ExtendHatchPredicate {
             return true;
         }
         for (PartAbility ability : abilities) {
-            if (ability == ThreadHatchMachines.THREAD_HATCH
-                    || ability == OverclockHatches.OVERCLOCK_HATCH) {
+            if (ability == OverclockHatches.OVERCLOCK_HATCH) {
                 return false;
             }
         }
@@ -123,20 +122,22 @@ public final class ExtendHatchPredicate {
     }
 
     /**
-     * 追加两个分支：线程仓（限 1 台）+ 超频仓（限 1 台）。
+     * 追加超频仓分支（限 1 台）。
      *
-     * <p>都带上限，与结构作者自己写时的口径一致：这两仓都不叠加，
-     * 装多台没有额外收益，反而会让玩家以为能堆。
+     * <p>带上限，与结构作者自己写时的口径一致：超频仓不叠加，装多台没有额外收益，
+     * 反而会让玩家以为能堆。
+     *
+     * <h2>为什么不放线程仓</h2>
+     * <p>增强版机器的线程数由它自己的模组决定，它不认识 {@link IThreadHatchPart} ——
+     * 线程仓装上去能成形，但不会增加任何线程，属于对玩家的误导。因此这里不放行；
+     * 本模组自己的机器另有结构谓词直接声明线程仓（那里才是真正生效的地方）。
      */
     public static TraceabilityPredicate union(TraceabilityPredicate original) {
         if (original == null) {
             return null;
         }
         try {
-            return original
-                    .or(com.gregtechceu.gtceu.api.pattern.Predicates.abilities(ThreadHatchMachines.THREAD_HATCH)
-                            .setMaxGlobalLimited(1))
-                    .or(OverclockHatches.predicate());
+            return original.or(OverclockHatches.predicate());
         } catch (RuntimeException failed) {
             GTLModular.LOGGER.warn("[gtlmodular] 增强版仓室补丁跳过一次：{}", failed.toString());
             return original;

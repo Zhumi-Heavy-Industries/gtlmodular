@@ -926,7 +926,7 @@ public final class GTLModularConfig {
     // 加速仓 · 装得上除增强版以外的多方块（结构侧兜底分支）
     //   所有多方块结构都走 Predicates.abilities(...) 声明「哪一格能放仓」，
     //   在它的返回值上追加一个加速仓分支，等于给所有结构多留一格。
-    //   增强版核心（GTL-Extend）接管的机器不在兜底范围内，只保留线程仓 / 超频仓。
+    //   增强版核心（GTL-Extend）接管的机器不在兜底范围内，只保留超频仓。
     //   关掉即逐字回到结构作者自己写的范围。
     // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
     // ==================================================================
@@ -940,17 +940,17 @@ public final class GTLModularConfig {
                     .define("accelerateHatch.anyMultiblock", true);
 
     // ==================================================================
-    // 线程仓 / 超频仓 · 只装到增强版核心的机器上
+    // 超频仓 · 只装到增强版核心的机器上
     //   范围口径与加速仓不同：增强版自己注册的机器 + 它改写过的机器，
     //   不包括 gtceu / gtlcore 原生机器和第三方附属。
     // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
     // ==================================================================
 
     private static final ForgeConfigSpec.BooleanValue EXTEND_HATCHES_ENABLED =
-            BUILDER.comment("线程仓 / 超频仓是否允许装到增强版核心的机器上（默认开）",
-                            "Allow the thread hatch and overclock hatch on GTL-Extend machines (default true).",
-                            "只作用于增强版核心（命名空间 gtl_extend）及其改写过的机器，不影响其它多方块。",
-                            "Thread hatch 需要线程引擎接管才有意义，见独立线程配置。")
+            BUILDER.comment("超频仓是否允许装到增强版核心的机器上（默认开）",
+                            "Allow the overclock hatch on GTL-Extend machines (default true).",
+                            "只作用于增强版核心及其改写过的机器，不影响其它多方块。",
+                            "线程仓不在此列：增强版不认识本模组的线程接口，装了也不生效，故不开放。")
                     .define("extendHatches.enabled", true);
 
     public static final ForgeConfigSpec SPEC = BUILDER.build();
@@ -1669,7 +1669,7 @@ public final class GTLModularConfig {
         }
     }
 
-    /** 线程仓 / 超频仓是否允许装到增强版核心的机器上。 */
+    /** 超频仓是否允许装到增强版核心的机器上。 */
     public static boolean isExtendHatchesEnabled() {
         try {
             return EXTEND_HATCHES_ENABLED.get();
