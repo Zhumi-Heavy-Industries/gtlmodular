@@ -75,12 +75,24 @@ public final class AccelerateHatchPredicate {
     }
 
     /**
-     * 兜底分支：匹配任何一台加速仓，不设数量上限、不进结构预览。
+     * 兜底分支：允许放加速仓，<b>最多 1 台</b>，不进结构预览。
      *
-     * <p>与结构原谓词是 OR 关系，所以「原本能放仓的格子」只是多了一种可选方块。
+     * <h2>为什么是「最多 1 台」而不是不限</h2>
+     * <p>加速仓改的是整台机器配方耗时的百分比，装两台不会更快（{@code AccelerateHatchLogic#find}
+     * 只取第一台），放开数量只会让玩家以为能叠。与结构作者自己声明时用的
+     * {@link AccelerateHatches#predicate()} 保持同一个口径。
+     *
+     * <h2>为什么不设最小值</h2>
+     * <p>口径是「最多一个，不是必须的」：不放加速仓时结构照常成型。
+     *
+     * <h2>为什么上限只设在加速仓这一支上</h2>
+     * <p>{@code setMaxGlobalLimited} 会把整个谓词列表里的每一项都设成同一个上限，
+     * 所以必须先在加速仓自己的谓词上设好，再 OR 进结构 —— 对
+     * {@code original.or(branch())} 的结果调用会把结构原有的其它仓也一起限成 1 台。
      */
     public static TraceabilityPredicate branch() {
-        return com.gregtechceu.gtceu.api.pattern.Predicates.abilities(AccelerateHatches.ACCELERATE_HATCH);
+        return com.gregtechceu.gtceu.api.pattern.Predicates.abilities(AccelerateHatches.ACCELERATE_HATCH)
+                .setMaxGlobalLimited(1);
     }
 
     /**
