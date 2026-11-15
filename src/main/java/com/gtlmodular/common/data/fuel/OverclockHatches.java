@@ -44,7 +44,13 @@ public final class OverclockHatches {
 
     public static final List<MachineDefinition> REGISTERED = new ArrayList<>(7);
 
-    /** 结构谓词：凡可插线程仓的机器都应 {@code .or(OverclockHatches.predicate())}。 */
+    /**
+     * 结构谓词：<b>最多 1 台，可以不装</b>（不放时结构照常成型）。
+     *
+     * <p>上限 1 台是因为超频仓改的是整机时间倍率，装多台没有额外收益
+     * （{@code OverclockHatchLogic#find} 只取第一台）；不设最小值，
+     * GTCEu 的 {@code minCount} 默认 -1 ⇒ 一台不放不会被判缺件。
+     */
     public static com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate predicate() {
         return com.gregtechceu.gtceu.api.pattern.Predicates.abilities(OVERCLOCK_HATCH)
                 .setMaxGlobalLimited(1)
