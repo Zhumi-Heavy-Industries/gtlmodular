@@ -1,6 +1,7 @@
 package com.gtlmodular.mixin.order;
 
 import com.gtlmodular.common.item.terminal.TerminalTempPatternHolder;
+import com.gtlmodular.common.order.OrderBridge;
 
 import appeng.api.crafting.IPatternDetails;
 import appeng.api.stacks.AEKey;
