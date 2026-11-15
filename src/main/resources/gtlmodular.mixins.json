@@ -8,15 +8,23 @@
         "enhancedcore.AssemblyManagerTargetMixin",
         "eco.EcoCpuNameMixin",
         "gtlcore.MERecipePatternHelperMixin",
+        "gtlcore.MultipleRecipesLogicAccelerateMixin",
         "gtceu.MixinRecipeOutputProvider",
         "gtceu.StellarForgePatternMixin",
+        "gtceu.PredicatesAbilitiesMixin",
+        "gtceu.PredicatesExtendHatchMixin",
+        "gtceu.MultiblockDefinitionExtendHatchMixin",
+        "gtceu.WorkableMultiblockOverclockMixin",
         "order.TerminalTempPatternMixin",
         "order.TerminalOrderCpuMixin",
-        "order.TerminalOrderEcoCpuMixin"
+        "order.TerminalOrderEcoCpuMixin",
+        "gtladditions.GtlAddMultipleRecipesLogicAccelerateMixin",
+        "gtladditions.MutableRecipesLogicAccelerateMixin"
     ],
     "client": [
         "gtceu.MixinWorkableProgressBar",
-        "gtceu.MachineModeTooltipMixin"
+        "gtceu.MachineModeTooltipMixin",
+        "ConfiguratorPanelTabMixin"
     ],
     "injectors": {
         "defaultRequire": 0

@@ -9,7 +9,7 @@ group = 'com.gtlmodular'
 //   每次部署前都要动这一行 —— mods.toml 用 `mod_version: project.version` 注入，
 //   jar 名也是 `gtlmodular-<version>.jar`（换版本号 ⇒ mods 目录里**必须删掉旧 jar**，
 //   否则同一个 modId 两份 jar，Forge 会以"Duplicate mod"拒绝加载）。
-version = '0.3.394'
+version = '0.3.395'
 archivesBaseName = 'gtlmodular'
 
 // [2026-09-20] 编译 JDK 提到 21：整合包里的 gtladditions 3.2.8Custom_SubSpace-fix2 是 Java 21
@@ -163,9 +163,9 @@ tasks.register('checkMixinPackagePurity') {
         def declared = new HashSet<String>()
         (text =~ /"([\w.\$]+)"\s*(?=[,\]])/).each { m ->
             def v = m[1]
-            if (v.contains('.')) {
-                declared.add(v.substring(v.lastIndexOf('.') + 1))
-            }
+            // 清单条目可能带子包前缀（"order.TerminalOrderCpuMixin"），也可能直接是类名
+            // （"ConfiguratorPanelTabMixin" —— 该类就在 mixin 包根下）⇒ 两种都要计入
+            declared.add(v.contains('.') ? v.substring(v.lastIndexOf('.') + 1) : v)
         }
 
         // ② 清单里 "plugin" 声明的 mixin 插件类（允许直接写在 mixin 包里）
@@ -177,6 +177,7 @@ tasks.register('checkMixinPackagePurity') {
 
         def problems = []
         def unregistered = []
+        def intentionallyOff = []
         mixinRoot.eachFileRecurse { f ->
             if (!f.name.endsWith('.java')) return
             if (f.name == 'package-info.java') return
@@ -192,14 +193,24 @@ tasks.register('checkMixinPackagePurity') {
                 return
             }
             if (!declared.contains(simple)) {
-                // 温和提示：是 @Mixin 但没登记 ⇒ 不会生效（多半是废弃代码），不阻断构建
-                unregistered << "  \u00b7 ${rel}"
+                // 是 @Mixin 但没登记 ⇒ 不会生效。分两种：
+                //   ① 注释声明「临时停用 / 临时安全诊断 / 临时绕过」= 有意为之 → 仅信息输出；
+                //   ② 其余 = 疑似遗漏（本该生效却没生效）→ WARN 提醒。
+                if (body.contains('当前状态：未登记') || body.contains('临时安全诊断') || body.contains('临时绕过')) {
+                    intentionallyOff << "  \u00b7 ${rel}"
+                } else {
+                    unregistered << "  \u00b7 ${rel}"
+                }
             }
         }
 
+        if (!intentionallyOff.isEmpty()) {
+            logger.lifecycle("[mixin-check] 以下 @Mixin 未登记、且注释声明为临时停用/诊断（有意为之）：\n" +
+                    intentionallyOff.join('\n'))
+        }
         if (!unregistered.isEmpty()) {
-            logger.warn("[mixin-check] 以下 @Mixin 类未在 gtlmodular.mixins.json 登记，实际不会生效（建议清理）：\n" +
-                    unregistered.join('\n'))
+            logger.warn("[mixin-check] 以下 @Mixin 类未在 gtlmodular.mixins.json 登记，实际不会生效" +
+                    "（若非本意请补登记）：\n" + unregistered.join('\n'))
         }
 
         if (!problems.isEmpty()) {
