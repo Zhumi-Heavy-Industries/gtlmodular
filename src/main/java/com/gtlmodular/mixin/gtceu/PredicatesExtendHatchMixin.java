@@ -21,7 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 所以在这一层追加两条能力分支即可，结构形状一个字不动。
  *
  * <h2>为什么不能无差别追加（与加速仓的区别）</h2>
- * <p>加速仓是「所有多方块」，而这两个仓按口径只给<b>增强版核心的机器</b>：
+ * <p>加速仓是「除增强版以外的多方块」，而这两个仓按口径只给<b>增强版核心的机器</b>：
  * <ul>
  *   <li>线程仓要驱动本模组的线程引擎才有意义，挂到不认识它的机器上只是占一格；</li>
  *   <li>超频仓改的是超频口径，只对已经接了 {@code OverclockProfiles} 的链路有效（见 {@link ExtendHatchPredicate}）。</li>

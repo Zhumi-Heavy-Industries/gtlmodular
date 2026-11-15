@@ -62,7 +62,7 @@ public final class AccelerateHatchLogic {
      * @return 换算后的配方；没有加速仓、开关关闭或参数不全时原样返回
      */
     public static GTRecipe apply(MetaMachine machine, GTRecipe recipe) {
-        if (recipe == null || machine == null || !AccelerateHatchPredicate.enabled()) {
+        if (recipe == null || machine == null || !AccelerateHatchPredicate.runtimeEnabled()) {
             return recipe;
         }
         AccelerateHatchPartMachine hatch = find(machine);

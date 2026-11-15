@@ -923,17 +923,18 @@ public final class GTLModularConfig {
                     .defineInRange("lcrCoil.normalOverclockDurationFactor", 0.5D, 0.01D, 1.0D);
 
     // ==================================================================
-    // 加速仓 · 装得上任何多方块（结构侧兜底分支）
+    // 加速仓 · 装得上除增强版以外的多方块（结构侧兜底分支）
     //   所有多方块结构都走 Predicates.abilities(...) 声明「哪一格能放仓」，
     //   在它的返回值上追加一个加速仓分支，等于给所有结构多留一格。
+    //   增强版核心（GTL-Extend）接管的机器不在兜底范围内，只保留线程仓 / 超频仓。
     //   关掉即逐字回到结构作者自己写的范围。
     // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
     // ==================================================================
 
     private static final ForgeConfigSpec.BooleanValue ACCELERATE_HATCH_ANY_MULTIBLOCK =
-            BUILDER.comment("加速仓是否允许装到任何多方块上（默认开）",
-                            "Allow the accelerate hatch in every multiblock structure (default true).",
-                            "开：所有多方块（含 gtceu / gtlcore / 增强版核心 / 第三方附属）的仓室位都接受加速仓；",
+            BUILDER.comment("加速仓是否允许装到除增强版以外的多方块上（默认开）",
+                            "Allow the accelerate hatch in every multiblock except GTL-Extend machines (default true).",
+                            "开：gtceu / gtlcore / 第三方附属与本模组自声明结构的仓室位都接受加速仓（增强版核心接管的机器除外）；",
                             "关：只接受结构作者自己声明过的位置。",
                             "只影响能否安装，不影响加速幅度。")
                     .define("accelerateHatch.anyMultiblock", true);
@@ -1654,7 +1655,7 @@ public final class GTLModularConfig {
     }
 
     /**
-     * 加速仓是否装得上任何多方块。
+     * 加速仓是否装得上除增强版以外的多方块。
      *
      * <p>结构谓词在启动期构建一次，所以改完这一项要重启游戏；运行期判断一律读这里，
      * 保证「结构放行」和「实际加速」用的是同一个开关。

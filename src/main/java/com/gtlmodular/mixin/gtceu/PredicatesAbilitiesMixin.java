@@ -12,13 +12,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 让加速仓能装到「任何多方块」上 —— 结构侧的<b>唯一</b>注入点。
+ * 让加速仓能装到「除增强版以外的任何多方块」上 —— 结构侧的<b>唯一</b>注入点。
  *
  * <h2>为什么是这个点</h2>
- * 所有多方块结构（本模组、gtceu、gtlcore、增强版核心、第三方附属）声明「哪一格可以放仓」时，
+ * 所有多方块结构（本模组、gtceu、gtlcore、第三方附属）声明「哪一格可以放仓」时，
  * 走的都是 {@code Predicates.abilities(PartAbility...)}(已按字节码核实该类常量池里有这个方法，
  * 且它是全库唯一的仓室谓词入口)。每个结构再各自 {@code .or(...)} 自己的例外，
- * 因此<b>在 abilities 的返回值上追加一个加速仓分支</b>，就等于给所有结构都加了一格。
+ * 因此<b>在 abilities 的返回值上追加一个加速仓分支</b>，就等于给这些结构都加了一格。
+ *
+ * <h2>为什么不给增强版核心（GTL-Extend）的机器加</h2>
+ * 口径是「除增强版以外」。增强版接管的机器在结构构建期会压入机器凭据，
+ * 由 {@link AccelerateHatchPredicate#shouldExtend()} 识别并跳过，
+ * 这些机器上保留线程仓 / 超频仓（{@code PredicatesExtendHatchMixin}）。
  *
  * <h2>为什么把加速仓并进返回值里、而不是另外 OR 一次</h2>
  * 结构形如 {@code casing.or(abilities(IMPORT_ITEMS)).where('C', ...)} —— abilities 的返回是
@@ -35,6 +40,7 @@ import org.slf4j.LoggerFactory;
  *       加速仓只是「有的机器装不上」，绝不会影响其他仓的匹配。</li>
  *   <li>本类<b>不改任何既有方块集合</b>：只在 OR 树上追加一个「匹配加速仓」的分支，
  *       原本能放的仓一个不少，原本不能放的方块一个不多（加速仓除外）。</li>
+ *   <li>增强版核心的机器不受影响：它们的结构构建期凭据窗口会让本注入直接跳过。</li>
  *   <li>P 位 / 只读结构的机器不受影响：它们的结构本来就没调 abilities、或者调了也不含仓位。</li>
  * </ul>
  */
@@ -46,7 +52,7 @@ public abstract class PredicatesAbilitiesMixin {
     @Inject(method = "abilities", at = @At("RETURN"), cancellable = true, remap = false)
     private static void gtlmodular$allowAccelerateHatch(PartAbility[] abilities,
                                                        CallbackInfoReturnable<TraceabilityPredicate> cir) {
-        if (!AccelerateHatchPredicate.enabled()) {
+        if (!AccelerateHatchPredicate.shouldExtend()) {
             return;
         }
         TraceabilityPredicate original = cir.getReturnValue();
@@ -54,7 +60,7 @@ public abstract class PredicatesAbilitiesMixin {
             return;
         }
         if (AccelerateHatchPredicate.alreadyIncludes(abilities)) {
-            // 结构作者自己已经写了加速仓谓词（本模组那 9 处），不要再叠一层，
+            // 结构作者自己已经写了加速仓谓词（本模组那几处结构），不要再叠一层，
             // 否则同一能力出现两条 limited 分支，全局配额会被算两次。
             return;
         }
