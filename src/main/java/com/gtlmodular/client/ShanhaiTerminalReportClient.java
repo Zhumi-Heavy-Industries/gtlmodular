@@ -71,4 +71,9 @@ public final class ShanhaiTerminalReportClient {
         minecraft.setScreen(new WhaleTerminalReportScreen(report));
         return true;
     }
+
+    /** 離開世界時清空：重進後主界面不應再顯示上一次會話掃到的主機。 */
+    public static void clear() {
+        REPORTS.clear();
+    }
 }
