@@ -57,6 +57,18 @@ public final class OverclockHatches {
                 .setPreviewCount(1);
     }
 
+    /**
+     * 兜底分支：允许放超频仓，<b>最多 1 台</b>、<b>非必需</b>、不进结构预览。
+     *
+     * <p>与 {@link #predicate()} 的区别是不带 {@code setPreviewCount(1)}：
+     * 那个是「结构作者主动声明」时用的（预览里占一格）；
+     * 本方法用于给<b>没写这一句</b>的结构兜底补位，不该在预览里多出一个位置。
+     */
+    public static com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate branch() {
+        return com.gregtechceu.gtceu.api.pattern.Predicates.abilities(OVERCLOCK_HATCH)
+                .setMaxGlobalLimited(1);
+    }
+
     public static void register() {
         for (int i = 0; i < TIERS.length; i++) {
             REGISTERED.add(registerOne(TIERS[i], SUFFIXES[i], i + 1));
@@ -77,8 +89,14 @@ public final class OverclockHatches {
                 .tier(tier)
                 .renderer(() -> new WorkableTieredHullMachineRenderer(tier, overlay))
                 .langValue(GTValues.VN[tier] + " Overclock Hatch")
-                .tooltips(Component.translatable("gtlmodular.overclock_hatch.tooltip",
-                        fmt(pct)))
+                // 百分号直接拼进参数：语言文件里只留一个 %s，
+                // 避免 %%/单独 % 在 Minecraft 的占位符解析里被判成无效格式而整体回退。
+                // 不用占位符：翻译格式化实测会把 %s 原样显示。
+                // 改成「前缀 + 数值 + 后缀」三段拼接，数字由代码直接算，不经过格式化器。
+                .tooltips(Component.empty()
+                        .append(Component.translatable("gtlmodular.overclock_hatch.tooltip.head"))
+                        .append(Component.literal(fmt(pct) + "%"))
+                        .append(Component.translatable("gtlmodular.overclock_hatch.tooltip.tail")))
                 .register();
     }
 

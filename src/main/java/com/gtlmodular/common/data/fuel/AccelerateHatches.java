@@ -91,8 +91,14 @@ public final class AccelerateHatches {
                 .tier(tier)
                 .renderer(() -> new WorkableTieredHullMachineRenderer(tier, overlay))
                 .langValue(GTValues.VN[tier] + " Accelerate Hatch")
-                .tooltips(Component.translatable("gtlmodular.accelerate_hatch.hatch.tooltip",
-                        AccelerateHatchPartMachine.minPercentage(tier)))
+                // 百分号拼进参数：语言文件里只留一个 %s，
+                // 避免 %% / 单独 % 被 Minecraft 的占位符解析判成无效格式而整体回退。
+                // 不用占位符：翻译格式化实测会把 %s 原样显示。
+                // 改成「前缀 + 数值 + 后缀」三段拼接，数字由代码直接算，不经过格式化器。
+                .tooltips(Component.empty()
+                        .append(Component.translatable("gtlmodular.accelerate_hatch.hatch.tooltip.head"))
+                        .append(Component.literal(AccelerateHatchPartMachine.minPercentage(tier) + "%"))
+                        .append(Component.translatable("gtlmodular.accelerate_hatch.hatch.tooltip.tail")))
                 .register();
     }
 }

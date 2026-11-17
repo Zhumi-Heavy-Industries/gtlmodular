@@ -6,6 +6,7 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gtlmodular.common.config.GTLModularConfig;
 
+
 /**
  * 加速仓的<b>生效侧</b>：把结构里那台加速仓的百分比套到配方耗时上。
  *
@@ -55,13 +56,31 @@ public final class AccelerateHatchLogic {
     }
 
     /**
-     * 给一条配方套上加速仓的耗时百分比。
+     * 给一条配方套上加速仓的耗时百分比 —— 供 {@code RecipeLogic#setupRecipe} 钩子调用。
+     *
+     * <h2>为什么需要这个入口</h2>
+     * <p>原生 {@code doModifyRecipe} 会遍历部件调 {@code IMultiPart#modifyRecipe}，
+     * 但<b>不是所有机器都走那条路</b>：gtlcore 用 {@code @Overwrite} 换掉了
+     * {@code doModifyRecipe}（不再遍历部件），还有一些机器（如 {@code isa_mill}）
+     * 根本不继承 {@code WorkableMultiblockMachine}。{@code setupRecipe} 是所有配方逻辑
+     * 的必经一步，把换算放这里覆盖面最广。
+     *
+     * <h2>★ 为什么必须先把原始时长存下来</h2>
+     * <p>{@code setupRecipe} 会被<b>同一个配方对象</b>反复调用
+     * （{@code onRecipeFinish} 里 {@code setupRecipe(this.lastRecipe)}）。
+     * 若每次都乘一次百分比，时长会递进塌缩（实测 99 → 66 → 1），
+     * 表现成「越跑越快」。
+     *
+     * <p>所以第一次进来时把<b>原始时长</b>记进 {@code recipe.data}，之后每次都从
+     * 原始值重算。写的是「原始值」而不是「已加速」标记 —— 原始值对同一配方恒定，
+     * 被 {@code copy()} 共享出去也无害；而标记一旦共享就会让后续副本全部跳过换算
+     * （那正是「拆了重放反而没效果」的成因）。
      *
      * @param machine 正在处理配方的机器
-     * @param recipe  它的配方
-     * @return 换算后的配方；没有加速仓、开关关闭或参数不全时原样返回
+     * @param recipe  它的配方（就地修改）
+     * @return 同一个配方对象
      */
-    public static GTRecipe apply(MetaMachine machine, GTRecipe recipe) {
+    public static GTRecipe applyIfNeeded(MetaMachine machine, GTRecipe recipe) {
         if (recipe == null || machine == null || !AccelerateHatchPredicate.runtimeEnabled()) {
             return recipe;
         }
@@ -69,7 +88,61 @@ public final class AccelerateHatchLogic {
         if (hatch == null) {
             return recipe;
         }
-        return AccelerateHatchPartMachine.applyTo(recipe, hatch.getPercentage(), hatch.getTier());
+        // 基准 = 本轮处理前的时长。超频仓可能已经缩过一次，两者串联相乘，
+        // 而不是各自从「原始值」重算后互相覆盖。
+        //
+        // 幂等：记住上一次本方法写出的结果；当前时长正好等于它就说明是
+        // setupRecipe 对同一配方的重复调用，不重复乘。
+        int base = recipe.duration;
+        if (base <= 0) {
+            return recipe;
+        }
+        if (recipe.data.contains(LAST_RESULT) && recipe.data.getInt(LAST_RESULT) == base) {
+            return recipe;
+        }
+        GTRecipe result = AccelerateHatchPartMachine.applyTo(
+                recipe, hatch.getPercentage(), hatch.getTier());
+        if (result == recipe) {
+            recipe.data.putInt(LAST_RESULT, recipe.duration);
+        }
+        return result;
+    }
+
+    /**
+     * 上一次换算结果的时长，记在 {@code data} 里用于判重。
+     *
+     * <p>存的是「结果值」而不是「已完成」布尔标记：结果值只在时长确实等于它时才命中，
+     * 换配方或换档位就不匹配，不会污染后续副本。
+     *
+     * <p>与超频仓的键分开，两者串联相乘时才不会互相覆盖。
+     */
+    private static final String LAST_RESULT = "gtlmodular_accelerate_last_result";
+
+    /**
+     * 纯数值版：按本仓的百分比把一段时长缩短。
+     *
+     * <p>供不持有 {@code GTRecipe} 的链路使用（如增强版的 IV 原生引擎，
+     * 它自己维护 {@code IvJob.duration}，不经过 {@code RecipeLogic}）。
+     *
+     * @param machine  机器（用来找仓）
+     * @param duration 原始时长（tick）
+     * @param recipeTier 配方电压档（用于「仓低于配方时每级 -20%」的惩罚）
+     * @return 缩短后的时长；没有仓时原样返回
+     */
+    public static int applyToDuration(MetaMachine machine, int duration, int recipeTier) {
+        if (duration <= 0 || machine == null || !AccelerateHatchPredicate.runtimeEnabled()) {
+            return duration;
+        }
+        AccelerateHatchPartMachine hatch = find(machine);
+        if (hatch == null) {
+            return duration;
+        }
+        int reduction = hatch.getPercentage();
+        int t = recipeTier - hatch.getTier();
+        if (t > 0) {
+            reduction = Math.min(100, reduction + 20 * t);
+        }
+        return Math.max(1, duration * reduction / 100);
     }
 
     /** 界面/Jade 用：当前生效的加速百分比；没有加速仓返回 {@code -1}。 */

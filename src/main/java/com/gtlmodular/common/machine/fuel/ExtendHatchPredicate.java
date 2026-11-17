@@ -4,6 +4,7 @@ import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.api.pattern.BlockPattern;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
+import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.fuel.OverclockHatches;
@@ -41,6 +42,10 @@ public final class ExtendHatchPredicate {
      * <p>与 {@code IvMachineScope} 常量池里的名单逐条对应。新增/删减时两边一起改，
      * 否则会出现「结构放得进、增强版不认」或相反的情况。
      */
+    /** 增强版核心的结构改写入口（反射调用，见 {@link #enhancedTargets}）。 */
+    private static final String ENHANCEDCORE_PATTERNS =
+            "com.gtl.enhancedcore.common.structure.GtlMegastructurePatterns";
+
     private static final Set<String> ENHANCEDCORE_MACHINES = Set.of(
             // —— 巨构 / 高能
             "atomic_energy_excitation_plant",
@@ -76,13 +81,59 @@ public final class ExtendHatchPredicate {
     private static final Deque<ResourceLocation> BUILDING = new ArrayDeque<>();
 
     /**
+     * 当前这次结构构建已经追加过哪些仓。
+     *
+     * <h2>为什么需要它</h2>
+     * <p>{@code Predicates.autoAbilities(...)} 内部会为每种能力<b>各调一次</b>
+     * {@code abilities(...)}（输入/输出能量、物品、流体、维护、并行…），
+     * 一台机器最多调 6~7 次。若每次都在 RETURN 上追加一份超频仓，
+     * 整台机器就会生成 6~7 个互相独立的谓词 —— 结构预览里于是出现 7 组
+     * 「最多：1 个」超频仓（实测截图）。
+     *
+     * <p>按 GTO「天球分歧引擎」的写法：一个仓在整台机器只声明一次。
+     * 这里在构建窗口内记下已追加的种类，重复调用直接跳过。
+     */
+    private static final Deque<Set<String>> ADDED = new ArrayDeque<>();
+
+    /**
      * 该 id 是不是增强版接管的机器。
      *
      * <p>只看 {@code path}：这几台分属 gtceu / gtlcore / gtladditions / gtlsupb，
      * 命名空间各不相同，但 path 是唯一的。
      */
     public static boolean isExtendMachine(ResourceLocation id) {
-        return id != null && ENHANCEDCORE_MACHINES.contains(id.getPath());
+        if (id == null) {
+            return false;
+        }
+        // 首选：直接问增强版自己。GtlMegastructurePatterns.targets 是它的公开入口，
+        // 覆盖它用 JSON 改写结构的全部机器（43 台，且随它升级自动同步）。
+        // 手抄名单在模组换代后必然漏登记，曾经因此让加速仓漏放进被改写的机器，
+        // 也让结构收尾改到了不该改的地方引发崩服。
+        Boolean enhanced = enhancedTargets(id);
+        if (enhanced != null) {
+            return enhanced;
+        }
+        // 兜底：增强版改写「仓室/结构」但在 targets 名单之外的那几台（如原生隔离目标）。
+        return ENHANCEDCORE_MACHINES.contains(id.getPath());
+    }
+
+    /**
+     * 反射问增强版「这台机器是不是它的结构改写目标」。
+     *
+     * <p>走反射而不是直接 import：增强版核心对本模组是<b>可选依赖</b>，独立版
+     * {@code gtl_nac} 不装它，直接引用会在类加载期抛 {@code NoClassDefFoundError}。
+     *
+     * @return {@code true}/{@code false} 表示问到结果；{@code null} 表示没装增强版核心或调用失败，
+     *         调用方退回静态名单
+     */
+    private static Boolean enhancedTargets(ResourceLocation id) {
+        try {
+            Class<?> patterns = Class.forName(ENHANCEDCORE_PATTERNS);
+            Object result = patterns.getMethod("targets", ResourceLocation.class).invoke(null, id);
+            return result instanceof Boolean matched ? matched : null;
+        } catch (ReflectiveOperationException | RuntimeException absent) {
+            return null;
+        }
     }
 
     /** 当前是否处在增强版机器的结构构建窗口内。 */
@@ -98,14 +149,22 @@ public final class ExtendHatchPredicate {
      */
     public static BlockPattern buildWithCredential(ResourceLocation id, Supplier<BlockPattern> original) {
         BUILDING.push(id);
+        ADDED.push(java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
         try {
-            BlockPattern pattern = original.get();
-            // 窗口内收尾：此刻 inExtendBuild() 为真 ⇒ 加速仓兜底不会追加，
-            // 只需把增益仓的数量/下限修正到「最多 1 台、非必需」。
-            HatchQuotaRepair.normalizePattern(pattern, false);
-            return pattern;
+            // 窗口内只建立凭据，不改结构一个字节。
+            //
+            // 增强版的 GtlMegastructurePatterns.replace(...) 在构建过程中会校验
+            // 「requiredParts 的原始规则没被动过」（common.size()==1 且 limited 为空），
+            // 一旦我们改过有限列表就直接抛 "Required part rule changed"。
+            // 而 replace 用的是缓存里的同一个 BlockPattern 对象，第一次改过，
+            // 后续任何一次重新取值都会撞上这条校验 ⇒ 启动崩溃。
+            //
+            // 提速仓的收尾统一交给 FactoryBlockPatternGainHatchQuotaMixin：
+            // 那里的 shouldExtend() 在窗口内为 false，只会复位下限、不会追加分支。
+            return original.get();
         } finally {
             BUILDING.pop();
+            ADDED.pop();
         }
     }
 
@@ -141,16 +200,119 @@ public final class ExtendHatchPredicate {
      * 线程仓装上去能成形，但不会增加任何线程，属于对玩家的误导。因此这里不放行；
      * 本模组自己的机器另有结构谓词直接声明线程仓（那里才是真正生效的地方）。
      */
+    /**
+     * <b>不在这里追加任何仓。</b>
+     *
+     * <h2>为什么</h2>
+     * <p>{@code Predicates.autoAbilities(...)} 里对 INPUT_ENERGY 的写法是
+     * {@code setMinGlobalLimited(1).setMaxGlobalLimited(2).setPreviewCount(1)}。
+     * 这几个方法会把<b>整个 limited 列表</b>（并把 common 全搬进去）逐项覆盖成同一个值：
+     * <pre>
+     *   for (SimplePredicate predicate : this.limited) predicate.maxCount = max;
+     * </pre>
+     * 只要我们的仓在这次调用之前进入了同一列表，就会被改成「最少1个、最多2个」——
+     * 实测表现就是预览里同时出现「最多：1 个」与「最少1个，最多2个」两套定义，
+     * 且结构里能放 2 台。
+     *
+     * <p>所以追加必须发生在<b>所有 setter 都跑完之后</b>，即结构彻底定型时。
+     * 增强版结构由 {@code GtlMegastructurePatterns.replace(...)} 产出，
+     * 在它的 RETURN 处统一处理（见 {@code EnhancedcoreReplaceHatchMixin}）。
+     */
     public static TraceabilityPredicate union(TraceabilityPredicate original) {
-        if (original == null) {
-            return null;
+        return original;
+    }
+
+    /** 超频仓能力（供 mixin 追加时引用）。 */
+    public static final com.gregtechceu.gtceu.api.machine.multiblock.PartAbility OVERCLOCK_ABILITY =
+            OverclockHatches.OVERCLOCK_HATCH;
+
+    /** 加速仓能力。 */
+    public static final com.gregtechceu.gtceu.api.machine.multiblock.PartAbility ACCELERATE_ABILITY =
+            com.gtlmodular.common.data.fuel.AccelerateHatches.ACCELERATE_HATCH;
+
+    /** 这台机器要不要在结构定型后追加增益仓。 */
+    public static boolean shouldAttachFor(ResourceLocation id) {
+        return isExtendMachine(id) && GTLModularConfig.isExtendHatchesEnabled();
+    }
+
+    /** 这一格是否已经能放超频仓。 */
+    public static boolean containsOverclock(TraceabilityPredicate cell) {
+        return containsAbility(cell, OVERCLOCK_ABILITY);
+    }
+
+    /** 这一格是否已经能放加速仓。 */
+    public static boolean containsAccelerate(TraceabilityPredicate cell) {
+        return containsAbility(cell, ACCELERATE_ABILITY);
+    }
+
+    private static boolean containsAbility(TraceabilityPredicate cell, com.gregtechceu.gtceu.api.machine.multiblock.PartAbility ability) {
+        for (SimplePredicate simple : cell.limited) {
+            if (isOnlyOf(simple, ability)) {
+                return true;
+            }
         }
-        try {
-            return original.or(OverclockHatches.predicate());
-        } catch (RuntimeException failed) {
-            GTLModular.LOGGER.warn("[gtlmodular] 增强版仓室补丁跳过一次：{}", failed.toString());
-            return original;
+        for (SimplePredicate simple : cell.common) {
+            if (isOnlyOf(simple, ability)) {
+                return true;
+            }
         }
+        return false;
+    }
+
+    private static boolean isOnlyOf(SimplePredicate simple, com.gregtechceu.gtceu.api.machine.multiblock.PartAbility ability) {
+        if (!(simple instanceof com.gregtechceu.gtceu.api.pattern.predicates.PredicateBlocks blocks)
+                || blocks.blocks == null || blocks.blocks.length == 0) {
+            return false;
+        }
+        var allowed = ability.getAllBlocks();
+        if (allowed.isEmpty()) {
+            return false;
+        }
+        for (var block : blocks.blocks) {
+            if (!allowed.contains(block)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 把「可放某仓」就地追加到这一格。
+     *
+     * <p>放进 limited 并设成「最多 1 台、非必需」。由于调用点已在
+     * {@code replace(...)} 的 RETURN，此时不会再有人遍历列表覆盖它。
+     */
+    public static void attach(TraceabilityPredicate cell, com.gregtechceu.gtceu.api.machine.multiblock.PartAbility ability) {
+        TraceabilityPredicate branch = com.gregtechceu.gtceu.api.pattern.Predicates.abilities(ability)
+                .setMaxGlobalLimited(1);
+        for (SimplePredicate simple : branch.limited) {
+            simple.minCount = -1;
+            simple.minLayerCount = -1;
+            simple.maxCount = 1;
+            cell.limited.add(simple);
+        }
+        for (SimplePredicate simple : branch.common) {
+            simple.minCount = -1;
+            simple.minLayerCount = -1;
+            simple.maxCount = 1;
+            cell.limited.add(simple);
+        }
+    }
+
+    /**
+     * 在当前构建窗口里登记「这种仓已经追加过」。
+     *
+     * @return true 表示本次是第一次，调用方应该追加
+     */
+    private static boolean markAdded(com.gregtechceu.gtceu.api.machine.multiblock.PartAbility ability) {
+        Set<String> current = ADDED.peek();
+        if (current == null) {
+            // 不在构建窗口内（理论上不会发生），保守起见不追加。
+            return false;
+        }
+        // 每次 build 各记一套：增强版 raw / replaced 是两份不同的结构，
+        // 各自都需要完整的一份，只防「同一次 build 内被 autoAbilities 调 7 次」。
+        return current.add(ability.getName());
     }
 
     /** 这台机器是否在增强版名单内（供运行期判定复用）。 */

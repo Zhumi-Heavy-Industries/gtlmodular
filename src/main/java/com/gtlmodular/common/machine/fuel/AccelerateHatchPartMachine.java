@@ -94,16 +94,21 @@ public class AccelerateHatchPartMachine extends TieredPartMachine implements IMu
     // ------------------------------------------------------------------
 
     /**
-     * 按百分比缩短配方耗时。这是本仓接入多方块的唯一入口
-     * （{@code WorkableMultiblockMachine#doModifyRecipe} 会遍历所有部件调它）。
+     * <b>不改配方</b> —— 加速统一在 {@code RecipeLogic#setupRecipe} 之后生效。
      *
-     * <p>换算公式本身在 {@link #applyTo}：另一条不经过 {@code doModifyRecipe} 的配方逻辑
-     * （gtlcore 的 {@code MultipleRecipesLogic}）走 {@link AccelerateHatchLogic}，
-     * 两边用的是同一份公式，不会出现两种加速口径。
+     * <h2>为什么这里留空</h2>
+     * <p>{@code doModifyRecipe} → {@code IMultiPart#modifyRecipe} 只覆盖一部分机器：
+     * gtlcore 用 {@code @Overwrite} 换掉了 {@code doModifyRecipe}（不再遍历部件），
+     * 还有一些机器根本不继承 {@code WorkableMultiblockMachine}。
+     * 如果这里也缩时长，那些机器就会被缩两次。
+     *
+     * <p>因此唯一的换算入口是 {@link AccelerateHatchLogic#applyIfNeeded}，
+     * 由 {@code RecipeLogicAccelerateSetupMixin} 在配方进入计时后调用 ——
+     * 那是所有配方逻辑的必经之路，且只走一次。
      */
     @Override
     public GTRecipe modifyRecipe(@NotNull GTRecipe recipe) {
-        return applyTo(recipe, getPercentage(), getTier());
+        return recipe;
     }
 
     /**
@@ -153,6 +158,7 @@ public class AccelerateHatchPartMachine extends TieredPartMachine implements IMu
 
     @Override
     public void addMultiText(List<Component> textList) {
+        // addDisplayText may be polled repeatedly for client/server sync; one part contributes one line per list.
         textList.add(Component.translatable("gtlmodular.accelerate_hatch.tooltip", getPercentage())
                 .withStyle(ChatFormatting.AQUA));
     }

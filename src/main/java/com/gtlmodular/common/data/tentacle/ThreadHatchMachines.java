@@ -126,6 +126,9 @@ public final class ThreadHatchMachines {
                 //   （「可为机器提供 %s 线程的并行」），%s = 该档上限。
                 // ★ 0.3.285：删掉我们自己追加的「可调范围 1 ~ %s」第二行（用户反馈黑色行太多）。
                 .tooltips(Component.translatable("gtlmodular.thread_hatch.tooltip", threads))
+                // 线程数只被本模组自己的机器读取；装到别的机器上不会生效，
+                // 提前说明，免得玩家以为放了就有效。
+                .tooltips(Component.translatable("gtlmodular.thread_hatch.scope"))
                 .register();
 
         THREAD_HATCHES.put(tier, definition);

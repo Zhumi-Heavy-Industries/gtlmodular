@@ -45,3 +45,9 @@ _gtmt_src/
 _d/
 _compile_check.log
 _scratch/
+
+# 本地取证/跑测目录（体积大、非源码）
+deps-src/
+run-test/
+run-test-nac/
+.scratch/
