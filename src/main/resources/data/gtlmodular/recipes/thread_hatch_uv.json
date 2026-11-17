@@ -1,0 +1,32 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ABA",
+    "CDC",
+    "EFE"
+  ],
+  "key": {
+    "A": {
+      "tag": "gtceu:circuits/uhv"
+    },
+    "B": {
+      "item": "gtceu:uv_robot_arm"
+    },
+    "C": {
+      "item": "gtceu:uv_conveyor_module"
+    },
+    "D": {
+      "item": "gtceu:uv_parallel_hatch"
+    },
+    "E": {
+      "item": "gtceu:enriched_naquadah_trinium_europium_duranide_hex_wire"
+    },
+    "F": {
+      "item": "gtlmodular:integrated_control_core_uv"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:thread_hatch_uv",
+    "count": 1
+  }
+}

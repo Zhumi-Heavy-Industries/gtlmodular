@@ -1,0 +1,32 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ABA",
+    "CDC",
+    "EFE"
+  ],
+  "key": {
+    "A": {
+      "tag": "gtceu:circuits/max"
+    },
+    "B": {
+      "item": "gtlcore:max_robot_arm"
+    },
+    "C": {
+      "item": "gtlcore:max_conveyor_module"
+    },
+    "D": {
+      "item": "gtceu:max_parallel_hatch"
+    },
+    "E": {
+      "item": "gtceu:hypogen_hex_wire"
+    },
+    "F": {
+      "item": "gtlmodular:integrated_control_core_max"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:thread_hatch_max",
+    "count": 1
+  }
+}

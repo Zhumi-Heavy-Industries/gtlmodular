@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CFC",
+    "FAF",
+    "CFC"
+  ],
+  "key": {
+    "C": {
+      "item": "gtceu:zpm_sensor"
+    },
+    "F": {
+      "item": "gtceu:zpm_field_generator"
+    },
+    "A": {
+      "item": "gtceu:zpm_machine_hull"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:accelerate_hatch_zpm"
+  }
+}

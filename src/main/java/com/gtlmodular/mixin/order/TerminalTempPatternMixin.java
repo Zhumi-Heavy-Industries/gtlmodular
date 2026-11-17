@@ -1,7 +1,7 @@
 package com.gtlmodular.mixin.order;
 
-import com.gtlmodular.common.item.terminal.TerminalOrderMarker;
 import com.gtlmodular.common.item.terminal.TerminalTempPatternHolder;
+import com.gtlmodular.common.order.OrderBridge;
 
 import appeng.api.crafting.IPatternDetails;
 import appeng.api.stacks.AEKey;
@@ -35,7 +35,7 @@ public abstract class TerminalTempPatternMixin implements TerminalTempPatternHol
     private void gtlmodular$appendOrderPattern(AEKey what,
                                                CallbackInfoReturnable<Collection<IPatternDetails>> cir) {
         IPatternDetails pattern = gtlmodular$tempPattern;
-        if (pattern == null || !TerminalOrderMarker.isMarker(what)) return;
+        if (pattern == null || !OrderBridge.isMarker(what)) return;
         Collection<IPatternDetails> existing = cir.getReturnValue();
         if (existing != null && !existing.isEmpty()) return;
         cir.setReturnValue(Set.of(pattern));

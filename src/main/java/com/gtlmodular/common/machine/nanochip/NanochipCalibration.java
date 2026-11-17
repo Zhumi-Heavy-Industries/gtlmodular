@@ -416,9 +416,10 @@ public final class NanochipCalibration {
      *
      * <p>⚠️ <b>刻意不做</b>：不去 {@code #} 后缀、不做大小写折叠、不做命名空间补全。
      * 本模组这批配方的 id 是 {@code ResourceLocation} 的 {@code namespace:path} 形态
-     * （{@link ResourceLocation#toString()} 恒为 {@code namespace:path}，例：
-     * {@code NanochipCandidateSearch.java:147} 直接 {@code recipe.getId().toString()} 当排序键、
-     * {@code NanochipConcurrentBatches.java:251} 把它原样存 NBT 再
+     * （{@link ResourceLocation#toString()} 恒为 {@code namespace:path}；下面两条是<b>历史取证</b>，
+     * 被引用的两个类已随 P1 删除，行号只剩留痕意义：
+     * 旧候选搜索（类已删，原 :147）直接 {@code recipe.getId().toString()} 当排序键、
+     * 旧批次表（类已删，原 :251）把它原样存 NBT 再
      * {@code ResourceLocation.tryParse} 读回 ⇒ 逐字往返，没有 {@code #} 之类后缀）。
      * 若将来真有带后缀的 id 要放行，正确做法是在名册里<b>逐字写上那个后缀</b>（精确项），
      * 而不是在本方法里悄悄截断（截断 = 把两条不同的配方混成一条）。

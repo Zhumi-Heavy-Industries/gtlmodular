@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:fine_dubnium_wire"
+            "item": "gtceu:dubnium_fine_wire"
           }
         }
       }

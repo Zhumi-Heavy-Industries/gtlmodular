@@ -97,6 +97,10 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
             return lines.size() + omitted;
         }
 
+        public boolean full() {
+            return lines.size() >= MAX_LINES;
+        }
+
         public void add(BlockPos pos, String categoryKey, Component categoryLabel, int color, Component name) {
             add(pos, categoryKey, categoryLabel, color, name, List.of());
         }

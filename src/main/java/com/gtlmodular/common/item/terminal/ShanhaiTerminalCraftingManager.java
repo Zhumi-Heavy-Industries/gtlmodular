@@ -45,6 +45,8 @@ public final class ShanhaiTerminalCraftingManager {
     }
 
     private static final long CALC_TIMEOUT_TICKS = 400;
+    /** 玩家在另一个维度/下线时，单次计算等待上限；避免一次离线把所有缺口都判成失败。 */
+    private static final int CALC_WAIT_PLAYER_TICKS = 1200;
     /** 单次结构缺口种类上限：超过则不下单，避免一次开几百个 AE 计算/存档卡死。 */
     private static final int MAX_ORDER_KINDS = 128;
 
@@ -76,6 +78,10 @@ public final class ShanhaiTerminalCraftingManager {
         Context ae;
         Phase phase = Phase.CALCULATING;
         long ticks;
+        /** 玩家不在线时已经等待的 tick 数。 */
+        int playerMissingTicks;
+        /** 计划指纹对应的订单记账批次：结构变了就换批次，旧批次的已下单/阻塞数量作废。 */
+        UUID orderBatch;
         /** 没有合成流程、没进入计算的缺口；合成报告里单独列出。 */
         List<WorkItem> unavailable = List.of();
 
@@ -94,6 +100,8 @@ public final class ShanhaiTerminalCraftingManager {
     private static final Map<UUID, Session> ORDER_SESSIONS = new ConcurrentHashMap<>();
     private static final Map<UUID, Map<GlobalPos, Map<AEKey, Long>>> SUBMITTED_AMOUNTS = new ConcurrentHashMap<>();
     private static final Map<UUID, Map<GlobalPos, Map<AEKey, Long>>> BLOCKED_AMOUNTS = new ConcurrentHashMap<>();
+    /** 每个终端当前记账批次的计划指纹；指纹变化时丢弃旧的已下单/阻塞数量。 */
+    private static final Map<UUID, Map<GlobalPos, String>> ACCOUNTING_FINGERPRINT = new ConcurrentHashMap<>();
     private static final Map<UUID, Session> ACTIVE_CALCULATIONS = new ConcurrentHashMap<>();
 
     private ShanhaiTerminalCraftingManager() {}
@@ -111,6 +119,8 @@ public final class ShanhaiTerminalCraftingManager {
                     || existing.phase == Phase.READY_TO_SUBMIT)) {
             return false;
         }
+        // 结构变了（同控制器但指纹不同）就换记账批次，否则旧订单数量会一直抵掉新缺口。
+        syncAccountingBatch(terminalId, plan);
         Map<AEKey, Long> rawShortages = materials.shortages(plan, player, ae);
         if (rawShortages.size() > MAX_ORDER_KINDS) {
             player.sendSystemMessage(Component.literal(
@@ -150,6 +160,7 @@ public final class ShanhaiTerminalCraftingManager {
         session.unavailable = unavailableItems;
         session.crafting = crafting;
         session.ae = ae;
+        session.orderBatch = UUID.randomUUID();
         Session previous = ORDER_SESSIONS.put(terminalId, session);
         if (previous != null) ACTIVE_CALCULATIONS.remove(terminalId, previous);
         cancel(previous);
@@ -202,7 +213,10 @@ public final class ShanhaiTerminalCraftingManager {
         }
         ORDER_SESSIONS.remove(session.terminalId, session);
         ACTIVE_CALCULATIONS.remove(session.terminalId, session);
+        // 旧会话（指纹已变）的提交结果不记进当前批次，避免污染新结构的缺口计算。
+        boolean currentBatch = isCurrentBatch(session);
         for (WorkItem item : session.items) {
+            if (!currentBatch) break;
             if (item.submitted) {
                 rememberAmount(SUBMITTED_AMOUNTS, session.terminalId, session.target, item.key, item.amount);
             } else if (item.plan != null && item.plan.simulation()) {
@@ -253,6 +267,7 @@ public final class ShanhaiTerminalCraftingManager {
         if (order != null) ACTIVE_CALCULATIONS.remove(terminalId, order);
         SUBMITTED_AMOUNTS.remove(terminalId);
         BLOCKED_AMOUNTS.remove(terminalId);
+        ACCOUNTING_FINGERPRINT.remove(terminalId);
         cancel(build);
         cancel(order);
     }
@@ -267,7 +282,8 @@ public final class ShanhaiTerminalCraftingManager {
                 continue;
             }
             session.ticks++;
-            long timeout = Math.min(12000L, 400L * Math.max(1, session.items.size()));
+            // 计算超时按“实际推进量”算：缺口多时单个计划可能很慢，但已完成的不能白等。
+            long timeout = Math.min(12000L, CALC_TIMEOUT_TICKS * Math.max(1L, (long) session.items.size()));
             if (session.ticks > timeout) {
                 ACTIVE_CALCULATIONS.remove(session.terminalId, session);
                 ORDER_SESSIONS.remove(session.terminalId, session);
@@ -284,7 +300,7 @@ public final class ShanhaiTerminalCraftingManager {
                 }
             }
             if (active) continue;
-            boolean evaluatedAny = false;
+            // 先把已完成的 future 全部收掉，再决定是否开下一个。
             for (WorkItem item : session.items) {
                 if (item.future == null || !item.future.isDone()) continue;
                 try {
@@ -294,10 +310,9 @@ public final class ShanhaiTerminalCraftingManager {
                 }
                 item.future = null;
                 item.evaluated = true;
-                evaluatedAny = true;
             }
-            if (evaluatedAny && startNextCalculation(session, findPlayer(session.playerId))) continue;
-            if (!evaluatedAny && startNextCalculation(session, findPlayer(session.playerId))) continue;
+            // 串行计算：一个算完才能开下一个。
+            if (startNextCalculation(session, findPlayer(session.playerId))) continue;
             ACTIVE_CALCULATIONS.remove(session.terminalId, session);
             int usable = 0;
             List<String> failures = new ArrayList<>();
@@ -428,22 +443,33 @@ public final class ShanhaiTerminalCraftingManager {
     }
 
     private static boolean startNextCalculation(Session session, ServerPlayer player) {
-        if (session.crafting == null || player == null) return false;
+        if (session.crafting == null) return false;
+        WorkItem next = null;
         for (WorkItem item : session.items) {
             if (item.evaluated || item.submitted || item.future != null) continue;
-            try {
-                item.future = session.crafting.beginCraftingCalculation(
-                        player.level(), session.ae::source, item.key, item.amount,
-                        CalculationStrategy.REPORT_MISSING_ITEMS);
-            } catch (Throwable t) {
-                item.future = null;
-                item.evaluated = true;
-                item.plan = null;
-            }
-            if (item.future == null) item.evaluated = true;
-            return true;
+            next = item;
+            break;
         }
-        return false;
+        if (next == null) return false;
+        // 玩家下线/在别的维度时 AE2 没有 level 可用：保留未计算项，等玩家回来再继续，
+        // 而不是把它当成“已算完”从而把所有缺口都报成失败。
+        if (player == null) {
+            session.ticks = Math.max(0L, session.ticks - 1);
+            return session.playerMissingTicks++ < CALC_WAIT_PLAYER_TICKS;
+        }
+        session.playerMissingTicks = 0;
+        try {
+            next.future = session.crafting.beginCraftingCalculation(
+                    player.level(), session.ae::source, next.key, next.amount,
+                    CalculationStrategy.REPORT_MISSING_ITEMS);
+        } catch (Throwable t) {
+            GTLModular.LOGGER.warn("终端合成方案计算启动失败: {}", next.displayName, t);
+            next.future = null;
+            next.evaluated = true;
+            next.plan = null;
+        }
+        if (next.future == null) next.evaluated = true;
+        return true;
     }
 
     private static boolean hasPendingCalculation(Session session) {
@@ -537,6 +563,31 @@ public final class ShanhaiTerminalCraftingManager {
     private static boolean sameBinding(Session session, ItemStack terminal) {
         GlobalPos current = ShanhaiUltimateTerminalConfig.getBoundAe(terminal);
         return session.binding != null && session.binding.equals(current);
+    }
+
+    /** 同一终端 + 同一控制器，计划指纹变化即开启新的记账批次。 */
+    private static void syncAccountingBatch(UUID terminalId, ShanhaiStructurePlan plan) {
+        Map<GlobalPos, String> byTarget = ACCOUNTING_FINGERPRINT
+                .computeIfAbsent(terminalId, ignored -> new ConcurrentHashMap<>());
+        String previous = byTarget.put(plan.target(), plan.fingerprint());
+        if (previous != null && !previous.equals(plan.fingerprint())) {
+            resetAmounts(SUBMITTED_AMOUNTS, terminalId, plan.target());
+            resetAmounts(BLOCKED_AMOUNTS, terminalId, plan.target());
+        }
+    }
+
+    /** 会话是否仍属于当前记账批次（指纹被改了就不算）。 */
+    private static boolean isCurrentBatch(Session session) {
+        Map<GlobalPos, String> byTarget = ACCOUNTING_FINGERPRINT.get(session.terminalId);
+        if (byTarget == null) return true;
+        String current = byTarget.get(session.target);
+        return current == null || current.equals(session.planFingerprint);
+    }
+
+    private static void resetAmounts(Map<UUID, Map<GlobalPos, Map<AEKey, Long>>> amounts,
+                                     UUID terminalId, GlobalPos target) {
+        Map<GlobalPos, Map<AEKey, Long>> byTarget = amounts.get(terminalId);
+        if (byTarget != null) byTarget.remove(target);
     }
 
     private static void cancel(Session session) {

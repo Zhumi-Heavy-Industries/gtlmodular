@@ -9,7 +9,7 @@ group = 'com.gtlmodular'
 //   每次部署前都要动这一行 —— mods.toml 用 `mod_version: project.version` 注入，
 //   jar 名也是 `gtlmodular-<version>.jar`（换版本号 ⇒ mods 目录里**必须删掉旧 jar**，
 //   否则同一个 modId 两份 jar，Forge 会以"Duplicate mod"拒绝加载）。
-version = '0.3.266'
+version = '0.3.435'
 archivesBaseName = 'gtlmodular'
 
 // [2026-09-20] 编译 JDK 提到 21：整合包里的 gtladditions 3.2.8Custom_SubSpace-fix2 是 Java 21
@@ -83,7 +83,12 @@ dependencies {
     // 依赖版本与 GTCEu 1.4.4 / LDLib 1.0.33.b 对齐（GTM 的传递依赖见下）
     // transitive=false：ldlib 会拖 ae2/kubejs/jei，本项目不需要 → 直接用 libs/ 下的本地 jar
     // [2026-09-15] ldlib 改用 libs/ 里的 jar：走 maven + fg.deobf 时，mapped 阶段取不到 DeobfuscatingRepo（null@pom）
-    // [2026-09-20] libs/ 已同步实例当前一套：gtladditions fix2(Java21) / gtlcore 1.2.3.2-fix2 / ldlib 1.0.33.b
+    // libs/ 与实例「GregTech Leisure-猪咪增强版 2.9.2」当前一套对齐：
+    //   gtlcore 1.2.3.3-fix4 / GTL-Enhancedcore 5.2.6 / jei 15.49.0.200 /
+    //   gtladditions 3.3.1Custom / ldlib 1.0.33.b
+    // 注意：gtlcore 1.2.3.3 把 MEPatternOutputMin/Max 挪进了 INSTANCE.machines，
+    //   1.2.3.2 及更早是直接挂在 INSTANCE 上 —— 换依赖版本时这两处访问要一起改，
+    //   否则 compileJava 报「找不到符号 machines」。
     // implementation fg.deobf('com.lowdragmc.ldlib:ldlib-forge-1.20.1:1.0.33.b') { transitive = false }
 
     // 其余依赖全部来自 libs/ 下的本地 jar（含 gtceu-1.20.1-1.4.4 及其依赖）
@@ -101,7 +106,7 @@ tasks.named('processResources') {
             // 许可：本模组自身 MIT；内含从 GTOCore 派生的素材（5 张贴图 / 结构数据 / 文案）
             // 按上游要求以 CC BY-NC-SA 4.0（资源）与 PolyForm Noncommercial 1.0.0（代码）分发，
             // 详见 NOTICE_第三方素材_GTO.md 与 jar 内 META-INF/NOTICE_GTO.md、META-INF/licenses/。
-            mod_license: 'MIT (GTO-derived assets: CC BY-NC-SA 4.0, see NOTICE_GTO.md)', mod_version: project.version,
+            mod_license: 'MIT (GTO-derived assets: CC BY-NC-SA 4.0; GTNH-derived text/data: LGPL-3.0-or-later; NAC recipe values: GPL-3.0; see NOTICE_GTO.md / NOTICE_GT5U.md)', mod_version: project.version,
             // 作者名同样用 \u 转义，避免编码问题
             mod_authors: '\u5c0f\u7231\u4e0e\u5927\u80a5\u9c7c', forge_version: '47.3.7',
     ]
@@ -124,3 +129,105 @@ jar {
         ])
     }
 }
+
+// ===========================================================================================
+// ★ 2026-11-15：mixin 包纯净性检查（防回归）
+//
+// 背景（0.3.392 实机崩溃）：
+//   gtlmodular.mixins.json 声明 package = com.gtlmodular.mixin，Mixin 把该包下的**所有类**
+//   都视为 mixin 专用，禁止被普通代码直接引用。0.3.389 把反射桥接类 OrderBridge 放进了
+//   com.gtlmodular.mixin.order ⇒ AE 合成任务结束时抛：
+//     IllegalClassLoadError: ... is in a defined mixin package ... and cannot be referenced directly
+//   ⇒ 直接崩服。这类错误编译器发现不了（源码层面完全合法），只能靠运行期崩半天才发现。
+//
+// 本任务把该约束前移到构建期：
+//   · 扫描 sourceSets.main.java 下 com/gtlmodular/mixin/ 里的每个 .java；
+//   · 不在 gtlmodular.mixins.json 的 mixins/client 清单里、或没有 @Mixin 注解 ⇒ 报错并中断构建。
+//
+// 注意：mixin 子包里的 **package-info.java / 内部类（如 Xxx$Yyy.java）** 不在此列 ——
+//   内部类文件名不含 '$'，但 mixin 清单只登记顶层类，故按「清单里有没有这个简单类名」判定。
+// 不想要这条检查时：`gradle build -x checkMixinPackagePurity`。
+// ===========================================================================================
+tasks.register('checkMixinPackagePurity') {
+    group = 'verification'
+    description = '确保 com.gtlmodular.mixin 包下只有混入类（@Mixin 或 mixin 插件），不含普通工具类'
+
+    def mixinRoot = file('src/main/java/com/gtlmodular/mixin')
+    def configFile = file('src/main/resources/gtlmodular.mixins.json')
+    inputs.dir(mixinRoot)
+    inputs.file(configFile)
+
+    doLast {
+        if (!mixinRoot.exists() || !configFile.exists()) {
+            logger.lifecycle("[mixin-check] 跳过：mixin 目录或配置文件不存在")
+            return
+        }
+        def text = configFile.getText('UTF-8')
+
+        // ① 清单里登记的 mixin（mixins / client 两个数组）：v^层类简单名
+        def declared = new HashSet<String>()
+        (text =~ /"([\w.\$]+)"\s*(?=[,\]])/).each { m ->
+            def v = m[1]
+            // 清单条目可能带子包前缀（"order.TerminalOrderCpuMixin"），也可能直接是类名
+            // （"ConfiguratorPanelTabMixin" —— 该类就在 mixin 包根下）⇒ 两种都要计入
+            declared.add(v.contains('.') ? v.substring(v.lastIndexOf('.') + 1) : v)
+        }
+
+        // ② 清单里 "plugin" 声明的 mixin 插件类（允许直接写在 mixin 包里）
+        def plugins = new HashSet<String>()
+        (text =~ /"plugin"\s*:\s*"([\w.]+)"/).each { m ->
+            def v = m[1]
+            plugins.add(v.substring(v.lastIndexOf('.') + 1))
+        }
+
+        def problems = []
+        def unregistered = []
+        def intentionallyOff = []
+        mixinRoot.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java')) return
+            if (f.name == 'package-info.java') return
+            def simple = f.name.substring(0, f.name.length() - '.java'.length())
+            def rel = mixinRoot.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+            def body = f.getText('UTF-8')
+
+            if (plugins.contains(simple)) return            // mixin 插件：放行
+
+            if (!body.contains('@Mixin')) {
+                // 真正的红线：mixin 包里的普通类 ⇒ 任何代码引用它都会崩服
+                problems << "  \u00b7 ${rel}：不是 @Mixin 类（普通工具类不能放在 mixin 包）"
+                return
+            }
+            if (!declared.contains(simple)) {
+                // 是 @Mixin 但没登记 ⇒ 不会生效。分两种：
+                //   ① 注释声明「临时停用 / 临时安全诊断 / 临时绕过」= 有意为之 → 仅信息输出；
+                //   ② 其余 = 疑似遗漏（本该生效却没生效）→ WARN 提醒。
+                if (body.contains('当前状态：未登记') || body.contains('临时安全诊断') || body.contains('临时绕过')) {
+                    intentionallyOff << "  \u00b7 ${rel}"
+                } else {
+                    unregistered << "  \u00b7 ${rel}"
+                }
+            }
+        }
+
+        if (!intentionallyOff.isEmpty()) {
+            logger.lifecycle("[mixin-check] 以下 @Mixin 未登记、且注释声明为临时停用/诊断（有意为之）：\n" +
+                    intentionallyOff.join('\n'))
+        }
+        if (!unregistered.isEmpty()) {
+            logger.warn("[mixin-check] 以下 @Mixin 类未在 gtlmodular.mixins.json 登记，实际不会生效" +
+                    "（若非本意请补登记）：\n" + unregistered.join('\n'))
+        }
+
+        if (!problems.isEmpty()) {
+            throw new GradleException(
+                    "mixin 包纯净性检查失败（com.gtlmodular.mixin 下只能有混入类）：\n" +
+                            problems.join('\n') + "\n" +
+                            "普通工具类请移到 com.gtlmodular.common.* 等非 mixin 包。\n" +
+                            "原因：Mixin 禁止任何代码直接引用 mixin 包内的类，" +
+                            "否则运行期抛 IllegalClassLoadError 直接崩服。")
+        }
+        logger.lifecycle("[mixin-check] OK：com/gtlmodular/mixin 下均为混入类（@Mixin 或 plugin）")
+    }
+}
+
+tasks.named('compileJava') { dependsOn 'checkMixinPackagePurity' }

@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:legendarium_double_wire"
+            "item": "gtceu:legendarium_wire_gt_double"
           }
         }
       }

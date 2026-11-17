@@ -89,9 +89,17 @@
     "fluid": [
       {
         "content": {
-          "amount": 1440,
+          "amount": 72,
           "value": {
-            "fluid": "gtceu:soldering_alloy"
+            "fluid": "gtceu:mutated_living_solder"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 40000,
+          "value": {
+            "fluid": "gtceu:pcb_coolant"
           }
         }
       }

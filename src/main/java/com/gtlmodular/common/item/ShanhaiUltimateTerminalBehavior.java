@@ -144,7 +144,9 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             return result.success() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
         }
 
-        if (serverPlayer.isCreative()) {
+        if (serverPlayer.isCreative()
+                && !ShanhaiUltimateTerminalConfig.isOrderMode(terminal)
+                && !ShanhaiUltimateTerminalConfig.isReplaceMode(terminal)) {
             if (rejectOutOfBuildHeight(serverPlayer, terminal, plan)) {
                 return InteractionResult.FAIL;
             }
@@ -161,12 +163,30 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             if (rejectOutOfBuildHeight(serverPlayer, terminal, plan)) {
                 return InteractionResult.FAIL;
             }
+            // 替换模式：第一次只扫描并缓存可替换位置，第二次才按 tick 分批替换。
+            if (ShanhaiUltimateTerminalConfig.isReplaceMode(terminal)) {
+                boolean hasReplacements = plan.entries().stream()
+                        .anyMatch(entry -> entry.requiresBuild()
+                                && (entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
+                                || entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE));
+                if (hasReplacements) {
+                    var result = com.gtlmodular.common.item.terminal.TerminalReplaceService.execute(
+                            serverPlayer, terminal, plan, ae);
+                    if (result != null) {
+                        serverPlayer.sendSystemMessage(Component.literal(
+                                (result.success() ? "§a" : "§c") + "[哦鲸鲸终端] "
+                                        + result.message() + "，变更 " + result.changed() + " 处"));
+                        sendBuildReport(serverPlayer, plan, result);
+                        return result.success() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
+                    }
+                }
+            }
             if (ae != null && ShanhaiTerminalCraftingManager.confirmSubmit(
                     serverPlayer, terminal, plan, ae)) {
                 return InteractionResult.SUCCESS;
             }
             if (ShanhaiTerminalCraftingManager.consumeBuildConfirmation(serverPlayer, terminal, plan)) {
-                ShanhaiStructureExecutor.Result result = executor.execute(serverPlayer, plan, ae);
+                ShanhaiStructureExecutor.Result result = executeBuild(serverPlayer, plan, ae);
                 serverPlayer.sendSystemMessage(Component.literal(
                         (result.success() ? "§a" : "§c") + "[哦鲸鲸终端] " + result.message()
                                 + "，变更 " + result.changed() + " 处"));
@@ -175,15 +195,12 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             }
             // 第一次潜行右击：优先走 GTO 式单个 AE 订单（独立逻辑）
             if (ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) {
-                if (com.gtlmodular.common.item.terminal.TerminalOrderService.start(
-                        serverPlayer, terminal, plan, ae)) {
-                    com.gtlmodular.common.item.terminal.TerminalAutoBuildService.register(
-                            serverPlayer, terminal, plan);
-                    return InteractionResult.SUCCESS;
-                }
+                // GTO 单订单把全部缺口合成一个样板，AE 规划可能绕过网络里已有成品，
+                // 去从原料重算。这里改回逐材料计算：先扣库存，只对真正的缺口下单。
+                com.gtlmodular.GTLModular.LOGGER.info("终端使用逐材料订单路径（先扣 AE 库存，再计算缺口）");
             }
             // 旧多缺口逐单逻辑（订单服务不可用时的回退）
-            requestMissingOrders(serverPlayer, terminal, plan, ae);
+            boolean orderStarted = requestMissingOrders(serverPlayer, terminal, plan, ae);
             if (ShanhaiTerminalCraftingManager.phase(terminal)
                     == ShanhaiTerminalCraftingManager.Phase.READY_TO_BUILD) {
                 // 旧计划可能因结构变化导致 fingerprint 不匹配；用当前扫描重新 arm，
@@ -191,7 +208,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                 ShanhaiTerminalCraftingManager.armDirectBuild(serverPlayer, terminal, plan);
                 if (ShanhaiTerminalCraftingManager.consumeBuildConfirmation(
                         serverPlayer, terminal, plan)) {
-                    ShanhaiStructureExecutor.Result result = executor.execute(serverPlayer, plan, ae);
+                    ShanhaiStructureExecutor.Result result = executeBuild(serverPlayer, plan, ae);
                     serverPlayer.sendSystemMessage(Component.literal(
                             (result.success() ? "§a" : "§c") + "[哦鲸鲸终端] " + result.message()
                                     + "，变更 " + result.changed() + " 处"));
@@ -206,23 +223,25 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                     .anyMatch(entry -> entry.kind() == ShanhaiStructurePlan.Kind.REPLACE
                             || entry.kind() == ShanhaiStructurePlan.Kind.FORCE_REPLACE);
             var preflight = materials.preflight(plan, serverPlayer, ae);
-            boolean waitingOrders = ae != null
-                    && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)
-                    && !preflight.success();
+            // 只要开了下单功能且 AE 在线，缺口就算“有订单在等”：即使全部缺口都没有样板
+            // （AE 不会真正提交任何 job），也必须登记自动施工，否则材料永远不会被放进结构。
+            boolean orderMode = ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal);
+            boolean waitingOrders = orderMode && (!preflight.success() || orderStarted);
             if (hasReplacement || waitingOrders || !preflight.success()) {
-                ShanhaiTerminalCraftingManager.armDirectBuild(serverPlayer, terminal, plan);
-                boolean auto = ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal);
-                if (auto) {
+                if (!waitingOrders) {
+                    ShanhaiTerminalCraftingManager.armDirectBuild(serverPlayer, terminal, plan);
+                }
+                if (orderMode) {
                     com.gtlmodular.common.item.terminal.TerminalAutoBuildService.register(
-                            serverPlayer, terminal, plan);
+                            serverPlayer, terminal, plan, true);
                 }
                 serverPlayer.sendSystemMessage(Component.literal(hasReplacement
                         ? "§e[哦鲸鲸终端] 替换计划已准备；再次潜行右击确认施工"
                         : "§e[哦鲸鲸终端] 施工计划已准备；再次潜行右击按现有材料施工（缺料位置跳过）"
-                                + (auto ? "；订单已登记，材料齐后自动施工" : "")));
+                                + (orderMode ? "；订单已登记，材料齐后自动施工" : "")));
                 return InteractionResult.SUCCESS;
             }
-            ShanhaiStructureExecutor.Result result = executor.execute(serverPlayer, plan, ae);
+            ShanhaiStructureExecutor.Result result = executeBuild(serverPlayer, plan, ae);
             serverPlayer.sendSystemMessage(Component.literal(
                     (result.success() ? "§a" : "§c") + "[哦鲸鲸终端] " + result.message()
                             + "，变更 " + result.changed() + " 处"));
@@ -273,8 +292,13 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
     public boolean scanOnly(ServerPlayer player, ItemStack terminal, BlockPos pos) {
         ShanhaiTerminalAeBinding.Context ae = resolveAeContext(player, terminal);
         try {
-            ShanhaiStructurePlan plan = scanPlan(player, terminal, pos, ae);
+            // 只扫描时不做候选优先级排序：29k 格结构下逐个候选查 AE/背包会卡住服务端线程。
+            MetaMachine machine = MetaMachine.getMachine(player.level(), pos);
+            if (!(machine instanceof IMultiController controller)) return false;
+            ShanhaiStructurePlan plan = ShanhaiStructurePlanner.scan(controller, terminal);
             if (plan == null) return false;
+            ShanhaiUltimateTerminalConfig.setBoundController(terminal,
+                    GlobalPos.of(player.level().dimension(), pos.immutable()));
             if (ShanhaiUltimateTerminalConfig.isModuleCheckMode(terminal)) {
                 reportModulePositions(player, plan);
             } else {
@@ -284,6 +308,11 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             player.sendSystemMessage(Component.literal("§c[哦鲸鲸终端] 结构读取失败: " + e.getMessage()));
         }
         return true;
+    }
+
+    private ShanhaiStructureExecutor.Result executeBuild(ServerPlayer player, ShanhaiStructurePlan plan,
+                                                         ShanhaiTerminalAeBinding.Context ae) {
+        return player.isCreative() ? executor.executeCreative(player, plan, ae) : executor.execute(player, plan, ae);
     }
 
     private ShanhaiStructurePlan scanPlan(ServerPlayer player, ItemStack terminal, BlockPos pos,
@@ -299,18 +328,18 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         return ShanhaiTerminalAeBinding.resolve(player, terminal);
     }
 
-    private void requestMissingOrders(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
-                                      ShanhaiTerminalAeBinding.Context ae) {
+    private boolean requestMissingOrders(ServerPlayer player, ItemStack terminal, ShanhaiStructurePlan plan,
+                                         ShanhaiTerminalAeBinding.Context ae) {
         if (!ShanhaiUltimateTerminalConfig.isAeMode(terminal)
-                || !ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) return;
+                || !ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) return false;
         if (ae == null) {
             if (!materials.preflight(plan, player, null).success()) {
                 player.sendSystemMessage(Component.literal(
                         "§e[哦鲸鲸终端] AE 网络未绑定或离线，无法下单缺口"));
             }
-            return;
+            return false;
         }
-        ShanhaiTerminalCraftingManager.begin(player, terminal, plan, ae, materials);
+        return ShanhaiTerminalCraftingManager.begin(player, terminal, plan, ae, materials);
     }
 
     private boolean rejectOutOfBuildHeight(ServerPlayer player, ItemStack terminal,
@@ -358,6 +387,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         long expiry = System.currentTimeMillis() + 15000;
         List<ShanhaiStructureHighlightPacket.Marker> highlights = new ArrayList<>();
         for (ShanhaiStructurePlan.Entry entry : plan.entries()) {
+            if (report.full()) break;
             boolean chamberHint = entry.kind() == ShanhaiStructurePlan.Kind.CHAMBER_HINT
                     || entry.chamberCapable();
             boolean actionable = entry.kind() == ShanhaiStructurePlan.Kind.PLACE
@@ -534,6 +564,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.0"));
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.1"));
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.2"));
+        list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.3"));
         list.add(bound == null
                 ? Component.translatable("tooltip.gtlmodular.whale_terminal.unbound")
                 : Component.translatable("tooltip.gtlmodular.whale_terminal.bound",

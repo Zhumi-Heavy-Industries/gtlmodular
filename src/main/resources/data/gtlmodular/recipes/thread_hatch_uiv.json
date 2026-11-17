@@ -1,0 +1,32 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "ABA",
+    "CDC",
+    "EFE"
+  ],
+  "key": {
+    "A": {
+      "tag": "gtceu:circuits/uxv"
+    },
+    "B": {
+      "item": "gtceu:uiv_robot_arm"
+    },
+    "C": {
+      "item": "gtceu:uiv_conveyor_module"
+    },
+    "D": {
+      "item": "gtceu:uiv_parallel_hatch"
+    },
+    "E": {
+      "item": "gtceu:echoite_hex_wire"
+    },
+    "F": {
+      "item": "gtlmodular:integrated_control_core_uiv"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:thread_hatch_uiv",
+    "count": 1
+  }
+}

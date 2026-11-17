@@ -47,6 +47,9 @@ public final class ScreenSpaceSceneCapture {
     /** 本帧是否已经拷过 —— 同帧多个漩涡只拷一次。 */
     private static boolean sceneCopiedThisFrame;
 
+    /** 首次捕获成功/失败只打一条日志（诊断光影下的帧缓冲来源）。 */
+    private static boolean loggedCapture;
+
     private ScreenSpaceSceneCapture() {
     }
 
@@ -69,6 +72,23 @@ public final class ScreenSpaceSceneCapture {
         return captureTarget(outputTarget);
     }
 
+    /**
+     * ★ 2026-11-02：抓「当前真正绑定着的绘制帧缓冲」，而不是写死主渲染目标。
+     *
+     * <p>原因：玩家带 <b>Oculus/Iris + 光影包</b> 时，世界不是画在主渲染目标上，而是画进 Iris 自己的
+     * 世界缓冲（在主目标上只有天空/清屏内容），最后才 composite 到主目标。若照 GTO 原样只抓
+     * {@code getMainRenderTarget()}，{@code AFTER_CUTOUT_BLOCKS} 时抓到的是空画面 ⇒ 漩涡 shader
+     * 采样到黑，视觉上「有几何但看不见扭曲」。
+     * 这里改为读 {@code GL_DRAW_FRAMEBUFFER_BINDING}：谁在画就抓谁（原版下正好是主目标）。
+     */
+    private static int boundDrawFramebuffer() {
+        try {
+            return org.lwjgl.opengl.GL11.glGetInteger(org.lwjgl.opengl.GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
     /** 只抓主渲染目标（GTO 保留的另一入口，当前没用到）。 */
     public static TextureTarget captureMainTarget() {
         return captureTarget(Minecraft.getInstance().getMainRenderTarget());
@@ -83,22 +103,53 @@ public final class ScreenSpaceSceneCapture {
             return sceneTarget;
         }
         Minecraft minecraft = Minecraft.getInstance();
+        // ★ 当前真正在画的帧缓冲（Iris 光影下是它自己的世界缓冲；原版下是主目标）。
+        int boundFbo = boundDrawFramebuffer();
+        int sourceFbo = boundFbo != 0 ? boundFbo : outputTarget.frameBufferId;
+        int sourceWidth = outputTarget.width;
+        int sourceHeight = outputTarget.height;
         // 1) 清掉离屏目标（第 2 参是 onMac，官方映射 Minecraft.ON_OSX）
         sceneTarget.clear(Minecraft.ON_OSX);
-        // 2) 把 outputTarget 的颜色附件 blit 到离屏目标的颜色附件
-        GlStateManager._glBindFramebuffer(36008 /* GL_READ_FRAMEBUFFER */, outputTarget.frameBufferId);
-        GlStateManager._glBindFramebuffer(36009 /* GL_DRAW_FRAMEBUFFER */, sceneTarget.frameBufferId);
-        GlStateManager._glBlitFrameBuffer(
-                0, 0, outputTarget.width, outputTarget.height,
-                0, 0, sceneTarget.width, sceneTarget.height,
-                16640 /* GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT */,
-                9728 /* GL_NEAREST */);
-        GlStateManager._glBindFramebuffer(36160 /* GL_FRAMEBUFFER */, 0);
-        // 3) 把视口复原并重新绑回主目标（blit 之后 GL 状态已被我们自己改过）
-        outputTarget.bindWrite(true);
+        // 2) 只 blit 颜色附件。
+        //    ★ 2026-11-02：GTO 原来带 GL_DEPTH_BUFFER_BIT（16640）；在光影/某些驱动下
+        //    源与目标的深度格式不一致时，整条 blit 会以 GL_INVALID_OPERATION 失败（连颜色也拷不过去）
+        //    ⇒ 场景缓冲全黑 ⇒ 漩涡采样到黑，看起来就是「一个大黑圈 + 彩色螺旋」。
+        //    这里只拷颜色（16384），失败再退回主渲染目标重试一次。
+        int error = blitColor(sourceFbo, sourceWidth, sourceHeight);
+        if (error != 0 && sourceFbo != outputTarget.frameBufferId) {
+            error = blitColor(outputTarget.frameBufferId, outputTarget.width, outputTarget.height);
+        }
+        // 3) 把 GL 状态还回去：绑定回原来那个帧缓冲（不是盲目绑 0），视口按窗口复原
+        if (boundFbo != 0) {
+            GlStateManager._glBindFramebuffer(36160 /* GL_FRAMEBUFFER */, boundFbo);
+        } else {
+            outputTarget.bindWrite(true);
+        }
         RenderSystem.viewport(0, 0, minecraft.getWindow().getWidth(), minecraft.getWindow().getHeight());
+        if (!loggedCapture) {
+            loggedCapture = true;
+            com.gtlmodular.GTLModular.LOGGER.info(
+                    "[gtlmodular] 恒星炎炀锻炉特效：场景捕获 fbo={} size={}x{} → {}x{} 结果={}",
+                    sourceFbo, sourceWidth, sourceHeight, sceneTarget.width, sceneTarget.height,
+                    error == 0 ? "ok" : ("GL错误" + error));
+        }
         sceneCopiedThisFrame = true;
         return sceneTarget;
+    }
+
+    /** 只拷颜色附件；返回 {@code glGetError()}（0 = 成功）。 */
+    private static int blitColor(int sourceFbo, int sourceWidth, int sourceHeight) {
+        GlStateManager._glBindFramebuffer(36008 /* GL_READ_FRAMEBUFFER */, sourceFbo);
+        GlStateManager._glBindFramebuffer(36009 /* GL_DRAW_FRAMEBUFFER */, sceneTarget.frameBufferId);
+        GlStateManager._glBlitFrameBuffer(
+                0, 0, sourceWidth, sourceHeight,
+                0, 0, sceneTarget.width, sceneTarget.height,
+                16384 /* GL_COLOR_BUFFER_BIT */,
+                9728 /* GL_NEAREST */);
+        int error = org.lwjgl.opengl.GL11.glGetError();
+        // 把读/写绑定还原成「统一帧缓冲」，避免后续 GL 调用看到奇怪的读写分离状态。
+        GlStateManager._glBindFramebuffer(36160 /* GL_FRAMEBUFFER */, sourceFbo);
+        return error;
     }
 
     /** 释放离屏缓冲（世界卸载 / 没有特效时调用）。 */

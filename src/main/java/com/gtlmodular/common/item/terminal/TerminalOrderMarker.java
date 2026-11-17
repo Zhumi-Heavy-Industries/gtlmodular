@@ -15,6 +15,7 @@ public final class TerminalOrderMarker {
     private static final String MARKER = "gtlmodular_order_marker";
     private static final String TARGET = "gtlmodular_order_target";
     private static final String FINGERPRINT = "gtlmodular_order_fp";
+    private static final String DIMENSION = "gtlmodular_order_dim";
 
     private TerminalOrderMarker() {}
 
@@ -24,6 +25,7 @@ public final class TerminalOrderMarker {
         tag.putBoolean(MARKER, true);
         tag.putLong(TARGET, target.pos().asLong());
         tag.putString(FINGERPRINT, fingerprint);
+        tag.putString(DIMENSION, target.dimension().location().toString());
         return stack;
     }
 
@@ -36,5 +38,20 @@ public final class TerminalOrderMarker {
 
     public static boolean isMarker(GenericStack stack) {
         return stack != null && isMarker(stack.what());
+    }
+
+    public static long targetPos(GenericStack stack) {
+        if (!isMarker(stack)) return Long.MIN_VALUE;
+        return ((AEItemKey) stack.what()).toStack().getOrCreateTag().getLong(TARGET);
+    }
+
+    public static String fingerprint(GenericStack stack) {
+        if (!isMarker(stack)) return "";
+        return ((AEItemKey) stack.what()).toStack().getOrCreateTag().getString(FINGERPRINT);
+    }
+
+    public static String dimension(GenericStack stack) {
+        if (!isMarker(stack)) return "";
+        return ((AEItemKey) stack.what()).toStack().getOrCreateTag().getString(DIMENSION);
     }
 }

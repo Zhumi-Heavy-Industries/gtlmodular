@@ -58,59 +58,7 @@ public class NanochipJadePlugin implements IWailaPlugin {
     public void registerClient(IWailaClientRegistration registration) {
         registration.registerBlockComponent(VacuumColorProvider.INSTANCE, Block.class);
         registration.registerBlockComponent(PortChannelProvider.INSTANCE, Block.class);
-        registration.registerBlockComponent(BeatProvider.INSTANCE, Block.class);
         registration.registerBlockComponent(NanochipThreadedJadeProvider.INSTANCE, Block.class);
-    }
-
-    /**
-     * <b>NAC 主机的 5 秒节拍</b>（P3/P4）：第几拍 + 进度 + 本拍收/发/挂起。
-     *
-     * <p>节拍属于主机（每 100 tick 一拍、与有没有料无关）；这里只是把 {@code @DescSynced}
-     * 的字段读到 Jade 上，让玩家随时看得到"主机一直在跑"。
-     */
-    public enum BeatProvider implements IBlockComponentProvider {
-        INSTANCE;
-
-        private static final ResourceLocation UID =
-                new ResourceLocation(GTLModular.MOD_ID, "nac_beat");
-
-        @Override
-        public ResourceLocation getUid() {
-            return UID;
-        }
-
-        @Override
-        public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config) {
-            try {
-                if (!(accessor.getBlockEntity() instanceof MetaMachineBlockEntity blockEntity)) {
-                    return;
-                }
-                if (!(blockEntity.getMetaMachine()
-                        instanceof com.gtlmodular.common.machine.nanochip.NanochipAssemblyComplexMachine host)) {
-                    return;
-                }
-                float progress = Math.max(0.0F, Math.min(1.0F, host.portBeatProgress()));
-                // 进度条：boxStyle 必须非 null（Jade 的 ElementHelper 里 Objects.requireNonNull），
-                // 之前传 null 被吞掉、连下面的文字行也一起没了。
-                try {
-                    var helper = snownee.jade.api.ui.IElementHelper.get();
-                    var style = helper.progressStyle()
-                            .color(0xFF44DD44, 0xFF2A2A2A)   // 绿色进度条（2026-10-29 用户要求）
-                            .textColor(0xFFFFFFFF);
-                    tooltip.add(helper.progress(progress,
-                            Component.translatable("gtlmodular.nanochip.beat.progress",
-                                    Math.round(progress * 100.0F)),
-                            style, snownee.jade.api.ui.BoxStyle.DEFAULT, false));
-                } catch (Throwable ignored) {
-                    // 条画不出来也要让下面那行文字照常显示。
-                }
-                tooltip.add(Component.translatable("gtlmodular.nanochip.beat.line",
-                        host.portBeatCount(), host.portBeatReceived(),
-                        host.portBeatSent(), host.portBeatPending()));
-            } catch (Throwable ignored) {
-                // Jade 渲染期绝不因为本模组抛异常。
-            }
-        }
     }
 
     /**

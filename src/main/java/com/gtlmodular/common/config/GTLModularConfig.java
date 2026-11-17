@@ -103,6 +103,15 @@ public final class GTLModularConfig {
                             "闸门一律 fail-open：样板解析不出来 / 出任何异常都放行，绝不会让机器卡死。")
                     .define("patternAssembly.identityGate", true);
 
+    private static final ForgeConfigSpec.BooleanValue PATTERN_STRONG_MATCH =
+            BUILDER.comment("猪咪样板总成的「样板强匹配」开关（默认关；对齐山海样板总成的强匹配口径）",
+                            "开：只按「配方类型 + 完整配方 ID」执行 —— 样板 NBT 没有配方 ID/类型、",
+                            "ID 缺少类型前缀、该类型下找不到这个 ID、样板内容与配方 ID 不符，一律拒绝且不找替补。",
+                            "拒绝原因分四类（看日志「强匹配拒绝」）：missing / prefix / unresolved / identity。",
+                            "关（默认）：没有精确配方 ID 时允许按样板内容推断（老样板直接可用）。",
+                            "注意：打开后，仓里没有身份 NBT 的老样板会被拒绝，直到它们被自动补写身份（成型后约 1 秒）。")
+                    .define("patternAssembly.strongMatch", false);
+
     private static final ForgeConfigSpec.BooleanValue AUTO_RECIPE_MODE_SWITCH =
             BUILDER.comment("猪咪样板总成的「自动切换配方模式」开关（默认开）",
                             "开：当前模式下机器已经跑不动（IDLE/WAITING，即这一模式的料吃完或卡住）时，",
@@ -158,7 +167,7 @@ public final class GTLModularConfig {
             BUILDER.comment("NAC 主机强制零耗电（默认开）",
                             "true （默认）：主机与模块不消耗任何 EU（供调试/验收用）；",
                             "false：恢复正常的无线电网/能源仓扣电。")
-                    .define("nanochipComplex.freeEnergy", true);
+                    .define("nanochipComplex.freeEnergy", false);
 
     /**
      * 主机 5 秒总成节拍的日志开关（默认开）—— P3 验收要求「日志可见第 N 拍」。
@@ -758,7 +767,275 @@ public final class GTLModularConfig {
                             "false：被过滤的产物原样交回余量，交给有普通输出仓的机器继续处理。")
                     .define("outputAssembly.voidFiltered", true);
 
+    // ==================================================================
+    // 奈亚拉托提普之触 · 中央黑日（nyarlathotepFx）
+    //
+    // 2026-11-02（0.3.328）：上一版的「五层不稳定特效 + 五个千面相」全部移除，
+    // 只保留结构正中心的一个不透明黑日（+ 视界亮环 / 日冕 / 吸积盘 / 辐射 / 向心流）。
+    // 位置 = 控制器局部 (0, 0, -24)（结构 165×48×49 的几何中心，也是中央菱形核心的中心）。
+    //
+    // 全部运行期现读；读取一律走下面 readXxx 兜底，配置未加载时回落默认值。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    /**
+     * ★ <b>总开关</b>（{@code nyarlathotepFx.enable}，默认 <b>{@code false}</b> = 关闭）。
+     *
+     * <p>沿用 0.3.304 的玩家口径「默认关闭 + 游戏内 F10 切换」。黑日本身很轻
+     * （默认半径下约 1600 quads/台），想常开就把这一项改成 true。
+     */
+    private static final ForgeConfigSpec.BooleanValue NYARLATHOTEP_FX_ENABLE =
+            BUILDER.comment("奈亚中央黑日总开关（★ 默认 false = 关闭；游戏内按 F10 可随时切换，切换后立即写回本文件、重进游戏保持）",
+                            "Master switch for the Nyarlathotep central black sun (default false; press F10 in game to toggle, written back to this file).",
+                            "false（默认）：完全不扫描控制器、不绘制任何东西（零开销）；",
+                            "true：扫描 scanRadius 格内的奈亚控制器，在结构正中心画一个黑日；",
+                            "★ 游戏内切换键：F10（可在「按键设置 → GTL·熔岩模块化机组」里改）。")
+                    .define("nyarlathotepFx.enable", false);
+
+    /** 黑核半径。 */
+    private static final ForgeConfigSpec.DoubleValue NYARLATHOTEP_FX_CORE_RADIUS =
+            BUILDER.comment("黑日核心半径（方块；默认 6.5，范围 3.0 ~ 10.0）",
+                            "Black sun core radius in blocks (default 6.5, range 3.0..10.0).",
+                            "6.5 = 正好盖住结构正中心的菱形核心、又给光环/吸积盘留出空间；",
+                            "光环、吸积盘、辐射、向心流全部按同一比例缩放。")
+                    .defineInRange("nyarlathotepFx.coreRadius", 6.5D, 3.0D, 10.0D);
+
+    /** 光环/吸积盘亮度。 */
+    private static final ForgeConfigSpec.DoubleValue NYARLATHOTEP_FX_INTENSITY =
+            BUILDER.comment("黑日光环/吸积盘亮度倍率（默认 1.0，范围 0.0 ~ 4.0）",
+                            "Black sun corona / accretion disk brightness (default 1.0, range 0.0..4.0).",
+                            "只乘加性发光层，不影响不透明的黑色核心。")
+                    .defineInRange("nyarlathotepFx.intensity", 1.0D, 0.0D, 4.0D);
+
+    /** 扫描半径。 */
+    private static final ForgeConfigSpec.IntValue NYARLATHOTEP_FX_SCAN_RADIUS =
+            BUILDER.comment("控制器扫描半径（方块；默认 48，范围 16 ~ 128）",
+                            "Controller scan radius in blocks (default 48, range 16..128).",
+                            "以玩家所在 16³ 区段为基准向外扩：48 ⇒ 每轴 7 个区段 = 343 区段/轮；",
+                            "调大能更早发现远处的机器，但每轮区段数按三次方增长。")
+                    .defineInRange("nyarlathotepFx.scanRadius", 48, 16, 128);
+
+    /** 扫描间隔。 */
+    private static final ForgeConfigSpec.IntValue NYARLATHOTEP_FX_SCAN_INTERVAL_TICKS =
+            BUILDER.comment("两轮扫描之间的最小间隔（tick；默认 10，范围 1 ~ 200）",
+                            "Minimum ticks between two scan sweeps (default 10, range 1..200).",
+                            "10 tick = 0.5 秒；调大更省客户端 CPU、拆建后的更新更迟钝。")
+                    .defineInRange("nyarlathotepFx.scanIntervalTicks", 10, 1, 200);
+
+    /** 绘制距离上限。 */
+    private static final ForgeConfigSpec.IntValue NYARLATHOTEP_FX_DRAW_DISTANCE =
+            BUILDER.comment("绘制距离上限（方块；默认 384，范围 64 ~ 1024）",
+                            "Maximum draw distance in blocks (default 384, range 64..1024).",
+                            "相机到控制器方块超过这个距离就不画这台机器的黑日（仍保留在扫描缓存里）。")
+                    .defineInRange("nyarlathotepFx.drawDistance", 384, 64, 1024);
+
+    // ==================================================================
+    // 通用独立线程引擎 · 调度（threading）
+    //
+    // ★ 2026-11-08：GTO 式按需订阅。机器没批次、没料、没 ME 样板仓时退订；
+    //   来料 / AE 推样板 / 换配方表 / 结构成形时重订；巡检器每 N tick 兜底补订阅。
+    //   关掉 demandSubscribe ⇒ 回到“永久订阅”（旧行为），一行回退。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    /** 按需订阅总开关（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_DEMAND_SUBSCRIBE =
+            BUILDER.comment("通用独立线程引擎：按需订阅（默认开）",
+                            "开：机器没批次、没物品/流体输入、没 ME 样板仓时退订，空闲机器不占 tick；",
+                            "关：回到旧版“永久订阅”，每台机器每 tick 都进 serverTick（兼容/排查用）。")
+                    .define("threading.demandSubscribe", true);
+
+    /** 唤醒巡检间隔（tick）。 */
+    private static final ForgeConfigSpec.IntValue THREADING_WAKE_SWEEP_TICKS =
+            BUILDER.comment("线程唤醒巡检间隔（tick；默认 10 = 0.5 秒）",
+                            "只给“退订了但按规则该订阅”的机器补订阅（防漏唤醒冻结），不推进批次；",
+                            "调小：接单更及时、空转巡检更频繁；调大：更省 CPU、漏唤醒恢复更慢。")
+                    .defineInRange("threading.wakeSweepTicks", 10, 1, 200);
+
+    /** ★ 2026-11-10：EU 能源缓冲总开关（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_ENERGY_BUFFER =
+            BUILDER.comment("通用独立线程引擎：EU 能源缓冲（默认开）",
+                            "开：配方每 tick 要的电先由内部缓存支付，每 N tick 才向能源仓批量补一次；",
+                            "关：回到逐 tick 直接穿能源仓能力链（旧行为，排查用）。")
+                    .define("threading.energyBuffer", true);
+
+    /** ★ 2026-11-10：能源缓冲补能间隔（tick；默认 10）。 */
+    private static final ForgeConfigSpec.IntValue THREADING_ENERGY_BUFFER_TICKS =
+            BUILDER.comment("能源缓冲补能间隔（tick；默认 10 = 每 0.5 秒调一次能源仓）",
+                            "补能量 = 上一窗口的真实消耗量（自适应），缓存约等于 N tick 的电；",
+                            "调大：调仓次数更少、机器/能源仓界面的存量显示更“滞后”；调小：更接近逐 tick。")
+                    .defineInRange("threading.energyBufferTicks", 10, 1, 100);
+
+    /** ★ 2026-11-10：能源缓冲「优先从无线电网抽电」（默认开）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_GRID_POWER =
+            BUILDER.comment("通用独立线程引擎：优先从无线电网抽电（默认开）",
+                            "开：机器放置者名下有无线电网余额时，能源缓冲先扣电网（每 N tick 批量扣一次），能源仓兜底；",
+                            "关：只从机器自己的能源仓取电（旧行为）。",
+                            "电网身份 = 放置者 UUID（IMachineLife.onMachinePlaced 记录，随机器存档）。")
+                    .define("threading.gridPower", true);
+
+    // ==================================================================
+    // 大型化学反应釜 · 线圈加成（lcrCoil）
+    //
+    // ★ 2026-11-09（玩家口径：照抄 GTO 的大型化学反应釜）：
+    //   GTO 的 LargeChemicalReactorMachine 继承 CoilMultiblockMachine，getRealRecipe 里是
+    //     RecipeModifier.overclocking(this, unit, recipe, false, 1, 1,
+    //         (getCoilTier() + 2 > recipe.tier) ? 0.25 : 0.5)
+    //   这个 0.25/0.5 是 GTCEu 26.x RecipeModifier#overclocking(holder, unit, recipe,
+    //   boolean generator, double euMultiplier, double durationMultiplier, double durationFactor)
+    //   的最后一个参数 —— **「每一次超频的耗时倍率」**（euMultiplier / durationMultiplier 都是 1，
+    //   即不额外省电、不额外加速）：
+    //     线圈等级 + 2 > 配方等级 ⇒ 每次超频耗时 ×0.25 = 无损超频（4 倍速/档）
+    //     否则                   ⇒ 每次超频耗时 ×0.5  = 普通超频（2 倍速/档）
+    //   对应 GTO 自己的描述「线圈等级不低于运行的配方等级时启用无损超频」。
+    //   （★ 2026-11-09 修正：上一版 0.3.362 把它误读成「整单耗时的固定倍率」，本轮已改成
+    //     与 GTO 一致的「每次超频倍率」。）
+    //   本包 gtceu 1.4.4 的大型化学反应釜结构里只有一个「白铜线圈」位置、机器本体不读线圈
+    //   （WorkableElectricMultiblockMachine），线圈纯装饰；本模组在机器注册窗口把机器类换成
+    //   CoilLargeChemicalReactorMachine，并把结构 C 位放开成任意加热线圈，按上面口径超频。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue LCR_COIL_ENABLED =
+            BUILDER.comment("大型化学反应釜的线圈加成总开关（默认开）",
+                            "Enable coil support for the Large Chemical Reactor (default true).",
+                            "开：结构 C 位接受任意等级加热线圈；线圈等级够高时启用无损超频（GTO 口径）；",
+                            "关：完全保持 gtceu 1.4.4 原样（只能放白铜线圈、机器不读线圈、无加成）。")
+                    .define("lcrCoil.enabled", true);
+
+    private static final ForgeConfigSpec.IntValue LCR_COIL_TIER_ADVANTAGE =
+            BUILDER.comment("线圈等级相对配方等级的优势值（默认 2；GTO 原式为 2）",
+                            "判定式：线圈等级 + 该值 > 配方等级 ⇒ 无损超频（perfectOverclockDurationFactor），",
+                            "否则普通超频（normalOverclockDurationFactor）。",
+                            "线圈等级 0 = 白铜、1 = 坎塔尔、2 = 镍铬、3 = 钛锆钼……（ICoilType#getTier 的序号）。",
+                            "配方等级 = 配方 EU/t 折算的电压等级（ULV=0、LV=1、MV=2……）。")
+                    .defineInRange("lcrCoil.tierAdvantage", 2, 0, 30);
+
+    private static final ForgeConfigSpec.DoubleValue LCR_COIL_PERFECT_OVERCLOCK_FACTOR =
+            BUILDER.comment("无损超频「每次超频」的耗时倍率（默认 0.25 = 每档 4 倍速；GTO 原式为 0.25）",
+                            "线圈等级满足「等级 + tierAdvantage > 配方等级」时使用。",
+                            "注意：这是每一次超频的倍率，不是整单额外再乘一次。")
+                    .defineInRange("lcrCoil.perfectOverclockDurationFactor", 0.25D, 0.01D, 1.0D);
+
+    private static final ForgeConfigSpec.DoubleValue LCR_COIL_NORMAL_OVERCLOCK_FACTOR =
+            BUILDER.comment("普通超频「每次超频」的耗时倍率（默认 0.5 = 每档 2 倍速；GTO 原式为 0.5）",
+                            "线圈等级不够时使用（GTO 原版就是这样：线圈跟不上配方等级 ⇒ 只有普通超频）。")
+                    .defineInRange("lcrCoil.normalOverclockDurationFactor", 0.5D, 0.01D, 1.0D);
+
+    // ==================================================================
+    // 加速仓 · 装得上除增强版以外的多方块（结构侧兜底分支）
+    //   所有多方块结构都走 Predicates.abilities(...) 声明「哪一格能放仓」，
+    //   在它的返回值上追加一个加速仓分支，等于给所有结构多留一格。
+    //   增强版核心（GTL-Extend）接管的机器不在兜底范围内，只保留超频仓。
+    //   关掉即逐字回到结构作者自己写的范围。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue ACCELERATE_HATCH_ANY_MULTIBLOCK =
+            BUILDER.comment("加速仓是否允许装到除增强版以外的多方块上（默认开）",
+                            "Allow the accelerate hatch in every multiblock except GTL-Extend machines (default true).",
+                            "开：gtceu / gtlcore / 第三方附属与本模组自声明结构的仓室位都接受加速仓（增强版核心接管的机器除外）；",
+                            "关：只接受结构作者自己声明过的位置。",
+                            "只影响能否安装，不影响加速幅度。")
+                    .define("accelerateHatch.anyMultiblock", true);
+
+    // ==================================================================
+    // 超频仓 · 只装到增强版核心的机器上
+    //   范围口径与加速仓不同：增强版自己注册的机器 + 它改写过的机器，
+    //   不包括 gtceu / gtlcore 原生机器和第三方附属。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue EXTEND_HATCHES_ENABLED =
+            BUILDER.comment("超频仓是否允许装到增强版核心的机器上（默认开）",
+                            "Allow the overclock hatch on GTL-Extend machines (default true).",
+                            "只作用于增强版核心及其改写过的机器，不影响其它多方块。",
+                            "线程仓不在此列：增强版不认识本模组的线程接口，装了也不生效，故不开放。")
+                    .define("extendHatches.enabled", true);
+
     public static final ForgeConfigSpec SPEC = BUILDER.build();
+
+    // ---- 奈亚中央黑日：运行期读取入口（每帧 / 每轮现读，改完重进即生效） ----
+
+    /** 总开关（★ 默认 false = 关；配置未加载时也回落 false）。 */
+    public static boolean isNyarlathotepFxEnabled() {
+        return readBoolean(NYARLATHOTEP_FX_ENABLE, false);
+    }
+
+    /**
+     * 直接设定总开关并<b>立即写回配置文件</b>（F10 按键用）。
+     *
+     * @return {@code true} = 已成功写回文件；{@code false} = 值改了但写盘失败（本次会话仍生效）
+     */
+    public static boolean setNyarlathotepFxEnabled(boolean value) {
+        try {
+            NYARLATHOTEP_FX_ENABLE.set(value);
+        } catch (Throwable notLoaded) {
+            return false;
+        }
+        try {
+            SPEC.save();
+            return true;
+        } catch (Throwable saveFailure) {
+            com.gtlmodular.GTLModular.LOGGER.warn(
+                    "[gtlmodular] 奈亚中央黑日：总开关已切成 {}，但写回 config/gtlmodular-common.toml 失败"
+                            + "（本次会话仍生效，重进游戏会恢复成文件里的旧值）：{}",
+                    value, saveFailure.toString());
+            return false;
+        }
+    }
+
+    /** 黑核半径（默认 6.5，Forge 已按 3.0 ~ 10.0 夹紧）。 */
+    public static double getNyarlathotepFxCoreRadius() {
+        return readDouble(NYARLATHOTEP_FX_CORE_RADIUS, 6.5D);
+    }
+
+    /** 发光强度倍率（默认 1.0，Forge 已按 0.0 ~ 4.0 夹紧）。 */
+    public static double getNyarlathotepFxIntensity() {
+        return readDouble(NYARLATHOTEP_FX_INTENSITY, 1.0D);
+    }
+
+    /** 扫描半径（默认 48 格，Forge 已按 16 ~ 128 夹紧；调用方仍按 16 取整）。 */
+    public static int getNyarlathotepFxScanRadius() {
+        return readInt(NYARLATHOTEP_FX_SCAN_RADIUS, 48);
+    }
+
+    /** 扫描间隔（默认 10 tick，Forge 已按 1 ~ 200 夹紧）。 */
+    public static int getNyarlathotepFxScanIntervalTicks() {
+        return readInt(NYARLATHOTEP_FX_SCAN_INTERVAL_TICKS, 10);
+    }
+
+    /** 绘制距离上限（默认 384 格，Forge 已按 64 ~ 1024 夹紧）。 */
+    public static int getNyarlathotepFxDrawDistance() {
+        return readInt(NYARLATHOTEP_FX_DRAW_DISTANCE, 384);
+    }
+
+    /** 配置未加载（构造期 / 测试环境）时读 Boolean 的兜底。 */
+    private static boolean readBoolean(ForgeConfigSpec.BooleanValue value, boolean fallback) {
+        try {
+            return value.get();
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    /** 配置未加载（构造期 / 测试环境）时读 Int 的兜底。 */
+    private static int readInt(ForgeConfigSpec.IntValue value, int fallback) {
+        try {
+            return value.get();
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
+
+    /** 配置未加载（构造期 / 测试环境）时读 Double 的兜底。 */
+    private static double readDouble(ForgeConfigSpec.DoubleValue value, double fallback) {
+        try {
+            return value.get();
+        } catch (Throwable ignored) {
+            return fallback;
+        }
+    }
 
     /**
      * ★ 2026-10-01：天基矿石处理厂配方镜像是否开启（{@code spaceOre.recipeMirror}，默认 {@code true}）。
@@ -812,12 +1089,12 @@ public final class GTLModularConfig {
         }
     }
 
-    /** 主机是否强制零耗电（默认 true，见 {@link #NANOCHIP_FREE_ENERGY}）。 */
+    /** 主机是否强制零耗电（调试开关，默认关闭；见 {@link #NANOCHIP_FREE_ENERGY}）。 */
     public static boolean isNanochipFreeEnergyEnabled() {
         try {
             return NANOCHIP_FREE_ENERGY.get();
         } catch (Throwable ignored) {
-            return true;
+            return false;
         }
     }
 
@@ -1018,11 +1295,8 @@ public final class GTLModularConfig {
      * 配置读不到时按"不改变行为"处理，与"默认开"不矛盾。
      */
     public static boolean isNanochipSimpleLogistics() {
-        try {
-            return NANOCHIP_SIMPLE_LOGISTICS.get();
-        } catch (Throwable ignored) {
-            return false;
-        }
+        // 真空网络已停用；NAC 的输入输出只走样板总成，所以固定为简单模式。
+        return true;
     }
 
     /**
@@ -1084,6 +1358,14 @@ public final class GTLModularConfig {
     public static boolean isPatternDebugLogsEnabled() {
         try {
             return PATTERN_DEBUG_LOGS.get();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static boolean isPatternStrongMatchEnabled() {
+        try {
+            return PATTERN_STRONG_MATCH.get();
         } catch (Throwable ignored) {
             return false;
         }
@@ -1286,6 +1568,113 @@ public final class GTLModularConfig {
             return OUTPUT_ASSEMBLY_VOID_FILTERED.get();
         } catch (IllegalStateException notLoaded) {
             return OUTPUT_ASSEMBLY_VOID_FILTERED.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-08：线程引擎按需订阅是否开启（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingDemandSubscribe() {
+        try {
+            return THREADING_DEMAND_SUBSCRIBE.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_DEMAND_SUBSCRIBE.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-08：唤醒巡检间隔（tick；配置未加载时回落默认 10）。 */
+    public static int getThreadingWakeSweepTicks() {
+        try {
+            return THREADING_WAKE_SWEEP_TICKS.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_WAKE_SWEEP_TICKS.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：EU 能源缓冲是否开启（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingEnergyBuffer() {
+        try {
+            return THREADING_ENERGY_BUFFER.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_ENERGY_BUFFER.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：能源缓冲补能间隔（tick；配置未加载时回落默认 10）。 */
+    public static int getThreadingEnergyBufferTicks() {
+        try {
+            return THREADING_ENERGY_BUFFER_TICKS.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_ENERGY_BUFFER_TICKS.getDefault();
+        }
+    }
+
+    /** ★ 2026-11-10：能源缓冲是否优先从无线电网抽电（配置未加载时回落默认 true）。 */
+    public static boolean isThreadingGridPower() {
+        try {
+            return THREADING_GRID_POWER.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_GRID_POWER.getDefault();
+        }
+    }
+
+    // ---- 大型化学反应釜 · 线圈加成（配置未加载时一律回落默认值） ----
+
+    /** 大型化学反应釜线圈加成总开关（默认 true）。 */
+    public static boolean isLcrCoilEnabled() {
+        try {
+            return LCR_COIL_ENABLED.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_ENABLED.getDefault();
+        }
+    }
+
+    /** 线圈等级相对配方等级的优势值（默认 2）。 */
+    public static int getLcrCoilTierAdvantage() {
+        try {
+            return LCR_COIL_TIER_ADVANTAGE.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_TIER_ADVANTAGE.getDefault();
+        }
+    }
+
+    /** 无损超频「每次超频」的耗时倍率（默认 0.25）。 */
+    public static double getLcrCoilPerfectOverclockFactor() {
+        try {
+            return LCR_COIL_PERFECT_OVERCLOCK_FACTOR.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_PERFECT_OVERCLOCK_FACTOR.getDefault();
+        }
+    }
+
+    /** 普通超频「每次超频」的耗时倍率（默认 0.5）。 */
+    public static double getLcrCoilNormalOverclockFactor() {
+        try {
+            return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.get();
+        } catch (IllegalStateException notLoaded) {
+            return LCR_COIL_NORMAL_OVERCLOCK_FACTOR.getDefault();
+        }
+    }
+
+    /**
+     * 加速仓是否装得上除增强版以外的多方块。
+     *
+     * <p>结构谓词在启动期构建一次，所以改完这一项要重启游戏；运行期判断一律读这里，
+     * 保证「结构放行」和「实际加速」用的是同一个开关。
+     */
+    public static boolean isAccelerateHatchAnyMultiblock() {
+        try {
+            return ACCELERATE_HATCH_ANY_MULTIBLOCK.get();
+        } catch (IllegalStateException notLoadedYet) {
+            // 结构构建早于配置加载时按默认（开）放行，避免开档瞬间结构少一格。
+            return true;
+        }
+    }
+
+    /** 超频仓是否允许装到增强版核心的机器上。 */
+    public static boolean isExtendHatchesEnabled() {
+        try {
+            return EXTEND_HATCHES_ENABLED.get();
+        } catch (IllegalStateException notLoadedYet) {
+            return true;
         }
     }
 }

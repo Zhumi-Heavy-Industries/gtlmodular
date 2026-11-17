@@ -79,6 +79,21 @@ public final class TentacleBlocks {
     public static final BlockEntry<Block> QUARK_PIPE =
             casing("quark_pipe");
 
+    /**
+     * 生物计算机外壳（GTO {@code gtocore:biocomputer_casing}，自带 {@code ActiveBlock} 的
+     * active/inactive 两态）—— 2026-11-01 研究链的新方块。
+     *
+     * <p>本模组只做<b>静态外壳</b>（不引 ActiveBlock），贴图逐字节取自
+     * {@code gtocore:block/casings/about_computer/biocomputer_shell.png}（16×16；GTO 同名
+     * {@code .mcmeta} 是 LDLib 的 CTM 连接声明，不是动画，故<b>不拷贝</b>，
+     * 换成我方 {@code block/casings/biocomputer_casing.png}）。
+     *
+     * <p>它是 {@code gtlmodular:nich_empty_component} 的装配线基材（GTO 装配机配方的
+     * {@code GTBlocks.ADVANCED_COMPUTER_CASING} + 电路/细线 → 本方块）。
+     */
+    public static final BlockEntry<Block> BIOCOMPUTER_CASING =
+            casing("biocomputer_casing");
+
     /** 机械方块：铁块底子、金属声、8/10 强度（与 NAC 结构方块同口径）。 */
     private static BlockEntry<Block> casing(String name) {
         return GTLModularMachines.REGISTRATE.block(name, Block::new)
@@ -111,7 +126,8 @@ public final class TentacleBlocks {
     /** 强制类加载（在机器注册链里调一次）。 */
     public static void init() {
         com.gtlmodular.GTLModular.LOGGER.info(
-                "[gtlmodular] 奈亚拉托提普之触·结构缺件方块已注册 4 个："
-                        + "激光机械方块 / 安普洛活性机械方块 / 电子渗透安普洛涂层玻璃 / 夸克管道");
+                "[gtlmodular] 奈亚拉托提普之触·结构缺件方块已注册 5 个："
+                        + "激光机械方块 / 安普洛活性机械方块 / 电子渗透安普洛涂层玻璃 / 夸克管道"
+                        + " / 生物计算机外壳（研究链 0.3.270 新增）");
     }
 }

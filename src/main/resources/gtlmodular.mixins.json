@@ -5,13 +5,29 @@
     "compatibilityLevel": "JAVA_17",
     "mixins": [
         "enhancedcore.SuperBufferChineseNamesMixin",
+        "enhancedcore.EnhancedcoreReplaceHatchMixin",
+        "enhancedcore.IvNativeEngineGainHatchMixin",
+        "enhancedcore.IvTotalEuMixin",
+        "enhancedcore.AssemblyManagerTargetMixin",
         "eco.EcoCpuNameMixin",
+        "gtlcore.MERecipePatternHelperMixin",
+        "gtceu.MixinRecipeOutputProvider",
         "gtceu.StellarForgePatternMixin",
+        "gtceu.FactoryBlockPatternGainHatchQuotaMixin",
+        "gtceu.RecipeLogicAccelerateSetupMixin",
+        "gtceu.RecipeLogicGainHatchTickMixin",
+        "gtceu.OverclockHatchLogicMixin",
+        "gtceu.PredicatesExtendHatchMixin",
+        "gtceu.MultiblockDefinitionExtendHatchMixin",
+        "gtladditions.MutableRecipesLogicGainHatchMixin",
         "order.TerminalTempPatternMixin",
-        "order.TerminalOrderCpuMixin"
+        "order.TerminalOrderCpuMixin",
+        "order.TerminalOrderEcoCpuMixin"
     ],
     "client": [
-        "gtceu.MixinWorkableProgressBar"
+        "gtceu.MixinWorkableProgressBar",
+        "gtceu.MachineModeTooltipMixin",
+        "ConfiguratorPanelTabMixin"
     ],
     "injectors": {
         "defaultRequire": 0

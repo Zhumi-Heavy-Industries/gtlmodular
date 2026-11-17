@@ -9,6 +9,7 @@ import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IMachineModifyDrops;
 import com.gregtechceu.gtceu.api.machine.feature.IInteractedMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine;
+import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
@@ -16,6 +17,7 @@ import com.gregtechceu.gtceu.api.recipe.content.ContentModifier;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -58,6 +60,9 @@ import java.util.function.BiPredicate;
  *       （右键即塞、潜行同样生效、物品被消耗、拆机掉落归还）。</li>
  *   <li><b>耗能倍率 600%（耗能 ×6，即原先的 6 倍）、耗时倍率 100%（耗时不变）</b>；
  *       耗电仍由主机集中供给（生态圈式），双流体税照旧。</li>
+ *   <li><b>线程仓（0.3.291 起结构限装 1 个）</b>：本机没有独立的「跨配方线程」预算 —— 它本来就
+ *       一次跑<b>全部</b>匹配配方，所以线程仓按「猪咪愤怒烧矿机」同一口径
+ *       <b>总 = 基础并行 + 线程仓线程数</b> 折进并行（见 {@link #threadsFromThreadHatch()}）。</li>
  * </ul>
  */
 public class MoltenStripperModuleMachine extends MoltenModuleMachineBase<MoltenStripperModuleMachine>
@@ -269,14 +274,43 @@ public class MoltenStripperModuleMachine extends MoltenModuleMachineBase<MoltenS
         }
     }
 
-    // ---------- 并行 ----------
+    // ---------- 并行 / 线程仓（0.3.293 接线，口径同「猪咪愤怒烧矿机」）----------
 
     /**
-     * 实时并行数：{@code 1536 + max(0, 线圈温度-21600)/1200*300}；已嵌入处理器主机数量 n&gt;0 时
-     * 再乘 {@code 2^(6 + 10*((n-1)/184)^2)}（沿用原星阵的倍率公式）。
+     * 结构里<b>线程仓</b>的当前设定值（{@code gtlmodular:thread_hatch_*}，本结构 {@code setMaxGlobalLimited(1)}，
+     * 口径 A：只取单仓）。没装线程仓 / 未成形（{@code getParts()} 为空）⇒ 0。
+     *
+     * <p>取值是玩家在仓界面里<b>当前设定</b>的线程数（1~本档上限），不是满档 —— 与
+     * {@link IThreadHatchPart#getThreads()} 的语义一致。
+     */
+    public int threadsFromThreadHatch() {
+        for (IMultiPart part : getParts()) {
+            if (part instanceof IThreadHatchPart hatch) {
+                return Math.max(0, hatch.getThreads());
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * 实时并行数（<b>总并行</b>）= 基础并行 + 线程仓线程数。
+     *
+     * <p>为什么是「加」而不是「乘」：本机配方逻辑（{@link StripperRecipeLogic}）一次跑<b>所有</b>
+     * 匹配配方、每条配方用同一个并行数，本身<b>没有跨配方线程预算</b>可加。队长口径与
+     * 猪咪愤怒烧矿机一致 —— <b>总 = 基础 + 线程仓</b>，所以把仓的线程数直接折成并行数。
+     *
+     * <p>温度和处理器主机倍率都只作用于<b>基础</b>部分（{@link #baseParallel()}），线程仓是纯增量。
      * 温度取主机同步值（见 {@link #hostCoilTemperature()}），客户端显示与服务端一致。
      */
     public long getRealParallel() {
+        return baseParallel() + threadsFromThreadHatch();
+    }
+
+    /**
+     * 基础并行（<b>不含线程仓</b>）：{@code 1536 + max(0, 线圈温度-21600)/1200*300}；
+     * 已嵌入处理器主机数量 n&gt;0 时再乘 {@code 2^(6 + 10*((n-1)/184)^2)}（沿用原星阵的倍率公式）。
+     */
+    private long baseParallel() {
         int coilTemp = hostCoilTemperature();
         long base = BASE_PARALLEL
                 + (long) (Math.max(0, coilTemp - COIL_TEMP_BASELINE) / COIL_TEMP_STEP) * COIL_TEMP_STEP_PARALLEL;
@@ -298,6 +332,18 @@ public class MoltenStripperModuleMachine extends MoltenModuleMachineBase<MoltenS
     @Override
     public int getMaxParallel() {
         return Ints.saturatedCast(getRealParallel());
+    }
+
+    // ---------- 独立线程引擎（★ 2026-11-05）----------
+
+    /**
+     * 每条线程的并行数 = 本机基础并行公式（不含线程仓增量）。
+     *
+     * <p>线程数/开关由基座统一从线程仓现读，模块类只描述自己的并行口径。
+     */
+    @Override
+    public int engineParallelPerBatch() {
+        return Ints.saturatedCast(baseParallel());
     }
 
     // ---------- 生命周期 ----------
@@ -386,8 +432,9 @@ public class MoltenStripperModuleMachine extends MoltenModuleMachineBase<MoltenS
     /**
      * 显示行与「宏原子共振碎片剥离机」同步：
      * <ul>
-     *   <li>同时处理至多 N 个配方（N = 当前并行数，跨配方并行）</li>
-     *   <li>拥有无限个跨配方线程</li>
+     *   <li>同时处理至多 N 个配方（N = 当前并行数 = 基础 + 线程仓，跨配方并行）</li>
+     *   <li>拥有无限个跨配方线程（本机不按线程数限制配方条数，线程仓只加并行）</li>
+     *   <li>装了线程仓时多打一行「线程仓：N 线程（已并入并行）」</li>
      *   <li>已安装 x/128 个处理器主机（本机嵌入，原星阵槽位）</li>
      * </ul>
      * 不提供「配方最短耗时」与「切换机器模式」两个配置器。
@@ -403,6 +450,14 @@ public class MoltenStripperModuleMachine extends MoltenModuleMachineBase<MoltenS
             textList.add(Component.translatable("gtlmodular.multiblock.parallel",
                     Component.literal(FormattingUtil.formatNumbers(parallel))
                             .withStyle(ChatFormatting.DARK_PURPLE))
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        // 线程仓行：只在真装了仓时出现（与原来「没仓时界面完全不变」的口径一致）
+        int hatchThreads = threadsFromThreadHatch();
+        if (hatchThreads > 0) {
+            textList.add(Component.literal("线程仓: ")
+                    .append(Component.literal(hatchThreads + " 线程（已并入并行）")
+                            .withStyle(ChatFormatting.GOLD))
                     .withStyle(ChatFormatting.GRAY));
         }
         textList.add(Component.translatable("gtladditions.multiblock.threads",

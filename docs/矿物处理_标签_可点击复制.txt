@@ -40,9 +40,9 @@
 
 &6&l» 4号电路（宝石类）
 &f白名单：
-{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"*ores(*quartz*|*diamond*|*garnet*)*"}}
+{"text":"点击复制白名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"*ores*&(*quartz*|*diamond*|*garnet*)"}}
 &f黑名单：
-{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"|*dust*|*gems*|*sapphire*|*ruby*|"}}
+{"text":"点击复制黑名单","color":"aqua","underlined":true,"clickEvent":{"action":"copy_to_clipboard","value":"*dust*|*gems*|*sapphire*|*ruby*"}}
 
 &6&l» 需要单独处理
 &f- &c碧玉&f（24号电路）

@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:niobium_titanium_single_wire"
+            "item": "gtceu:niobium_titanium_wire_gt_single"
           }
         }
       }

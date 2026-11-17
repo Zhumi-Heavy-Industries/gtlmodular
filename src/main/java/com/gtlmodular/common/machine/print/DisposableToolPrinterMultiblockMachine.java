@@ -18,7 +18,15 @@ import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
  * 只使用 GTCEu 自己的 {@code RecipeLogic} / {@code GTRecipe} / {@code GTRecipeModifiers}。
  */
 public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
+
+
+    @Override
+    public int getMaxParallel() {
+        return 1;
+    }
+
 
     /** 基础线程数（队长口径：八线程）。 */
     public static final int THREADS = 8;
@@ -30,6 +38,16 @@ public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMult
     @Override
     protected RecipeLogic createRecipeLogic(Object... args) {
         return new ThreadedRecipeLogic(this);
+    }
+
+    /** ★ 2026-11-10：记录放置者 UUID —— 能源缓冲「从无线电网抽电」的身份。 */
+    @Override
+    public void onMachinePlaced(@org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity player,
+                                net.minecraft.world.item.ItemStack stack) {
+        if (player instanceof net.minecraft.world.entity.player.Player p
+                && getRecipeLogic() instanceof ThreadedRecipeLogic logic) {
+            logic.setGridUser(p.getUUID());
+        }
     }
 
     /** 2026-10-30 诊断：成形/失形各打一行，便于从日志判断是结构没成还是配方没配。 */
@@ -47,6 +65,7 @@ public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMult
 
     @Override
     public int baseThreads() {
+        // 没装线程仓时的固定值；装了线程仓时引擎统一读仓（effectiveThreads()），机器类不再适配。
         return THREADS;
     }
 

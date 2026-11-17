@@ -187,6 +187,15 @@ public final class GTLModularMachines {
         registerBufferedOutputAssembly();
         // ★ 2026-09-22 晚：自制通配符样板总成已退役（见上方注释）——改用第三方 mod
         //   `wildcard_pattern` + gtlcore 的官方兼容机器，这里不再注册任何通配符机器。
+        // ★ 2026-11-01（0.3.281）：GTO 线程仓 7 档（uv/uhv/uev/uiv/uxv/opv/max，UV=4…MAX=256 线程）。
+        //   ★ 必须排在 NAC / 奈亚拉托提普之触**之前**：PartAbility.getAllBlocks() 是 memoize 的，
+        //     而 Predicates.abilities(...) 在构建结构谓词时就把方块表取走了 ⇒ 后注册的话
+        //     线程仓谓词会拿到空表（7 台仓永远放不进结构）。
+        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.register();
+        // ★ 超频仓 17 档（对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」的要求。
+        com.gtlmodular.common.data.fuel.OverclockHatches.register();
+        // ★ 加速仓 14 档（LV~MAX，对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」。
+        com.gtlmodular.common.data.fuel.AccelerateHatches.register();
         // NAC（纳米芯片组装复合体，GTNH 移植）：控制器 + 11 个模块
         com.gtlmodular.common.data.nanochip.NanochipMachines.register();
         // ★ 2026-10-30：一次性工具 3D 打印 —— GTO 3D 打印机「一次性工具」分支剥离
@@ -199,9 +208,34 @@ public final class GTLModularMachines {
         //   用 gtlcore 原始 17×10×15 结构补一台 EV 期可用的 PCB 机器（2 线程 / 自带并行 1024 / 无激光仓）。
         com.gtlmodular.common.data.pcb.SmallPcbFactoryMachines.register();
         // ★ 2026-10-31：GTO 奈亚拉托提普之触 —— 165×48×49 结构 1:1 照搬，
-        //   三张配方表（超时空组装线/组装线/电路组装线）可切、线圈并行、4 线程。
+        //   三张配方表（超时空组装线/组装线/电路组装线）可切、线圈并行、
+        //   线程数由结构里的 GTO 线程仓（7 档）给出，没有线程仓时 1 条。
         //   结构里缺的 4 件方块见 common/data/tentacle/TentacleBlocks（在 initBlocks 里建）。
         com.gtlmodular.common.data.tentacle.NyarlathotepsTentacleMachines.register();
+        // ★ 2026-11-14：GTO 力场压模工厂 —— 29×15×15 结构 1:1 照搬（缺的 3 件方块换成
+        //   本整合包的语义等价物，见 FieldExtruderFactoryStructures 类注释的符号表）。
+        //   ★ 配方表按队长口径改为本模组自建的「零部件加工」(gtlmodular:component_parts)，
+        //   不再是 GTO 的压模机表。结构 B 位开放 线程/超频/加速/并行/维护 仓。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryMachines.register();
+        // ★ 2026-11-02：GTO 高维等离子聚变核心 —— 63×83×47 结构 1:1 照搬（新增独立机器，
+        //   与 gtlcore 的 gtceu:dimensionally_transcendent_plasma_forge 并存）；
+        //   配方表 = gtceu:dimensionally_transcendent_plasma_forge + gtceu:stellar_forge；
+        //   结构里缺的 18 件方块见 common/data/hpfc/HpfcBlocks（在 initBlocks 里建）。
+        com.gtlmodular.common.data.hpfc.HpfcMachines.register();
+        // ★ 2026-11-09：冷却塔冷凝中枢 —— 存档「琪露诺」里 13×16×16 实建冷却塔 1:1 导出，
+        //   控制器外观照 gtceu:cooling_tower，机器代码照 gtladditions 反熵冷凝中枢，
+        //   结构舱室位允许铝制防冻机械方块 + 本模组 7 档线程仓。
+        com.gtlmodular.common.data.coolingtower.CoolingTowerCondensationCenterMachines.register();
+
+        // ★ 2026-11-01：恒星炎炀锻炉「换机器类 + 换描述 + 挂漩涡渲染器」必须**在这个窗口**做
+        //   （机器注册 = GTM 的 RegisterEvent，早于客户端第一次资源加载；渲染器覆层贴图要在贴图集拼接时注册）。
+        //   gtlcore 是本模组的依赖、先于本模组注册，这里取 gtceu:stellar_forge 一定能拿到。
+        com.gtlmodular.common.data.stellar.StellarForgeDefinitionSetup.configureNow(true);
+
+        // ★ 2026-11-09：大型化学反应釜「吃线圈加成」—— 同样必须在这个窗口里换 definition 字段
+        //   （改机器类 + 把 C 位白铜线圈放开成任意加热线圈 + 追加 GTO 口径的耗时修正器）。
+        //   说明见 LargeChemicalReactorCoilSetup 类注释；配置开关 lcrCoil.enabled。
+        com.gtlmodular.common.data.LargeChemicalReactorCoilSetup.configureNow();
     }
 
     /**
@@ -218,9 +252,14 @@ public final class GTLModularMachines {
         // 电子渗透安普洛涂层玻璃 / 夸克管道）。★ 必须在这里（RegisterEvent<Block> 之前）建条目，
         // 不能等到机器注册窗口。
         com.gtlmodular.common.data.tentacle.TentacleBlocks.init();
+        // 奈亚配套物品（大脑/超级大脑/神经矩阵）—— 同样必须在 RegisterEvent<Item> 之前建条目
+        com.gtlmodular.common.data.tentacle.TentacleItems.init();
         // ★ 2026-10-31：GTO 恒星炎炀锻炉（gtceu:stellar_forge 换壳）结构里我方缺的 6 件机壳
         //   （辐射吸收 / 碳化硼陶瓷 / 氧化镁陶瓷 / 磁力 / 等离子加热 / 中子稳定）—— 时序要求同上。
         com.gtlmodular.common.data.stellar.StellarForgeBlocks.init();
+        // ★ 2026-11-14：GTO 力场压模工厂结构里我方缺的 2 件机壳
+        //   （高能耐压 / 氧化锂陶瓷防热抗震；加速管道复用 kubejs:accelerated_pipeline）—— 时序要求同上。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryBlocks.init();
         // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
         // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
         // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。
@@ -235,6 +274,12 @@ public final class GTLModularMachines {
         // ★ 2026-10-31：恒星炎炀锻炉材料链的 8 件陶瓷中间品（粗坯/块/砖/薄片 × 碳化硼、氧化镁）——
         //   时序要求同上（必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目）。
         com.gtlmodular.common.data.stellar.StellarForgeCeramicItems.init();
+        // ★ 2026-11-02：GTO 高维等离子聚变核心材料链的 10 件物品（催化剂基底 / 铪催化剂 /
+        //   两套陶瓷 粗坯·块·砖·薄片）—— 时序要求同上。
+        com.gtlmodular.common.data.hpfc.HpfcItems.init();
+        // ★ 2026-11-02：GTO 高维等离子聚变核心结构里我方缺的 18 件方块（16 色 ABS 机壳 +
+        //   碳酸锶陶瓷射线吸收方块 + 氧化钴陶瓷导热方块）—— 必须在 RegisterEvent<Block> 之前建条目。
+        com.gtlmodular.common.data.hpfc.HpfcBlocks.init();
         // ★ P2：样板仓「归档」工具物品（gtlmodular:pattern_archive）—— 时序要求同上：
         //   必须在 Forge 的 RegisterEvent<Item> **之前**建好 Registrate 条目，否则它永远进不了物品注册表。
         com.gtlmodular.common.item.PatternArchiveItem.register();
@@ -568,10 +613,12 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         TraceabilityPredicate casing =
                 blocks(blockOf("gtceu:heatproof_machine_casing")).or(ioUnlimited(true));
-        Block threadHatch = ForgeRegistries.BLOCKS.getValue(new ResourceLocation("gtladditions", "thread_modifier_hatch"));
-        if (threadHatch != null) {
-            casing = casing.or(blocks(threadHatch));
-        }
+        // ★ 2026-11-02 队长口径（口径 A：只取单仓）：本机允许安装本模组线程仓（限 1 个），
+        //   不再接受 gtladditions 的 Ω-天球分歧引擎。
+        casing = casing.or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                .setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         FactoryBlockPattern f = FactoryBlockPattern.start()
                 .aisle("CCCCC", "CCSCC", "CCCCC", "CCCCC", "HHHHH", "P.P.P", "P.P.P", "P.P.P");
         f = f.where('S', controller(blocks(def.get())));
@@ -597,7 +644,10 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         // 壳格：任意一格都能换成 输入/输出 物品或流体仓（下限 0、不限上限）
         TraceabilityPredicate casing =
-                blocks(blockOf("gtlcore:hyper_mechanical_casing")).or(ioUnlimited(false));
+                blocks(blockOf("gtlcore:hyper_mechanical_casing")).or(ioUnlimited(false))
+                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         // 管道格：必须为硅岩管道，不可替换
         TraceabilityPredicate pipe = blocks(blockOf("gtceu:naquadah_huge_fluid_pipe"));
         // 单个切片、8 行高（5宽 × 8高 × 1深）
@@ -628,7 +678,10 @@ public final class GTLModularMachines {
     private static com.gregtechceu.gtceu.api.pattern.BlockPattern spaceShellPattern(
             MultiblockMachineDefinition def) {
         // 机械方块格：可换输入/输出仓与并行仓
-        TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true));
+        TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true))
+                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
+                .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         FactoryBlockPattern f = FactoryBlockPattern.start();
         for (String[] aisle : SpaceOrePatternLayers.AISLES) {
             f = f.aisle(aisle);

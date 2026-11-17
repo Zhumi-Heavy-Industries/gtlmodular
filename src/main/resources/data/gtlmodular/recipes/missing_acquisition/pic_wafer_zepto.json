@@ -23,7 +23,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "tag": "forge:lenses/orange"
+            "tag": "forge:lenses/green"
           }
         },
         "chance": 0

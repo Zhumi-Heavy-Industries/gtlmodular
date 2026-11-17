@@ -23,6 +23,8 @@ gtladditions（LGPLv3.0，作者 アドニス、疏影）：神锻配置页图�
 沿用其 OverlayHullMachineRenderer 与 infinity_input_dual_hatch_casing 材质（未装该模组时自动退回本机外壳）。
 设计参考：gt_shanhai（星律，作者 dishanhai）——「配方模式识别 / 类型闸 / 样板身份闸 / 不串配方」
 的思路参考了其公开实现，本仓库为自写代码，未复制其源码。
+GTNH 2.9.0 NAC（GT5U，LGPL-3.0-or-later；NAC 配方数值来自 NewHorizonsCoreMod，GPL-3.0）：
+模块文本/机制/配方数值的出处与逐项清单见 NOTICE_第三方素材_GT5U.md。
 机器结构、材质与配方表的版权归各自作者所有。
 '''
 

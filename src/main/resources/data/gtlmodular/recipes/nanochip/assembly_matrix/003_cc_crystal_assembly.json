@@ -67,6 +67,24 @@
           }
         }
       }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 18,
+          "value": {
+            "fluid": "gtceu:mutated_living_solder"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 10000,
+          "value": {
+            "fluid": "gtceu:pcb_coolant"
+          }
+        }
+      }
     ]
   },
   "outputs": {

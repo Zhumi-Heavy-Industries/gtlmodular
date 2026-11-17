@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:echoite_double_wire"
+            "item": "gtceu:echoite_wire_gt_double"
           }
         }
       }

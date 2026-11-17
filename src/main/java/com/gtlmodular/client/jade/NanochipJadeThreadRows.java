@@ -195,7 +195,7 @@ public final class NanochipJadeThreadRows {
      *
      * <p>★ 2026-11-02 起占位符的取值 = 显示下标（{@link #appendAllRows} 的 {@code i}）；
      * <b>改前</b>传的是服务端开批次时钉死的<b>全局递增稳定编号</b>
-     * （{@code NanochipThreadedRecipeLogic#threadLabelOf}）⇒ 实机显示 {@code 线程1 / 线程5 / 线程16 …}
+     * （旧世代逻辑类的 {@code threadLabelOf}，该类已随 P1 删除）⇒ 实机显示 {@code 线程1 / 线程5 / 线程16 …}
      * 一路往上涨，与 GTO 不同形。内部那个 {@code seq} 与 {@code KEY_SLOT} <b>一字未动</b>
      * （只在显示这一处解耦）。
      * 键名沿用 {@code ....bar.short}（历史名；改前它渲染 {@code #编号}）：<b>语义不变</b>
@@ -223,7 +223,7 @@ public final class NanochipJadeThreadRows {
      * （见类注释的「条宽」一条），去掉长尾巴才不会把框撑宽。
      *
      * <p>{@link #LANG_MORE} <b>一字未改</b>：机器面板
-     * （{@code NanochipThreadedRecipeLogic#LANG_THREADS_MORE}）仍读它（那边是 8 行窗口，
+     * （旧世代逻辑类的 {@code LANG_THREADS_MORE}，该类已随 P1 删除）仍读它（那边是 8 行窗口，
      * 「只列最快的 N 条」那句在场是必要的）。
      */
     public static final String LANG_MORE_UNLISTED = "gtlmodular.nanochip.threads.more.unlisted";
@@ -377,7 +377,7 @@ public final class NanochipJadeThreadRows {
      * <p>★ <b>2026-11-02 起编号口径 = 「本次列表内的下标」（从 0 起）</b>，与 GTO 截图的
      * {@code 线程0: / 线程1: / 线程2:} <b>逐字同形</b>。
      * <p>改前传的是服务端开批次时钉死的<b>全局递增稳定编号</b>
-     * （{@code NanochipThreadedRecipeLogic#threadLabelOf}）⇒ 玩家实机看到 {@code 线程1}、
+     * （旧世代逻辑类的 {@code threadLabelOf}，该类已随 P1 删除）⇒ 玩家实机看到 {@code 线程1}、
      * {@code 线程5/6}、{@code 线程16/17} 一路往上涨，与 GTO 不同形。
      * <b>本轮回退到「显示下标」</b>：显示层与内部 {@code seq} <b>解耦</b>，
      * {@code KEY_SLOT} / {@code threadLabelOf} / 原生条归属判定 <b>一字未动</b>

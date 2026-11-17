@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:fine_cinobite_wire"
+            "item": "gtceu:cinobite_fine_wire"
           }
         }
       }

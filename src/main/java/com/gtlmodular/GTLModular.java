@@ -42,9 +42,25 @@ public final class GTLModular {
         DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
                 com.gtlmodular.client.renderer.stellar.StellarForgeFxClient.init());
 
+        // ★ 2026-11-02（0.3.328）：奈亚拉托提普之触「正中心黑日」——纯客户端接线：
+        //   自己扫控制器 + RenderLevelStage.AFTER_BLOCK_ENTITIES 直接画；无自定义 shader，
+        //   不替换机器外观渲染器。上一版的五层不稳定特效与五个面相已全部移除。
+        DistExecutor.safeRunWhenOn(Dist.CLIENT, () -> () ->
+                com.gtlmodular.client.renderer.nyarlathotep.BlackSunClient.init());
+
         // 本模组 Registrate 的注册事件挂到 mod 总线（deferred 条目在 RegisterEvent 时落库），
         // 同时订阅 GTM 的机器注册窗口（GTCEuAPI.RegisterEvent<RL, MachineDefinition>）。
         GTLModularMachines.registerEventListeners(modBus);
+
+        // ★ 2026-11-08：通用独立线程引擎的「唤醒巡检器」——服务端每 N tick 一次（Phase.END），
+        //   只给“退订了但按规则该订阅”的机器补订阅，不推进任何批次；见 ThreadWakeSweeper 类注释。
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.machine.engine.ThreadWakeSweeper::onServerTick);
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.machine.engine.ThreadWakeSweeper::onServerStopped);
+        // ★ 2026-11-10：右键机器 = 登记电网取电身份（老存档机器也能用；见 GridUserBinding 类注释）。
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.addListener(
+                com.gtlmodular.common.event.GridUserBinding::onRightClick);
 
         // ★ NAC 自有配方表的注册窗口：GTCEuAPI.RegisterEvent<RL, GTRecipeType>（在 GTRecipeTypes.init() 内、
         //   RECIPE_TYPES.freeze() **之前**）——与机器注册同款做法（gtlcore / gtmthings 都这么接）。
@@ -54,6 +70,10 @@ public final class GTLModular {
         // ★ 2026-10-30：一次性工具 3D 打印配方表（gtlmodular:disposable_tool_printing），同一注册窗口。
         modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
                 com.gtlmodular.common.data.print.DisposableToolPrintTypes::onRecipeTypeRegisterEvent);
+        // ★ 奈亚机「零部件加工」专用表（gtlmodular:component_parts），同一注册窗口。
+        //   不共用 gtlcore:component_assembly_line，避免零件配方连带改写部件组装机。
+        modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
+                com.gtlmodular.common.data.tentacle.ComponentPartsRecipeTypes::onRecipeTypeRegisterEvent);
 
         // ★ 2026-10-01：**天基矿石处理厂（gtceu:space_ore_processor）配方镜像**（v2，第二轮）。
         //   起因：gtladditions 分支 3.2.8Custom_SubSpace-fix2 自带的复制逻辑
@@ -99,12 +119,39 @@ public final class GTLModular {
         //   把 gtceu:stellar_forge 的机器工厂换成 StellarForgeMachine（GTO 连续运行/等级/掉电爆炸），
         //   并把 GTO 原版机器描述追加到 tooltip。
         modBus.addListener(com.gtlmodular.common.data.stellar.StellarForgeDefinitionSetup::onLoadComplete);
+
+        // ★ 2026-11-09：大型化学反应釜线圈加成的兜底（正常在 GTLModularMachines.init() 的
+        //   机器注册窗口里配好；这里只是极端加载顺序下的保险，两处都幂等）。
+        modBus.addListener(com.gtlmodular.common.data.LargeChemicalReactorCoilSetup::onLoadComplete);
         com.gtlmodular.common.data.GTLModularAddon.registrate =
                 com.gregtechceu.gtceu.api.registry.registrate.GTRegistrate.create(MOD_ID);
 
         // NAC 自检：进世界自动跑一次写日志 + /gtlmodular_nac 随时重跑
         // （用来验证「注册表里真的有 / 数据包真的加载了 / 引用的流体真的存在」这类只有跑起来才知道的事）
         com.gtlmodular.common.command.GTLModularCommands.register();
+
+        // ★ 2026-11-01：奈亚拉托提普之触里「JSON 表达不了」的两族配方（提取机 + 任意生物蛋、
+        //   装配线夸克管道 + 研究门）改成**模组本体运行期注入**，不再依赖 KubeJS 脚本：
+        //   照 print 包 / SpaceOreRecipeMirror 的老套路，挂 Forge 事件总线的 ServerStartedEvent，
+        //   在配方管理器就绪后同时写 lookup（机器用）与 RecipeManager.byType（JEI 用）。
+        com.gtlmodular.common.data.tentacle.TentacleRecipes.register();
+
+        // ★ 2026-11-10：超级大冰箱（冷却塔冷凝中枢）的获取配方 —— 装配线 UXV + 研究门。
+        //   带研究门的配方要同时补一条「研究站配方」（输出带 assembly_line_research NBT 的数据介质），
+        //   纯 JSON 表达不了，所以跟奈亚之触同一套运行期注入。
+        com.gtlmodular.common.data.coolingtower.CoolingTowerRecipe.register();
+
+        // ★ 2026-11-14：力场压模零件工厂的获取配方 —— 装配线 UEV + 研究门，
+        //   数值逐项照搬 GTO（{@code nanotechnology.js:45} 那条），只把产出改成我们的 id。
+        //   同样带研究门 ⇒ 跟超级大冰箱 / 奈亚之触同一套运行期注入。
+        com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryRecipe.register();
+
+        // ★ 2026-11-14：恒星炎炀锻炉的 31 条配方从 KubeJS 脚本迁入模组本体。
+        //   缘由：server_scripts/gtlmodular_stellar_forge_materials.js 在实例里被删除后，
+        //   材料仍在（Java 注册）但三味合金熔炼 / 形态链 / 陶瓷链 / 机壳配方全部消失，
+        //   玩家报「巴氏合金锭 / 贫铀合金锭 / 碳化凯金硅岩合金锭 合不出来」。
+        //   迁入后配方不再随 KubeJS 脚本的存亡而消失。
+        com.gtlmodular.common.data.stellar.StellarForgeRecipes.register();
 
         // ★ 2026-09-27：GTL-Enhancedcore 兼容 mixin 的**条件注册**（见 registerEnhancedcoreMixins）。
         // [2026-10-01 停用：反射+ignoreRequired 方案不采用，见 _enhcore/实施.md] registerEnhancedcoreMixins();

@@ -1,0 +1,6 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "gtlmodular:item/uiv_integrated_control_core"
+  }
+}

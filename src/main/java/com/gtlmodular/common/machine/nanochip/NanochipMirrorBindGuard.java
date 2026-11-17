@@ -71,7 +71,7 @@ import java.util.Set;
  *          {@code gtlcore_base.txt:152-165}）→
  *       ⑤{@code updateIO()}（{@code :168-172}），而它会对每个控制器调
  *         {@code IRecipeCapabilityMachine.upDate()}（{@code :244-264}）—— <b>即镜像入链顺带把「输入侧接线」重建一次</b>
- *         （这正是 {@code NanochipThreadedRecipeLogic#refreshInputWiringIfStale()} 补的那一步）。
+ *         （这正是旧世代逻辑类的 {@code refreshInputWiringIfStale()} 补的那一步；该类已随 P1 删除）。
  *       <b>反链</b>：{@code releaseBuffer()} → {@code host.removeProxy(this)}（{@code :197}）；
  *       {@code onMachineRemoved()} 也调它（{@code :395-399}）。</li>
  * </ol>
@@ -87,7 +87,7 @@ import java.util.Set;
  *   <li><b>玩家从来没绑过</b>（该机结构里没有任何镜像部件）⇒ 0 是<b>事实</b>，无缺陷可修。
  *       注意 {@code proxies}/{@code proxyMachines} <b>都不参与</b>「这台机器有没有配方可做」的判定
  *       （判定读的是 {@code mePatternRecipeHandleParts} 与各槽配方缓存，见
- *       {@code NanochipThreadedRecipeLogic#refreshInputWiringIfStale()} 的长注释）⇒ 这一格不该被读成"坏了"；</li>
+ *       旧世代逻辑类的 {@code refreshInputWiringIfStale()} 长注释；该类已随 P1 删除）⇒ 这一格不该被读成"坏了"；</li>
  *   <li><b>绑过、但读档后没重新入链</b>：镜像的 {@code onLoad} 是「等 0 tick」的延迟任务，它执行时若宿主
  *       方块实体还没就绪（跨区块 / 读档头几秒），{@code setBuffer} 第 ② 步判假并<b>静默返回</b>
  *       （{@code :99-108} 的 {@code ifeq 183}），而 {@code bufferResolved} 已被置真（{@code :87-89}）

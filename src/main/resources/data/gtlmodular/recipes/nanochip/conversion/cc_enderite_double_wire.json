@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:enderite_double_wire"
+            "item": "gtceu:enderite_wire_gt_double"
           }
         }
       }

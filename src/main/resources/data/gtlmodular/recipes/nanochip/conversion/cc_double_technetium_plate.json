@@ -14,7 +14,7 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:double_technetium_plate"
+            "item": "gtceu:technetium_double_plate"
           }
         }
       }

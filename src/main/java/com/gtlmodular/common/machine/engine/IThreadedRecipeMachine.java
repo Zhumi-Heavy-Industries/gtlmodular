@@ -1,5 +1,9 @@
 package com.gtlmodular.common.machine.engine;
 
+import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
+import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
+import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+
 /**
  * ★ <b>独立线程引擎 · 机器侧契约</b>。
  *
@@ -47,5 +51,106 @@ public interface IThreadedRecipeMachine {
      */
     default boolean usesParallelHatch() {
         return true;
+    }
+
+    /**
+     * ★ 2026-11-05：<b>结构里线程仓的当前设定值之和</b>（没装 / 未成形 ⇒ 0）。
+     *
+     * <p>「通用引擎的线程数跟线程仓相关」的统一读口：所有实现本接口的机器都可以写成
+     * <pre>{@code
+     * int hatch = threadHatchThreads();
+     * return hatch > 0 ? hatch : 原本的固定线程数;
+     * }</pre>
+     * ⇒ <b>装了线程仓就完全按仓里的设定值</b>（仓 4 线程 = 引擎 4 线程），没装时保持原值。
+     * 结构里线程仓数量由各结构谓词自己限制（本模组一律 {@code setMaxGlobalLimited(1)}）。
+     */
+    default int threadHatchThreads() {
+        if (!(this instanceof IMultiController controller)) {
+            return 0;
+        }
+        long total = 0L;
+        for (IMultiPart part : controller.getParts()) {
+            if (part instanceof IThreadHatchPart hatch) {
+                total += Math.max(0, hatch.getThreads());
+                if (total >= Integer.MAX_VALUE) {
+                    return Integer.MAX_VALUE;
+                }
+            }
+        }
+        return (int) total;
+    }
+
+    /**
+     * ★ 2026-11-07：<b>引擎实际使用的线程数</b>——装线程仓就完全按仓，没装才用机器自己的固定值。
+     *
+     * <p>这是「机器只要在结构里允许线程仓，就直接能用、不用再改机器类」的统一读口：
+     * 机器只需要把 {@code THREAD_HATCH} 加进结构谓词，线程数/开关全部由引擎从部件上现读。
+     */
+    default int effectiveThreads() {
+        int hatch = threadHatchThreads();
+        return Math.max(1, hatch > 0 ? hatch : baseThreads());
+    }
+
+    /** 线程仓「并行重复配方」：全部仓都允许才算允许；没装仓 ⇒ 允许（GTO 默认）。 */
+    default boolean threadHatchRepeatedRecipes() {
+        if (!(this instanceof IMultiController controller)) {
+            return true;
+        }
+        for (IMultiPart part : controller.getParts()) {
+            if (part instanceof IThreadHatchPart hatch && !hatch.isRepeatedRecipes()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 线程仓「独立线程」（GTO 语义）：全部仓都打开才算独立；没装仓 ⇒ 独立。
+     *
+     * <p>开 = 每条线程各自有一份完整的并行/功率额度（GTO：「每个线程都能独立拉取机器最大功率」）；
+     * 关 = 所有线程共用同一份额度（整机并行不再随线程数翻倍）。
+     */
+    default boolean threadHatchIndependent() {
+        if (!(this instanceof IMultiController controller)) {
+            return true;
+        }
+        boolean found = false;
+        for (IMultiPart part : controller.getParts()) {
+            if (part instanceof IThreadHatchPart hatch) {
+                found = true;
+                if (!hatch.isIndependentThread()) {
+                    return false;
+                }
+            }
+        }
+        return true; // 没装仓：按“独立”处理，保持机器原行为
+    }
+
+    /**
+     * ★ 2026-11-08：<b>本机是否「必须先装线程仓，引擎才接管」</b>。
+     *
+     * <p>默认 {@code false}——本模组自研机器（3D 打印阵列 / 小型 PCB 工厂 / 部件组装机 / NAC）
+     * <b>本来就是按引擎设计的</b>，装不装线程仓都该由引擎驱动；
+     * GTO 移植机（奈亚 / 高维等离子聚变核心）不是：它们原本有自己的多方块逻辑，
+     * 线程仓只是给它们<b>加线程</b>的增强件 ⇒ <b>没装线程仓时不该被引擎接管</b>，
+     * 应回到移植前的原逻辑（gtlcore 的 {@code MultipleRecipesLogic}）。
+     *
+     * <p>实现方式见 {@code ThreadedRecipeLogic} 里的「闸门」：没装线程仓时由
+     * 一个不自己订阅 tick 的 {@code MultipleRecipesLogic} 代跑，引擎只镜像它的进度。
+     */
+    default boolean engineRequiresThreadHatch() {
+        return false;
+    }
+
+    /**
+     * ★ 2026-11-09：<b>没装线程仓时由谁代跑</b> —— 只有 {@link #engineRequiresThreadHatch()}
+     * 为 {@code true} 的机器会问这一步。
+     *
+     * <p>返回 {@code null} ⇒ 按老口径交回 gtlcore 的 {@code MultipleRecipesLogic}（GTO 移植机）；
+     * 返回一个逻辑实例 ⇒ 用它当原逻辑。NAC 模块走后者：没装线程仓时回到自己的
+     * {@code ModuleRecipeLogic}，行为与装引擎之前逐字一致（含它自己的缓存供电口径）。
+     */
+    default com.gregtechceu.gtceu.api.machine.trait.RecipeLogic createEngineFallbackLogic() {
+        return null;
     }
 }

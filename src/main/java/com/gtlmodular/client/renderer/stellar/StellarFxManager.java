@@ -57,8 +57,17 @@ public final class StellarFxManager {
      */
     public static void dispatch(RenderLevelStageEvent event) {
         if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_CUTOUT_BLOCKS) {
+            // ★ 在世界渲染阶段抓相机变换：AFTER_LEVEL 时 camera/PoseStack 可能已被重置。
+            StellarForgeVortexFX.setFrameCamera(
+                    event.getPoseStack() == null ? null : event.getPoseStack().last().pose(),
+                    event.getCamera() == null ? null : event.getCamera().getPosition());
+        }
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             ScreenSpaceSceneCapture.beginFrame();
             StellarForgeVortexFX.beginBatchFrame();
+            // ★ 2026-11-02：AFTER_LEVEL 下 RenderSystem 里的投影可能已被重置/换成 GUI 的，
+            //   这里用事件给的 3D 投影矩阵，flush 时直接用它（否则特效会「钉在屏幕上跟着视角走」）。
+            StellarForgeVortexFX.setFrameProjection(event.getProjectionMatrix());
         }
         for (AbstractStellarFx fx : FX_LIST) {
             if (fx.isDiscarded()) {
@@ -67,7 +76,7 @@ public final class StellarFxManager {
             fx.render(event.getStage(), event.getLevelRenderer(), event.getPoseStack(),
                     event.getProjectionMatrix(), event.getPartialTick(), event.getCamera(), event.getFrustum());
         }
-        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_CUTOUT_BLOCKS) {
+        if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_LEVEL) {
             StellarForgeVortexFX.flushBatch(event.getLevelRenderer());
         }
     }

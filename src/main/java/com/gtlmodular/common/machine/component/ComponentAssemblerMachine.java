@@ -27,7 +27,15 @@ import org.jetbrains.annotations.Nullable;
  * 放在 {@code beforeWorking} 会让超档配方每 tick 被选中又被拒，饿死同轮能做的配方。
  */
 public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine {
+        implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
+
+
+    @Override
+    public int getMaxParallel() {
+        return 1;
+    }
+
 
     /** 部件装配配方写在 {@code data} 里的外壳等级键（GTO / gtlcore 同款键名）。 */
     public static final String RECIPE_TIER_KEY = "CATier";
@@ -46,12 +54,22 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
         return new ThreadedRecipeLogic(this);
     }
 
+    /** ★ 2026-11-10：记录放置者 UUID —— 能源缓冲「从无线电网抽电」的身份。 */
+    @Override
+    public void onMachinePlaced(@org.jetbrains.annotations.Nullable net.minecraft.world.entity.LivingEntity player,
+                                net.minecraft.world.item.ItemStack stack) {
+        if (player instanceof net.minecraft.world.entity.player.Player p
+                && getRecipeLogic() instanceof ThreadedRecipeLogic logic) {
+            logic.setGridUser(p.getUUID());
+        }
+    }
+
     /** 成形/失形各打一行：先分清是结构没成还是配方没配，再看引擎的 5 秒诊断。 */
     @Override
     public void onStructureFormed() {
         super.onStructureFormed();
         GTLModular.LOGGER.info("[gtlmodular] 部件组装机已成形 @{}（线程 {}，配方等级上限 {}）",
-                getPos(), threads, maxRecipeTier);
+                getPos(), effectiveThreads(), maxRecipeTier);
     }
 
     @Override
@@ -62,6 +80,8 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
 
     @Override
     public int baseThreads() {
+        // 没装线程仓时的固定值（v1 = 4 / v2 = 8）。装了线程仓时引擎统一读仓
+        // （IThreadedRecipeMachine#effectiveThreads()），机器类不再做额外适配。
         return threads;
     }
 

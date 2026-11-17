@@ -63,6 +63,13 @@ public class MoltenBlastModuleMachine extends MoltenModuleMachineBase<MoltenBlas
      */
     @Override
     public int getAdditionalThread() {
+        // ★ 2026-11-02 队长口径（A：只取单仓）：优先读本模组线程仓（gtlmodular:thread_hatch_*），
+        //   结构里最多 1 个；有它就按它的当前设定值给线程，不再走 gtladditions 天球那套 ×20。
+        for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart part : getParts()) {
+            if (part instanceof com.gtlmodular.common.machine.tentacle.IThreadHatchPart hatch) {
+                return Math.max(0, hatch.getThreads());
+            }
+        }
         if (threadPart == null) {
             return 0;
         }
@@ -73,9 +80,21 @@ public class MoltenBlastModuleMachine extends MoltenModuleMachineBase<MoltenBlas
         return (int) Math.min(Integer.MAX_VALUE, (long) perArray * THREAD_MULTIPLIER);
     }
 
-    /** 本机跨配方线程总数 = 基础 64 + 天球分歧引擎额外线程。 */
+    /** ★ 2026-11-02 队长口径：去掉基础 64，线程总数 = 线程仓当前设定值（没仓 = 0）。 */
     public int totalThreads() {
-        return BASE_THREADS + getAdditionalThread();
+        return getAdditionalThread();
+    }
+
+    // ---------- 独立线程引擎（★ 2026-11-05）----------
+
+    /**
+     * 每条线程自己的并行数 = 结构并行仓的当前并行（不带线程数乘法）。
+     *
+     * <p>线程数/开关由基座统一从线程仓现读，模块类只描述自己的并行口径。
+     */
+    @Override
+    public int engineParallelPerBatch() {
+        return Math.max(1, super.getMaxParallel());
     }
 
     /**
@@ -95,7 +114,7 @@ public class MoltenBlastModuleMachine extends MoltenModuleMachineBase<MoltenBlas
     public int getMaxParallel() {
         int hatchParallel = super.getMaxParallel();
         int threads = totalThreads();
-        if (threads <= BASE_THREADS) {
+        if (threads <= 0) {
             return hatchParallel;
         }
         long value = (long) hatchParallel * threads / BASE_THREADS;
