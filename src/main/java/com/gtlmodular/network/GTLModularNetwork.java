@@ -9,10 +9,11 @@ import net.minecraftforge.network.simple.SimpleChannel;
  * 本模组网络通道（只服务哦鲸鲸终端：设置写回 / 报告下发 / 结构高亮）。
  *
  * <p>协议版本与通道名都独立于其他模组；新增包时 id 顺序追加，不要插队。
+ * 加包即改协议版本：客户端/服务端各装一半时直接拒连，避免解出半截包。
  */
 public final class GTLModularNetwork {
 
-    private static final String PROTOCOL_VERSION = "1";
+    private static final String PROTOCOL_VERSION = "2";
     private static final ResourceLocation CHANNEL_NAME =
             new ResourceLocation(GTLModular.MOD_ID, "terminal");
 
@@ -53,5 +54,10 @@ public final class GTLModularNetwork {
                 OpenTerminalReportPacket::encode,
                 OpenTerminalReportPacket::new,
                 OpenTerminalReportPacket::handle);
+        CHANNEL.registerMessage(packetId++,
+                TerminalStructureDetectPacket.class,
+                TerminalStructureDetectPacket::encode,
+                TerminalStructureDetectPacket::new,
+                TerminalStructureDetectPacket::handle);
     }
 }

@@ -363,6 +363,7 @@ datagen 用 `runData`（`:55-67`，输出到 `src/generated/resources/`）——
 | 潜行右击控制器 | 确认施工 |
 | 拆解模式右键控制器 | 按结构回收材料（有 AE 入 AE，无 AE 入背包） |
 | 聊天里的「[点击查看详细报告]」 | 打开完整报告屏（按类别筛选、滚动、点击复制坐标、显示坐标方框） |
+| 按住 Ctrl 右击多方块控制器 | **结构检测**：复匹配结构并报出每个错误位置需要的方块 + 红色高亮 15 秒（沿用终端的镜像/重复层数；8 格内；已成型直接提示） |
 
 **代码位置**：
 - 服务端：`com.gtlmodular.common.item.ShanhaiUltimateTerminalBehavior` + `common/item/terminal/**`

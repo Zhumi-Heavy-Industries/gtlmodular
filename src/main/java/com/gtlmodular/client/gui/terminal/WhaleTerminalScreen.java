@@ -269,8 +269,9 @@ public final class WhaleTerminalScreen extends Screen {
     private void drawFooter(GuiGraphics graphics, int mouseX, int mouseY) {
         graphics.drawString(font, shorten(bound, 160), left + 10, top + 224, EcoStyle.TEXT_DIM, false);
         graphics.drawString(font, boundEco, left + 180, top + 224, EcoStyle.TEXT_DIM, false);
-        graphics.drawString(font, tr("hint.0"), left + 10, top + 238, EcoStyle.TEXT_DIM, false);
-        graphics.drawString(font, tr("hint.1"), left + 10, top + 250, EcoStyle.TEXT_DIM, false);
+        graphics.drawString(font, tr("hint.0"), left + 10, top + 234, EcoStyle.TEXT_DIM, false);
+        graphics.drawString(font, tr("hint.1"), left + 10, top + 244, EcoStyle.TEXT_DIM, false);
+        graphics.drawString(font, tr("hint.2"), left + 10, top + 254, EcoStyle.TEXT_DIM, false);
         boolean previewHover = EcoStyle.hit(mouseX, mouseY, previewX, previewY, 88, 20);
         EcoStyle.button(graphics, previewX, previewY, 88, 20, previewHover, true);
         EcoStyle.centeredShadow(graphics, font, tr("preview.button"), previewX, 88, previewY + 6, EcoStyle.TEXT);

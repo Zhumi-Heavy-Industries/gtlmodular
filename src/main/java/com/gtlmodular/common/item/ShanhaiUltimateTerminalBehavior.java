@@ -564,6 +564,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.0"));
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.1"));
         list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.2"));
+        list.add(Component.translatable("tooltip.gtlmodular.whale_terminal.3"));
         list.add(bound == null
                 ? Component.translatable("tooltip.gtlmodular.whale_terminal.unbound")
                 : Component.translatable("tooltip.gtlmodular.whale_terminal.bound",
