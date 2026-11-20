@@ -84,6 +84,8 @@ public final class TerminalScreen extends Screen {
     private long openedAt;
     private long lastPerfLogAt;
     private boolean reportDefaultApplied;
+    private Page drawnPage;
+    private long pageSwitchAt;
     private @Nullable ShanhaiTerminalReport report;
 
     public TerminalScreen(InteractionHand hand, boolean preview) {
@@ -311,6 +313,13 @@ public final class TerminalScreen extends Screen {
         }
         long renderStart = System.nanoTime();
         this.seconds = (renderStart - openedAt) / 1_000_000_000f;
+        if (page != drawnPage) {
+            drawnPage = page;
+            pageSwitchAt = renderStart;
+        }
+        float transition = Math.min(1f, (renderStart - pageSwitchAt) / 550_000_000f);
+        float transitionEase = 1f - (1f - transition) * (1f - transition) * (1f - transition);
+        float pageShift = (1f - transitionEase) * 5f;
         this.mouseX = (mouseX - originX) / scale;
         this.mouseY = (mouseY - originY) / scale;
         hits.clear();
@@ -332,15 +341,27 @@ public final class TerminalScreen extends Screen {
         // 1.20.1 的 BufferSource 按 RenderType 创建顺序出队；同一批次里先建 text 缓冲、后建 gui 缓冲，
         // 会让后画的色块盖住先建的文字（CONFIG/BIND/SYSTEM 标题发黑就是这个原因）。
         g.drawManaged(() -> {
-            TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
-            TerminalFrame.draw(g, page);
-            navHits();
-            switch (page) {
-                case MAIN -> drawMain(g);
-                case OPTIONS -> TerminalOptions.draw(g, this);
-                case REPORT -> TerminalReport.draw(g, this);
+            g.pose().pushPose();
+            try {
+                // 网页 .entering .sheet>*：0.55s 内从下方 5px 淡入
+                g.pose().translate(0, pageShift, 0);
+                TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+                TerminalFrame.draw(g, page);
+                navHits();
+                switch (page) {
+                    case MAIN -> drawMain(g);
+                    case OPTIONS -> TerminalOptions.draw(g, this);
+                    case REPORT -> TerminalReport.draw(g, this);
+                }
+            } finally {
+                g.pose().popPose();
             }
         });
+        if (transition < 0.999f) {
+            int veil = (int) ((1f - transitionEase) * 150f);
+            g.drawManaged(() -> TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H,
+                    (veil << 24) | 0xEFF1EF));
+        }
         overlayHitStart = -1;
         if (layerOpen || tierOpen) {
             g.drawManaged(() -> {
@@ -394,8 +415,9 @@ public final class TerminalScreen extends Screen {
         TerminalDraw.rect(g, 36, 44, cw + 12, 10, TerminalTheme.INK);
         TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "CONFIG", 42, 46, 1.8f, 0xFFFFFFFF);
         float emW = TerminalFonts.trackedWidth(Fam.MONO, 5.5f, "06", 1.8f) + 6;
-        TerminalDraw.rect(g, 36 + cw + 10, 44, emW, 10, TerminalTheme.RED);
-        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", 36 + cw + 13, 46, 1.8f, 0xFFFFFFFF);
+        // 网页标准：06 是钴蓝块 + 红字，黑条只属于 CONFIG
+        TerminalDraw.rect(g, 36 + cw + 10, 44, emW, 10, TerminalTheme.COBALT);
+        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", 36 + cw + 13, 46, 1.8f, TerminalTheme.RED);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "06 / GTL MODULAR", 110, 46, 1.6f, TerminalTheme.INK_FAINT);
 
         TerminalDraw.rect(g, 36, 66, 2, 30, TerminalTheme.COBALT);

@@ -51,7 +51,6 @@ public final class TerminalReport {
         TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRightMixed(g, Fam.MONO, 6.5f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "坐标", 477, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
 
         // 清单（裁剪，展开行高 48）
@@ -112,9 +111,6 @@ public final class TerminalReport {
                 68, y + 3, 0f, TerminalTheme.INK);
         TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 3, TerminalTheme.INK);
 
-        String coord = row.coords().isEmpty() ? "—" : fmt(row.coords().get(0));
-        // 网页版坐标列是右对齐到纸面右缘附近，不是左对齐（之前对不上就是这里）
-        TerminalFonts.drawRightMixed(g, Fam.MONO, 6f, coord, 520, y + 6, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, open ? "−" : "+", C_TOGGLE, y + 4, 0f,
                 open ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
 

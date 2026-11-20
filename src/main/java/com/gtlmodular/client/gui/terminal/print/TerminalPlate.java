@@ -120,7 +120,7 @@ public final class TerminalPlate {
         }
 
         // L7 主扫掠带（纸白）
-        brush(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(120));
+        brush(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(153));
 
         // L7 星座
         float[] stars = {250, 700, 300, 670, 350, 720, 290, 760};
@@ -176,8 +176,9 @@ public final class TerminalPlate {
         }
 
         // L11 描边数字 06
-        outlineNumber(g, 90, 900, "06", 1.4f, ink(0) & 0x00FFFFFF | (0x66 << 24));
-        outlineNumber(g, 80, 892, "06", 1.8f, cob(140));
+        // 网页：盘外左下双描边 06，字号 260（≈70 设计像素），两遍都是钴蓝
+        outlineNumber(g, 90, 930, "06", 1.4f, cob(102));
+        outlineNumber(g, 80, 920, "06", 1.8f, cob(140));
 
         // L12 NESW
         TerminalFonts.draw(g, Fam.SERIF, 4.4f, "N", sx(508), sy(250), paper(220));
@@ -222,7 +223,7 @@ public final class TerminalPlate {
 
     private static void brush(GuiGraphics g, float x1, float y1, float x2, float y2,
                               float amp, float w, float bias, int color) {
-        int n = 8;
+        int n = 24;
         float[][] spine = new float[n + 1][2];
         float[] widths = new float[n + 1];
         float dx = x2 - x1, dy = y2 - y1;
@@ -274,10 +275,10 @@ public final class TerminalPlate {
     }
 
     private static void outlineNumber(GuiGraphics g, float x, float y, String s, float w, int color) {
-        TerminalFonts.draw(g, Fam.SERIF, 60f, s, sx(x) - w, sy(y) - w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 60f, s, sx(x) + w, sy(y) + w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 60f, s, sx(x) - w, sy(y) + w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 60f, s, sx(x) + w, sy(y) - w, color);
+        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) - w, sy(y) - w, color);
+        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) + w, sy(y) + w, color);
+        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) - w, sy(y) + w, color);
+        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) + w, sy(y) - w, color);
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */
@@ -298,24 +299,29 @@ public final class TerminalPlate {
         }
     }
 
-    /** 实心盘上的白色星盘符号。 */
-    private static void starCompass(GuiGraphics g, float tx, float ty) {
-        float cx = tx + 80 * 1.4f, cy = ty + 68 * 1.4f;
-        float r1 = 45 * 1.4f, r2 = 39 * 1.4f;
-        TerminalDraw.ring(g, sx(cx), sy(cy), sr(r1), 1.1f, paper(220));
-        TerminalDraw.ring(g, sx(cx), sy(cy), sr(r2), 1.1f, paper(200));
-        for (int i = 0; i < 8; i++) {
-            double a = Math.PI / 4 * i;
-            TerminalDraw.line(g,
-                    sx(cx) + (float) Math.cos(a) * sr(r2), sy(cy) + (float) Math.sin(a) * sr(r2),
-                    sx(cx) + (float) Math.cos(a) * sr(r1 * 1.28f), sy(cy) + (float) Math.sin(a) * sr(r1 * 1.28f),
-                    1f, paper(200));
-        }
-        TerminalDraw.fillCircle(g, sx(cx), sy(cy), sr(5), paper(220));
-        // 两翼
-        TerminalDraw.line(g, sx(cx - r1 * 0.9f), sy(cy - r1 * 0.35f),
-                sx(cx - r1 * 1.35f), sy(cy - r1 * 0.1f), 1f, paper(180));
-        TerminalDraw.line(g, sx(cx + r1 * 0.9f), sy(cy + r1 * 0.35f),
-                sx(cx + r1 * 1.35f), sy(cy + r1 * 0.1f), 1f, paper(180));
+    /** 实心盘上的白色星盘符号（v22 官方坐标：translate(408 340) scale(1.4)）。 */
+    private static void starCompass(GuiGraphics g, float ox, float oy) {
+        float ex = 408f, ey = 340f, k = 1.4f;
+        float cx = sx(ex + 80 * k), cy = sy(ey + 68 * k);
+        float rOuter = sr(45 * k), rInner = sr(39 * k);
+        TerminalDraw.ring(g, cx, cy, rOuter, 1.4f, paper(220));
+        TerminalDraw.ring(g, cx, cy, rInner, 1.4f, paper(200));
+        // 长十字 + 斜线（官方 path 的等价线段）
+        TerminalDraw.line(g, sx(ex + 80 * k), sy(ey + 5 * k), sx(ex + 80 * k), sy(ey + 153 * k), 1.2f, paper(210));
+        TerminalDraw.line(g, sx(ex + 12 * k), sy(ey + 68 * k), sx(ex + 148 * k), sy(ey + 68 * k), 1.2f, paper(210));
+        TerminalDraw.line(g, sx(ex + 27 * k), sy(ey + 31 * k), sx(ex + 133 * k), sy(ey + 137 * k), 1.2f, paper(200));
+        TerminalDraw.line(g, sx(ex + 133 * k), sy(ey + 31 * k), sx(ex + 27 * k), sy(ey + 137 * k), 1.2f, paper(200));
+        // 下方两翼（官方填充 path）
+        float[] left = {
+                sx(ex + 4 * k), sy(ey + 92 * k), sx(ex + 35 * k), sy(ey + 99 * k),
+                sx(ex + 59 * k), sy(ey + 121 * k), sx(ex + 29 * k), sy(ey + 117 * k)
+        };
+        float[] right = {
+                sx(ex + 156 * k), sy(ey + 92 * k), sx(ex + 125 * k), sy(ey + 99 * k),
+                sx(ex + 101 * k), sy(ey + 121 * k), sx(ex + 131 * k), sy(ey + 117 * k)
+        };
+        TerminalDraw.polygon(g, left, paper(210));
+        TerminalDraw.polygon(g, right, paper(210));
+        TerminalDraw.fillCircle(g, cx, cy, sr(5 * k), paper(230));
     }
 }
