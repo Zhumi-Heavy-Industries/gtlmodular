@@ -325,6 +325,7 @@ public final class TerminalScreen extends Screen {
 
         g.fill(0, 0, width, height, TerminalTheme.BACKDROP);
         g.pose().pushPose();
+        try {
         g.pose().translate(originX, originY, 0);
         g.pose().scale(scale, scale, 1f);
         // 三个独立 drawManaged，而不是一个批次里反复 flush。
@@ -352,7 +353,9 @@ public final class TerminalScreen extends Screen {
         g.drawManaged(() -> reticle.draw(g, this.mouseX, this.mouseY, seconds,
                 target == null ? null : new TerminalReticle.Target(target.x, target.y, target.w, target.h,
                         target.label, target.ink)));
-        g.pose().popPose();
+        } finally {
+            g.pose().popPose();
+        }
         long elapsed = System.nanoTime() - renderStart;
         long now = System.nanoTime();
         if (elapsed >= 40_000_000L && now - lastPerfLogAt >= 3_000_000_000L) {
@@ -449,21 +452,27 @@ public final class TerminalScreen extends Screen {
         // 档位面板会盖住整块内容区，打开时跳过圆盘，省掉每帧上万次 fill
         if (!tierOpen) {
             g.pose().pushPose();
-            // v19-v22 分层入场：盘面从右侧 30*d 滑入并缓出
-            float enter = Math.min(1f, seconds / 0.9f);
-            float ease = 1f - (1f - enter) * (1f - enter) * (1f - enter);
-            float slide = (1f - ease) * 36f;
-            g.pose().translate(menu.px + slide, menu.py, 0);
-            TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
-            g.pose().popPose();
+            try {
+                // v19-v22 分层入场：盘面从右侧 30*d 滑入并缓出
+                float enter = Math.min(1f, seconds / 0.9f);
+                float ease = 1f - (1f - enter) * (1f - enter) * (1f - enter);
+                float slide = (1f - ease) * 36f;
+                g.pose().translate(menu.px + slide, menu.py, 0);
+                TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
+            } finally {
+                g.pose().popPose();
+            }
         }
         // 圆盘文字必须在 SYSTEM 卡纸底之前落地；卡的第一笔是色块，flush 后顺序安全。
         g.flush();
 
         g.pose().pushPose();
-        g.pose().translate(menu.px * 1.5f, menu.py * 1.5f, 0);
-        systemCard(g, 300, 62);
-        g.pose().popPose();
+        try {
+            g.pose().translate(menu.px * 1.5f, menu.py * 1.5f, 0);
+            systemCard(g, 300, 62);
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     private void echo(GuiGraphics g, float x, float y) {
@@ -773,10 +782,13 @@ public final class TerminalScreen extends Screen {
             return;
         }
         g.pose().pushPose();
-        g.pose().translate(x, y, 0);
-        g.pose().scale(scale, scale, 1f);
-        g.renderItem(new ItemStack(block), 0, 0);
-        g.pose().popPose();
+        try {
+            g.pose().translate(x, y, 0);
+            g.pose().scale(scale, scale, 1f);
+            g.renderItem(new ItemStack(block), 0, 0);
+        } finally {
+            g.pose().popPose();
+        }
     }
 
     private static int alpha(int c, int a) {

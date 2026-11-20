@@ -23,7 +23,7 @@ public final class TerminalTierPanel {
             {"超级热容", "白铜", "坎塔尔合金", "镍铬合金", "钌钨钼合金", "高速钢-G", "铑钯合金", "凯金合金",
                     "三钛", "渊狱合金", "泰坦钢", "精金", "超能硅岩-塔兰", "星辉", "无尽", "海珀珍", "永恒"}
     };
-    private static final float COLS = 6;
+    private static final int COLS = 6;
     private static final float CW = 76, CH = 18, GX = 4, GY = 22;
 
     /** 网页端 v32 的展示名与格数（SEPM 固定 5 档，总 39 档）。 */
