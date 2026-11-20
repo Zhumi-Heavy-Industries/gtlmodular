@@ -81,12 +81,18 @@ public final class TerminalFonts {
 
     private static boolean colorWarned;
     private static boolean awtLogged;
+    private static boolean awtFailed;
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
         if (drawAwt(g, fam, size, text, x, y, color)) return;
         // 兜底：走原版 Font（颜色可能仍偏黑，但至少不丢字）
         rawDrawMc(g, of(fam, size), text, x, y, color);
+    }
+
+    /** AWT 路径是否已经失败（用于黑底按钮的兜底配色）。 */
+    public static boolean awtFailed() {
+        return awtFailed;
     }
 
     /** 用 AWT 烘一张小贴图再 blit，彻底绕开 MC 图集的颜色问题。 */
@@ -100,7 +106,9 @@ public final class TerminalFonts {
                 java.awt.Font base = AWTF.get(fam);
                 if (base == null) {
                     String file = pickFile(fam);
-                    if (file == null) return false;
+                    if (file == null) {
+                        return false; // 该字族缺文件时只回退该族，不影响其它文字
+                    }
                     base = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, new java.io.File(file));
                     AWTF.put(fam, base);
                 }
@@ -162,6 +170,7 @@ public final class TerminalFonts {
             g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
             return true;
         } catch (Throwable t) {
+            awtFailed = true;
             if (!colorWarned) {
                 colorWarned = true;
                 GTLModular.LOGGER.warn("[TerminalFonts] AWT 文字失败，回退 MC 字体: {}", t.toString());
@@ -321,6 +330,13 @@ public final class TerminalFonts {
     }
 
     // ────────────────────────────── 文本绘制
+
+    /** 墨色文字走 MC 字体：省掉大量 AWT 小贴图（环上铭文每帧上百个字），颜色本来就是深墨。 */
+    public static void drawInkMc(GuiGraphics g, Fam fam, float size, String text,
+                                 float x, float y, int color) {
+        Font font = of(fam, size);
+        if (font != null) rawDrawMc(g, font, text, x, y, color);
+    }
 
     public static float width(Fam fam, float size, String text) {
         Font font = of(fam, size);

@@ -84,8 +84,9 @@ public final class TerminalPlate {
         dashed(g, sx(90), sy(CY), sx(950), sy(CY), 2.6f, 2.1f, ink(60));
 
         // L4 环绕文字（r450，慢转）
-        ringText(g, CX, CY, 450f, seconds * 3.0f,
-                "GREGTECH LEISURE · LATERANO 1099 · FAITH · ORDER · FREEDOM · SIDESTORY 06 · ");
+        String legend = "GREGTECH LEISURE · LATERANO 1099 · FAITH · ORDER · FREEDOM · SIDESTORY 06 · ";
+        // v22 的 textPath 放了两遍，保证整圈铺满
+        ringText(g, CX, CY, 450f, seconds * 3.0f, legend + legend);
 
         // L4 点线圈 + 节点
         TerminalDraw.dottedRing(g, sx(CX), sy(CY), sr(382), 1.4f,

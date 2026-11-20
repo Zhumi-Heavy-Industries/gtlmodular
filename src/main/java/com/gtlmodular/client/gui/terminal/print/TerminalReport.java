@@ -147,7 +147,13 @@ public final class TerminalReport {
         } else {
             TerminalDraw.outline(g, x, y, w, 16, hover ? TerminalTheme.COBALT : TerminalTheme.INK);
         }
-        int c = fill ? textColor : TerminalTheme.INK;
+        boolean fallbackInk = fill && TerminalFonts.awtFailed();
+        if (fill && fallbackInk) {
+            // AWT 文字不可用时，MC 字在纯黑底上会看不见；改成纸底墨字保证可读
+            TerminalDraw.rect(g, x, y, w, 16, TerminalTheme.PAPER);
+            TerminalDraw.outline(g, x, y, w, 16, TerminalTheme.INK);
+        }
+        int c = fill ? (fallbackInk ? TerminalTheme.INK : textColor) : TerminalTheme.INK;
         if (icon > 0) icon(g, icon, x + 7, y + 4, c);
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f + (icon > 0 ? 4 : 0), y + 4, c);
         s.hit(x, y, w, 16, label, action, false);
