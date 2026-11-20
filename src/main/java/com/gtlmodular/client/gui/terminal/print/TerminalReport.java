@@ -1,0 +1,155 @@
+package com.gtlmodular.client.gui.terminal.print;
+
+import com.gtlmodular.client.gui.terminal.print.TerminalTheme.Fam;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.core.BlockPos;
+
+/** 报告页（02）：Scan Report + 摘要 + 可展开清单 + 4 按钮。 */
+public final class TerminalReport {
+
+    private TerminalReport() {}
+
+    private static final float LIST_X = 20;
+    private static final float LIST_Y = 94;
+    private static final float LIST_W = 520;
+    // 清单底边留到 226，232 的「全部 N 条」才不会被最后一行压住
+    public static final float LIST_H = 132;
+    private static final float ROW_H = 21;
+    private static final float C_QTY_RIGHT = 448;
+    private static final float C_COORD = 464;
+    private static final float C_TOGGLE = 526;
+
+    public static void draw(GuiGraphics g, TerminalScreen s) {
+        TerminalDraw.rect(g, 20, 35, 2, 14, TerminalTheme.COBALT);
+        TerminalFonts.draw(g, Fam.SERIF, 13f, "Scan Report", 30, 35, TerminalTheme.INK);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, s.targetText(), 438, 37, 1.2f, TerminalTheme.INK_FAINT);
+
+        TerminalDraw.hline(g, 20, 540, 54, TerminalTheme.RULE);
+
+        // 摘要
+        String[] parts = {"可放置", "冲突", "缺失"};
+        int[] vals = {s.placeCount, s.conflictCount, s.missingCount};
+        float x = 20;
+        for (int i = 0; i < 3; i++) {
+            TerminalFonts.drawMixed(g, Fam.MONO, 7f, parts[i] + " ", x, 61, 0, TerminalTheme.INK_SOFT);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, parts[i] + " ", 0);
+            TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, String.valueOf(vals[i]), x, 61, 0, TerminalTheme.INK);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, String.valueOf(vals[i]), 0) + 10;
+        }
+        TerminalFonts.drawMixed(g, Fam.MONO, 7f, "耗时 —", x, 61, 0, TerminalTheme.INK_SOFT);
+
+        // 刻度尺 + 表头
+        for (float tx = 20; tx <= 540; tx += 12) {
+            TerminalDraw.vline(g, tx, 74, 79, 0xB81F2427);
+        }
+        TerminalDraw.hline(g, 524, 540, 75, TerminalTheme.INK_FAINT);
+
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawRightMixed(g, Fam.MONO, 6f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "坐标", C_COORD, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
+
+        // 清单（裁剪，展开行高 48）
+        g.enableScissor(Math.round(s.originX + LIST_X * s.scale), Math.round(s.originY + LIST_Y * s.scale),
+                Math.round(s.originX + (LIST_X + LIST_W) * s.scale), Math.round(s.originY + (LIST_Y + LIST_H) * s.scale));
+        float y = LIST_Y + 2 - s.reportScroll;
+        int shown = 0;
+        for (int i = 0; i < s.reportRows.size(); i++) {
+            TerminalScreen.ReportRow row = s.reportRows.get(i);
+            if (!matchesFilter(s, row)) continue;
+            boolean open = s.expanded[i];
+            float rowH = ROW_H + (open ? 48 : 0);
+            if (y + rowH >= LIST_Y && y <= LIST_Y + LIST_H) {
+                drawRow(g, s, row, i, y, open);
+            }
+            y += rowH;
+            shown++;
+        }
+        g.disableScissor();
+
+        // 必须先落一笔色块再画文字：disableScissor 已清批，若先建 text 缓冲，
+        // 后面的「关闭」填充按钮会晚于文字出队并盖住标签。
+        TerminalDraw.hline(g, 20, 540, 248, TerminalTheme.RULE);
+        String omitted = s.reportOmitted > 0
+                ? "另有 " + s.reportOmitted + " 条已省略 · ESC 关闭"
+                : "全部 " + shown + " 条 · ESC 关闭";
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, omitted, 20, 232, 0.6f, TerminalTheme.INK_FAINT);
+
+        button(g, s, 20, 258, 74, "复制全部", false, TerminalTheme.INK, s::copyReport);
+        button(g, s, 100, 258, 74, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes);
+        button(g, s, 180, 258, 96, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter);
+        button(g, s, 476, 258, 64, "关闭", true, TerminalTheme.PAPER, s::onClose);
+    }
+
+    private static String shortName(String name) {
+        if (name == null) return "";
+        int cut = name.indexOf('、');
+        if (cut > 0) name = name.substring(0, cut);
+        return name;
+    }
+
+    private static boolean matchesFilter(TerminalScreen s, TerminalScreen.ReportRow row) {
+        return switch (s.filter) {
+            case 1 -> "可放置".equals(row.category());
+            case 2 -> "冲突".equals(row.category());
+            case 3 -> "缺失".equals(row.category());
+            default -> true;
+        };
+    }
+
+    private static void drawRow(GuiGraphics g, TerminalScreen s, TerminalScreen.ReportRow row,
+                                int index, float y, boolean open) {
+        TerminalDraw.hline(g, 20, 540, y + 19, TerminalTheme.RULE_SOFT);
+        TerminalDraw.rect(g, 20, y + 5, 2, 11, row.color());
+
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, row.category(), 26, y + 6, 0f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(),
+                68, y + 3, 0f, TerminalTheme.INK);
+        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 3, TerminalTheme.INK);
+
+        String coord = row.coords().isEmpty() ? "—" : fmt(row.coords().get(0));
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 6, 0.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 7f, open ? "−" : "+", C_TOGGLE, y + 4, 0f,
+                open ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
+
+        if (open && !row.coords().isEmpty()) {
+            float cy = y + 21;
+            for (int k = 0; k < row.coords().size() && k < 3; k++) {
+                TerminalFonts.drawMixed(g, Fam.MONO, 6f, "» " + fmt(row.coords().get(k)), 74, cy + 3, 0.4f,
+                        TerminalTheme.INK_FAINT);
+                TerminalDraw.hline(g, 74, 520, cy + 14, 0x141F2427);
+                cy += 16;
+            }
+        }
+        // 命中区必须裁到清单视口内，否则展开行的 69px 命中矩形会压到 258 的按钮上，
+        // 准星就会在按钮区画一个"看不见目标"的框。
+        float top = Math.max(y, LIST_Y);
+        float bottom = Math.min(y + ROW_H + (open ? 48f : 0f), LIST_Y + LIST_H);
+        if (y < LIST_Y + LIST_H && y + ROW_H > LIST_Y && bottom - top > 2f) {
+            s.hit(20, top, 520, bottom - top, row.name(), () -> s.toggleRow(index), false);
+        }
+    }
+
+    private static void button(GuiGraphics g, TerminalScreen s, float x, float y, float w,
+                               String label, boolean fill, int textColor, Runnable action) {
+        boolean hover = s.isHover(x, y, w, 16);
+        if (fill) {
+            TerminalDraw.rect(g, x, y, w, 16, TerminalTheme.INK);
+        } else {
+            TerminalDraw.outline(g, x, y, w, 16, hover ? TerminalTheme.COBALT : TerminalTheme.INK);
+        }
+        TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f, y + 4, fill ? textColor : TerminalTheme.INK);
+        s.hit(x, y, w, 16, label, action, false);
+    }
+
+    static String fmt(BlockPos pos) {
+        return pos.getX() + ", " + pos.getY() + ", " + pos.getZ();
+    }
+
+    public static void copyToClipboard(String text) {
+        Minecraft.getInstance().keyboardHandler.setClipboard(text);
+    }
+}

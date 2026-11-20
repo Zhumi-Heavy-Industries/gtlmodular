@@ -3,6 +3,7 @@ package com.gtlmodular.client;
 import com.gtlmodular.GTLModular;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.gtlmodular.client.gui.terminal.TerminalPreviewOpener;
+import com.gtlmodular.client.gui.terminal.print.TerminalSpecimenScreen;
 import com.gtlmodular.common.data.GTLModularItems;
 import com.gtlmodular.common.item.ShanhaiUltimateTerminalConfig;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
@@ -43,6 +44,15 @@ public final class TerminalChatCommands {
                         && TerminalPreviewOpener.open(controller.getDefinition())) return 1;
             }
             return 0;
+        }));
+        event.getDispatcher().register(Commands.literal("gtlmodular_terminal_ui").executes(context -> {
+            Minecraft.getInstance().setScreen(
+                    new com.gtlmodular.client.gui.terminal.print.TerminalScreen(null, true));
+            return 1;
+        }));
+        event.getDispatcher().register(Commands.literal("gtlmodular_terminal_specimen").executes(context -> {
+            Minecraft.getInstance().setScreen(new TerminalSpecimenScreen());
+            return 1;
         }));
         event.getDispatcher().register(Commands.literal(COMMAND)
                 .then(Commands.argument("id", LongArgumentType.longArg())

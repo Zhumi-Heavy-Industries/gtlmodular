@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 
+import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.compat.EcoSubsystemBridge;
 import com.gtlmodular.common.item.terminal.ShanhaiChamberClassifier;
 import com.gtlmodular.common.item.terminal.ShanhaiModuleClassifier;
@@ -290,19 +291,35 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
     }
 
     public boolean scanOnly(ServerPlayer player, ItemStack terminal, BlockPos pos) {
-        ShanhaiTerminalAeBinding.Context ae = resolveAeContext(player, terminal);
+        long perfStart = System.nanoTime();
+        long planMs = 0;
+        int slots = 0;
+        // Scan-only never reads AE inventory; avoid resolving a potentially expensive AE context here.
         try {
             // 只扫描时不做候选优先级排序：29k 格结构下逐个候选查 AE/背包会卡住服务端线程。
             MetaMachine machine = MetaMachine.getMachine(player.level(), pos);
             if (!(machine instanceof IMultiController controller)) return false;
-            ShanhaiStructurePlan plan = ShanhaiStructurePlanner.scan(controller, terminal);
+            boolean moduleCheck = ShanhaiUltimateTerminalConfig.isModuleCheckMode(terminal);
+            long planStart = System.nanoTime();
+            ShanhaiStructurePlan plan = moduleCheck
+                    ? ShanhaiStructurePlanner.scan(controller, terminal)
+                    : ShanhaiStructurePlanner.scanForReport(controller, terminal);
+            planMs = (System.nanoTime() - planStart) / 1_000_000L;
             if (plan == null) return false;
+            slots = plan.entries().size();
             ShanhaiUltimateTerminalConfig.setBoundController(terminal,
                     GlobalPos.of(player.level().dimension(), pos.immutable()));
-            if (ShanhaiUltimateTerminalConfig.isModuleCheckMode(terminal)) {
+            long reportStart = System.nanoTime();
+            if (moduleCheck) {
                 reportModulePositions(player, plan);
             } else {
                 reportPlan(player, plan);
+            }
+            long reportMs = (System.nanoTime() - reportStart) / 1_000_000L;
+            long totalMs = (System.nanoTime() - perfStart) / 1_000_000L;
+            if (totalMs >= 100L) {
+                GTLModular.LOGGER.warn("[TerminalPerf] scan slots={}, planner={} ms, report/packet={} ms, total={} ms",
+                        slots, planMs, reportMs, totalMs);
             }
         } catch (RuntimeException e) {
             player.sendSystemMessage(Component.literal("§c[哦鲸鲸终端] 结构读取失败: " + e.getMessage()));
@@ -369,12 +386,18 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
     }
 
     private void reportPlan(ServerPlayer player, ShanhaiStructurePlan plan) {
-        long place = count(plan, ShanhaiStructurePlan.Kind.PLACE);
-        long replace = count(plan, ShanhaiStructurePlan.Kind.REPLACE)
-                + count(plan, ShanhaiStructurePlan.Kind.FORCE_REPLACE);
-        long blocked = count(plan, ShanhaiStructurePlan.Kind.BLOCKED);
-        long manual = count(plan, ShanhaiStructurePlan.Kind.MANUAL);
-        long chambers = plan.entries().stream().filter(ShanhaiStructurePlan.Entry::chamberCapable).count();
+        // One pass over potentially tens of thousands of slots (previously five full stream passes).
+        long place = 0, replace = 0, blocked = 0, manual = 0, chambers = 0;
+        for (ShanhaiStructurePlan.Entry entry : plan.entries()) {
+            switch (entry.kind()) {
+                case PLACE -> place++;
+                case REPLACE, FORCE_REPLACE -> replace++;
+                case BLOCKED -> blocked++;
+                case MANUAL -> manual++;
+                default -> { }
+            }
+            if (entry.chamberCapable()) chambers++;
+        }
         player.sendSystemMessage(Component.literal("§b[哦鲸鲸终端] 缺失 §f" + place
                 + " §b| 替换 §f" + replace + " §b| 阻塞 §f" + blocked
                 + " §b| 手动 §f" + manual + " §b| 可放仓室 §f" + chambers));
@@ -534,10 +557,6 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         ShanhaiStructureHighlightPacket.sendTo(player, plan.target().dimension(),
                 System.currentTimeMillis() + 15000, highlights);
         sendReportLink(player, report, 0, modulePositions.size());
-    }
-
-    private static long count(ShanhaiStructurePlan plan, ShanhaiStructurePlan.Kind kind) {
-        return plan.entries().stream().filter(entry -> entry.kind() == kind).count();
     }
 
     private static int highlightColor(ShanhaiStructurePlan.Kind kind,

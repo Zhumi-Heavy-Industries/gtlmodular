@@ -41,91 +41,105 @@ public final class ShanhaiStructurePlanner {
             state = state == null ? Blocks.AIR.defaultBlockState() : state;
         }
     }
+    private static final Candidate EMPTY_CANDIDATE =
+            new Candidate(ItemStack.EMPTY, Blocks.AIR.defaultBlockState());
 
     private ShanhaiStructurePlanner() {}
 
     public static ShanhaiStructurePlan scan(IMultiController controller, ItemStack terminal) {
-        return scan(controller, terminal, candidate -> Integer.MAX_VALUE);
+        // 普通结构查看不需要仓室/替换候选的优先级排序：省掉对每个槽位的候选列表 sort。
+        return scanInternal(controller, terminal, null, false);
+    }
+
+    /** 扫描报告路径：非仓室候选不会带进 plan（reportPlan 对这些候选不读取），减少 29k 级 ItemStack 复制。 */
+    public static ShanhaiStructurePlan scanForReport(IMultiController controller, ItemStack terminal) {
+        return scanInternal(controller, terminal, null, true);
     }
 
     public static ShanhaiStructurePlan scan(IMultiController controller, ItemStack terminal,
                                             CandidatePriority priority) {
+        return scanInternal(controller, terminal, priority, false);
+    }
+
+    private static ShanhaiStructurePlan scanInternal(IMultiController controller, ItemStack terminal,
+                                                       CandidatePriority priority, boolean reportOnly) {
         Level level = controller.self().getLevel();
         boolean mirrored = ShanhaiUltimateTerminalConfig.isMirrored(terminal);
         boolean noChambers = ShanhaiUltimateTerminalConfig.isNoChamberMode(terminal);
+        boolean replaceMode = ShanhaiUltimateTerminalConfig.isReplaceMode(terminal);
+        boolean absoluteReplace = ShanhaiUltimateTerminalConfig.isAbsoluteReplaceMode(terminal);
         int repeatCount = ShanhaiUltimateTerminalConfig.getRepeatCount(terminal);
-        List<ShanhaiStructurePlan.Entry> entries = new ArrayList<>();
+        Block[] replacementFamily = replacementFamily(terminal);
+        Block replacementTarget = replacementTarget(terminal, replacementFamily);
+        Candidate replacementCandidate = replacementTarget == null ? EMPTY_CANDIDATE
+                : new Candidate(replacementTarget.asItem().getDefaultInstance(), replacementTarget.defaultBlockState());
         CandidateCache candidateCache = new CandidateCache();
-        for (ShanhaiStructurePatternAdapter.Slot slot
-                : ShanhaiStructurePatternAdapter.map(controller, repeatCount, mirrored)) {
-            if (slot.pos().equals(controller.self().getPos())) continue;
-            entries.add(classify(level, slot.pos(), slot.predicate(), terminal, priority, candidateCache));
-        }
-        List<ShanhaiStructurePlan.Entry> normalized = new ArrayList<>(entries.size());
-        for (ShanhaiStructurePlan.Entry entry : entries) {
-            if (!noChambers && entry.chamberCapable()) {
-                normalized.add(new ShanhaiStructurePlan.Entry(entry.pos(),
-                        ShanhaiStructurePlan.Kind.CHAMBER_HINT, entry.desired(), entry.desiredState(),
-                        entry.current(), entry.currentState(),
-                        entry.candidates(), true, entry.currentMatchesStructure()));
-            } else if (entry.chamberCapable()
-                    && entry.kind() == ShanhaiStructurePlan.Kind.SATISFIED) {
-                normalized.add(new ShanhaiStructurePlan.Entry(entry.pos(),
-                        ShanhaiStructurePlan.Kind.CHAMBER_HINT, entry.desired(), entry.desiredState(),
-                        entry.current(), entry.currentState(),
-                        entry.candidates(), true, entry.currentMatchesStructure()));
-            } else {
-                normalized.add(entry);
-            }
+        List<ShanhaiStructurePatternAdapter.Slot> slots =
+                ShanhaiStructurePatternAdapter.map(controller, repeatCount, mirrored);
+        List<ShanhaiStructurePlan.Entry> entries = new ArrayList<>(slots.size());
+        BlockPos controllerPos = controller.self().getPos();
+        for (ShanhaiStructurePatternAdapter.Slot slot : slots) {
+            if (slot.pos().equals(controllerPos)) continue;
+            PreparedCandidates prepared = candidateCache.prepared(slot.predicate(), priority);
+            entries.add(classify(level, slot.pos(), prepared,
+                    replacementFamily, replacementTarget, replacementCandidate, replaceMode, absoluteReplace,
+                    noChambers, reportOnly));
         }
         Block controllerBlock = controller.self().getBlockState().getBlock();
         var machineId = ForgeRegistries.BLOCKS.getKey(controllerBlock);
         return new ShanhaiStructurePlan(
-                GlobalPos.of(level.dimension(), controller.self().getPos()),
-                machineId == null ? "" : machineId.toString(), mirrored, repeatCount, normalized);
+                GlobalPos.of(level.dimension(), controllerPos),
+                machineId == null ? "" : machineId.toString(), mirrored, repeatCount, entries);
     }
 
     private static ShanhaiStructurePlan.Entry classify(Level level, BlockPos pos,
-                                                         TraceabilityPredicate predicate,
-                                                         ItemStack terminal,
-                                                         CandidatePriority priority,
-                                                         CandidateCache candidateCache) {
-        List<Candidate> allCandidates = collectCandidates(predicate, candidateCache);
-        List<ItemStack> candidateItems = allCandidates.stream()
-                .map(Candidate::item)
-                .filter(stack -> !stack.isEmpty())
-                .toList();
-        boolean chamberCapable = allCandidates.stream()
-                .map(candidate -> candidate.state().getBlock())
-                .anyMatch(ShanhaiChamberClassifier::isChamberBlock);
-        List<Candidate> ordinaryCandidates = allCandidates.stream()
-                .filter(candidate -> !ShanhaiChamberClassifier.isChamberBlock(candidate.state().getBlock()))
-                .filter(candidate -> candidate.state().getBlock() != Blocks.AIR)
-                .sorted(Comparator.comparingInt(candidate -> priority.priority(candidate.item())))
-                .toList();
+                                                         PreparedCandidates prepared,
+                                                         Block[] replacementFamily,
+                                                         Block replacementTarget,
+                                                         Candidate replacementCandidate,
+                                                         boolean replaceMode,
+                                                         boolean absoluteReplace,
+                                                         boolean noChambers,
+                                                         boolean reportOnly) {
+        List<Candidate> allCandidates = prepared.all();
+        List<Candidate> ordinaryCandidates = prepared.ordinary();
+        boolean chamberCapable = prepared.chamberCapable();
+        List<ItemStack> candidateItems = reportOnly && !chamberCapable ? List.of() : prepared.items();
 
         BlockState currentState = level.getBlockState(pos);
-        ItemStack current = currentState.isAir()
+        // Report-only scan never consumes current ItemStacks; do not allocate one for every slot.
+        ItemStack current = reportOnly || currentState.isAir()
                 ? ItemStack.EMPTY : currentState.getBlock().asItem().getDefaultInstance();
-        Block[] replacementFamily = replacementFamily(terminal);
-        Block replacementTarget = replacementTarget(terminal, replacementFamily);
-        boolean replacementApplies = replacementTarget != null && ordinaryCandidates.stream()
-                .map(candidate -> candidate.state().getBlock())
-                .anyMatch(block -> contains(replacementFamily, block));
+        boolean replacementApplies = false;
+        if (replaceMode && replacementTarget != null) {
+            for (Candidate candidate : ordinaryCandidates) {
+                if (contains(replacementFamily, candidate.state().getBlock())) {
+                    replacementApplies = true;
+                    break;
+                }
+            }
+        }
 
-        Candidate desiredCandidate = replacementApplies
-                ? new Candidate(replacementTarget.asItem().getDefaultInstance(), replacementTarget.defaultBlockState())
-                : ordinaryCandidates.stream().findFirst()
-                        .orElse(new Candidate(ItemStack.EMPTY, Blocks.AIR.defaultBlockState()));
+        Candidate desiredCandidate;
+        if (replacementApplies) {
+            desiredCandidate = replacementCandidate;
+        } else if (ordinaryCandidates.isEmpty()) {
+            desiredCandidate = EMPTY_CANDIDATE;
+        } else {
+            desiredCandidate = ordinaryCandidates.get(0);
+        }
         ItemStack desired = desiredCandidate.item();
         BlockState desiredState = desiredCandidate.state();
-        boolean hasBuildTarget = !desired.isEmpty()
-                || desiredState.getBlock() instanceof LiquidBlock;
+        boolean hasBuildTarget = !desired.isEmpty() || desiredState.getBlock() instanceof LiquidBlock;
         Block currentBlock = currentState.getBlock();
-        boolean currentAllowed = allCandidates.stream()
-                .map(candidate -> candidate.state().getBlock())
-                .anyMatch(block -> block == currentBlock)
-                && (!(currentBlock instanceof LiquidBlock) || currentState.getFluidState().isSource());
+        boolean currentAllowed = false;
+        for (Candidate candidate : allCandidates) {
+            if (candidate.state().getBlock() == currentBlock) {
+                currentAllowed = true;
+                break;
+            }
+        }
+        currentAllowed &= !(currentBlock instanceof LiquidBlock) || currentState.getFluidState().isSource();
         boolean currentMatchesStructure = currentAllowed
                 || (replacementApplies && contains(replacementFamily, currentBlock));
         boolean fillingFlow = currentBlock instanceof LiquidBlock
@@ -140,27 +154,24 @@ public final class ShanhaiStructurePlanner {
         } else if (currentState.isAir() || fillingFlow) {
             kind = hasBuildTarget ? ShanhaiStructurePlan.Kind.PLACE : ShanhaiStructurePlan.Kind.MANUAL;
         } else {
-            kind = ShanhaiUltimateTerminalConfig.isAbsoluteReplaceMode(terminal) && hasBuildTarget
+            kind = absoluteReplace && hasBuildTarget
                     ? ShanhaiStructurePlan.Kind.FORCE_REPLACE
                     : ShanhaiStructurePlan.Kind.BLOCKED;
         }
+
+        if ((!noChambers && chamberCapable)
+                || (chamberCapable && kind == ShanhaiStructurePlan.Kind.SATISFIED)) {
+            kind = ShanhaiStructurePlan.Kind.CHAMBER_HINT;
+        }
+        // Scan report only reads candidates for chamber positions. Avoid copying every ordinary slot's
+        // candidate stacks into 29k plan entries; this was a major transient-allocation source.
+        if (reportOnly && !chamberCapable) candidateItems = List.of();
         return new ShanhaiStructurePlan.Entry(pos, kind, desired, desiredState,
                 current, currentState, candidateItems, chamberCapable, currentMatchesStructure);
     }
 
-    private static List<Candidate> collectCandidates(TraceabilityPredicate predicate, CandidateCache candidateCache) {
-        List<Candidate> result = new ArrayList<>();
-        addCandidates(result, predicate.limited, candidateCache);
-        addCandidates(result, predicate.common, candidateCache);
-        return new ArrayList<>(result);
-    }
-
-    private static void addCandidates(List<Candidate> result, List<SimplePredicate> predicates,
-                                      CandidateCache candidateCache) {
-        for (SimplePredicate simple : predicates) {
-            result.addAll(candidateCache.get(simple));
-        }
-    }
+    private record PreparedCandidates(List<Candidate> all, List<Candidate> ordinary,
+                                      List<ItemStack> items, boolean chamberCapable) {}
 
     private static List<Candidate> readCandidates(SimplePredicate simple) {
         if (simple.candidates == null) return Collections.emptyList();
@@ -185,10 +196,39 @@ public final class ShanhaiStructurePlanner {
     }
 
     private static final class CandidateCache {
+        private static final int MAX_PREPARED = 512;
         private final Map<SimplePredicate, List<Candidate>> byPredicate = new IdentityHashMap<>();
+        private final Map<TraceabilityPredicate, PreparedCandidates> byPattern = new IdentityHashMap<>();
 
         private List<Candidate> get(SimplePredicate simple) {
             return byPredicate.computeIfAbsent(simple, ShanhaiStructurePlanner::readCandidates);
+        }
+
+        private PreparedCandidates prepared(TraceabilityPredicate predicate, CandidatePriority priority) {
+            PreparedCandidates cached = byPattern.get(predicate);
+            if (cached != null) return cached;
+            List<Candidate> all = new ArrayList<>();
+            for (SimplePredicate simple : predicate.limited) all.addAll(get(simple));
+            for (SimplePredicate simple : predicate.common) all.addAll(get(simple));
+            List<Candidate> ordinary = new ArrayList<>(all.size());
+            List<ItemStack> items = new ArrayList<>(all.size());
+            boolean chamber = false;
+            for (Candidate candidate : all) {
+                Block block = candidate.state().getBlock();
+                if (ShanhaiChamberClassifier.isChamberBlock(block)) chamber = true;
+                else if (block != Blocks.AIR) ordinary.add(candidate);
+                if (!candidate.item().isEmpty()) items.add(candidate.item());
+            }
+            if (priority != null && ordinary.size() > 1) {
+                ordinary.sort(Comparator.comparingInt(candidate -> priority.priority(candidate.item())));
+            }
+            PreparedCandidates result = new PreparedCandidates(List.copyOf(all), List.copyOf(ordinary),
+                    items.isEmpty() ? List.of() : List.copyOf(items), chamber);
+            // Some patterns share predicates across many positions. Bound the cache so a pathological
+            // generated pattern with unique predicates cannot pin the whole scan in memory.
+            if (byPattern.size() >= MAX_PREPARED) byPattern.clear();
+            byPattern.put(predicate, result);
+            return result;
         }
     }
 
@@ -208,7 +248,8 @@ public final class ShanhaiStructurePlanner {
     }
 
     private static boolean contains(Block[] blocks, Block block) {
-        return Arrays.asList(blocks).contains(block);
+        for (Block candidate : blocks) if (candidate == block) return true;
+        return false;
     }
 
 }

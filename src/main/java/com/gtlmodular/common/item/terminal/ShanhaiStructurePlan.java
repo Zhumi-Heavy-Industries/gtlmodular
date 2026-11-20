@@ -60,13 +60,15 @@ public final class ShanhaiStructurePlan {
             desiredState = desiredState == null ? Blocks.AIR.defaultBlockState() : desiredState;
             current = current == null ? ItemStack.EMPTY : current.copyWithCount(1);
             currentState = currentState == null ? Blocks.AIR.defaultBlockState() : currentState;
-            List<ItemStack> copies = new ArrayList<>();
-            if (candidates != null) {
+            if (candidates == null || candidates.isEmpty()) {
+                candidates = List.of();
+            } else {
+                List<ItemStack> copies = new ArrayList<>(candidates.size());
                 for (ItemStack candidate : candidates) {
                     if (candidate != null && !candidate.isEmpty()) copies.add(candidate.copyWithCount(1));
                 }
+                candidates = copies.isEmpty() ? List.of() : Collections.unmodifiableList(copies);
             }
-            candidates = Collections.unmodifiableList(copies);
         }
 
         public boolean requiresMaterial() {

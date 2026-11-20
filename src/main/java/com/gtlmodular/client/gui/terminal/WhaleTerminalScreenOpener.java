@@ -9,7 +9,8 @@ public final class WhaleTerminalScreenOpener {
     private WhaleTerminalScreenOpener() {}
 
     public static void open(InteractionHand hand) {
-        // 主界面改为 LDLib 印刷图版版；旧的 WhaleTerminalScreen 保留，便于对照与回退。
-        Minecraft.getInstance().setScreen(new WhaleTerminalPlateScreen(hand));
+        // v31 印刷档案版三页自绘界面；旧的 WhaleTerminalScreen / PlateScreen 保留，便于回退对照。
+        Minecraft.getInstance().setScreen(
+                new com.gtlmodular.client.gui.terminal.print.TerminalScreen(hand, false));
     }
 }
