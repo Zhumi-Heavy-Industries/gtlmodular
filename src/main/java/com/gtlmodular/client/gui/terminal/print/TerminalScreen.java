@@ -460,7 +460,8 @@ public final class TerminalScreen extends Screen {
         bind(g, 36, 190, "BIND 01 · AE NETWORK", "01", boundAe,
                 "AE 网络 · " + (boundAe ? "已绑定" : "未绑定"),
                 boundAe ? boundAeText : "点击绑定 / 打开子系统　›", false, null);
-        bind(g, 36, 232, "BIND 02 · ECO SUBSYSTEM", "02", boundEco,
+        // v32 源码 BIND 02 不是 .bind.on，表头恒为 INK 黑；状态文字仍按真实绑定
+        bind(g, 36, 232, "BIND 02 · ECO SUBSYSTEM", "02", false,
                 "ECO 子系统 · " + (boundEco ? "已绑定" : "未绑定"),
                 boundEco ? "已连接" : "点击绑定 / 打开子系统　›", true,
                 () -> {

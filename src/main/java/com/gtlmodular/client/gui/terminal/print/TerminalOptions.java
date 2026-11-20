@@ -65,7 +65,7 @@ public final class TerminalOptions {
         TerminalDraw.hline(g, 196, 540, 110, TerminalTheme.RULE);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "类型", 200, 114, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "舱室类型", 300, 114, 1.4f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "状态", 470, 114, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "属性", 470, 114, 1.4f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 196, 540, 126, TerminalTheme.RULE_SOFT);
 
         for (int i = 0; i < 8; i++) {

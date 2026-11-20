@@ -149,9 +149,17 @@ public final class TerminalFonts {
         return awtFailed;
     }
 
+    private static void ensureWhiteShaderColor() {
+        float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
+        if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        }
+    }
+
     /** 用 AWT 烘一张小贴图再 blit，彻底绕开 MC 图集的颜色问题。 */
     private static boolean drawAwt(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         try {
+            ensureWhiteShaderColor();
             float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
             int px = Math.max(2, Math.round(size * gs));
             Key key = new Key(fam, px, color, text);
@@ -242,6 +250,7 @@ public final class TerminalFonts {
                                     float x, float y, int color, float stroke) {
         if (text == null || text.isEmpty()) return;
         try {
+            ensureWhiteShaderColor();
             // 超大字号（镜像 N 900）只按 1x 烘：opacity 0.06 的水印，放大不影响观感，
             // 但能把 729px 的轮廓贴图降到 243px，首帧少几十毫秒。
             float gs = size >= 150f ? 1f
