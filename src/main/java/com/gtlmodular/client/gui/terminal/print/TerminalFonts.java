@@ -242,7 +242,10 @@ public final class TerminalFonts {
                                     float x, float y, int color, float stroke) {
         if (text == null || text.isEmpty()) return;
         try {
-            float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+            // 超大字号（镜像 N 900）只按 1x 烘：opacity 0.06 的水印，放大不影响观感，
+            // 但能把 729px 的轮廓贴图降到 243px，首帧少几十毫秒。
+            float gs = size >= 150f ? 1f
+                    : Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
             int px = Math.max(2, Math.round(size * gs));
             int strokeQ = Math.max(1, Math.round(stroke * gs * 10f));
             OKey key = new OKey(fam, px, color, text, strokeQ);

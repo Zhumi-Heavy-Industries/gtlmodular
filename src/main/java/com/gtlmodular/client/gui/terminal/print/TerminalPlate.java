@@ -38,7 +38,7 @@ public final class TerminalPlate {
         try {
             g.pose().translate(sx(760), 0, 0);
             g.pose().scale(-1f, 1f, 1f);
-            TerminalFonts.drawOutlined(g, Fam.SERIF, nSize, "N", 0, nTop, ink(16), 1.2f);
+            TerminalFonts.drawOutlined(g, Fam.SERIF, nSize, "N", 0, nTop, ink(16), 0.6f);
         } finally {
             g.pose().popPose();
         }
@@ -339,7 +339,7 @@ public final class TerminalPlate {
         float size = 70f;
         float baselineY = sy(y);
         float top = baselineY - size * 0.82f;
-        TerminalFonts.drawOutlined(g, Fam.SERIF, size, s, sx(x), top, color, Math.max(0.7f, w * K));
+        TerminalFonts.drawOutlined(g, Fam.SERIF, size, s, sx(x), top, color, Math.max(0.35f, w * K));
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */

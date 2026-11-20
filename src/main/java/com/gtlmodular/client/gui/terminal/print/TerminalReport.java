@@ -80,10 +80,11 @@ public final class TerminalReport {
                 : "全部 " + shown + " 条 · ESC 关闭";
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, omitted, 20, 232, 0.6f, TerminalTheme.INK_FAINT);
 
-        button(g, s, 20, 258, 84, "复制全部", false, TerminalTheme.INK, s::copyReport, 1);
-        button(g, s, 110, 258, 92, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes, 2);
-        button(g, s, 208, 258, 100, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter, 3);
-        button(g, s, 468, 258, 72, "关闭", true, TerminalTheme.PAPER, s::onClose, 0);
+        // v32 源码按钮位置/宽度：20/100/180/476，74/74/96/64
+        button(g, s, 20, 258, 74, "复制全部", false, TerminalTheme.INK, s::copyReport, 1);
+        button(g, s, 100, 258, 74, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes, 2);
+        button(g, s, 180, 258, 96, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter, 3);
+        button(g, s, 476, 258, 64, "关闭", true, TerminalTheme.PAPER, s::onClose, 0);
     }
 
     private static String shortName(String name) {
