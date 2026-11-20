@@ -42,7 +42,7 @@ public final class TerminalReticle {
         if (!primed) {
             bx = tx; by = ty; bw = tw; bh = th; primed = true;
         }
-        float k = 0.28f;
+        float k = 0.42f;
         bx += (tx - bx) * k;
         by += (ty - by) * k;
         bw += (tw - bw) * k;

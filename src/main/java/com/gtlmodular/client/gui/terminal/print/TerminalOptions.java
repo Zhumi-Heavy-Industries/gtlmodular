@@ -87,28 +87,98 @@ public final class TerminalOptions {
         }
     }
 
-    /** 植物生长：茎按进度画线，6 片叶沿茎依次展开（9s 循环）。 */
-    private static void plant(GuiGraphics g, float x, float y, float w, float h, float t) {
+    /**
+     * 植物生长（网页 .grow 的对位）：56×56，茎为两段三次贝塞尔，叶片是两段二次曲线围成的尖叶，
+     * 带叶脉与节点，9 秒循环。之前用短线拼，实机看起来是「虚线小虫」，这里按设计稿曲线重画。
+     */
+    private static void plant(GuiGraphics g, float ox, float oy, float w, float h, float t) {
         float p = (t % 9f) / 9f;
         float stem = Math.min(1f, p / 0.62f);
-        float baseX = x + 8, baseY = y + h - 6;
-        TerminalDraw.line(g, baseX, baseY, baseX + 2, baseY - 18 * stem, 1f, 0xB33A5BC2);
-        TerminalDraw.line(g, baseX + 2, baseY - 18 * stem, baseX + 16 * stem, baseY - 34 * stem, 1f, 0xB33A5BC2);
-        TerminalDraw.line(g, baseX + 16 * stem, baseY - 34 * stem, baseX + 24 * stem, baseY - 46 * stem, 1f, 0xB33A5BC2);
+        if (stem <= 0f) return;
 
-        float[] ly = {0.26f, 0.40f, 0.54f, 0.66f, 0.78f, 0.9f};
-        for (int i = 0; i < 6; i++) {
-            float leafStart = 0.06f + i * 0.09f;
-            float k = (p - leafStart) / 0.10f;
-            k = Math.max(0f, Math.min(1f, k));
-            if (k <= 0f) continue;
-            float lx = baseX + 4 + i * 3.2f;
-            float ly0 = baseY - 12 - i * 5.2f;
-            float len = 7f * k;
-            TerminalDraw.line(g, lx, ly0, lx + len, ly0 - len * 0.55f, 1f, 0xCC3A5BC2);
-            TerminalDraw.line(g, lx, ly0, lx + len * 0.9f, ly0 + len * 0.2f, 1f, 0xCC3A5BC2);
-            TerminalDraw.fillCircle(g, lx, ly0, 1.1f, TerminalTheme.COBALT);
+        // 茎：M6 50 C18 46,20 30,30 24 C40 18,44 10,50 6（设计稿数字）
+        float[][] stemPts = bezier2(
+                6, 50, 18, 46, 20, 30, 30, 24,
+                40, 18, 44, 10, 50, 6, 36);
+        int last = Math.max(1, Math.round(stemPts.length * stem));
+        for (int i = 1; i < last; i++) {
+            TerminalDraw.line(g, ox + stemPts[i - 1][0], oy + stemPts[i - 1][1],
+                    ox + stemPts[i][0], oy + stemPts[i][1], 1f, 0xD93A5BC2);
         }
+
+        float[][] leaves = {{14, 44, -1}, {22, 36, 1}, {28, 29, -1}, {36, 21, 1}, {41, 15, -1}, {47, 9, 1}};
+        for (int i = 0; i < leaves.length; i++) {
+            float start = 0.06f + i * 0.09f;
+            float k = Math.max(0f, Math.min(1f, (p - start) / 0.10f));
+            if (k <= 0.02f) continue;
+            float lx = ox + leaves[i][0];
+            float ly = oy + leaves[i][1];
+            float side = leaves[i][2];
+            float grow = 0.5f + 0.5f * k;
+            float ex = lx + side * 11f * grow;
+            float ey = ly - 4.95f * grow;
+
+            // 叶面：两段二次曲线围合后按扫描线填充（纸色偏冷，70% 不透明）
+            java.util.List<float[]> poly = new java.util.ArrayList<>();
+            float c1x = lx + side * 11f * 0.5f, c1y = ly - 3.2f * 2f * grow;
+            float c2x = lx + side * 11f * 0.55f, c2y = ey + 3.2f * 0.6f * grow;
+            for (int s = 0; s <= 8; s++) {
+                float u = s / 8f;
+                poly.add(quad(lx, ly, c1x, c1y, ex, ey, u));
+            }
+            for (int s = 1; s <= 8; s++) {
+                float u = s / 8f;
+                poly.add(quad(ex, ey, c2x, c2y, lx, ly, u));
+            }
+            float[] pts = new float[poly.size() * 2];
+            for (int s = 0; s < poly.size(); s++) {
+                pts[s * 2] = poly.get(s)[0];
+                pts[s * 2 + 1] = poly.get(s)[1];
+            }
+            TerminalDraw.polygon(g, pts, (int) (0.70f * k * 255) << 24 | 0xE2E7E9);
+            // 叶缘
+            for (int s = 1; s < poly.size(); s++) {
+                TerminalDraw.line(g, poly.get(s - 1)[0], poly.get(s - 1)[1],
+                        poly.get(s)[0], poly.get(s)[1], 0.9f, 0xD93A5BC2);
+            }
+            // 叶脉
+            TerminalDraw.line(g, lx, ly, ex, ey, 0.8f, 0xB33A5BC2);
+            // 节点
+            TerminalDraw.fillCircle(g, lx, ly, 1.4f, TerminalTheme.COBALT);
+        }
+    }
+
+    private static float[] quad(float x0, float y0, float cx, float cy, float x1, float y1, float u) {
+        float v = 1f - u;
+        return new float[]{
+                v * v * x0 + 2 * v * u * cx + u * u * x1,
+                v * v * y0 + 2 * v * u * cy + u * u * y1
+        };
+    }
+
+    /** 两段三次贝塞尔拼接，按段数采样。 */
+    private static float[][] bezier2(float x0, float y0, float x1, float y1, float x2, float y2,
+                                     float x3, float y3, float x4, float y4, float x5, float y5,
+                                     float x6, float y6, int steps) {
+        float[][] out = new float[steps * 2][2];
+        int n = 0;
+        for (int s = 0; s < steps; s++) {
+            float u = s / (float) (steps - 1);
+            float v = 1f - u;
+            out[n][0] = v * v * v * x0 + 3 * v * v * u * x1 + 3 * v * u * u * x2 + u * u * u * x3;
+            out[n][1] = v * v * v * y0 + 3 * v * v * u * y1 + 3 * v * u * u * y2 + u * u * u * y3;
+            n++;
+        }
+        for (int s = 1; s < steps; s++) {
+            float u = s / (float) (steps - 1);
+            float v = 1f - u;
+            out[n][0] = v * v * v * x3 + 3 * v * v * u * x4 + 3 * v * u * u * x5 + u * u * u * x6;
+            out[n][1] = v * v * v * y3 + 3 * v * v * u * y4 + 3 * v * u * u * y5 + u * u * u * y6;
+            n++;
+        }
+        float[][] trimmed = new float[n][2];
+        System.arraycopy(out, 0, trimmed, 0, n);
+        return trimmed;
     }
 
     // ────────────────────────────── 视图 B：开关设置

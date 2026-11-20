@@ -38,9 +38,27 @@ public final class TerminalTierPanel {
 
     public static String name(String key, int i) {
         Block[] b = blocks(key);
-        if (i >= 0 && i < b.length) return b[i].getName().getString();
+        if (i >= 0 && i < b.length) return shortName(key, b[i].getName().getString());
         String[] fb = fallback(key);
         return i >= 0 && i < fb.length ? fb[i] : "?";
+    }
+
+    /** 网页版格子里是短标签（LV / 白铜 / 动力模块 Ⅱ），不是方块全名。 */
+    private static String shortName(String key, String full) {
+        if (full == null) return "?";
+        String n = full;
+        if ("cal".equals(key)) {
+            int p = n.indexOf('(');
+            int q = n.indexOf('（');
+            if (p > 0) n = n.substring(p + 1).replace(")", "");
+            else if (q > 0) n = n.substring(q + 1).replace("）", "");
+            else if (n.startsWith("部件装配线外壳")) n = n.substring("部件装配线外壳".length());
+        } else if ("coil".equals(key)) {
+            n = n.replace("线圈方块", "").replace("线圈", "");
+        } else if ("sepm".equals(key)) {
+            n = n.replace("太空电梯动力模块", "动力模块 ");
+        }
+        return n.trim().isEmpty() ? full : n.trim();
     }
 
     private static String[] fallback(String key) {
@@ -61,9 +79,9 @@ public final class TerminalTierPanel {
     }
 
     public static void draw(GuiGraphics g, TerminalScreen s) {
-        TerminalDraw.rect(g, 23, 17, 520, 284, 0x381F2427);
-        TerminalDraw.rect(g, 20, 14, 520, 284, TerminalTheme.PAPER);
-        TerminalDraw.outline(g, 20, 14, 520, 284, TerminalTheme.INK);
+        TerminalDraw.rect(g, 23, 17, 520, 318, 0x381F2427);
+        TerminalDraw.rect(g, 20, 14, 520, 318, TerminalTheme.PAPER);
+        TerminalDraw.outline(g, 20, 14, 520, 318, TerminalTheme.INK);
         TerminalDraw.rect(g, 20, 14, 520, 12, TerminalTheme.INK);
         TerminalFonts.drawMixed(g, Fam.MONO, 5.5f,
                 "REPLACE / 替换部件 · " + totalTiers() + " 档 · 点击即选中",
@@ -76,13 +94,14 @@ public final class TerminalTierPanel {
         int rowsTotal = 0;
         for (String key : KEYS) rowsTotal += Math.max(1, (size(key) + 5) / 6);
         float top = 30f;
-        float bottom = 14f + 284f - 26f;
-        float avail = bottom - top - KEYS.length * 12f - (KEYS.length - 1) * 5f;
+        float bottom = 14f + 318f - 26f;
+        // 底部留 8px 给固定的说明行，避免压缩行距后最后一行文字贴到说明上
+        float avail = bottom - top - KEYS.length * 12f - (KEYS.length - 1) * 5f - 8f;
         float gy = Math.max(18f, Math.min(GY, avail / Math.max(1, rowsTotal)));
         float ch = gy - 3f;
 
         g.enableScissor(Math.round(s.originX + 22 * s.scale), Math.round(s.originY + 27 * s.scale),
-                Math.round(s.originX + 538 * s.scale), Math.round(s.originY + 292 * s.scale));
+                Math.round(s.originX + 538 * s.scale), Math.round(s.originY + 330 * s.scale));
         try {
             // scissor 边界会清批；先落一笔不可见色块，保证后续文字在色块之后出队。
             TerminalDraw.rect(g, 22, 28, 1, 1, TerminalTheme.PAPER);
@@ -125,7 +144,7 @@ public final class TerminalTierPanel {
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f,
                 "方块名取自 BlockMap.tierBlockMap · 点击即写回并返回",
-                32, 284, 0.8f, TerminalTheme.INK_FAINT);
+                32, 320, 0.8f, TerminalTheme.INK_FAINT);
     }
 
     private static int index(String key) {

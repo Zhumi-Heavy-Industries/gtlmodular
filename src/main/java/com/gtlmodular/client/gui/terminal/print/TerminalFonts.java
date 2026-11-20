@@ -67,8 +67,21 @@ public final class TerminalFonts {
         }
     }
 
+    private static boolean colorWarned;
+
     private static void rawDraw(GuiGraphics g, Font font, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
+        // 某些 GUI（ModernUI 的模糊/背景层等）会留下非白的 shaderColor，文字着色器会把它当
+        // ColorModulator 乘进顶点色 —— 白色字会变成灰黑、INK 变纯黑。画字前强制复位。
+        float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
+        if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
+            if (!colorWarned) {
+                colorWarned = true;
+                GTLModular.LOGGER.warn("[TerminalFonts] 检测到残留 shaderColor={}, {}, {}, {}，已复位为白",
+                        sc[0], sc[1], sc[2], sc[3]);
+            }
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
+        }
         if (RENDER_TEXT != null) {
             try {
                 RENDER_TEXT.invoke(font, text, x, y, color, false,

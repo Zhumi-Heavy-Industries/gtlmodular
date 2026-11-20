@@ -49,7 +49,7 @@ public final class TerminalReport {
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRightMixed(g, Fam.MONO, 6f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "坐标", C_COORD, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "坐标", 477, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
 
         // 清单（裁剪，展开行高 48）
@@ -81,7 +81,7 @@ public final class TerminalReport {
         button(g, s, 20, 258, 74, "复制全部", false, TerminalTheme.INK, s::copyReport);
         button(g, s, 100, 258, 74, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes);
         button(g, s, 180, 258, 96, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter);
-        button(g, s, 476, 258, 64, "关闭", true, TerminalTheme.PAPER, s::onClose);
+        button(g, s, 468, 258, 72, "关闭", true, TerminalTheme.PAPER, s::onClose);
     }
 
     private static String shortName(String name) {
@@ -111,7 +111,8 @@ public final class TerminalReport {
         TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 3, TerminalTheme.INK);
 
         String coord = row.coords().isEmpty() ? "—" : fmt(row.coords().get(0));
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 6, 0.4f, TerminalTheme.INK_FAINT);
+        // 网页版坐标列是右对齐到纸面右缘附近，不是左对齐（之前对不上就是这里）
+        TerminalFonts.drawRightMixed(g, Fam.MONO, 6f, coord, 520, y + 6, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, open ? "−" : "+", C_TOGGLE, y + 4, 0f,
                 open ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
 
