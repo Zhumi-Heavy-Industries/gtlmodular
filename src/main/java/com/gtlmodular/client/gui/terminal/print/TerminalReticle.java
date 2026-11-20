@@ -72,6 +72,8 @@ public final class TerminalReticle {
         int bg = locked ? TerminalTheme.COBALT : 0xD9EFF1EF;
         int fg = locked ? TerminalTheme.PAPER : TerminalTheme.INK;
         TerminalDraw.rect(g, lx, ly, tw2 + 6, 10, bg);
+        // 标签底条先落地，纸白字才不会被同批次的填充盖住
+        g.flush();
         TerminalFonts.drawTracked(g, Fam.MONO, 6f, shown, lx + 3, ly + 2, 0.8f, fg);
 
         // 涟漪

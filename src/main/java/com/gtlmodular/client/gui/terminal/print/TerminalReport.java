@@ -153,6 +153,11 @@ public final class TerminalReport {
             TerminalDraw.rect(g, x, y, w, 16, TerminalTheme.PAPER);
             TerminalDraw.outline(g, x, y, w, 16, TerminalTheme.INK);
         }
+        if (fill) {
+            // AWT 文字走 guiTextured，和 gui 填充不是同一个 RenderType；先落地填充，
+            // 否则部分批次顺序会把黑底排在文字之后，字就被盖住。
+            g.flush();
+        }
         int c = fill ? (fallbackInk ? TerminalTheme.INK : textColor) : TerminalTheme.INK;
         if (icon > 0) icon(g, icon, x + 7, y + 4, c);
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f + (icon > 0 ? 4 : 0), y + 4, c);

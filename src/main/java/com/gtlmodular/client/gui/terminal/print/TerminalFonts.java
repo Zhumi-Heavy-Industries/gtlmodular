@@ -189,9 +189,13 @@ public final class TerminalFonts {
                 com.mojang.blaze3d.platform.NativeImage ni =
                         new com.mojang.blaze3d.platform.NativeImage(
                                 com.mojang.blaze3d.platform.NativeImage.Format.RGBA, tw, th, false);
+                // 批量取 ARGB，避免逐像素 getRGB 的色彩模型转换（首帧主要开销之一）
+                int[] argbPixels = ((java.awt.image.DataBufferInt)
+                        img.getRaster().getDataBuffer()).getData();
+                int idx = 0;
                 for (int yy = 0; yy < th; yy++) {
                     for (int xx = 0; xx < tw; xx++) {
-                        int argb = img.getRGB(xx, yy);
+                        int argb = argbPixels[idx++];
                         int a = (argb >>> 24) & 0xFF;
                         int r = (argb >>> 16) & 0xFF;
                         int gg = (argb >>> 8) & 0xFF;
@@ -204,7 +208,7 @@ public final class TerminalFonts {
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_" + (texSeq++), dyn);
                 tex = new Tex(rl, Math.max(1, Math.round(tw / gs)), Math.max(1, Math.round(th / gs)), tw, th);
-                if (TEX.size() > 512) {
+                if (TEX.size() > 2048) {
                     var it = TEX.entrySet().iterator();
                     if (it.hasNext()) {
                         Tex old = it.next().getValue();
@@ -391,6 +395,8 @@ public final class TerminalFonts {
     }
 
     public static float width(Fam fam, float size, String text) {
+        float aw = awtWidth(fam, size, text);
+        if (aw >= 0) return aw;
         Font font = of(fam, size);
         return font == null ? 0f : advance(font, text);
     }

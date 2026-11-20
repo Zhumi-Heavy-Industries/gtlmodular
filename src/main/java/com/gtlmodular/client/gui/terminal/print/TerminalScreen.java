@@ -83,6 +83,7 @@ public final class TerminalScreen extends Screen {
     private final MineMenu menu = new MineMenu();
     private long openedAt;
     private long lastPerfLogAt;
+    private boolean reportDefaultApplied;
     private @Nullable ShanhaiTerminalReport report;
 
     public TerminalScreen(InteractionHand hand, boolean preview) {
@@ -302,6 +303,12 @@ public final class TerminalScreen extends Screen {
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         if (cursorHidden) hideCursor();
+        // 报告可能在屏幕打开后才到达：第一次真正画报告页时补展开第一行
+        if (page == Page.REPORT && !reportDefaultApplied && !reportRows.isEmpty()) {
+            reportDefaultApplied = true;
+            if (expanded.length != reportRows.size()) expanded = new boolean[reportRows.size()];
+            expanded[0] = true;
+        }
         long renderStart = System.nanoTime();
         this.seconds = (renderStart - openedAt) / 1_000_000_000f;
         this.mouseX = (mouseX - originX) / scale;
@@ -442,7 +449,11 @@ public final class TerminalScreen extends Screen {
         // 档位面板会盖住整块内容区，打开时跳过圆盘，省掉每帧上万次 fill
         if (!tierOpen) {
             g.pose().pushPose();
-            g.pose().translate(menu.px, menu.py, 0);
+            // v19-v22 分层入场：盘面从右侧 30*d 滑入并缓出
+            float enter = Math.min(1f, seconds / 0.9f);
+            float ease = 1f - (1f - enter) * (1f - enter) * (1f - enter);
+            float slide = (1f - ease) * 36f;
+            g.pose().translate(menu.px + slide, menu.py, 0);
             TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
             g.pose().popPose();
         }
