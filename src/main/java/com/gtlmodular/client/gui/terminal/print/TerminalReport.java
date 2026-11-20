@@ -15,10 +15,10 @@ public final class TerminalReport {
     private static final float LIST_Y = 94;
     private static final float LIST_W = 520;
     // 清单底边留到 226，232 的「全部 N 条」才不会被最后一行压住
-    public static final float LIST_H = 132;
+    public static final float LIST_H = 152;
     private static final float ROW_H = 21;
-    private static final float C_QTY_RIGHT = 448;
-    private static final float C_COORD = 464;
+    private static final float C_QTY_RIGHT = 464;
+    private static final float C_COORD = 474;
     private static final float C_TOGGLE = 526;
 
     public static void draw(GuiGraphics g, TerminalScreen s) {
@@ -51,6 +51,7 @@ public final class TerminalReport {
         TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRightMixed(g, Fam.MONO, 6.5f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "坐标", 474, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
 
         // 清单（裁剪，展开行高 48）
@@ -110,6 +111,9 @@ public final class TerminalReport {
         TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(),
                 68, y + 3, 0f, TerminalTheme.INK);
         TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 3, TerminalTheme.INK);
+        // 网页 rep-coord：展开时显示第一条坐标，折叠显示「—」
+        String coord = open && !row.coords().isEmpty() ? fmt(row.coords().get(0)) : "—";
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 6, 0.4f, TerminalTheme.INK_SOFT);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, open ? "−" : "+", C_TOGGLE, y + 4, 0f,
                 open ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
