@@ -415,9 +415,9 @@ public final class TerminalScreen extends Screen {
         TerminalDraw.rect(g, 36, 44, cw + 12, 10, TerminalTheme.INK);
         TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "CONFIG", 42, 46, 1.8f, 0xFFFFFFFF);
         float emW = TerminalFonts.trackedWidth(Fam.MONO, 5.5f, "06", 1.8f) + 6;
-        // 网页标准：06 是钴蓝块 + 红字，黑条只属于 CONFIG
-        TerminalDraw.rect(g, 36 + cw + 10, 44, emW, 10, TerminalTheme.COBALT);
-        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", 36 + cw + 13, 46, 1.8f, TerminalTheme.RED);
+        // 网页 CSS：.chip-d 黑底纸白字，.chip-d em(06) 红底 #B43A34、纸白字
+        TerminalDraw.rect(g, 36 + cw + 10, 44, emW, 10, TerminalTheme.RED);
+        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", 36 + cw + 13, 46, 1.8f, 0xFFFFFFFF);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "06 / GTL MODULAR", 110, 46, 1.6f, TerminalTheme.INK_FAINT);
 
         TerminalDraw.rect(g, 36, 66, 2, 30, TerminalTheme.COBALT);

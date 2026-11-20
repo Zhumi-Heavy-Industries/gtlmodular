@@ -123,9 +123,8 @@ public final class TerminalPlate {
             double rr = 20 + Math.sqrt(i / 90.0) * 210;
             float dx = sx(CX) + (float) Math.cos(a) * sr((float) rr);
             float dy = sy(CY) + (float) Math.sin(a) * sr((float) rr);
-            // 半调网点 6 秒呼吸（v16-v22 规格：0.13↔0.26 透明度）
-            int breathe = 48 + Math.round(14f * (0.5f + 0.5f * (float) Math.sin(t * Math.PI * 2f / 6f)));
-            TerminalDraw.fillCircle(g, dx, dy, 1.6f, paper(breathe));
+            // 网页 L6 半调是静态 opacity .22，不做呼吸
+            TerminalDraw.fillCircle(g, dx, dy, 1.6f, paper(56));
         }
 
         // L7 主扫掠带（纸白）
@@ -244,7 +243,7 @@ public final class TerminalPlate {
     /** 网页 _sweep_brush：两侧偏移曲线围成的填充带，不是圆点串。 */
     private static void sweepBand(GuiGraphics g, float x1, float y1, float x2, float y2,
                                   float amp, float w, float bias, int color) {
-        int n = 24;
+        int n = 14;
         float[] sx1 = new float[n + 1], sy1 = new float[n + 1];
         float[] leftX = new float[n + 1], leftY = new float[n + 1];
         float[] rightX = new float[n + 1], rightY = new float[n + 1];
