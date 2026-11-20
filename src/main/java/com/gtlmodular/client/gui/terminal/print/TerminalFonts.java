@@ -49,6 +49,42 @@ public final class TerminalFonts {
     private static final Map<Key, Tex> TEX = new java.util.LinkedHashMap<>(128, 0.75f, true);
     private static final Map<Fam, java.awt.Font> AWTF = new java.util.EnumMap<>(Fam.class);
     private static int texSeq;
+    private static java.awt.image.BufferedImage probeImg;
+    private static java.awt.Graphics2D probeG;
+
+    private static java.awt.Font awtFont(Fam fam, int px) {
+        java.awt.Font base = AWTF.get(fam);
+        if (base == null) {
+            String file = pickFile(fam);
+            if (file == null) return null;
+            try {
+                base = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, new java.io.File(file));
+            } catch (Throwable t) {
+                return null;
+            }
+            AWTF.put(fam, base);
+        }
+        return base.deriveFont((float) px);
+    }
+
+    /** AWT 实际字宽（设计像素）；AWT 不可用时返回 -1。排版必须与绘制同源。 */
+    private static float awtWidth(Fam fam, float size, String text) {
+        if (text == null || text.isEmpty()) return 0f;
+        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+        int px = Math.max(2, Math.round(size * gs));
+        java.awt.Font af = awtFont(fam, px);
+        if (af == null) return -1f;
+        try {
+            if (probeG == null) {
+                probeImg = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                probeG = probeImg.createGraphics();
+            }
+            probeG.setFont(af);
+            return probeG.getFontMetrics().stringWidth(text) / gs;
+        } catch (Throwable t) {
+            return -1f;
+        }
+    }
 
     // 绕过 ModernUI：它的 mixin 接管了 Font.drawInBatch / StringSplitter。
     // 这里直接反射调用原版私有的 renderText 与包私有的 getFontSet，用我们自己的 FontSet 绘制/量宽。
@@ -85,6 +121,11 @@ public final class TerminalFonts {
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
+        // 主墨色 0x1F2427：MC 字体本来就渲染成近黑，直接用，省掉大量 AWT 小贴图
+        if ((color & 0xFFFFFF) == 0x1F2427) {
+            rawDrawMc(g, of(fam, size), text, x, y, color);
+            return;
+        }
         if (drawAwt(g, fam, size, text, x, y, color)) return;
         // 兜底：走原版 Font（颜色可能仍偏黑，但至少不丢字）
         rawDrawMc(g, of(fam, size), text, x, y, color);
@@ -351,7 +392,9 @@ public final class TerminalFonts {
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             int n = Character.charCount(cp);
-            w += advance(font, new String(Character.toChars(cp))) + tracking;
+            String one = new String(Character.toChars(cp));
+            float aw = awtWidth(fam, size, one);
+            w += (aw >= 0 ? aw : advance(font, one)) + tracking;
             i += n;
         }
         return w - tracking;
@@ -375,7 +418,8 @@ public final class TerminalFonts {
             int cp = text.codePointAt(i);
             String ch = new String(Character.toChars(cp));
             rawDraw(g, fam, size, ch, cx, y, color);
-            cx += advanceOf(font, cp) + tracking;
+            float aw = awtWidth(fam, size, ch);
+            cx += (aw >= 0 ? aw : advanceOf(font, cp)) + tracking;
             i += Character.charCount(cp);
         }
     }
@@ -468,13 +512,19 @@ public final class TerminalFonts {
                 if (cn != null) f = cn;
                 runFam = Fam.CN;
             }
+            String runText = run.toString();
+            float aw = awtWidth(runFam, size, runText);
             float w = 0f;
-            for (int k = i; k < j; ) {
-                int cp = text.codePointAt(k);
-                w += advanceOf(f, cp);
-                k += Character.charCount(cp);
+            if (aw < 0) {
+                for (int k = i; k < j; ) {
+                    int cp = text.codePointAt(k);
+                    w += advanceOf(f, cp);
+                    k += Character.charCount(cp);
+                }
+            } else {
+                w = aw;
             }
-            rawDraw(g, runFam, size, run.toString(), cx, y, color);
+            rawDraw(g, runFam, size, runText, cx, y, color);
             cx += w + tracking * count;
             i = j;
         }
@@ -493,7 +543,9 @@ public final class TerminalFonts {
                 Font cn = of(Fam.CN, size);
                 if (cn != null) f = cn;
             }
-            w += advanceOf(f, cp) + tracking;
+            String one = new String(Character.toChars(cp));
+            float aw = awtWidth(f == null ? fam : (isCjk(cp) ? Fam.CN : fam), size, one);
+            w += (aw >= 0 ? aw : advanceOf(f, cp)) + tracking;
             i += Character.charCount(cp);
         }
         return w - tracking;
