@@ -31,21 +31,30 @@ public final class TerminalPlate {
 
     public static void draw(GuiGraphics g, float seconds, boolean hover, int[] flags) {
         float t = seconds;
-        // L1 镜像字母 N
+        // L1 镜像描边大写 N（官方 scale(-1 1) + font-size 900，stroke 2）
+        float nSize = 900f * K;
+        float nTop = sy(860) - nSize * 0.82f;
         g.pose().pushPose();
-        g.pose().translate(sx(CX), sy(430), 0);
-        g.pose().scale(-1f, 1f, 1f);
-        TerminalFonts.draw(g, Fam.SERIF, 36f, "N", -9, -18, ink(16));
-        g.pose().popPose();
+        try {
+            g.pose().translate(sx(760), 0, 0);
+            g.pose().scale(-1f, 1f, 1f);
+            TerminalFonts.drawOutlined(g, Fam.SERIF, nSize, "N", 0, nTop, ink(16), 1.2f);
+        } finally {
+            g.pose().popPose();
+        }
+        // L1 叶片三块（官方 line176 的三个填充 path）
+        leaf(g, 220, 480, 300, 24);
+        leaf(g, 700, 300, 260, 18);
+        leaf(g, 500, 800, 340, 22);
 
         // L1 S 形扫掠笔刷
-        brush(g, 40, 860, 980, 260, 70, 150, 0.82f, cob(26));
+        sweepBand(g, 40, 860, 980, 260, 70, 150, 0.82f, cob(26));
 
         // L2 外圈
         TerminalDraw.ring(g, sx(CX), sy(CY), sr(360), 1f, ink(66));
         TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1f, ink(56));
         // L2 放射线 72 根（每 5°）
-        for (int i = 0; i < 72; i += 2) {
+        for (int i = 0; i < 72; i++) {
             double a = Math.toRadians(i * 5);
             TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
                     sx(CX) + (float) Math.cos(a) * sr(520), sy(CY) + (float) Math.sin(a) * sr(520),
@@ -120,7 +129,7 @@ public final class TerminalPlate {
         }
 
         // L7 主扫掠带（纸白）
-        brush(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(153));
+        sweepBand(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(153));
 
         // L7 星座
         float[] stars = {250, 700, 300, 670, 350, 720, 290, 760};
@@ -221,6 +230,55 @@ public final class TerminalPlate {
         }
     }
 
+    /** 官方 L1 的叶片填充 path 的等价多边形。 */
+    private static void leaf(GuiGraphics g, float x, float y, float len, float w) {
+        float[] pts = {
+                sx(x), sy(y),
+                sx(x + len * 0.5f), sy(y - w),
+                sx(x + len), sy(y + 10),
+                sx(x + len * 0.5f), sy(y + w / 3f)
+        };
+        TerminalDraw.polygon(g, pts, ink(18));
+    }
+
+    /** 网页 _sweep_brush：两侧偏移曲线围成的填充带，不是圆点串。 */
+    private static void sweepBand(GuiGraphics g, float x1, float y1, float x2, float y2,
+                                  float amp, float w, float bias, int color) {
+        int n = 24;
+        float[] sx1 = new float[n + 1], sy1 = new float[n + 1];
+        float[] leftX = new float[n + 1], leftY = new float[n + 1];
+        float[] rightX = new float[n + 1], rightY = new float[n + 1];
+        float dx = x2 - x1, dy = y2 - y1;
+        float nl = (float) Math.sqrt(dx * dx + dy * dy);
+        float ux = -dy / nl, uy = dx / nl;
+        for (int i = 0; i <= n; i++) {
+            float p = i / (float) n;
+            float off = (float) Math.sin(p * Math.PI * 1.6) * amp;
+            float px = x1 + dx * p + ux * off;
+            float py = y1 + dy * p + uy * off;
+            sx1[i] = sx(px);
+            sy1[i] = sy(py);
+        }
+        for (int i = 0; i <= n; i++) {
+            int a = Math.max(0, i - 1), b = Math.min(n, i + 1);
+            float nx = -(sy1[b] - sy1[a]), ny = sx1[b] - sx1[a];
+            float len = (float) Math.sqrt(nx * nx + ny * ny);
+            if (len < 0.001f) len = 1f;
+            nx /= len; ny /= len;
+            float k = (float) Math.pow(Math.sin(Math.PI * Math.pow(i / (float) n, bias * 2f)), 0.75);
+            float half = w * K * Math.max(0.03f, k) / 2f;
+            leftX[i] = sx1[i] + nx * half;
+            leftY[i] = sy1[i] + ny * half;
+            rightX[i] = sx1[i] - nx * half;
+            rightY[i] = sy1[i] - ny * half;
+        }
+        float[] pts = new float[(n + 1) * 4];
+        int n2 = 0;
+        for (int i = 0; i <= n; i++) { pts[n2++] = leftX[i]; pts[n2++] = leftY[i]; }
+        for (int i = n; i >= 0; i--) { pts[n2++] = rightX[i]; pts[n2++] = rightY[i]; }
+        TerminalDraw.polygon(g, pts, color);
+    }
+
     private static void brush(GuiGraphics g, float x1, float y1, float x2, float y2,
                               float amp, float w, float bias, int color) {
         int n = 24;
@@ -274,11 +332,15 @@ public final class TerminalPlate {
         TerminalDraw.line(g, x + dx, y - 2, x + 3 + dx, y, 1.1f, ink(200));
     }
 
+    /**
+     * 空心的描边 06：网页是 fill:none + text stroke，两层错位 10（inner）叠印；
+     * 这里用 AWT GlyphVector 轮廓 + 描边烘焙，不做任何填充。
+     */
     private static void outlineNumber(GuiGraphics g, float x, float y, String s, float w, int color) {
-        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) - w, sy(y) - w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) + w, sy(y) + w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) - w, sy(y) + w, color);
-        TerminalFonts.draw(g, Fam.SERIF, 70f, s, sx(x) + w, sy(y) - w, color);
+        float size = 70f;
+        float baselineY = sy(y);
+        float top = baselineY - size * 0.82f;
+        TerminalFonts.drawOutlined(g, Fam.SERIF, size, s, sx(x), top, color, Math.max(0.7f, w * K));
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */

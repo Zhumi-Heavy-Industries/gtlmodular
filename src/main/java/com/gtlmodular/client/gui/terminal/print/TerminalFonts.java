@@ -48,6 +48,8 @@ public final class TerminalFonts {
     }
     private static final Map<Key, Tex> TEX = new java.util.LinkedHashMap<>(128, 0.75f, true);
     private static final Map<Fam, java.awt.Font> AWTF = new java.util.EnumMap<>(Fam.class);
+    private record OKey(Fam fam, int px, int color, String text, int strokeQ) {}
+    private static final Map<OKey, Tex> OTEX = new java.util.LinkedHashMap<>(64, 0.75f, true);
     private static int texSeq;
     private static java.awt.image.BufferedImage probeImg;
     private static java.awt.Graphics2D probeG;
@@ -232,6 +234,66 @@ public final class TerminalFonts {
                 GTLModular.LOGGER.warn("[TerminalFonts] AWT 文字失败，回退 MC 字体: {}", t.toString());
             }
             return false;
+        }
+    }
+
+    /** 空心描边文字（SVG text stroke 的等价实现）：只用字形轮廓 + 描边，不填充。 */
+    public static void drawOutlined(GuiGraphics g, Fam fam, float size, String text,
+                                    float x, float y, int color, float stroke) {
+        if (text == null || text.isEmpty()) return;
+        try {
+            float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+            int px = Math.max(2, Math.round(size * gs));
+            int strokeQ = Math.max(1, Math.round(stroke * gs * 10f));
+            OKey key = new OKey(fam, px, color, text, strokeQ);
+            Tex tex = OTEX.get(key);
+            if (tex == null) {
+                java.awt.Font af = awtFont(fam, px);
+                if (af == null) {
+                    drawAwt(g, fam, size, text, x, y, color);
+                    return;
+                }
+                java.awt.font.FontRenderContext frc =
+                        new java.awt.font.FontRenderContext(null, true, true);
+                java.awt.font.GlyphVector gv = af.createGlyphVector(frc, text);
+                java.awt.Shape shape = gv.getOutline();
+                java.awt.geom.Rectangle2D b = shape.getBounds2D();
+                float sw = Math.max(0.6f, stroke * gs);
+                int pad = (int) Math.ceil(sw) + 2;
+                int tw = Math.max(1, (int) Math.ceil(b.getWidth()) + pad * 2);
+                int th = Math.max(1, (int) Math.ceil(b.getHeight()) + pad * 2);
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(tw, th,
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D g2 = img.createGraphics();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                        java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.translate(pad - b.getX(), pad - b.getY());
+                g2.setColor(new java.awt.Color(color, true));
+                g2.setStroke(new java.awt.BasicStroke(sw));
+                g2.draw(shape);
+                g2.dispose();
+                int[] argb = ((java.awt.image.DataBufferInt) img.getRaster().getDataBuffer()).getData();
+                com.mojang.blaze3d.platform.NativeImage ni =
+                        new com.mojang.blaze3d.platform.NativeImage(
+                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, tw, th, false);
+                int idx = 0;
+                for (int yy = 0; yy < th; yy++) {
+                    for (int xx = 0; xx < tw; xx++) {
+                        int c = argb[idx++];
+                        int a = (c >>> 24) & 0xFF, r = (c >>> 16) & 0xFF, gg = (c >>> 8) & 0xFF, bb = c & 0xFF;
+                        ni.setPixelRGBA(xx, yy, (a << 24) | (bb << 16) | (gg << 8) | r);
+                    }
+                }
+                net.minecraft.client.renderer.texture.DynamicTexture dyn =
+                        new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                ResourceLocation rl = Minecraft.getInstance().getTextureManager()
+                        .register("gtl_term_outline_" + (texSeq++), dyn);
+                tex = new Tex(rl, Math.max(1, Math.round(tw / gs)), Math.max(1, Math.round(th / gs)), tw, th);
+                OTEX.put(key, tex);
+            }
+            g.blit(tex.rl, Math.round(x), Math.round(y), tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+        } catch (Throwable t) {
+            drawAwt(g, fam, size, text, x, y, color);
         }
     }
 
