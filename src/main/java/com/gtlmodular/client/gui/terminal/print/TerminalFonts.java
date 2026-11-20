@@ -38,6 +38,18 @@ public final class TerminalFonts {
     private static final Map<Font, FontSet> FONT_SETS = new java.util.IdentityHashMap<>();
     private static boolean logged;
 
+    // ── AWT 直绘：MC 的 TTF 图集是单通道，某些渲染路径会把字形当黑色纹理，
+    //    导致白字/钴蓝字全变黑。这里直接用系统 TTF 烘成 ARGB 小贴图再 blit，
+    //    颜色、字形都与设计稿一致；按 (族,字号,颜色,文本) 缓存，LRU 512。
+    private record Key(Fam fam, int sizeQ, int color, String text) {}
+    private static final class Tex {
+        final ResourceLocation rl; final int w, h, tw, th;
+        Tex(ResourceLocation rl, int w, int h, int tw, int th) { this.rl = rl; this.w = w; this.h = h; this.tw = tw; this.th = th; }
+    }
+    private static final Map<Key, Tex> TEX = new java.util.LinkedHashMap<>(128, 0.75f, true);
+    private static final Map<Fam, java.awt.Font> AWTF = new java.util.EnumMap<>(Fam.class);
+    private static int texSeq;
+
     // 绕过 ModernUI：它的 mixin 接管了 Font.drawInBatch / StringSplitter。
     // 这里直接反射调用原版私有的 renderText 与包私有的 getFontSet，用我们自己的 FontSet 绘制/量宽。
     private static java.lang.reflect.Method RENDER_TEXT;
@@ -69,17 +81,95 @@ public final class TerminalFonts {
 
     private static boolean colorWarned;
 
-    private static void rawDraw(GuiGraphics g, Font font, String text, float x, float y, int color) {
+    private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
-        // 某些 GUI（ModernUI 的模糊/背景层等）会留下非白的 shaderColor，文字着色器会把它当
-        // ColorModulator 乘进顶点色 —— 白色字会变成灰黑、INK 变纯黑。画字前强制复位。
-        float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
-        if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
+        if (drawAwt(g, fam, size, text, x, y, color)) return;
+        // 兜底：走原版 Font（颜色可能仍偏黑，但至少不丢字）
+        rawDrawMc(g, of(fam, size), text, x, y, color);
+    }
+
+    /** 用 AWT 烘一张小贴图再 blit，彻底绕开 MC 图集的颜色问题。 */
+    private static boolean drawAwt(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
+        try {
+            float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+            int px = Math.max(2, Math.round(size * gs));
+            Key key = new Key(fam, px, color, text);
+            Tex tex = TEX.get(key);
+            if (tex == null) {
+                java.awt.Font base = AWTF.get(fam);
+                if (base == null) {
+                    String file = pickFile(fam);
+                    if (file == null) return false;
+                    base = java.awt.Font.createFont(java.awt.Font.TRUETYPE_FONT, new java.io.File(file));
+                    AWTF.put(fam, base);
+                }
+                java.awt.Font af = base.deriveFont((float) px);
+                java.awt.image.BufferedImage probe = new java.awt.image.BufferedImage(1, 1,
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D pg = probe.createGraphics();
+                pg.setFont(af);
+                java.awt.FontMetrics fm = pg.getFontMetrics();
+                int tw = Math.max(1, fm.stringWidth(text) + 2);
+                int th = Math.max(1, fm.getHeight());
+                pg.dispose();
+
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(tw, th,
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D g2 = img.createGraphics();
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING,
+                        java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                g2.setRenderingHint(java.awt.RenderingHints.KEY_FRACTIONALMETRICS,
+                        java.awt.RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                g2.setFont(af);
+                g2.setColor(new java.awt.Color(color, true));
+                g2.drawString(text, 1, Math.round(fm.getAscent()));
+                g2.dispose();
+
+                com.mojang.blaze3d.platform.NativeImage ni =
+                        new com.mojang.blaze3d.platform.NativeImage(
+                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, tw, th, false);
+                for (int yy = 0; yy < th; yy++) {
+                    for (int xx = 0; xx < tw; xx++) {
+                        int argb = img.getRGB(xx, yy);
+                        int a = (argb >>> 24) & 0xFF;
+                        int r = (argb >>> 16) & 0xFF;
+                        int gg = (argb >>> 8) & 0xFF;
+                        int b = argb & 0xFF;
+                        ni.setPixelRGBA(xx, yy, (a << 24) | (b << 16) | (gg << 8) | r);
+                    }
+                }
+                net.minecraft.client.renderer.texture.DynamicTexture dyn =
+                        new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                ResourceLocation rl = Minecraft.getInstance().getTextureManager()
+                        .register("gtl_term_" + (texSeq++), dyn);
+                tex = new Tex(rl, Math.max(1, Math.round(tw / gs)), Math.max(1, Math.round(th / gs)), tw, th);
+                if (TEX.size() > 512) {
+                    var it = TEX.entrySet().iterator();
+                    if (it.hasNext()) {
+                        Tex old = it.next().getValue();
+                        it.remove();
+                        Minecraft.getInstance().getTextureManager().release(old.rl);
+                    }
+                }
+                TEX.put(key, tex);
+            }
+            int dx = Math.round(x), dy = Math.round(y);
+            g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            return true;
+        } catch (Throwable t) {
             if (!colorWarned) {
                 colorWarned = true;
-                GTLModular.LOGGER.warn("[TerminalFonts] 检测到残留 shaderColor={}, {}, {}, {}，已复位为白",
-                        sc[0], sc[1], sc[2], sc[3]);
+                GTLModular.LOGGER.warn("[TerminalFonts] AWT 文字失败，回退 MC 字体: {}", t.toString());
             }
+            return false;
+        }
+    }
+
+    /** 原反射路径，仅在 AWT 不可用时兜底。 */
+    private static void rawDrawMc(GuiGraphics g, Font font, String text, float x, float y, int color) {
+        if (text.isEmpty()) return;
+        float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
+        if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         }
         if (RENDER_TEXT != null) {
@@ -88,7 +178,6 @@ public final class TerminalFonts {
                         g.pose().last().pose(), g.bufferSource(), Font.DisplayMode.NORMAL, 0xF000F0, 0);
                 return;
             } catch (Throwable ignored) {
-                // 落到原版 API
             }
         }
         g.drawString(font, text, x, y, color, false);
@@ -251,7 +340,7 @@ public final class TerminalFonts {
     public static void draw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         Font font = of(fam, size);
         if (font == null) return;
-        rawDraw(g, font, text, x, y, color);
+        rawDraw(g, fam, size, text, x, y, color);
     }
 
     /** 带字距绘制（设计稿 63 处 letter-spacing）。 */
@@ -264,7 +353,7 @@ public final class TerminalFonts {
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             String ch = new String(Character.toChars(cp));
-            rawDraw(g, font, ch, cx, y, color);
+            rawDraw(g, fam, size, ch, cx, y, color);
             cx += advanceOf(font, cp) + tracking;
             i += Character.charCount(cp);
         }
@@ -304,7 +393,7 @@ public final class TerminalFonts {
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             String ch = new String(Character.toChars(cp));
-            rawDraw(g, font, ch, x, cy, color);
+            rawDraw(g, fam, size, ch, x, cy, color);
             cy += advanceOf(font, cp) + tracking;
             i += Character.charCount(cp);
         }
@@ -352,9 +441,11 @@ public final class TerminalFonts {
                 count++;
             }
             Font f = latin;
+            Fam runFam = fam;
             if (cjk) {
                 if (cn == null) cn = of(Fam.CN, size);
                 if (cn != null) f = cn;
+                runFam = Fam.CN;
             }
             float w = 0f;
             for (int k = i; k < j; ) {
@@ -362,7 +453,7 @@ public final class TerminalFonts {
                 w += advanceOf(f, cp);
                 k += Character.charCount(cp);
             }
-            rawDraw(g, f, run.toString(), cx, y, color);
+            rawDraw(g, runFam, size, run.toString(), cx, y, color);
             cx += w + tracking * count;
             i = j;
         }

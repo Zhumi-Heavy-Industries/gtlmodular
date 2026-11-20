@@ -38,7 +38,9 @@ public final class TerminalReport {
             TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, String.valueOf(vals[i]), x, 61, 0, TerminalTheme.INK);
             x += TerminalFonts.mixedWidth(Fam.MONO, 7f, String.valueOf(vals[i]), 0) + 10;
         }
-        TerminalFonts.drawMixed(g, Fam.MONO, 7f, "耗时 —", x, 61, 0, TerminalTheme.INK_SOFT);
+        long ms = s.scanMs();
+        TerminalFonts.drawMixed(g, Fam.MONO, 7f, "耗时 " + (ms > 0 ? ms + " ms" : "—"),
+                x, 61, 0, TerminalTheme.INK_SOFT);
 
         // 刻度尺 + 表头
         for (float tx = 20; tx <= 540; tx += 12) {
@@ -46,10 +48,10 @@ public final class TerminalReport {
         }
         TerminalDraw.hline(g, 524, 540, 75, TerminalTheme.INK_FAINT);
 
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawRightMixed(g, Fam.MONO, 6f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "坐标", 477, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawRightMixed(g, Fam.MONO, 6.5f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "坐标", 477, 82, 1.4f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
 
         // 清单（裁剪，展开行高 48）
@@ -78,10 +80,10 @@ public final class TerminalReport {
                 : "全部 " + shown + " 条 · ESC 关闭";
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, omitted, 20, 232, 0.6f, TerminalTheme.INK_FAINT);
 
-        button(g, s, 20, 258, 74, "复制全部", false, TerminalTheme.INK, s::copyReport);
-        button(g, s, 100, 258, 74, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes);
-        button(g, s, 180, 258, 96, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter);
-        button(g, s, 468, 258, 72, "关闭", true, TerminalTheme.PAPER, s::onClose);
+        button(g, s, 20, 258, 84, "复制全部", false, TerminalTheme.INK, s::copyReport, 1);
+        button(g, s, 110, 258, 92, "显示方块", s.showBoxes, TerminalTheme.INK, s::toggleBoxes, 2);
+        button(g, s, 208, 258, 100, "筛选：" + s.filterName(), false, TerminalTheme.INK, s::cycleFilter, 3);
+        button(g, s, 468, 258, 72, "关闭", true, TerminalTheme.PAPER, s::onClose, 0);
     }
 
     private static String shortName(String name) {
@@ -119,7 +121,10 @@ public final class TerminalReport {
         if (open && !row.coords().isEmpty()) {
             float cy = y + 21;
             for (int k = 0; k < row.coords().size() && k < 3; k++) {
-                TerminalFonts.drawMixed(g, Fam.MONO, 6f, "» " + fmt(row.coords().get(k)), 74, cy + 3, 0.4f,
+                // 网页展开行用小拐角而不是 »；用两笔线画，避免字体缺字
+                TerminalDraw.hline(g, 74, 78, cy + 7, TerminalTheme.INK_FAINT);
+                TerminalDraw.vline(g, 74, cy + 3, cy + 7, TerminalTheme.INK_FAINT);
+                TerminalFonts.drawMixed(g, Fam.MONO, 6f, fmt(row.coords().get(k)), 82, cy + 3, 0.4f,
                         TerminalTheme.INK_FAINT);
                 TerminalDraw.hline(g, 74, 520, cy + 14, 0x141F2427);
                 cy += 16;
@@ -135,15 +140,41 @@ public final class TerminalReport {
     }
 
     private static void button(GuiGraphics g, TerminalScreen s, float x, float y, float w,
-                               String label, boolean fill, int textColor, Runnable action) {
+                               String label, boolean fill, int textColor, Runnable action, int icon) {
         boolean hover = s.isHover(x, y, w, 16);
         if (fill) {
             TerminalDraw.rect(g, x, y, w, 16, TerminalTheme.INK);
         } else {
             TerminalDraw.outline(g, x, y, w, 16, hover ? TerminalTheme.COBALT : TerminalTheme.INK);
         }
-        TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f, y + 4, fill ? textColor : TerminalTheme.INK);
+        int c = fill ? textColor : TerminalTheme.INK;
+        if (icon > 0) icon(g, icon, x + 7, y + 4, c);
+        TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f + (icon > 0 ? 4 : 0), y + 4, c);
         s.hit(x, y, w, 16, label, action, false);
+    }
+
+    /** 网页按钮里的小图标：☑ 复制 / ◉ 显示方块 / 筛选菱形。 */
+    private static void icon(GuiGraphics g, int kind, float x, float y, int color) {
+        switch (kind) {
+            case 1 -> {
+                TerminalDraw.outline(g, x, y + 1, 8, 8, color);
+                TerminalDraw.line(g, x + 2, y + 5, x + 3.5f, y + 7, 1f, color);
+                TerminalDraw.line(g, x + 3.5f, y + 7, x + 6.5f, y + 2.5f, 1f, color);
+            }
+            case 2 -> {
+                TerminalDraw.ellipseRing(g, x + 4, y + 5, 4.2f, 2.4f, 1f, color);
+                TerminalDraw.fillCircle(g, x + 4, y + 5, 1.2f, color);
+            }
+            case 3 -> {
+                float[] pts = {x + 4, y + 1, x + 8, y + 5, x + 4, y + 9, x, y + 5};
+                TerminalDraw.polygon(g, pts, 0);
+                for (int i = 0; i < 4; i++) {
+                    TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
+                            pts[((i + 1) % 4) * 2], pts[((i + 1) % 4) * 2 + 1], 1f, color);
+                }
+            }
+            default -> { }
+        }
     }
 
     static String fmt(BlockPos pos) {

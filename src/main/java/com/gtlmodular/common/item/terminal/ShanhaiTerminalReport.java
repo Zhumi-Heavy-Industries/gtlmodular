@@ -22,7 +22,7 @@ import net.minecraft.world.item.ItemStack;
 public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] counts, Component summary,
                                     List<Category> categories, List<Component> names,
                                     List<List<Item>> icons, List<Component> details,
-                                    List<Line> lines, int omitted) {
+                                    List<Line> lines, int omitted, long elapsedMs) {
 
     public enum Type { SCAN, MODULES, BUILD, CRAFT }
 
@@ -76,6 +76,7 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
         private final List<Line> lines = new ArrayList<>();
         private Component summary = Component.empty();
         private int omitted;
+        private long elapsedMs;
 
         public Builder(Type type, BlockPos target, int... counts) {
             this.type = type;
@@ -91,6 +92,12 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
 
         public long id() {
             return id;
+        }
+
+        /** 掃描/施工耗時（毫秒），報告頁右上「耗時」用；0 表示未計時。 */
+        public Builder elapsed(long millis) {
+            this.elapsedMs = Math.max(0, millis);
+            return this;
         }
 
         public int size() {
@@ -133,7 +140,7 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
         }
 
         public ShanhaiTerminalReport build() {
-            return new ShanhaiTerminalReport(id, type, target, counts, summary, categories, names, icons, details, lines, omitted);
+            return new ShanhaiTerminalReport(id, type, target, counts, summary, categories, names, icons, details, lines, omitted, elapsedMs);
         }
     }
 
@@ -156,6 +163,7 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
         }
         for (Component detail : details) buf.writeComponent(detail);
         buf.writeVarInt(omitted);
+        buf.writeLong(elapsedMs);
         buf.writeVarInt(lines.size());
         for (Line line : lines) {
             buf.writeLong(line.pos().asLong());
@@ -186,6 +194,7 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
         List<Component> details = new ArrayList<>(nameCount);
         for (int i = 0; i < nameCount; i++) details.add(buf.readComponent());
         int omitted = Math.max(0, buf.readVarInt());
+        long elapsedMs = Math.max(0, buf.readLong());
         int lineCount = checked(buf.readVarInt(), MAX_LINES);
         List<Line> lines = new ArrayList<>(lineCount);
         for (int i = 0; i < lineCount; i++) {
@@ -194,7 +203,7 @@ public record ShanhaiTerminalReport(long id, Type type, BlockPos target, int[] c
             int name = checked(buf.readVarInt(), nameCount - 1);
             lines.add(new Line(pos, category, name));
         }
-        return new ShanhaiTerminalReport(id, type, target, counts, summary, categories, names, icons, details, lines, omitted);
+        return new ShanhaiTerminalReport(id, type, target, counts, summary, categories, names, icons, details, lines, omitted, elapsedMs);
     }
 
     private static int checked(int value, int max) {

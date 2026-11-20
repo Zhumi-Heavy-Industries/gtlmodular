@@ -75,12 +75,10 @@ public final class TerminalFrame {
                 TerminalDraw.line(g, x + 8, y + 1, x + 1, y + 8, 0.8f, c);
             }
             case "sun" -> {
-                TerminalDraw.ring(g, cx, cy, 2.4f, 1f, c);
-                for (int i = 0; i < 8; i++) {
-                    double a = Math.PI * 2 * i / 8;
-                    TerminalDraw.line(g, cx + (float) Math.cos(a) * 3.4f, cy + (float) Math.sin(a) * 3.4f,
-                            cx + (float) Math.cos(a) * 4.4f, cy + (float) Math.sin(a) * 4.4f, 0.8f, c);
-                }
+                // 网页图标是半明半月：左半实心、右半描边
+                TerminalDraw.fillCircle(g, cx, cy, 3.2f, c);
+                TerminalDraw.rect(g, cx, cy - 3.2f, 3.4f, 6.4f, TerminalTheme.PAPER);
+                TerminalDraw.ring(g, cx, cy, 3.2f, 1f, c);
             }
             case "bolt" -> TerminalDraw.polygon(g, new float[]{
                     cx + 1.5f, y, x + 1, cy + 1, cx, cy + 1, x + 1.5f, y + 9, x + 8, cy - 1, cx + 1, cy - 1

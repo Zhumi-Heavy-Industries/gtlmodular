@@ -57,10 +57,6 @@ public final class TerminalPlate {
         // 6. 右缘一条测量线（网页左下角的横线对应物）
         TerminalDraw.hline(g, 520, 540, 176, ink(90));
 
-        // 7. hover：虚框，与设计稿的 1px 钴蓝变换框一致
-        if (hover) {
-            TerminalDraw.dashedRect(g, CX - 118, CY - 118, 236, 236, 2.2f, 3.2f, cob(130));
-        }
     }
 
     /** 用极低透明度的宽笔刷扫出斜向纸纹/钴蓝带。 */

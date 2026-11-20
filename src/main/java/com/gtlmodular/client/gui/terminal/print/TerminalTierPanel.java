@@ -58,6 +58,11 @@ public final class TerminalTierPanel {
         } else if ("sepm".equals(key)) {
             n = n.replace("太空电梯动力模块", "动力模块 ");
         }
+        // 少数方块名带一个前导 d（贴图变体），格子里去掉，避免 "d动力模块" 这种
+        if (n.length() > 1 && (n.charAt(0) == 'd' || n.charAt(0) == 'D')
+                && (Character.isIdeographic(n.charAt(1)) || n.charAt(1) == 'Ω')) {
+            n = n.substring(1);
+        }
         return n.trim().isEmpty() ? full : n.trim();
     }
 

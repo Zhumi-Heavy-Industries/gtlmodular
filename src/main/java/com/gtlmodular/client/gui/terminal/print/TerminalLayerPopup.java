@@ -27,7 +27,7 @@ public final class TerminalLayerPopup {
         // − / 数字 / +
         button(g, s, x + 6, y + 26, 20, 20, "−", () -> s.layerDraft = Math.max(1, s.layerDraft - 1));
         button(g, s, x + 120, y + 26, 20, 20, "+", () -> s.layerDraft = Math.min(MAX, s.layerDraft + 1));
-        TerminalFonts.drawCentered(g, Fam.MONO, 19f, String.format("%03d", s.layerDraft), x + 80, y + 22,
+        TerminalFonts.drawCentered(g, Fam.MONO, 24f, String.format("%03d", s.layerDraft), x + 80, y + 19,
                 TerminalTheme.COBALT);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "/ 648", x + 148, y + 32, 0f, TerminalTheme.INK_FAINT);
 

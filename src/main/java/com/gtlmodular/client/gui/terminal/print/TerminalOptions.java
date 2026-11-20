@@ -197,7 +197,9 @@ public final class TerminalOptions {
         TerminalDraw.hline(g, 28, 168, 222, TerminalTheme.RULE);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "参照 · 上次扫描", 28, 228, 1.2f, TerminalTheme.INK_SOFT);
         TerminalFonts.drawMixed(g, Fam.CN, 9f, s.machineName, 28, 238, 0f, TerminalTheme.INK);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "SNAP — · 128,64,-37", 28, 250, 0f, TerminalTheme.INK_FAINT);
+        long scanMs = s.scanMs();
+        String snap = "SNAP " + (scanMs > 0 ? scanMs + " ms" : "—") + " · " + s.scanTarget();
+        TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, snap, 28, 250, 0f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "S-01 / 结构替换选项", 28, 266, 1f, TerminalTheme.INK_FAINT);
 
         // 右侧开关面板

@@ -339,7 +339,7 @@ public final class TerminalScreen extends Screen {
                 this.page = target;
                 this.tierOpen = false;
                 this.layerOpen = false;
-            }, false);
+            }, true);
             x += numW + 5 + nameW + 26;
         }
     }
@@ -703,6 +703,16 @@ public final class TerminalScreen extends Screen {
     public String targetText() {
         if (report != null) return "TARGET " + report.target().toShortString();
         return "TARGET 128,64,-37";
+    }
+
+    /** 最近一次扫描耗时（服务端 planner 计时，0=未计时）。 */
+    public long scanMs() {
+        return report == null ? 0L : Math.max(0L, report.elapsedMs());
+    }
+
+    /** 最近一次扫描目标坐标；无报告时与网页原型一致显示占位。 */
+    public String scanTarget() {
+        return report == null ? "128,64,-37" : TerminalReport.fmt(report.target());
     }
 
     public void item(GuiGraphics g, Block block, int x, int y) {

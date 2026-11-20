@@ -313,7 +313,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
             if (moduleCheck) {
                 reportModulePositions(player, plan);
             } else {
-                reportPlan(player, plan);
+                reportPlan(player, plan, planMs);
             }
             long reportMs = (System.nanoTime() - reportStart) / 1_000_000L;
             long totalMs = (System.nanoTime() - perfStart) / 1_000_000L;
@@ -385,7 +385,7 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         return true;
     }
 
-    private void reportPlan(ServerPlayer player, ShanhaiStructurePlan plan) {
+    private void reportPlan(ServerPlayer player, ShanhaiStructurePlan plan, long elapsedMs) {
         // One pass over potentially tens of thousands of slots (previously five full stream passes).
         long place = 0, replace = 0, blocked = 0, manual = 0, chambers = 0;
         for (ShanhaiStructurePlan.Entry entry : plan.entries()) {
@@ -405,7 +405,8 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         // 聊天栏只放前几条；完整条目走报告封包，由聊天连结开启界面查看。
         ShanhaiTerminalReport.Builder report = new ShanhaiTerminalReport.Builder(
                 ShanhaiTerminalReport.Type.SCAN, plan.target().pos(),
-                (int) place, (int) replace, (int) blocked, (int) manual, (int) chambers);
+                (int) place, (int) replace, (int) blocked, (int) manual, (int) chambers)
+                .elapsed(elapsedMs);
         int lines = 0;
         long expiry = System.currentTimeMillis() + 15000;
         List<ShanhaiStructureHighlightPacket.Marker> highlights = new ArrayList<>();
