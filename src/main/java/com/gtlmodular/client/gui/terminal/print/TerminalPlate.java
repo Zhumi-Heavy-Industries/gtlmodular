@@ -99,34 +99,6 @@ public final class TerminalPlate {
             TerminalDraw.ring(g, nx, ny, 2.4f + pulse * 1.2f, 1f, cob(200));
         }
 
-        // L4b 扫描弧（3.4 秒/圈）+ 8 个开关六边形节点（开启钴蓝实心 / 关闭纸白空心）
-        float sweep = (t % 3.4f) / 3.4f * 360f;
-        TerminalDraw.arc(g, sx(CX), sy(CY), sr(382), sweep - 10f, sweep + 18f, 2.2f, paper(190));
-        int onCount = 0;
-        for (int i = 0; i < 8; i++) {
-            double a = Math.toRadians(-90 + i * 45);
-            float nx = sx(CX) + (float) Math.cos(a) * sr(382);
-            float ny = sy(CY) + (float) Math.sin(a) * sr(382);
-            boolean on = flags != null && i < flags.length && flags[i] != 0;
-            if (on) onCount++;
-            float[] hexPts = new float[12];
-            for (int k = 0; k < 6; k++) {
-                double ha = Math.PI / 3 * k - Math.PI / 2;
-                hexPts[k * 2] = nx + (float) Math.cos(ha) * 4.2f;
-                hexPts[k * 2 + 1] = ny + (float) Math.sin(ha) * 4.2f;
-            }
-            if (on) {
-                TerminalDraw.polygon(g, hexPts, TerminalTheme.COBALT);
-            } else {
-                TerminalDraw.polygon(g, hexPts, TerminalTheme.PAPER);
-            }
-            for (int k = 0; k < 6; k++) {
-                TerminalDraw.line(g, hexPts[k * 2], hexPts[k * 2 + 1],
-                        hexPts[((k + 1) % 6) * 2], hexPts[((k + 1) % 6) * 2 + 1], 1f, ink(180));
-            }
-        }
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, onCount + "/8", sx(860), sy(120), 0f, ink(150));
-
         // L5 土星环
         TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(140));
         TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(80));
@@ -136,14 +108,14 @@ public final class TerminalPlate {
         TerminalDraw.fillCircle(g, sx(CX), sy(CY), sr(R), TerminalTheme.COBALT);
         TerminalDraw.ring(g, sx(CX), sy(CY), sr(R), 1f, ink(210));
         // 盘上半调白点（黄金角）
-        for (int i = 0; i < 60; i++) {
+        for (int i = 0; i < 90; i++) {
             double a = i * 2.39996;
             double rr = 20 + Math.sqrt(i / 90.0) * 210;
             float dx = sx(CX) + (float) Math.cos(a) * sr((float) rr);
             float dy = sy(CY) + (float) Math.sin(a) * sr((float) rr);
             // 半调网点 6 秒呼吸（v16-v22 规格：0.13↔0.26 透明度）
-            int breathe = 40 + Math.round(18f * (0.5f + 0.5f * (float) Math.sin(t * Math.PI * 2f / 6f)));
-            TerminalDraw.fillCircle(g, dx, dy, 1.1f, paper(breathe));
+            int breathe = 48 + Math.round(14f * (0.5f + 0.5f * (float) Math.sin(t * Math.PI * 2f / 6f)));
+            TerminalDraw.fillCircle(g, dx, dy, 1.6f, paper(breathe));
         }
 
         // L7 主扫掠带（纸白）
