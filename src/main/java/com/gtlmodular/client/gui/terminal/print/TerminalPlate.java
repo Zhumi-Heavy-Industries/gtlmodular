@@ -332,14 +332,39 @@ public final class TerminalPlate {
     }
 
     /**
-     * 空心的描边 06：网页是 fill:none + text stroke，两层错位 10（inner）叠印；
-     * 这里用 AWT GlyphVector 轮廓 + 描边烘焙，不做任何填充。
+     * 空心的描边 06：AWT 轮廓在实机出现采样异常，这里直接用矢量线稿画「0」「6」，
+     * 两层错位 2.7px 叠印，保证任何 GUI scale 下都是可读的空心字。
      */
     private static void outlineNumber(GuiGraphics g, float x, float y, String s, float w, int color) {
-        float size = 70f;
-        float baselineY = sy(y);
-        float top = baselineY - size * 0.82f;
-        TerminalFonts.drawOutlined(g, Fam.SERIF, size, s, sx(x), top, color, Math.max(0.35f, w * K));
+        float baseX = sx(x);
+        float baseY = sy(y);
+        drawHollow06(g, baseX, baseY, color);
+    }
+
+    private static void drawHollow06(GuiGraphics g, float baseX, float baseY, int color) {
+        // 两层叠印：错位 2.7 设计像素，透明度由调用方颜色给出
+        for (int layer = 0; layer < 2; layer++) {
+            float ox = baseX + layer * 2.7f;
+            float oy = baseY + layer * 2.7f;
+            int c = layer == 0 ? cob(102) : cob(140);
+            // 0：椭圆环，中心 (baseX+18, baseY-32)
+            TerminalDraw.ellipseRing(g, ox + 18, oy - 32, 18, 31, 1.1f, c);
+            // 6：下方闭环 + 上方弯钩
+            float cx = ox + 52, cy = oy - 18;
+            TerminalDraw.ellipseRing(g, cx, cy, 16, 18, 1.1f, c);
+            float px = cx + 12, py = cy - 12;
+            float lx = cx - 12, ly = cy - 40;
+            float cxp = cx + 16, cyp = ly + 12;
+            float lastX = px, lastY = py;
+            for (int i = 1; i <= 12; i++) {
+                float u = i / 12f, v = 1f - u;
+                float nx = v * v * px + 2 * v * u * cxp + u * u * lx;
+                float ny = v * v * py + 2 * v * u * cyp + u * u * ly;
+                TerminalDraw.line(g, lastX, lastY, nx, ny, 1.1f, c);
+                lastX = nx;
+                lastY = ny;
+            }
+        }
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */

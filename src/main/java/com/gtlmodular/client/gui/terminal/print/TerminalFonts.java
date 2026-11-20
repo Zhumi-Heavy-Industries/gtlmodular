@@ -188,7 +188,8 @@ public final class TerminalFonts {
                 pg.setFont(af);
                 java.awt.FontMetrics fm = pg.getFontMetrics();
                 int tw = Math.max(1, fm.stringWidth(text) + 2);
-                int th = Math.max(1, fm.getHeight());
+                // 只用 ascent+descent，去掉行距 leading：贴图 top 才等于 CSS top
+                int th = Math.max(1, fm.getAscent() + fm.getDescent());
                 pg.dispose();
 
                 java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(tw, th,
