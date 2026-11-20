@@ -162,7 +162,7 @@ public final class TerminalTierPanel {
         }
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f,
-                "方块名取自 BlockMap.tierBlockMap · 点击即写回并返回",
+                "方块来自 BlockMap.tierBlockMap · 点击即时返回",
                 32, 320, 0.8f, TerminalTheme.INK_FAINT);
     }
 

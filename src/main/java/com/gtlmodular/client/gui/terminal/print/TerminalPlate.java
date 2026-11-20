@@ -193,10 +193,9 @@ public final class TerminalPlate {
             TerminalDraw.rect(g, x, sy(80), 1.2f, sr(760), paper((int) (a * 255)));
         }
 
-        // hover 构造方框
-        if (hover) {
-            TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 2.2f, 3.2f, cob(150));
-        }
+        // v22 构造线：静止时很淡（.18），hover 才明显；它不是准星吸附框
+        TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 2.2f, 3.2f,
+                cob(hover ? 90 : 34));
     }
 
     private static int flickerAlpha(float t, int i) {

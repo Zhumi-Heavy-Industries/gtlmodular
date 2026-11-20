@@ -104,7 +104,29 @@ public final class TerminalScreen extends Screen {
         this.originX = (width - TerminalTheme.W * scale) / 2f;
         this.originY = (height - TerminalTheme.H * scale) / 2f;
         this.openedAt = System.nanoTime();
+        hideCursor();
         loadState();
+    }
+
+    private boolean cursorHidden;
+
+    /** 网页端 .fx-sheet{cursor:none}：进终端隐藏系统指针，只留四角准星。 */
+    private void hideCursor() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getWindow() == null) return;
+        org.lwjgl.glfw.GLFW.glfwSetInputMode(mc.getWindow().getWindow(),
+                org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_HIDDEN);
+        cursorHidden = true;
+    }
+
+    private void restoreCursor() {
+        if (!cursorHidden) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.getWindow() != null) {
+            org.lwjgl.glfw.GLFW.glfwSetInputMode(mc.getWindow().getWindow(),
+                    org.lwjgl.glfw.GLFW.GLFW_CURSOR, org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL);
+        }
+        cursorHidden = false;
     }
 
     private void loadState() {
@@ -470,7 +492,7 @@ public final class TerminalScreen extends Screen {
                 on ? TerminalTheme.INK : TerminalTheme.INK_SOFT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, TerminalFonts.clip(Fam.MONO, 5.5f, coord, 200f),
                 x + 15, y + 23, 0.4f, hover ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
-        if (action && click != null) hit(x, y, 230, 36, title, click, false);
+        if (action && click != null) hit(x, y, 230, 36, status, click, false);
     }
 
     private void systemCard(GuiGraphics g, float x, float y) {
@@ -528,6 +550,12 @@ public final class TerminalScreen extends Screen {
 
     public boolean isHover(float x, float y, float w, float h) {
         return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+    }
+
+    @Override
+    public void removed() {
+        restoreCursor();
+        super.removed();
     }
 
     @Override

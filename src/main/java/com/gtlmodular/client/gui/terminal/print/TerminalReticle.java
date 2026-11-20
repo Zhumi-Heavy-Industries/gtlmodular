@@ -48,15 +48,17 @@ public final class TerminalReticle {
         bw += (tw - bw) * k;
         bh += (th - bh) * k;
 
-        int color = locked && target.ink() ? TerminalTheme.INK : TerminalTheme.COBALT;
+        // 静止：细墨色 7×7 L 角；吸附：粗钴蓝 10×10 L 角
+        int color = locked ? TerminalTheme.COBALT : TerminalTheme.INK;
         float arm = locked ? 10f : 7f;
-        corner(g, bx, by, arm, 1, color);
-        corner(g, bx + bw, by, -arm, 1, color);
-        corner(g, bx, by + bh, 1, -arm, color);
-        corner(g, bx + bw, by + bh, -arm, -arm, color);
+        float thick = locked ? 2f : 1f;
+        corner(g, bx, by, arm, arm, color, thick);
+        corner(g, bx + bw, by, -arm, arm, color, thick);
+        corner(g, bx, by + bh, arm, -arm, color, thick);
+        corner(g, bx + bw, by + bh, -arm, -arm, color, thick);
 
-        // 中心点
-        TerminalDraw.rect(g, mx - 1, my - 1, 2, 2, TerminalTheme.COBALT);
+        // 中心点：网页是 4×4 实心钴蓝方块，不是菱形
+        TerminalDraw.rect(g, mx - 2, my - 2, 4, 4, TerminalTheme.COBALT);
 
         // 标签：先按宽度截断再画；下方放不下就翻到框上方，且水平/垂直都夹在纸面内
         String label = target != null ? target.label() : String.format("X %04d  Y %04d", (int) mx, (int) my);
@@ -66,8 +68,11 @@ public final class TerminalReticle {
         float below = by + bh + 4f;
         float above = Math.min(by - 14f, 288f);
         float ly = (below + 10f <= 288f) ? below : (above >= 6f ? above : Math.min(330f, below));
-        TerminalDraw.rect(g, lx, ly, tw2 + 6, 10, color);
-        TerminalFonts.drawTracked(g, Fam.MONO, 6f, shown, lx + 3, ly + 2, 0.8f, TerminalTheme.PAPER);
+        // 静止=半透明纸底墨字；吸附=钴蓝底纸白字（之前字色反了）
+        int bg = locked ? TerminalTheme.COBALT : 0xD9EFF1EF;
+        int fg = locked ? TerminalTheme.PAPER : TerminalTheme.INK;
+        TerminalDraw.rect(g, lx, ly, tw2 + 6, 10, bg);
+        TerminalFonts.drawTracked(g, Fam.MONO, 6f, shown, lx + 3, ly + 2, 0.8f, fg);
 
         // 涟漪
         for (int i = ripples.size() - 1; i >= 0; i--) {
@@ -90,10 +95,12 @@ public final class TerminalReticle {
         }
     }
 
-    private static void corner(GuiGraphics g, float x, float y, float dx, float dy, int color) {
-        TerminalDraw.hline(g, x, x + dx, y, color);
-        TerminalDraw.vline(g, x, y, y + dy, color);
-        TerminalDraw.hline(g, x, x + dx, y + (dy > 0 ? 1 : -1), color);
-        TerminalDraw.vline(g, x + (dx > 0 ? 1 : -1), y, y + dy, color);
+    private static void corner(GuiGraphics g, float x, float y, float dx, float dy, int color, float thick) {
+        // 水平臂（下缘角画在框内，避免伸到框外）
+        float hy = y - (dy < 0 ? thick : 0);
+        TerminalDraw.rect(g, Math.min(x, x + dx), hy, Math.abs(dx), thick, color);
+        // 垂直臂（右缘角同样向内）
+        float vx = x - (dx < 0 ? thick : 0);
+        TerminalDraw.rect(g, vx, Math.min(y, y + dy), thick, Math.abs(dy), color);
     }
 }
