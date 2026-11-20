@@ -79,7 +79,7 @@ public final class TerminalPlate {
         TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1.2f, ink(150));
         TerminalDraw.dashedRing(g, sx(CX), sy(CY), sr(268), 1f,
                 (float) Math.toDegrees(2f / 268f), (float) Math.toDegrees(6f / 268f), ink(110));
-        for (int i = 0; i < 96; i += 2) {
+        for (int i = 0; i < 96; i++) {
             double a = Math.toRadians(i * 3.75);
             boolean major = i % 12 == 0;
             float len = sr(major ? 16 : 8);
