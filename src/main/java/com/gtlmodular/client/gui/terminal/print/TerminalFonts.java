@@ -51,6 +51,12 @@ public final class TerminalFonts {
     private static int texSeq;
     private static java.awt.image.BufferedImage probeImg;
     private static java.awt.Graphics2D probeG;
+    private record WKey(Fam fam, int px, String text) {}
+    private static final Map<WKey, Float> AW = new java.util.LinkedHashMap<>(256, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<WKey, Float> eldest) {
+            return size() > 4096;
+        }
+    };
 
     private static java.awt.Font awtFont(Fam fam, int px) {
         java.awt.Font base = AWTF.get(fam);
@@ -72,6 +78,9 @@ public final class TerminalFonts {
         if (text == null || text.isEmpty()) return 0f;
         float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
         int px = Math.max(2, Math.round(size * gs));
+        WKey wkey = new WKey(fam, px, text);
+        Float cached = AW.get(wkey);
+        if (cached != null) return cached;
         java.awt.Font af = awtFont(fam, px);
         if (af == null) return -1f;
         try {
@@ -80,7 +89,9 @@ public final class TerminalFonts {
                 probeG = probeImg.createGraphics();
             }
             probeG.setFont(af);
-            return probeG.getFontMetrics().stringWidth(text) / gs;
+            float w = probeG.getFontMetrics().stringWidth(text) / gs;
+            AW.put(wkey, w);
+            return w;
         } catch (Throwable t) {
             return -1f;
         }
