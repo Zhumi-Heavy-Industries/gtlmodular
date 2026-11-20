@@ -415,7 +415,7 @@ public final class TerminalScreen extends Screen {
         if (!tierOpen) {
             g.pose().pushPose();
             g.pose().translate(menu.px, menu.py, 0);
-            TerminalPlate.draw(g, seconds, isHover(280, 44, 250, 250));
+            TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
             g.pose().popPose();
         }
         // 圆盘文字必须在 SYSTEM 卡纸底之前落地；卡的第一笔是色块，flush 后顺序安全。
