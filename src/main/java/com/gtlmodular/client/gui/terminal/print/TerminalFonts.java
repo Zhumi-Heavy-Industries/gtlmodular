@@ -149,9 +149,16 @@ public final class TerminalFonts {
         return awtFailed;
     }
 
+    private static boolean shaderWarned;
+
     private static void ensureWhiteShaderColor() {
         float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
         if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
+            if (!shaderWarned) {
+                shaderWarned = true;
+                GTLModular.LOGGER.warn("[TerminalFonts] AWT 前残留 shaderColor={}, {}, {}, {}，已复位为白",
+                        sc[0], sc[1], sc[2], sc[3]);
+            }
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1f, 1f, 1f, 1f);
         }
     }
