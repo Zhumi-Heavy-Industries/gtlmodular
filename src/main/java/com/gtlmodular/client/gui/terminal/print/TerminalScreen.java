@@ -176,9 +176,12 @@ public final class TerminalScreen extends Screen {
 
             // 已放舱室：报告类别里出现过的舱室类型
             for (int i = 0; i < chamberOn.length; i++) {
-                String label = Component.translatable(ShanhaiChamberClassifier.Type.values()[i].translationKey()).getString();
+                ShanhaiChamberClassifier.Type type = ShanhaiChamberClassifier.Type.values()[i];
+                String label = Component.translatable(type.translationKey()).getString();
+                int typeColor = type.color() & 0xFFFFFF;
                 boolean found = report.categories().stream()
-                        .anyMatch(cat -> cat.label().getString().equals(label));
+                        .anyMatch(cat -> cat.label().getString().equals(label)
+                                || (cat.color() & 0xFFFFFF) == typeColor);
                 chamberOn[i] = found;
                 if (found) placed++;
             }
@@ -191,6 +194,7 @@ public final class TerminalScreen extends Screen {
             java.util.Arrays.fill(chamberOn, false);
         }
         expanded = new boolean[reportRows.size()];
+        if (expanded.length > 0) expanded[0] = true; // 网页端默认展开第一行
     }
 
     private ItemStack heldStack() {
@@ -370,8 +374,8 @@ public final class TerminalScreen extends Screen {
 
         // 三卡
         String[] titles = {"开始扫描", "配置舱室", "选择档位"};
-        String tierSub = (tierName == null || tierName.isEmpty())
-                ? TerminalTierPanel.totalTiers() + " 档可选 · 需扫描" : tierName + " · 已选";
+        // 网页端第三卡固定显示总档位数与「需扫描」，不显示已选，避免暗示已完成
+        String tierSub = TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
         String[] subs = {"手持终端 · 世界扫描", "8 类 · 6 必需", tierSub};
         for (int i = 0; i < 3; i++) {
             float x = 36 + i * 78;

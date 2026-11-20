@@ -26,6 +26,15 @@ public final class TerminalTierPanel {
     private static final float COLS = 6;
     private static final float CW = 76, CH = 18, GX = 4, GY = 22;
 
+    /** 网页端 v32 的展示名与格数（SEPM 固定 5 档，总 39 档）。 */
+    private static final String[][] WEB_LABELS = {
+            {"恒星炽热外壳", "进阶恒星炽热外壳", "终极恒星炽热外壳"},
+            {"动力模块 Ⅰ", "动力模块 Ⅱ", "动力模块 Ⅲ", "动力模块 Ⅳ", "动力模块 Ⅴ"},
+            {"LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV", "UIV", "UXV", "OpV", "MAX"},
+            {"超级热容", "白铜", "坎塔尔合金", "镍铬合金", "钌钨钼合金", "高速钢-G", "铑钯合金", "凯金合金",
+                    "三钛", "渊狱合金", "泰坦钢", "精金", "超能硅岩-塔兰", "星辉", "无尽", "海珀珍", "永恒"}
+    };
+
     /** 取某家族的方块（取不到就返回空数组）。 */
     public static Block[] blocks(String key) {
         try {
@@ -37,10 +46,11 @@ public final class TerminalTierPanel {
     }
 
     public static String name(String key, int i) {
+        String[] web = WEB_LABELS[index(key)];
+        if (i >= 0 && i < web.length) return web[i];
         Block[] b = blocks(key);
         if (i >= 0 && i < b.length) return shortName(key, b[i].getName().getString());
-        String[] fb = fallback(key);
-        return i >= 0 && i < fb.length ? fb[i] : "?";
+        return "?";
     }
 
     /** 网页版格子里是短标签（LV / 白铜 / 动力模块 Ⅱ），不是方块全名。 */
@@ -72,8 +82,11 @@ public final class TerminalTierPanel {
     }
 
     private static int size(String key) {
+        int idx = index(key);
+        String[] web = WEB_LABELS[idx];
         Block[] b = blocks(key);
-        return b.length > 0 ? b.length : fallback(key).length;
+        // 网页端是 3/5/14/17 共 39 档；真实方块可能多出 SEPM 6-7 档，界面按网页收口
+        return Math.min(web.length, b.length > 0 ? b.length : web.length);
     }
 
     /** 真实档位总数（界面文案用，不再写死 39）。 */
@@ -120,7 +133,8 @@ public final class TerminalTierPanel {
                 for (int j = 0; j < n; j++) {
                     float cx = 32 + (j % COLS) * (CW + GX);
                     float cy = y + (j / COLS) * gy;
-                    boolean on = s.family.equals(key) && s.tierIndex == j;
+                    int rawIdx = rawIndex(key, j);
+                    boolean on = s.family.equals(key) && s.tierIndex == rawIdx;
                     boolean hover = s.isHover(cx, cy, CW, ch);
                     TerminalDraw.rect(g, cx, cy, CW, ch, on ? 0x0F3A5BC2 : 0x00FFFFFF);
                     TerminalDraw.outline(g, cx, cy, CW, ch,
@@ -128,8 +142,8 @@ public final class TerminalTierPanel {
 
                     String label = name(key, j);
                     float textX = cx + 22;
-                    if (blocks.length > 0 && j < blocks.length) {
-                        s.itemScaled(g, blocks[j], (int) cx + 4, (int) cy + 1,
+                    if (rawIdx >= 0 && rawIdx < blocks.length) {
+                        s.itemScaled(g, blocks[rawIdx], (int) cx + 4, (int) cy + 1,
                                 Math.min(1f, Math.max(0.75f, (ch - 1f) / 16f)));
                     } else {
                         TerminalDraw.rect(g, cx + 4, cy + 1, 14, 14, on ? TerminalTheme.COBALT : 0x668B9795);
@@ -138,7 +152,7 @@ public final class TerminalTierPanel {
                             on ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
 
                     final String fk = key;
-                    final int ti = j;
+                    final int ti = rawIdx;
                     s.hit(cx, cy, CW, ch, label + " (" + (j + 1) + "/" + n + ")", () -> s.applyTier(fk, ti), false);
                 }
                 y += ((n + COLS - 1) / COLS) * gy + 5;
@@ -150,6 +164,17 @@ public final class TerminalTierPanel {
         TerminalFonts.drawMixed(g, Fam.MONO, 5f,
                 "方块名取自 BlockMap.tierBlockMap · 点击即写回并返回",
                 32, 320, 0.8f, TerminalTheme.INK_FAINT);
+    }
+
+    /** 展示序 → 真实 BlockMap 下标（CAL 的网页顺序与 BlockMap 原始顺序不同）。 */
+    private static int rawIndex(String key, int displayIndex) {
+        if (!"cal".equals(key)) return displayIndex;
+        Block[] b = blocks(key);
+        String want = WEB_LABELS[index(key)][Math.max(0, Math.min(displayIndex, WEB_LABELS[index(key)].length - 1))];
+        for (int i = 0; i < b.length; i++) {
+            if (shortName(key, b[i].getName().getString()).equalsIgnoreCase(want)) return i;
+        }
+        return displayIndex;
     }
 
     private static int index(String key) {
