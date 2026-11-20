@@ -155,7 +155,8 @@ public final class TerminalScreen extends Screen {
         flags[7] = ShanhaiUltimateTerminalConfig.isModuleCheckMode(stack) ? 1 : 0;
         family = ShanhaiUltimateTerminalConfig.getReplacementFamily(stack);
         tierIndex = ShanhaiUltimateTerminalConfig.getReplacementTier(stack, family);
-        tierName = TerminalTierPanel.name(family, tierIndex);
+        tierIndex = Math.max(0, Math.min(tierIndex, TerminalTierPanel.count(family) - 1));
+        tierName = TerminalTierPanel.nameForRaw(family, tierIndex);
         boundAe = ShanhaiUltimateTerminalConfig.getBoundAe(stack) != null;
         boundEco = ShanhaiUltimateTerminalConfig.getBoundEco(stack) != null;
         var ae = ShanhaiUltimateTerminalConfig.getBoundAe(stack);
@@ -300,6 +301,7 @@ public final class TerminalScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (cursorHidden) hideCursor();
         long renderStart = System.nanoTime();
         this.seconds = (renderStart - openedAt) / 1_000_000_000f;
         this.mouseX = (mouseX - originX) / scale;
@@ -664,7 +666,7 @@ public final class TerminalScreen extends Screen {
     public void applyTier(String fam, int tier) {
         family = fam;
         tierIndex = tier;
-        tierName = TerminalTierPanel.name(fam, tier);
+        tierName = TerminalTierPanel.nameForRaw(fam, tier);
         tierOpen = false;
         if (!preview && hand != null) {
             GTLModularNetwork.CHANNEL.sendToServer(

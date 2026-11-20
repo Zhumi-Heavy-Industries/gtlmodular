@@ -85,7 +85,8 @@ public final class TerminalReticle {
             float p = age / 1.15f;
             float rad = 14 + p * 16;
             int alpha = (int) ((1 - p) * 255);
-            int c = (r.ink ? TerminalTheme.INK : TerminalTheme.COBALT) & 0x00FFFFFF | (alpha << 24);
+            // 网页 .fx-rip 统一钴蓝，不随目标墨色变
+            int c = TerminalTheme.COBALT & 0x00FFFFFF | (alpha << 24);
             TerminalDraw.ring(g, r.x, r.y, rad, 1f, c);
             TerminalFonts.drawTracked(g, Fam.MONO, 6f, "+ " + r.label, r.x + 16, r.y - 6, 0.8f,
                     (c & 0x00FFFFFF) | (((int) ((1 - p) * 210)) << 24));

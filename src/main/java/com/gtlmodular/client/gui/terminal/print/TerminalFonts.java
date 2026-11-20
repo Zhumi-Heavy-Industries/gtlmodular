@@ -80,6 +80,7 @@ public final class TerminalFonts {
     }
 
     private static boolean colorWarned;
+    private static boolean awtLogged;
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
@@ -152,6 +153,10 @@ public final class TerminalFonts {
                     }
                 }
                 TEX.put(key, tex);
+                if (!awtLogged) {
+                    awtLogged = true;
+                    GTLModular.LOGGER.info("[TerminalFonts] AWT 文字就绪：{} {}px texture {}x{}", fam, px, tw, th);
+                }
             }
             int dx = Math.round(x), dy = Math.round(y);
             g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);

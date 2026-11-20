@@ -166,6 +166,22 @@ public final class TerminalTierPanel {
                 32, 320, 0.8f, TerminalTheme.INK_FAINT);
     }
 
+    /** 当前网页展示的格数（SEPM 收口到 5）。 */
+    public static int count(String key) {
+        return size(key);
+    }
+
+    /** 真实 BlockMap 下标 → 展示序再取名；用于配置里存的是 raw index 的场景。 */
+    public static String nameForRaw(String key, int raw) {
+        return name(key, displayIndex(key, raw));
+    }
+
+    private static int displayIndex(String key, int raw) {
+        int n = size(key);
+        for (int i = 0; i < n; i++) if (rawIndex(key, i) == raw) return i;
+        return Math.max(0, Math.min(raw, n - 1));
+    }
+
     /** 展示序 → 真实 BlockMap 下标（CAL 的网页顺序与 BlockMap 原始顺序不同）。 */
     private static int rawIndex(String key, int displayIndex) {
         if (!"cal".equals(key)) return displayIndex;
