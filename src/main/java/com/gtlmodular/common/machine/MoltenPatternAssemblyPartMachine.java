@@ -791,8 +791,6 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     /** 「催化剂还没供给上」的槽（例如当时 ME 网络里没存量）—— 周期性重试，最多每轮 4 个。 */
     private final java.util.TreeSet<Integer> catalystRetrySlots = new java.util.TreeSet<>();
 
-    private int catalystRetryCursor;
-
     /** 每 {@link PatternCatalystSupply#REFRESH_INTERVAL_TICKS} tick 跑一次巡检。 */
     private int catalystSupplyTicker;
 
@@ -809,6 +807,30 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
 
     /** 催化剂供给状态版本：标记增删时 +1，用来让 AE 样板表缓存失效。 */
     private int catalystSupplyVersion;
+
+    /**
+     * 样板表版本：样板内容变化（界面放/取/换、批量归档收尾、拆机/读档重置）时 +1。
+     * 用作 AE 过滤缓存的指纹，避免每次 {@code getAvailablePatterns()} 都遍历全部样板槽做 NBT 哈希。
+     */
+    private int patternTableVersion;
+
+    /** {@link #catalystRetrySlots} 的环形游标：保证重试从上次的位置往后轮，后面的槽不会饿死。 */
+    private int catalystRetryCursor;
+
+    /** 已供给槽审计的环形起点（每轮最多审计 2 个，防止玩家取走标记后无人感知）。 */
+    private int catalystAuditCursor;
+
+    /** 审计用的临时列表（复用，避免每轮分配）。 */
+    private final java.util.List<Integer> catalystAuditScratch = new java.util.ArrayList<>();
+
+    /** 「解不出配方」的槽位短时退避（gameTime）：防止推料热路径每次都全表扫配方。 */
+    private final java.util.Map<Integer, Long> catalystResolveBackoff = new java.util.HashMap<>();
+
+    /** 解配方失败后的退避时长（tick）。 */
+    private static final long CATALYST_RESOLVE_BACKOFF_TICKS = 200L;
+
+    /** 读档后最多给多少个「非空样板槽」排入一次电路/催化剂热扫（有界，避免大仓读档卡顿）。 */
+    private static final int CATALYST_LOAD_WARM_LIMIT = 64;
 
     // ---------- 槽级电路自动补齐（修「塞入样板不工作、调一下电路才正常」）----------
     //
@@ -1504,6 +1526,9 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         //   super 里的 getRealPattern() 只认「样板自身带的电路」，回收后由新的识别/热队列按新样板重新补，
         //   绝不会把上一张样板的电路钉在新样板上。
         clearAutoCircuit(index);
+        // ★ 样板换过 ⇒ 样板表版本 +1（AE 过滤缓存按它失效）、该槽的「解配方退避」与「已供给」台账全部作废
+        patternTableVersion++;
+        catalystResolveBackoff.remove(index);
         // ★ 0.3.48（惰性 A 档第一步）：**先**保证这个槽在容量之内，再让父类干活。
         //   这是"写前增长"的兜底入口：界面放/取/换样板（InternalSlot.setOnContentsChanged → 这里）、
         //   AE 推送落地都会经过它；先增长可避免父类在该下标上读写越界。
@@ -1539,8 +1564,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         // ★ 库存催化剂（免塞催化剂）：样板换了 ⇒ 旧虚拟标记全部作废（实体催化剂物品/流体一格不动），
         //   并把新样板排进热队列，由每 20 tick 的既有服务端订阅去解配方 + 按 ME 存量自动供给。
         //   这里绝不做"扫配方表"的重活：界面放一张样板就会走本方法，批量粘贴 640 张也走本方法。
-        if (clearCatalystMarkers(index)) {
-            catalystSuppliedSlots.remove(index);
+        boolean suppliedChanged = setCatalystSupplied(index, false);
+        if (clearCatalystMarkers(index) || suppliedChanged) {
             noteCatalystSupplyChanged();
         }
         queueCatalystWarm(index);
@@ -2918,7 +2943,9 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         IPatternDetails unwrapped = patternDetails instanceof PatternCatalystFilter filter
                 ? filter.unwrap() : catalystFilterToOriginal.getOrDefault(patternDetails, patternDetails);
         IPatternDetails original = rewrittenToOriginal.getOrDefault(unwrapped, unwrapped);
-        boolean aePushedOriginal = original == patternDetails;
+        boolean aePushedFiltered = patternDetails instanceof PatternCatalystFilter
+                || catalystFilterToOriginal.containsKey(patternDetails);
+        boolean aePushedOriginal = original == unwrapped;
         int mul = effectiveMul();
         int div = effectiveDiv();
         Level pushLevel = getLevel();
@@ -3151,8 +3178,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
             pushedToMachineFluidTotal = pushedToMachineFluidTotal > Long.MAX_VALUE - pushedFluid
                     ? Long.MAX_VALUE : pushedToMachineFluidTotal + pushedFluid;
-            GTLModular.LOGGER.info("[gtlmodular] AE 推送样板 @{}: 是否缩放样板={} 机器侧放大={} 输入总量={} 有效缩放[{}] 累计推来[物品={}；流体={}] 明细:{}",
-                    getPos(), !aePushedOriginal, machineSideScaled, pushed, describeEffectiveScale(),
+            GTLModular.LOGGER.info("[gtlmodular] AE 推送样板 @{}: 是否缩放样板={} 是否催化剂过滤视图={} 机器侧放大={} 输入总量={} 有效缩放[{}] 累计推来[物品={}；流体={}] 明细:{}",
+                    getPos(), !aePushedOriginal, aePushedFiltered, machineSideScaled, pushed, describeEffectiveScale(),
                     pushedToMachineTotal, pushedToMachineFluidTotal, detail);
         }
         Integer slot = getSlotIndexForPattern(original);
@@ -5574,6 +5601,20 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             rewriteCacheBuilt = false;
             // ②b 批量写入后催化剂供给/过滤缓存全部作废（虚拟标记随样板换了，收尾统一重建）
             invalidateCatalystCaches();
+            // ②c 作废之后**必须把非空样板槽重新排进热队列**，否则归档/搬运后要等第一次 AE 推料
+            //     才会开始自动供给（VERIFICATION M2）。
+            try {
+                ItemStackTransfer inv = getPatternInventory();
+                if (inv != null) {
+                    for (int i = 0; i < inv.getSlots(); i++) {
+                        if (!inv.getStackInSlot(i).isEmpty()) {
+                            queueCatalystWarm(i);
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+                // 排队失败由第一次推料兜底
+            }
             // ③ 置一次「样板表过期」（片 D 既有入口：只置 needPatternSync，由每 tick 的既有消费点合并通知 AE）
             markPatternTableStale("归档批量收尾(片C)");
         } catch (Throwable failure) {
@@ -7655,6 +7696,22 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         }
     }
 
+    /**
+     * 记下/撤销「该槽催化剂已全部供给」。
+     *
+     * @return 成员是否真的变了
+     */
+    private boolean setCatalystSupplied(int slot, boolean supplied) {
+        boolean changed = supplied ? catalystSuppliedSlots.add(slot) : catalystSuppliedSlots.remove(slot);
+        if (changed) {
+            // 成员变化本身可能改变「哪些样板该对 AE 摘催化剂」⇒ 版本 +1 让过滤缓存重建
+            catalystSupplyVersion++;
+            catalystFilteredPatterns = null;
+            catalystFilterFingerprint = Long.MIN_VALUE;
+        }
+        return changed;
+    }
+
     /** 把槽位排进「解配方 + 自动供给」热队列（去重、有界；绝不在 onPatternChange 回调里扫配方表）。 */
     private void queueCatalystWarm(int slot) {
         try {
@@ -7706,6 +7763,19 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     queueCatalystWarm(slot);     // 顺便让热队列接着核对配方
                 }
             }
+            // ★ 读档后「槽级电路缓存」也不在了（SlotCacheManager 不落盘 circuitCache）；
+            //   对前若干个非空样板槽排一次热扫，让电路自愈与催化剂供给在机器没有 AE 推料时也能恢复
+            //   （VERIFICATION M6）。有界：最多 CATALYST_LOAD_WARM_LIMIT 个，避免 640 槽大仓读档卡顿。
+            ItemStackTransfer inventory = getPatternInventory();
+            if (inventory != null) {
+                int queued = 0;
+                for (int slot = 0; slot < inventory.getSlots() && queued < CATALYST_LOAD_WARM_LIMIT; slot++) {
+                    if (!inventory.getStackInSlot(slot).isEmpty()) {
+                        queueCatalystWarm(slot);
+                        queued++;
+                    }
+                }
+            }
         } catch (Throwable ignored) {
             // 读档补算失败：下一次 pushPattern 还会补
         }
@@ -7751,7 +7821,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
             int retries = Math.min(budget, Math.min(catalystRetrySlots.size(), PatternCatalystSupply.REFRESH_BATCH));
             for (int n = 0; n < retries; n++) {
-                Integer slot = catalystRetrySlots.pollFirst();
+                Integer slot = takeNextCatalystRetrySlot();
                 if (slot == null) {
                     break;
                 }
@@ -7764,6 +7834,10 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             if (changed) {
                 noteCatalystSupplyChanged();
             }
+            // ★ 审计：玩家可能把催化剂槽里自动生成的虚拟原料标记拿走（UI 槽可拿可取）。
+            //   取走后基类只会重算催化剂表、不会通知本类 ⇒ 「已供给」台账与 AE 过滤器都不知情，
+            //   表现是 AE 不再要、机器又没有 ⇒ 永久 IDLE。这里每轮有界抽查 2 个已供给槽。
+            auditCatalystSuppliedSlots(inventory);
         } catch (Throwable failure) {
             // tick 路径一律不许把异常抛出去
             long nowMs = System.currentTimeMillis();
@@ -7776,6 +7850,77 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     }
 
     private long lastCatalystWarnTick;
+
+    /** 环形取下一个重试槽（用 {@link #catalystRetryCursor} 往后找，绕回再从头；避免固定前 4 个）。 */
+    private Integer takeNextCatalystRetrySlot() {
+        if (catalystRetrySlots.isEmpty()) {
+            return null;
+        }
+        Integer slot = catalystRetrySlots.higher(catalystRetryCursor);
+        if (slot == null) {
+            slot = catalystRetrySlots.first();
+        }
+        catalystRetryCursor = slot;
+        catalystRetrySlots.remove(slot);
+        return slot;
+    }
+
+    /**
+     * 有界审计「已供给」台账：每轮最多 2 个槽，验一遍催化剂是否还都着落着。
+     *
+     * <p>为什么需要：催化剂槽 UI 是<b>可拿可取</b>的（gtlcore 的 {@code SlotWidget(..., true, true)}），
+     * 玩家把自动写的虚拟原料标记拿走以后，基类只会重算催化剂表，<b>不会</b>通知本类；
+     * 台账仍认为「已供给」⇒ AE 样板继续摘掉催化剂、机器又没有 ⇒ 该槽永久 IDLE。
+     *
+     * <p>只抽查、不全量扫描；不合格就撤销台账并排回热/重试队列。
+     */
+    private void auditCatalystSuppliedSlots(ItemStackTransfer inventory) {
+        if (catalystSuppliedSlots.isEmpty()) {
+            catalystAuditCursor = 0;
+            return;
+        }
+        try {
+            catalystAuditScratch.clear();
+            catalystAuditScratch.addAll(catalystSuppliedSlots);
+            int size = catalystAuditScratch.size();
+            if (catalystAuditCursor >= size) {
+                catalystAuditCursor = 0;
+            }
+            int audits = Math.min(2, size);
+            boolean changed = false;
+            for (int i = 0; i < audits; i++) {
+                int slot = catalystAuditScratch.get((catalystAuditCursor + i) % size);
+                boolean ok = false;
+                try {
+                    if (slot >= 0 && slot < inventory.getSlots()
+                            && !inventory.getStackInSlot(slot).isEmpty()) {
+                        IPatternDetails pattern = decodeSlotPattern(slot);
+                        GTRecipe recipe = pattern == null ? null : slotCachedRecipe(slot, pattern);
+                        if (recipe == null && pattern != null) {
+                            recipe = resolveCatalystRecipe(slot, pattern);   // 允许一次识别（有退避）
+                        }
+                        ok = pattern != null && recipe != null
+                                && PatternCatalystSupply.allSupplied(this, slot, recipe, pattern);
+                    }
+                } catch (Throwable ignored) {
+                    // 审计失败按「不合格」处理：撤销台账，交给热队列重新核
+                }
+                if (!ok) {
+                    if (setCatalystSupplied(slot, false)) {
+                        changed = true;
+                    }
+                    catalystWarmQueued.remove(slot);
+                    catalystRetrySlots.add(slot);
+                }
+            }
+            catalystAuditCursor = (catalystAuditCursor + audits) % Math.max(1, size);
+            if (changed) {
+                noteCatalystSupplyChanged();
+            }
+        } catch (Throwable ignored) {
+            // 审计绝不影响机器
+        }
+    }
 
     /** {@link #refreshCatalystSlot} 的位标志：有变化。 */
     private static final int CATALYST_CHANGED = 1;
@@ -7798,8 +7943,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             ItemStack stack = inventory.getStackInSlot(slot);
             if (stack == null || stack.isEmpty()) {
                 // 槽空了 ⇒ 旧虚拟标记全部作废
-                catalystSuppliedSlots.remove(slot);
-                return clearCatalystMarkers(slot) ? CATALYST_CHANGED : 0;
+                boolean changed = setCatalystSupplied(slot, false);
+                return clearCatalystMarkers(slot) || changed ? CATALYST_CHANGED : 0;
             }
             IPatternDetails pattern = decodeSlotPattern(slot);
             if (pattern == null) {
@@ -7810,10 +7955,11 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 return 0;   // 还没解出配方（类型未识别/歧义）⇒ 不动标记，等推料或下次
             }
             int flags = PatternCatalystSupply.refreshSlot(this, slot, recipe, pattern) ? CATALYST_CHANGED : 0;
-            if (PatternCatalystSupply.missingSuppliers(this, slot, recipe, pattern).isEmpty()) {
-                catalystSuppliedSlots.add(slot);
-            } else {
-                catalystSuppliedSlots.remove(slot);
+            boolean allSupplied = PatternCatalystSupply.missingSuppliers(this, slot, recipe, pattern).isEmpty();
+            if (setCatalystSupplied(slot, allSupplied)) {
+                flags |= CATALYST_CHANGED;
+            }
+            if (!allSupplied) {
                 flags |= CATALYST_MISSING;
             }
             return flags;
@@ -7827,20 +7973,21 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
      * 失败一律 fail-open（交给基类与下一次巡检），绝不影响这一单推料本身。
      */
     private void applyCatalystSupplyForPush(int slot, IPatternDetails pattern, KeyCounter[] inputHolder) {
-        if (!GTLModularConfig.isPatternAssemblyCatalystAutoSupplyEnabled()) {
-            return;
-        }
         try {
+            // ★ 先解配方（顺带触发「槽级电路自愈」）—— 电路自愈与催化剂开关**相互独立**：
+            //   即使玩家把 catalystAutoSupply 关了，这个坑（样板不带电路 ⇒ 机器不工作）也照样要修。
             GTRecipe recipe = resolveCatalystRecipe(slot, pattern);
             if (recipe == null) {
                 return;
             }
+            if (!GTLModularConfig.isPatternAssemblyCatalystAutoSupplyEnabled()) {
+                return;   // 催化剂自动供给关闭 ⇒ 退回玩家手动塞催化剂的老行为（电路自愈已在上一步做完）
+            }
             boolean changed = PatternCatalystSupply.ensureForPush(this, slot, recipe, pattern);
             changed |= PatternCatalystSupply.stripAndRefund(this, recipe, pattern, inputHolder);
-            if (PatternCatalystSupply.missingSuppliers(this, slot, recipe, pattern).isEmpty()) {
-                catalystSuppliedSlots.add(slot);
-            } else {
-                catalystSuppliedSlots.remove(slot);
+            boolean allSupplied = PatternCatalystSupply.missingSuppliers(this, slot, recipe, pattern).isEmpty();
+            changed |= setCatalystSupplied(slot, allSupplied);
+            if (!allSupplied) {
                 catalystRetrySlots.add(slot);
             }
             if (changed) {
@@ -7868,6 +8015,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             GTRecipe cached = slotCachedRecipe(slot, pattern);
             if (cached != null) {
+                catalystResolveBackoff.remove(slot);
                 applyRecipeCircuitIfNeeded(slot, cached);
                 return cached;
             }
@@ -7878,24 +8026,35 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             recipeTypeOfSlot(slot);   // 既有识别入口；缓存过就零开销
             cached = slotCachedRecipe(slot, pattern);
             if (cached != null) {
+                catalystResolveBackoff.remove(slot);
                 applyRecipeCircuitIfNeeded(slot, cached);
                 return cached;
             }
             if (this.lastMatchedSlotRecipe != null && patternIdentityMatches(this.lastMatchedSlotRecipe, pattern)) {
+                catalystResolveBackoff.remove(slot);
                 applyRecipeCircuitIfNeeded(slot, this.lastMatchedSlotRecipe);
                 return this.lastMatchedSlotRecipe;
             }
+            // ★ 退避：解不出来时不要每次推料都全表扫一遍（大包里几十万次 patternIdentityMatches）。
+            //   只挡「全表兜底」这一段，前面的槽缓存/识别入口不受影响；换样板时清（onPatternChange）。
             Level level = getLevel();
+            long now = level == null ? 0L : level.getGameTime();
+            Long until = catalystResolveBackoff.get(slot);
+            if (until != null && now < until) {
+                return null;
+            }
             for (GTRecipeType type : types) {
                 if (type == null) {
                     continue;
                 }
                 GTRecipe recipe = uniqueIdentityRecipe(type, pattern, level);
                 if (recipe != null) {
+                    catalystResolveBackoff.remove(slot);
                     applyRecipeCircuitIfNeeded(slot, recipe);
                     return recipe;
                 }
             }
+            catalystResolveBackoff.put(slot, now + CATALYST_RESOLVE_BACKOFF_TICKS);
         } catch (Throwable ignored) {
             // 解不出来 ⇒ 不供给
         }
@@ -7917,6 +8076,15 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 || !GTLModularConfig.isPatternAssemblyCatalystAeFilterEnabled()) {
             return base;
         }
+        // ★★ 只在 gtlcore 的「LEGACY 合成引擎」下包装。★★
+        //   gtlcore 1.2.3.3 的 GRAPH 引擎会用 `pattern.getClass() == AEProcessingPattern.class`
+        //   做匹配（GtlExecutionAdapter.matches / GraphProviderSnapshot），我们的 IPatternDetails 过滤视图
+        //   不是 AEProcessingPattern ⇒ 图引擎可能认不出这张样板、整单卡住。
+        //   GRAPH 是 1.2.3.3 的默认引擎 ⇒ 判不出来时一律**不包装**（宁可 AE 多要几份催化剂，也不能让机器不干活）。
+        //   机器侧「不用手动塞催化剂」不受这条影响（自动供给照旧）。
+        if (!isLegacyAeCraftingEngine()) {
+            return base;
+        }
         try {
             long fingerprint = catalystFilterFingerprintOf() * 31L + catalystSourceFingerprint(base);
             if (catalystFilteredPatterns != null && catalystFilterFingerprint == fingerprint) {
@@ -7925,6 +8093,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             List<IPatternDetails> filtered = new ArrayList<>(base.size());
             catalystFilterToOriginal.clear();
             boolean any = false;
+            boolean incomplete = false;
             for (IPatternDetails pattern : base) {
                 IPatternDetails wrapped = pattern;
                 try {
@@ -7932,7 +8101,11 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     Integer slot = getSlotIndexForPattern(original);
                     if (slot != null && slot >= 0 && catalystSuppliedSlots.contains(slot)) {
                         GTRecipe recipe = slotCachedRecipe(slot, original);
-                        if (recipe != null) {
+                        if (recipe == null) {
+                            // 「台账说已供给，但槽配方缓存刚好被 onContentsChanged 清掉了」——
+                            // 这一次不算完整信息，**不写指纹**，下一次强制重建（VERIFICATION H1）。
+                            incomplete = true;
+                        } else {
                             java.util.Set<AEKey> keys = PatternCatalystSupply
                                     .collectCatalystKeys(recipe, original).keySet();
                             if (!keys.isEmpty()
@@ -7952,26 +8125,31 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 filtered.add(wrapped);
             }
             catalystFilteredPatterns = any ? filtered : base;
-            catalystFilterFingerprint = fingerprint;
+            catalystFilterFingerprint = incomplete ? Long.MIN_VALUE : fingerprint;
             return catalystFilteredPatterns;
         } catch (Throwable ignored) {
             return base;   // 过滤整体失败 ⇒ 老行为
         }
     }
 
-    /** AE 样板表缓存的指纹：样板槽内容 + 催化剂供给版本（标记增删会 +1）。 */
-    private long catalystFilterFingerprintOf() {
-        long h = 17L + catalystSupplyVersion * 31L;
+    /** 当前 gtlcore 合成引擎是不是 LEGACY（判不出来按「不是」处理 ⇒ 不包装，安全优先）。 */
+    private static boolean isLegacyAeCraftingEngine() {
         try {
-            ItemStackTransfer inventory = getPatternInventory();
-            if (inventory != null) {
-                for (int i = 0; i < inventory.getSlots(); i++) {
-                    ItemStack stack = inventory.getStackInSlot(i);
-                    if (stack != null && !stack.isEmpty()) {
-                        h = h * 31L + i * 1000003L + stack.hashCode();
-                    }
-                }
+            org.gtlcore.gtlcore.config.ConfigHolder holder = org.gtlcore.gtlcore.config.ConfigHolder.INSTANCE;
+            if (holder == null || holder.ae == null) {
+                return false;
             }
+            return holder.ae.ae2CraftingEngine == org.gtlcore.gtlcore.config.AECraftingEngine.LEGACY;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** AE 样板表缓存的指纹：样板表版本 + 催化剂供给版本 + 已供给槽集合（成员变化同样会改变包装结果）。 */
+    private long catalystFilterFingerprintOf() {
+        long h = 17L + patternTableVersion * 31L + catalystSupplyVersion * 131L;
+        try {
+            h = h * 31L + catalystSuppliedSlots.hashCode();
         } catch (Throwable ignored) {
             // 取不到就只按版本号
         }
@@ -8011,6 +8189,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     /** 批量路径（归档/拆机/读档）用：把催化剂相关的运行期缓存全部作废，下一次自然重建。 */
     private void invalidateCatalystCaches() {
         catalystSupplyVersion++;
+        patternTableVersion++;
         catalystFilteredPatterns = null;
         catalystFilterFingerprint = Long.MIN_VALUE;
         catalystFilterToOriginal.clear();
@@ -8055,7 +8234,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             var cache = internal.getCacheManager();
             int current = cache.getCircuitCache();
             if (current == circuit) {
-                autoCircuitSlots.put(slot, circuit);   // 记成"我们的"，便于换样板时回收
+                // 已经是这个电路值：可能来自样板自带电路 / 共享电路 / 上游设置 ——
+                // **不记成我们的台账**（否则归档收尾的 clearAllAutoCircuits 会把合法来源误清）。
                 return;
             }
             if (current > 0) {
