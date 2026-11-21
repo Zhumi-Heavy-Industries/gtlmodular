@@ -79,6 +79,12 @@ public final class TerminalFonts {
         sheetScale = (s > 0f && s < 8f) ? s : 1f;
     }
 
+    /** 每个设计像素对应的物理像素数（可能是小数：GUI 缩放 × 纸张缩放）。 */
+    private static float deviceScale() {
+        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+        return gs * sheetScale;
+    }
+
     /** 每个「设计像素」对应多少物理像素：GUI 缩放 × 纸张缩放，取整到 1..8。 */
     private static int pixelRatio() {
         float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
@@ -272,6 +278,9 @@ public final class TerminalFonts {
                 }
                 net.minecraft.client.renderer.texture.DynamicTexture dyn =
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                // 必须关掉双线性：DynamicTexture 默认 blur=true，文字贴图被线性采样后
+                // 笔画边缘会被抹成半灰，1:1 上屏也发糊（这是"字体模糊"的主因）。
+                dyn.setFilter(false, false);
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_" + (texSeq++), dyn);
                 tex = new Tex(rl, outW, outH, finalW, finalH);
@@ -289,16 +298,35 @@ public final class TerminalFonts {
                     GTLModular.LOGGER.info("[TerminalFonts] AWT 文字就绪：{} {}px texture {}x{}", fam, px, tw, th);
                 }
             }
-            int dx = Math.round(x), dy = Math.round(y);
+            // 落点吸附到「设备像素」栅格：布局用设计像素，若直接 round 到设计像素，
+            // 在 3 倍 GUI 缩放下落点只会以 3 个物理像素为步长跳动，字符间距忽宽忽窄；
+            // 把小数部分交给 pose，落点就能精确到 1 个物理像素。
+            float e = deviceScale();
+            float ax = Math.round(x * e) / e;
+            float ay = Math.round(y * e) / e;
+            int dx = (int) Math.floor(ax), dy = (int) Math.floor(ay);
+            float fx = ax - dx, fy = ay - dy;
             if (!diagLogged && text.indexOf('鲸') >= 0) {
                 diagLogged = true;
                 var m = g.pose().last().pose();
-                GTLModular.LOGGER.info("[TermFontsDiag] text={} 落点=({},{}) 贴图={}x{} 姿态平移=({},{},{}) guiScale={}",
-                        text, dx, dy, tex.w, tex.h,
-                        Math.round(m.m30() * 100f) / 100f, Math.round(m.m31() * 100f) / 100f, Math.round(m.m32() * 100f) / 100f,
-                        Minecraft.getInstance().getWindow().getGuiScale());
+                GTLModular.LOGGER.info(
+                        "[TermFontsDiag] text={} 落点=({},{}) 设计尺寸={}x{} 烘焙贴图={}x{} "
+                                + "guiScale={} 纸张缩放={} 物理倍率={} 取整倍率={} 过滤=NEAREST 姿态平移=({},{})",
+                        text, dx, dy, tex.w, tex.h, tex.tw, tex.th,
+                        Minecraft.getInstance().getWindow().getGuiScale(), sheetScale,
+                        Math.round(deviceScale() * 100f) / 100f, pixelRatio(),
+                        Math.round(m.m30() * 100f) / 100f, Math.round(m.m31() * 100f) / 100f);
             }
-            g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            boolean nudged = fx != 0f || fy != 0f;
+            if (nudged) {
+                g.pose().pushPose();
+                g.pose().translate(fx, fy, 0f);
+            }
+            try {
+                g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            } finally {
+                if (nudged) g.pose().popPose();
+            }
             return true;
         } catch (Throwable t) {
             awtFailed = true;
@@ -369,14 +397,28 @@ public final class TerminalFonts {
                 }
                 net.minecraft.client.renderer.texture.DynamicTexture dyn =
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                dyn.setFilter(false, false); // 同 drawAwt：描边更要保持硬边，否则轮廓糊成一团
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_outline_" + (texSeq++), dyn);
                 // pad 以「设计像素」记：贴图在烘焙时按 k 倍超采样，pad 也要除以 k 才能退回字形盒左上
                 tex = new Tex(rl, outW, outH, finalW, finalH, Math.round(pad / (float) k));
                 OTEX.put(key, tex);
             }
-            g.blit(tex.rl, Math.round(x) - tex.pad, Math.round(y) - tex.pad,
-                    tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            float oe = deviceScale();
+            float oax = Math.round(x * oe) / oe - tex.pad;
+            float oay = Math.round(y * oe) / oe - tex.pad;
+            int odx = (int) Math.floor(oax), ody = (int) Math.floor(oay);
+            float ofx = oax - odx, ofy = oay - ody;
+            boolean onudged = ofx != 0f || ofy != 0f;
+            if (onudged) {
+                g.pose().pushPose();
+                g.pose().translate(ofx, ofy, 0f);
+            }
+            try {
+                g.blit(tex.rl, odx, ody, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            } finally {
+                if (onudged) g.pose().popPose();
+            }
         } catch (Throwable t) {
             drawAwt(g, fam, size, text, x, y, color);
         }
