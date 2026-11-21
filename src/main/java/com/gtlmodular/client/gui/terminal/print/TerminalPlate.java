@@ -47,8 +47,8 @@ public final class TerminalPlate {
         leaf(g, 700, 300, 260, 18);
         leaf(g, 500, 800, 340, 22);
 
-        // L1 S 形扫掠笔刷
-        sweepBand(g, 40, 860, 980, 260, 70, 150, 0.82f, cob(26));
+        // L1 S 形扫掠笔刷（网页 _sweep_brush(...,70,150,.42) opacity .1）
+        sweepBand(g, 40, 860, 980, 260, 70, 150, 0.42f, cob(26));
 
         // L2 外圈
         TerminalDraw.ring(g, sx(CX), sy(CY), sr(360), 1f, ink(66));
@@ -61,18 +61,18 @@ public final class TerminalPlate {
                     1f, ink(54));
         }
 
-        // L3 放射楔形 40 个
+        // L3 放射楔形 40 个：网页是沿单一角度 a=i·τ/40+(i%3)·.02 的细长条，
+        // 起点 r=262+(i%4)*6、终点 320+(i%5)*38、宽 w=2+(i%3)（1000系），opacity .25+(i%4)*.1。
+        // 旧实现画成 4° 扇形（宽 6~10×）且偏淡，这里改为单角细条以贴合网页质感。
         for (int i = 0; i < 40; i++) {
-            double a0 = Math.toRadians(i * 9 + 1.5);
-            double a1 = Math.toRadians(i * 9 + 5.5);
+            double a = i * Math.PI * 2 / 40 + (i % 3) * .02;
+            float rIn = 262 + (i % 4) * 6;
             float rOut = 320 + (i % 5) * 38;
-            float[] pts = {
-                    sx(CX) + (float) Math.cos(a0) * sr(262), sy(CY) + (float) Math.sin(a0) * sr(262),
-                    sx(CX) + (float) Math.cos(a0) * sr(rOut), sy(CY) + (float) Math.sin(a0) * sr(rOut),
-                    sx(CX) + (float) Math.cos(a1) * sr(rOut), sy(CY) + (float) Math.sin(a1) * sr(rOut),
-                    sx(CX) + (float) Math.cos(a1) * sr(262), sy(CY) + (float) Math.sin(a1) * sr(262),
-            };
-            TerminalDraw.polygon(g, pts, ink(40 + (i % 4) * 10));
+            float w = sr(2 + (i % 3));
+            TerminalDraw.line(g,
+                    sx(CX) + (float) Math.cos(a) * sr(rIn), sy(CY) + (float) Math.sin(a) * sr(rIn),
+                    sx(CX) + (float) Math.cos(a) * sr(rOut), sy(CY) + (float) Math.sin(a) * sr(rOut),
+                    w, ink(64 + (i % 4) * 26));
         }
 
         // L3 描边环 / 虚线环 / 刻度
@@ -81,11 +81,11 @@ public final class TerminalPlate {
                 (float) Math.toDegrees(2f / 268f), (float) Math.toDegrees(6f / 268f), ink(110));
         for (int i = 0; i < 96; i++) {
             double a = Math.toRadians(i * 3.75);
-            boolean major = i % 12 == 0;
+            boolean major = i % 8 == 0; // 网页 r2 = 300 + (16 if i%8==0 else 8)
             float len = sr(major ? 16 : 8);
             TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
                     sx(CX) + (float) Math.cos(a) * (sr(300) + len),
-                    sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(120));
+                    sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(178)); // 网页 opacity .7
         }
 
         // L3 断裂轴线
@@ -109,10 +109,10 @@ public final class TerminalPlate {
             TerminalDraw.ring(g, nx, ny, 2.4f + pulse * 1.2f, 1f, cob(200));
         }
 
-        // L5 土星环
-        TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(140));
-        TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(80));
-        brush(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(200));
+        // L5 土星环（网页：外环 stroke 2.8 opacity 1，内环 .9 opacity .6，笔刷为 n=14 填充带）
+        TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(230));
+        TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(153));
+        sweepBand(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(204));
 
         // L6 实心钴蓝盘
         TerminalDraw.fillCircle(g, sx(CX), sy(CY), sr(R), TerminalTheme.COBALT);
@@ -204,9 +204,9 @@ public final class TerminalPlate {
             TerminalDraw.rect(g, x, sy(80), 1.2f, sr(760), paper((int) (a * 255)));
         }
 
-        // v22 构造线：静止时很淡（.18），hover 才明显；它不是准星吸附框
+        // v22 构造线：静止 opacity .18、hover .85（网页 .pl-construct）；不是准星吸附框
         TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 2.2f, 3.2f,
-                cob(hover ? 90 : 34));
+                cob(hover ? 217 : 46));
     }
 
     private static int flickerAlpha(float t, int i) {
@@ -328,8 +328,18 @@ public final class TerminalPlate {
     }
 
     private static void bird(GuiGraphics g, float x, float y, float dx) {
-        TerminalDraw.line(g, x - 3 + dx, y, x + dx, y - 2, 1.1f, ink(200));
-        TerminalDraw.line(g, x + dx, y - 2, x + 3 + dx, y, 1.1f, ink(200));
+        // 网页 d="M x y q16 -12 32 0 q16 -12 32 0"：双拱鸥形，跨度 ~9px、每拱高 ~3px。
+        // 用两段折线近似每段二次曲线（起→拱顶→落），得到「M 形双拱」而非单尖角。
+        // 每拱 q16 -12 32 0：跨度 32 单位、控制点抬高 12 单位；两拱共 64 单位。
+        float span = sr(32f); // 单拱跨度 → 设计像素
+        float h = sr(12f);    // 控制点抬高 → 设计像素
+        float x0 = x + dx - span; // 以 x 为鸟身中心
+        // 第一拱（二次曲线用两段折线近似，拱顶取控制点高度的一半）
+        TerminalDraw.line(g, x0, y, x0 + span / 2, y - h / 2, 1f, ink(217));
+        TerminalDraw.line(g, x0 + span / 2, y - h / 2, x0 + span, y, 1f, ink(217));
+        // 第二拱
+        TerminalDraw.line(g, x0 + span, y, x0 + span * 1.5f, y - h / 2, 1f, ink(217));
+        TerminalDraw.line(g, x0 + span * 1.5f, y - h / 2, x0 + span * 2, y, 1f, ink(217));
     }
 
     /**

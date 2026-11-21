@@ -48,10 +48,11 @@ public final class TerminalReticle {
         bw += (tw - bw) * k;
         bh += (th - bh) * k;
 
-        // 静止：细墨色 7×7 L 角；吸附：粗钴蓝 10×10 L 角
+        // 静止：墨色 7×7 L 角；吸附：钴蓝 10×10 L 角。
+        // 网页 .fx-box b 两态 border 都是 1.3px（吸附只改颜色/尺寸，不改线宽）。
         int color = locked ? TerminalTheme.COBALT : TerminalTheme.INK;
         float arm = locked ? 10f : 7f;
-        float thick = locked ? 2f : 1f;
+        float thick = 1.3f;
         corner(g, bx, by, arm, arm, color, thick);
         corner(g, bx + bw, by, -arm, arm, color, thick);
         corner(g, bx, by + bh, arm, -arm, color, thick);
@@ -80,12 +81,13 @@ public final class TerminalReticle {
         for (int i = ripples.size() - 1; i >= 0; i--) {
             Ripple r = ripples.get(i);
             float age = seconds - r.t0;
-            if (age < 0 || age > 1.15f) {
+            if (age < 0 || age > 0.9f) {
                 ripples.remove(i);
                 continue;
             }
-            float p = age / 1.15f;
-            float rad = 14 + p * 16;
+            float p = age / 0.9f;
+            // 网页 .fx-rip：28px 环 scale .25→2.1 ⇒ 半径 3.5→29.4px
+            float rad = 3.5f + p * 25.9f;
             int alpha = (int) ((1 - p) * 255);
             // 网页 .fx-rip 统一钴蓝，不随目标墨色变
             int c = TerminalTheme.COBALT & 0x00FFFFFF | (alpha << 24);

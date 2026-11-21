@@ -16,9 +16,9 @@ public final class TerminalFrame {
             "SHEET 03 · 1,284 NODES"
     };
     private static final String[] STAMP = {
-            "SCAN 412 MS",
+            "SCAN 412 ms",
             "6 / 8 REQUIRED",
-            "VERIFY · OK"
+            "VERIFY / OK"
     };
 
     public static void draw(GuiGraphics g, Page page) {

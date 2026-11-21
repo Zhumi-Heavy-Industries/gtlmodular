@@ -87,11 +87,28 @@ public final class TerminalScreen extends Screen {
     private Page drawnPage;
     private long pageSwitchAt;
     private @Nullable ShanhaiTerminalReport report;
+    /** 聊天报告链接打开时注入的指定报告；非空则直接停在报告页，不依赖手持终端物品。 */
+    private final @Nullable ShanhaiTerminalReport forcedReport;
 
     public TerminalScreen(InteractionHand hand, boolean preview) {
+        this(hand, preview, null);
+    }
+
+    /**
+     * 聊天报告链接专用入口：注入指定报告并直接打开报告页。
+     * 报告页绘制复用本类已与网页端对齐的 {@code print.TerminalReport}，
+     * 不再走差异巨大的旧烘焙版 {@code WhaleTerminalReportScreen}。
+     */
+    public TerminalScreen(@Nullable ShanhaiTerminalReport forcedReport) {
+        this(null, false, forcedReport);
+    }
+
+    private TerminalScreen(InteractionHand hand, boolean preview, @Nullable ShanhaiTerminalReport forcedReport) {
         super(Component.literal("哦鲸鲸终端"));
         this.hand = hand;
         this.preview = preview;
+        this.forcedReport = forcedReport;
+        if (forcedReport != null) this.page = Page.REPORT;
     }
 
     private static final class MineMenu {
@@ -139,6 +156,14 @@ public final class TerminalScreen extends Screen {
             if (expanded.length > 0) expanded[0] = true;
             return;
         }
+        // 聊天报告链接：注入指定报告并直接停在报告页；不依赖手持终端物品。
+        if (forcedReport != null) {
+            if (Minecraft.getInstance().player != null) {
+                playerName = Minecraft.getInstance().player.getGameProfile().getName();
+            }
+            applyReport(forcedReport);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) playerName = mc.player.getGameProfile().getName();
         ItemStack stack = heldStack();
@@ -177,10 +202,19 @@ public final class TerminalScreen extends Screen {
             }
         }
 
-        report = ShanhaiTerminalReportClient.latestScan();
+        applyReport(ShanhaiTerminalReportClient.latestScan());
+    }
+
+    /**
+     * 把一份报告填充到报告的计数/清单/舱室状态字段。
+     * 正常路径传 latestScan()；聊天报告链接注入路径传 forcedReport。
+     * 两条路径共用，保证玩家在两条入口看到的报告页完全一致（均与网页端对齐）。
+     */
+    private void applyReport(ShanhaiTerminalReport r) {
+        report = r;
         placed = 0;
-        if (report != null) {
-            int[] c = report.counts();
+        if (r != null) {
+            int[] c = r.counts();
             if (c.length >= 5) {
                 missingCount = Math.max(0, c[0]);
                 conflictCount = Math.max(0, c[2]);
@@ -191,21 +225,21 @@ public final class TerminalScreen extends Screen {
                 missingCount = c[2];
             }
             long groupStart = System.nanoTime();
-            reportRows = groupReport(report);
+            reportRows = groupReport(r);
             long groupMs = (System.nanoTime() - groupStart) / 1_000_000L;
             if (groupMs >= 100L) {
                 com.gtlmodular.GTLModular.LOGGER.warn(
                         "[TerminalPerf] report group: {} ms, input lines={}, grouped rows={}",
-                        groupMs, report.lines().size(), reportRows.size());
+                        groupMs, r.lines().size(), reportRows.size());
             }
-            reportOmitted = report.omitted();
+            reportOmitted = r.omitted();
 
             // 已放舱室：报告类别里出现过的舱室类型
             for (int i = 0; i < chamberOn.length; i++) {
                 ShanhaiChamberClassifier.Type type = ShanhaiChamberClassifier.Type.values()[i];
                 String label = Component.translatable(type.translationKey()).getString();
                 int typeColor = type.color() & 0xFFFFFF;
-                boolean found = report.categories().stream()
+                boolean found = r.categories().stream()
                         .anyMatch(cat -> cat.label().getString().equals(label)
                                 || (cat.color() & 0xFFFFFF) == typeColor);
                 chamberOn[i] = found;
@@ -317,7 +351,7 @@ public final class TerminalScreen extends Screen {
             drawnPage = page;
             pageSwitchAt = renderStart;
         }
-        float transition = Math.min(1f, (renderStart - pageSwitchAt) / 550_000_000f);
+        float transition = Math.min(1f, (renderStart - pageSwitchAt) / 500_000_000f); // 网页 .sw-slot .5s
         float transitionEase = 1f - (1f - transition) * (1f - transition) * (1f - transition);
         float pageShift = (1f - transitionEase) * 5f;
         this.mouseX = (mouseX - originX) / scale;
@@ -358,9 +392,15 @@ public final class TerminalScreen extends Screen {
             }
         });
         if (transition < 0.999f) {
-            int veil = (int) ((1f - transitionEase) * 150f);
-            g.drawManaged(() -> TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H,
-                    (veil << 24) | 0xEFF1EF));
+            // 网页 v32 交叉淡化：不再用整页纸白幕（旧实现 peak .588 会遮成白屏）。
+            // 改为一条极淡钴蓝扫光横掠，峰值 alpha ≈ .12（30），与新页淡入同时发生，全程不遮断内容。
+            float sweepK = 1f - Math.abs(transition - 0.45f) / 0.45f; // 0→1→0，mid 峰值
+            if (sweepK > 0f) {
+                int alpha = (int) (sweepK * 30f); // 网页 fx-veil 峰值 .12
+                float bandX = transition * TerminalTheme.W;
+                g.drawManaged(() -> TerminalDraw.rect(g, bandX - 40f, 0, 80f, TerminalTheme.H,
+                        (alpha << 24) | 0x3A5BC2));
+            }
         }
         overlayHitStart = -1;
         if (layerOpen || tierOpen) {

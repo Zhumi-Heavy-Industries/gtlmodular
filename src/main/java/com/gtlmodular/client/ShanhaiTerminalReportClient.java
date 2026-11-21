@@ -5,7 +5,7 @@ package com.gtlmodular.client;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import com.gtlmodular.client.gui.terminal.WhaleTerminalReportScreen;
+import com.gtlmodular.client.gui.terminal.print.TerminalScreen;
 import com.gtlmodular.common.item.terminal.ShanhaiTerminalReport;
 
 import net.minecraft.ChatFormatting;
@@ -32,7 +32,7 @@ public final class ShanhaiTerminalReportClient {
             }
             return;
         }
-        minecraft.setScreen(new WhaleTerminalReportScreen(report));
+        minecraft.setScreen(new TerminalScreen(report));
     }
 
     /** 最近一次结构扫描报告；终端预览按钮使用。 */
@@ -68,7 +68,7 @@ public final class ShanhaiTerminalReportClient {
             }
             return true;
         }
-        minecraft.setScreen(new WhaleTerminalReportScreen(report));
+        minecraft.setScreen(new TerminalScreen(report));
         return true;
     }
 
