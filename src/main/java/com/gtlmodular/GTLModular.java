@@ -146,6 +146,12 @@ public final class GTLModular {
         //   同样带研究门 ⇒ 跟超级大冰箱 / 奈亚之触同一套运行期注入。
         com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryRecipe.register();
 
+        // ★ 2026-11-21：化学反应釜 → 大型化学反应釜 配方兼容镜像。
+        //   大化反跑独立配方类型 gtceu:large_chemical_reactor，不继承单方块 chemical_reactor；
+        //   服务端启动后把单方块表全量复制一份过去（已有同产物大化反配方的跳过），
+        //   以后新加的化学配方不用再手写 _large.json。
+        com.gtlmodular.common.data.chemical.ChemicalReactorMirror.register();
+
         // ★ 2026-11-14：恒星炎炀锻炉的 31 条配方从 KubeJS 脚本迁入模组本体。
         //   缘由：server_scripts/gtlmodular_stellar_forge_materials.js 在实例里被删除后，
         //   材料仍在（Java 注册）但三味合金熔炼 / 形态链 / 陶瓷链 / 机壳配方全部消失，

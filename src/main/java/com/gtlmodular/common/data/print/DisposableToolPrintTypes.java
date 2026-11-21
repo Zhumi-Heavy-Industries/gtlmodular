@@ -17,17 +17,21 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 「一次性工具 3D 打印」专用配方表。
+ * 「一次性工具 3D 打印」专用配方表（{@code gtlmodular:disposable_tool_printing}）。
  *
- * <p>本表只服务移植自 GTO（gtocore）3D 打印机「3D打印：一次性工具」那一个分支：
- * 不消耗一次性模具 + 72mB 材料流体 → 对应脆弱工具。GTO 原表还有「打印电机外壳/泵壳」等零件配方，
- * 本次按队长口径<b>只剥离一次性工具</b>，所以这里是一张只有一条语义的独立表。
+ * <h2>★ 2026-11-21：单方块 / 多方块合并为一张表</h2>
+ * <p>此前是两张表：带 1~6 号编程电路的 {@code disposable_tool_printing}（多方块用）和不带电路的
+ * {@code disposable_tool_printing_basic}（单方块用）。同一把工具因此在 JEI 里出现两份、
+ * 两个分类，玩家看不出该用哪张。现在按队长口径合并成<b>一张</b>：
+ * <b>单方块（LV/MV 打印机）与多方块（3D 打印阵列）共用 {@code disposable_tool_printing}</b>，
+ * 配方统一为「一次性模具（不消耗）+ 72mB 材料流体 → 脆弱工具」，<b>不再带编程电路</b>
+ * —— 材料本来就由流体区分，电路只是当初额外加的一维识别。</p>
  *
  * <h2>为什么自己 {@code new GTRecipeType} 而不是用 {@code GTRecipeTypes.register(...)}</h2>
- * 与 {@code NanochipRecipeTypes} 同因：GTCEu 1.4.4 的 {@code GTRecipeTypes.register(...)}
- * 内部把 id 硬编码成 {@code gtceu:} 命名空间，而本表要求 id 为
- * {@code gtlmodular:disposable_tool_printing}。因此沿用本工程既有写法，把同一个
- * {@link ResourceLocation} 同时登记进三个注册表：
+ * 与 {@code NanochipRecipeTypes} 同因：GTCEu 1.4.4 的
+ * {@code GTRecipeTypes.register(...)} 内部把 id 硬编码成 {@code gtceu:} 命名空间，
+ * 而本表要求 id 为 {@code gtlmodular:disposable_tool_printing}。因此沿用本工程既有写法，
+ * 把同一个 {@link ResourceLocation} 同时登记进三个注册表：
  * <ol>
  *   <li>{@code BuiltInRegistries.RECIPE_TYPE}（vanilla {@code RecipeManager} 建 byType 索引）；</li>
  *   <li>{@code BuiltInRegistries.RECIPE_SERIALIZER}（数据包 JSON 的 {@code "type"} 字段解析）；</li>
@@ -52,28 +56,13 @@ public final class DisposableToolPrintTypes {
     private static boolean registered;
 
     /**
-     * 一次性工具 3D 打印：模具（不消耗）+ 编程电路（不消耗）+ 材料流体 → 脆弱工具。
+     * 一次性工具 3D 打印：一次性模具（不消耗）+ 72mB 材料流体 → 脆弱工具。
      *
-     * <p>★ 2026-10-30：物品输入上限必须是 <b>2</b>（模具 + 电路）。之前写成 1 时，
-     * GTCEu 的配方 UI/机器输入仓只布局 1 个物品槽，电路那一项在 JEI 里显示不出来，
-     * 机器也只给 1 个输入槽 ⇒ 配方实际跑不了。
+     * <p>★ 2026-11-21：单方块与多方块<b>共用本表</b>（原来的 basic 表已删除，
+     * 见类注释）。物品输入上限随之收回 <b>1</b>（只有模具）。</p>
      */
     public static final GTRecipeType DISPOSABLE_TOOL_PRINTING =
-            type("disposable_tool_printing", 2, 1, 1, 0)
-                    .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT)
-                    .setSound(GTSoundEntries.ARC)
-                    .setIconSupplier(() -> DisposableToolPrintItems.iconStack());
-
-    /**
-     * ★ 2026-10-31：<b>单方块专用</b>的「原版流程」表：只有模具 + 流体，<b>不带编程电路</b>。
-     *
-     * <p>队长反馈：单方块调编程电路后输出槽会冒出编程电路。单方块本来就是
-     * {@code SimpleTieredMachine} 的原版流程——模具进物品槽、流体进罐、电路不该参与配方，
-     * 所以单方块改用这张 1 物品输入的表；带电路识别的是多方块表
-     * {@link #DISPOSABLE_TOOL_PRINTING}（它需要模具+电路两格）。
-     */
-    public static final GTRecipeType DISPOSABLE_TOOL_PRINTING_BASIC =
-            type("disposable_tool_printing_basic", 1, 1, 1, 0)
+            type("disposable_tool_printing", 1, 1, 1, 0)
                     .setProgressBar(GuiTextures.PROGRESS_BAR_ARROW, ProgressTexture.FillDirection.LEFT_TO_RIGHT)
                     .setSound(GTSoundEntries.ARC)
                     .setIconSupplier(() -> DisposableToolPrintItems.iconStack());
