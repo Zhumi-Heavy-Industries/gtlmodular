@@ -198,10 +198,12 @@ public final class TerminalScreen extends Screen {
         if (ae != null) boundAeText = ae.dimension().location() + " " + ae.pos().toShortString();
         if (family == null || family.isEmpty()) family = "sc";
 
-        // 主机名：读物品上绑定的控制器（本次会话最近一次扫描写入的坐标）
+        // 主机名：读物品上绑定的控制器，但**必须**本次登录扫描过才算数。
+        // 绑定坐标是写在物品 NBT 里的（跨存档/重启保留），直接拿来显示的话，重进游戏后
+        // 标题还挂着上次那台机器的名字；网页端语义是「没扫过 = 待扫描目标」。
         machineName = "待扫描目标";
         var ctrl = ShanhaiUltimateTerminalConfig.getBoundController(stack);
-        if (ctrl != null && mc.level != null) {
+        if (ctrl != null && mc.level != null && scannedThisSession(ctrl.pos())) {
             var machine = com.gregtechceu.gtceu.api.machine.MetaMachine.getMachine(mc.level, ctrl.pos());
             if (machine instanceof com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine controller) {
                 var def = controller.getDefinition();
@@ -210,6 +212,18 @@ public final class TerminalScreen extends Screen {
         }
 
         applyReport(ShanhaiTerminalReportClient.latestScan());
+    }
+
+    /**
+     * 本次登录（客户端进程内）是否扫描过这台控制器。
+     *
+     * <p>报告缓存 {@link ShanhaiTerminalReportClient} 只在内存里（进程退出即清空），
+     * 拿它判断「这一次登录有没有扫过」最省事，也不必往物品 NBT 里塞会话标记——
+     * 绑定坐标本身要跨存档保留（聊天指令、AE 等功能都用它）。</p>
+     */
+    private static boolean scannedThisSession(BlockPos pos) {
+        ShanhaiTerminalReport r = ShanhaiTerminalReportClient.latestScan();
+        return r != null && r.type() == ShanhaiTerminalReport.Type.SCAN && pos.equals(r.target());
     }
 
     /**
