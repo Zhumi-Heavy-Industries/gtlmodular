@@ -21,7 +21,11 @@ public final class TerminalReticle {
     private float lastSec = Float.NaN;
 
     public void click(float x, float y, String label, boolean ink) {
-        ripples.add(new Ripple(x, y, (float) (System.nanoTime() / 1e9), label, ink));
+        // 时间基准必须与 draw() 的 seconds 一致（打开界面后的相对秒）：
+        // 这里以前存的是 System.nanoTime()/1e9 的绝对秒，跟相对 seconds 相减恒为大负数，
+        // 涟漪每帧都被判成「还没开始」当场删掉，点击特效从来没有出现过。
+        float t = Float.isNaN(lastSec) ? 0f : lastSec;
+        ripples.add(new Ripple(x, y, t, label, ink));
         if (ripples.size() > 8) ripples.remove(0);
     }
 
@@ -72,21 +76,24 @@ public final class TerminalReticle {
         // 中心点：网页是 4×4 实心钴蓝方块，不是菱形
         TerminalDraw.rect(g, mx - 2, my - 2, 4, 4, TerminalTheme.COBALT);
 
-        // 标签：先按宽度截断再画；下方放不下就翻到框上方，且水平/垂直都夹在纸面内
+        // 标签：先按宽度截断再画；只往目标下方放（网页 .fx-lab 的 top = 底边 +4），
+        // 超出纸面就不画——网页那边由 sheet 的 overflow 裁掉，效果一样。
+        // 以前放不下会翻到框上方：悬停底部页签时「报告页」标签就浮到页脚刻度线上、与方框脱开，
+        // 看起来像页签自己冒出来一块（实机反馈「整体不整齐」）。
         String label = target != null ? target.label() : String.format("X %04d  Y %04d", (int) mx, (int) my);
         String shown = TerminalFonts.clip(Fam.MONO, 6f, label, 220f);
         float tw2 = TerminalFonts.trackedWidth(Fam.MONO, 6f, shown, 0.8f);
         float lx = Math.max(6f, Math.min(bx, 548f - (tw2 + 6f)));
-        float below = by + bh + 4f;
-        float above = Math.min(by - 14f, 288f);
-        float ly = (below + 10f <= 288f) ? below : (above >= 6f ? above : Math.min(330f, below));
-        // 静止=半透明纸底墨字；吸附=钴蓝底纸白字（之前字色反了）
-        int bg = locked ? TerminalTheme.COBALT : 0xD9EFF1EF;
-        int fg = locked ? TerminalTheme.PAPER : TerminalTheme.INK;
-        TerminalDraw.rect(g, lx, ly, tw2 + 6, 10, bg);
-        // 标签底条先落地，纸白字才不会被同批次的填充盖住
-        g.flush();
-        TerminalFonts.drawTracked(g, Fam.MONO, 6f, shown, lx + 3, ly + 2, 0.8f, fg);
+        float ly = by + bh + 4f;
+        if (ly + 10f <= TerminalTheme.H + 1f) {
+            // 静止=半透明纸底墨字；吸附=钴蓝底纸白字（之前字色反了）
+            int bg = locked ? TerminalTheme.COBALT : 0xD9EFF1EF;
+            int fg = locked ? TerminalTheme.PAPER : TerminalTheme.INK;
+            TerminalDraw.rect(g, lx, ly, tw2 + 6, 10, bg);
+            // 标签底条先落地，纸白字才不会被同批次的填充盖住
+            g.flush();
+            TerminalFonts.drawTracked(g, Fam.MONO, 6f, shown, lx + 3, ly + 2, 0.8f, fg);
+        }
 
         // 涟漪
         for (int i = ripples.size() - 1; i >= 0; i--) {
@@ -103,6 +110,8 @@ public final class TerminalReticle {
             // 网页 .fx-rip 统一钴蓝，不随目标墨色变
             int c = TerminalTheme.COBALT & 0x00FFFFFF | (alpha << 24);
             TerminalDraw.ring(g, r.x, r.y, rad, 1f, c);
+            // 环是色块、编号是贴图字，两套缓冲同批出队顺序不保证；环先单独落一批。
+            g.flush();
             TerminalFonts.drawTracked(g, Fam.MONO, 6f, "+ " + r.label, r.x + 16, r.y - 6, 0.8f,
                     (c & 0x00FFFFFF) | (((int) ((1 - p) * 210)) << 24));
             TerminalFonts.drawTracked(g, Fam.MONO, 5f,

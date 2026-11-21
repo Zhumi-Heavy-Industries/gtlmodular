@@ -250,10 +250,12 @@ public final class TerminalOptions {
             //   中文 x225 y+0（9px，盒高 10.8） 英文 x293 y+2（6px） ON/OFF 右缘 515 y+0
             //   行底线 .rule-soft 固定在【行内 top:15】，不是行底 y+21！
             //   上一版把线画在行底，整排视觉上就上移了一格。
-            final float rowH = 21f;
+            // 行距 21 是排布用的，命中/吸附框只能到行底线（y+15）为止：
+            // 之前用满 21，准星方框会往下压到下一行的字上（实机反馈「判定范围往下延伸」）。
+            final float hitH = 16f;
             float y = 83 + i * 21f;
-            boolean hover = s.isHover(205, y, 314, rowH);
-            if (hover) TerminalDraw.rect(g, 205, y, 314, rowH, 0x0F3A5BC2);
+            boolean hover = s.isHover(205, y, 314, hitH);
+            if (hover) TerminalDraw.rect(g, 205, y, 314, hitH, 0x0F3A5BC2);
             boolean on = s.flags[i] != 0;
             if (on) {
                 TerminalDraw.line(g, 209, y + 7, 211, y + 10, 1.1f, TerminalTheme.COBALT);
@@ -270,7 +272,7 @@ public final class TerminalOptions {
             // 行底线：网页在行内 top:15（宽 306，x209..515）
             TerminalDraw.hline(g, 209, 515, y + 15, 0x1A1F2427);
             final int idx = i;
-            s.hit(205, y, 314, rowH, SW_CN[i], () -> s.toggleFlag(idx), false);
+            s.hit(205, y, 314, hitH, SW_CN[i], () -> s.toggleFlag(idx), false);
         }
     }
 

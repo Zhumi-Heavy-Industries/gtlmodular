@@ -55,6 +55,14 @@ public final class TerminalScreen extends Screen {
     public String machineName = "待扫描目标";
     public String boundAeText = "OVERWORLD 128, 64, -37";
     public String tierName = "恒星炽热外壳";
+    /**
+     * 本次打开界面后点选过的档位名（空串 = 还没选）。
+     *
+     * <p>网页端 build_v4.py 的 .tier-cell 处理器点完会把「选择档位」卡副标写成
+     * 「&lt;档位名&gt; · 已选」再关面板；Java 端之前副标恒为「N 档可选 · 需扫描」，
+     * 于是点完格子面板一关，画面跟点之前一模一样（实机反馈「选了没变化」）。</p>
+     */
+    public String tierPicked = "";
     public String family = "sc";
     public int tierIndex;
     public int repeat = 1;
@@ -484,9 +492,22 @@ public final class TerminalScreen extends Screen {
             });
         }
         Target target = lockedTarget();
-        g.drawManaged(() -> reticle.draw(g, this.mouseX, this.mouseY, seconds,
-                target == null ? null : new TerminalReticle.Target(target.x, target.y, target.w, target.h,
-                        target.label, target.ink)));
+        // 准星/涟漪必须压在所有图层之上——档位面板里的方块图标是 renderItem 走 bufferSource
+        // 直接出的三维面片，深度比 z=0 的色块更靠前，同层绘制会被图标啃掉一角
+        // （实机反馈「三钛这个字被线圈方块挡住」）。
+        // 先把前面的批次刷干净，再整体前移到 z=400（原版 tooltip 的深度）画准星。
+        g.flush();
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0f, 0f, 400f);
+            // 依旧走 drawManaged 合批（涟漪一圈要几十个 fill，散着画每笔都刷一次批太贵）
+            g.drawManaged(() -> reticle.draw(g, this.mouseX, this.mouseY, seconds,
+                    target == null ? null : new TerminalReticle.Target(target.x, target.y, target.w, target.h,
+                            target.label, target.ink)));
+        } finally {
+            g.pose().popPose();
+        }
+        g.flush();
         } finally {
             g.pose().popPose();
         }
@@ -541,10 +562,13 @@ public final class TerminalScreen extends Screen {
             float numW = TerminalFonts.mixedWidth(Fam.MONO, 6f, p.num, 0f);
             float nameW = TerminalFonts.mixedWidth(Fam.MONO, 7f, p.cn, 1.2f);
             final Page target = p;
-            // 命中区盖住「下划线 + 编号 + 名称」整块（y318..334），
-            // 与准星吸附框（目标外扩 4px）一致。原为 y321 h12，鼠标落在页签上方
-            // 几像素就会看到准星已吸附、点下去却落空（实机反馈「选中不到页面切换」）。
-            hit(x - 4, 318, numW + 5 + nameW + 14, 16, p.cn, () -> {
+            // 命中区＝页签的实际视觉块：上头贴住激活下划线（y322 h2，左右各外扩 4）、
+            // 下头包住文字（y326 起）。原来是 y318/宽 +14，方框比下划线高 4px、右多 6px，
+            // 悬停时蓝横杠和名字都差一截才被框住（实机反馈「方框要把横杠框住」）。
+            float tabW = numW + 5f + nameW + 8f;
+            // 高 13：上边 321（下划线上沿 322 再留 1px）、下边 334（文字 326..333，
+            // 正好与四角裁切标的底端 334 齐平），框住横杠又不往页脚外多伸。
+            hit(x - 4, 321, tabW, 13, p.cn, () -> {
                 this.page = target;
                 this.tierOpen = false;
                 this.layerOpen = false;
@@ -586,8 +610,13 @@ public final class TerminalScreen extends Screen {
 
         // 三卡
         String[] titles = {"开始扫描", "配置舱室", "选择档位"};
-        // 网页端第三卡固定显示总档位数与「需扫描」，不显示已选，避免暗示已完成
-        String tierSub = TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
+        // 网页端第三卡：未选时显示总档位数与「需扫描」，点选后写回「<档位名> · 已选」。
+        // 副标可用宽度只有 60px（卡宽 72、左右各 6 内边距），长档位名先按实宽截断。
+        boolean picked = tierPicked != null && !tierPicked.isEmpty();
+        String tierSub = picked
+                ? tierPicked + " · 已选"
+                : TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
+        tierSub = TerminalFonts.clip(Fam.MONO, 5.5f, tierSub, 60f);
         String[] subs = {"手持终端 · 世界扫描", "8 类 · 6 必需", tierSub};
         for (int i = 0; i < 3; i++) {
             float x = 36 + i * 78;
@@ -596,7 +625,9 @@ public final class TerminalScreen extends Screen {
             if (hover) TerminalDraw.rect(g, x, 136, 72, 36, 0x0D3A5BC2);
             // 网页 .qa 实测：.t1 (x+6,y+7) 7.5px；.t2 (x+6,y+23) 5.5px 且 letter-spacing .6；.ar 右内边距 6
             TerminalFonts.drawMixed(g, Fam.CN, 7.5f, titles[i], x + 6, 143, 0f, TerminalTheme.INK);
-            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f, TerminalTheme.INK_SOFT);
+            // 已选档位用钴蓝，跟网页 .tier-cell.on 的选中色一致，扫一眼就知道生效了
+            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f,
+                    (i == 2 && picked) ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
             TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 61, 150, TerminalTheme.COBALT);
             final int idx = i;
             hit(x, 136, 72, 36, titles[i], () -> {
@@ -895,8 +926,16 @@ public final class TerminalScreen extends Screen {
         family = fam;
         tierIndex = tier;
         tierName = TerminalTierPanel.nameForRaw(fam, tier);
+        // 写回主界面第三卡副标（网页点完格子就改 .t2 文案再关面板）：否则面板一关，
+        // 画面与点之前一模一样，看不出到底选没选上。
+        tierPicked = tierName;
         tierOpen = false;
         if (!preview && hand != null) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                mc.player.displayClientMessage(
+                        Component.literal("§b[哦鲸鲸终端] 已选档位 · " + tierName), true);
+            }
             GTLModularNetwork.CHANNEL.sendToServer(
                     new UltimateTerminalConfigPacket(hand, Field.REPLACEMENT, tier, fam));
         }
