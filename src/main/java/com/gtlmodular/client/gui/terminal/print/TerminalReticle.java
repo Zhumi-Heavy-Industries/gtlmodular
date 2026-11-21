@@ -17,6 +17,8 @@ public final class TerminalReticle {
     private final List<Ripple> ripples = new ArrayList<>();
     private float bx, by, bw, bh;
     private boolean primed;
+    /** 上一帧的时间戳，用来把缓动换成时间基准（网页 k=.22/帧）。 */
+    private float lastSec = Float.NaN;
 
     public void click(float x, float y, String label, boolean ink) {
         ripples.add(new Ripple(x, y, (float) (System.nanoTime() / 1e9), label, ink));
@@ -28,21 +30,28 @@ public final class TerminalReticle {
         float tx, ty, tw, th;
         boolean locked = target != null;
         if (locked) {
-            tx = Math.max(6, target.x - 4);
-            ty = Math.max(6, target.y - 4);
-            tw = Math.max(8, Math.min(554, target.x + target.w + 4) - tx);
-            th = Math.max(8, Math.min(334, target.y + target.h + 4) - ty);
+            // 网页 loop()：tx=(tb.left-sb.left)*sc-4、tw=tb.width*sc+8 —— 不做边界夹取
+            tx = target.x - 4f;
+            ty = target.y - 4f;
+            tw = Math.max(8f, target.w + 8f);
+            th = Math.max(8f, target.h + 8f);
         } else {
-            // 只 clamp 目标值，别动缓动值，否则贴边会抖
-            tx = Math.max(6, Math.min(mx - 15, 548 - 30));
-            ty = Math.max(6, Math.min(my - 15, TerminalTheme.H - 14 - 30));
-            tw = 30;
-            th = 30;
+            // 网页 loop()：tx=X-15, ty=Y-15, 30×30，纯跟随、不夹边。
+            // 这里以前夹了 `min(mx-15, 548-30)`，指针移到纸面右侧时框被卡住不再跟手，
+            // 而网页端框是可以贴到纸外的——夹取才是"框不跟着指针"的真凶。
+            tx = mx - 15f;
+            ty = my - 15f;
+            tw = 30f;
+            th = 30f;
         }
         if (!primed) {
             bx = tx; by = ty; bw = tw; bh = th; primed = true;
         }
-        float k = 0.42f;
+        // 网页是每帧 k=.22 的指数缓动（≈60fps ⇒ 时间常数约 76ms）。
+        // 按帧数收敛在低帧率下会慢得离谱（本界面单帧可能上百毫秒），所以换成时间基准。
+        float dt = Float.isNaN(lastSec) ? 0.016f : Math.max(0f, Math.min(0.1f, seconds - lastSec));
+        lastSec = seconds;
+        float k = 1f - (float) Math.exp(-dt / 0.076f);
         bx += (tx - bx) * k;
         by += (ty - by) * k;
         bw += (tw - bw) * k;

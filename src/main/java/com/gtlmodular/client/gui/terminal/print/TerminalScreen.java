@@ -506,17 +506,18 @@ public final class TerminalScreen extends Screen {
     /**
      * 纸底 + 纸面颗粒，两者都必须先于页框/正文落地。
      *
-     * <p>先刷一次的原因：drawManaged 会把块内所有绘制攒到 block 结束统一出队，而
-     * guiTextured(文字/贴图) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，整张纸就会把
-     * 页框文字整组盖掉（矢量还在，因为它和纸底在同一条 gui 缓冲里、顶点排在纸底之后）。</p>
+     * <p>纸面用一张不透明的「纸色 + 颗粒」贴图平铺，仍保留下面那层纯色纸底做兜底
+     * （贴图万一没加载出来，至少还是白纸而不是黑屏）。</p>
      *
-     * <p>颗粒（guiTextured）画在纸色块之后、页框之前：与网页 DOM 里 {@code .grain} 位于内容
-     * 之下一致，面板/文字压在上面不被噪点干扰。</p>
+     * <p>结束后刷一次：drawManaged 会把块内所有绘制攒到 block 结束统一出队，而
+     * guiTextured(文字/贴图) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，整张纸就会把
+     * 页框文字整组盖掉。纸面单独成批，后面的页框/正文才能稳稳压在它上面。</p>
      */
     private static void drawPaper(GuiGraphics g) {
         TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+        // 贴图不可用就只剩纯色纸（宁可没颗粒，也不要花屏）
+        if (TerminalGrain.usable()) TerminalGrain.drawPaper(g);
         g.flush();
-        TerminalGrain.draw(g);
     }
 
     /** 用纸色以 coverage 不透明度盖住整页：等效于把整页 opacity 设为 (1-coverage)。 */
