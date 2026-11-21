@@ -1522,22 +1522,19 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         clearSlotTypeCache(index);
         invalidateRewriteCache();
         // ★★ 片 D（2026-09-27）：**样板增删要主动把「样板表过期」标记置起来** ★★
-        //   现场取证（逐指令对过 `_census/_gto_wildcard/javap_gtlcore/GTL_Buffer_full.txt`）：
-        //   gtlcore 具体类的 `needPatternSync = true` 全类**只有 3 处** ——
-        //     ① `refreshAllByProduct()` 偏移 60–66（读档补齐 / 批量粘贴的收尾）；
-        //     ② `lambda$onLoad$6()` 偏移 58–64（onLoad 异步补齐）；
-        //     ③ `onMachineRemoved()` 偏移 157–163（拆机）。
-        //   ★ 而 `onPatternChange(int)`（:279–364）**根本不置这个标记** —— 它只做
-        //     「刷 slot2PatternMap + hasPatternArray + 清该槽缓存 + 退残留料 + reCalculatePatternSlotMap」。
-        //   于是「玩家在界面上放/取/换一张样板」这条路（`InternalSlot.setOnContentsChanged`(:235)
-        //   → `onPatternChange`）**从来没人捅 AE** ⇒ 合成服务的可用样板表要等很久（甚至要重开界面）。
-        //   这里补的**就是这一句**：只置标记，**绝不**在"每个槽变化一次"的路径上直接
-        //   `refreshPatternsNow()` —— 批量粘贴 640 张会变成 640 次"AE 同步重读全部样板"= O(n²) 卡死
+        //   【★ 2026-11-21 订正（javap 对 libs/gtlcore-1.2.3.3-fix4.jar 逐指令复核）】
+        //   本段旧注释说「gtlcore 的 onPatternChange 根本不置 needPatternSync」——**该结论对 1.2.3.3 不成立**：
+        //   `MEPatternBufferPartMachine#onPatternChange` 尾部（偏移 206）确实 `putfield needPatternSync:Z`。
+        //   那为什么还要这一句？因为：
+        //     ① 它是**幂等**的防御性置位 —— 万一将来的 gtlcore 版本删掉那处（旧版本就曾是那样），
+        //        我们不会静默失灵；② 本类的 `onPatternChange` 覆写在某些分支（如归档批量窗口）会提前
+        //        `return`，这条兜底让"AE 样板表过期"始终有人负责置位。
+        //   仍然坚持的纪律：**绝不**在"每个槽变化一次"的路径上直接 `refreshPatternsNow()` ——
+        //   批量粘贴 640 张会变成 640 次"AE 同步重读全部样板"= O(n²) 卡死
         //   （惰性机 0.3.5 踩过，见 `LazyPatternAssemblyPartMachine.java:3498–3500` 的同款纪律）。
-        //   真正的消费只有一个地方：每 tick 的 `autoSwitchTickInner()`（约 :1265，合并成一次）。
+        //   真正的消费只有一个地方：每 tick 的 `autoSwitchTickInner()`（合并成一次）。
         //   `needPatternSync` 是基类 `MEPatternBufferPartMachineBase` 的 **protected** 字段
-        //   （`_census/_gto_wildcard/javap_gtlcore/GTL_MEPatternBufferPartMachineBase.sig.txt:11`
-        //    + `_census/_javap_simple_gtlcore_bufferbase.txt:21`）⇒ 子类直接读写，**没有新造第二套机制**。
+        //   ⇒ 子类直接读写，**没有新造第二套机制**。
         markPatternTableStale("界面/槽变化#" + (index + 1));
         // ★ 库存催化剂（免塞催化剂）：样板换了 ⇒ 旧虚拟标记全部作废（实体催化剂物品/流体一格不动），
         //   并把新样板排进热队列，由每 20 tick 的既有服务端订阅去解配方 + 按 ME 存量自动供给。
@@ -7921,7 +7918,7 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             return base;
         }
         try {
-            long fingerprint = catalystFilterFingerprintOf();
+            long fingerprint = catalystFilterFingerprintOf() * 31L + catalystSourceFingerprint(base);
             if (catalystFilteredPatterns != null && catalystFilterFingerprint == fingerprint) {
                 return catalystFilteredPatterns;
             }
@@ -7977,6 +7974,24 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
         } catch (Throwable ignored) {
             // 取不到就只按版本号
+        }
+        return h;
+    }
+
+    /**
+     * 报给 AE 的样板表<b>来源</b>指纹（base 或 FOA 改写后的列表）。
+     *
+     * <p>为什么必须进缓存键：`getAvailablePatterns()` 有两条来源（原样板 / 神锻改写样板），
+     * 两者的元素对象不同但样板仓内容与催化剂供给版本可以完全相同。若不把「来源列表」算进指纹，
+     * 切一次神锻就会命中另一来源的旧过滤缓存 ⇒ AE 拿到错误的样板表。
+     * 元素对象的 hashCode 在这两条来源里都是稳定的（缓存里存的是同一批对象）。
+     */
+    private static long catalystSourceFingerprint(List<IPatternDetails> base) {
+        long h = 7L;
+        if (base != null) {
+            for (IPatternDetails pattern : base) {
+                h = h * 31L + (pattern == null ? 0 : pattern.hashCode());
+            }
         }
         return h;
     }
