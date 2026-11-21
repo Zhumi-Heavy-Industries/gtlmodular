@@ -17,6 +17,9 @@ public final class TerminalReport {
     // 清单底边留到 246，232 的「全部 N 条」才不会被最后一行压住
     // 网页 .rep-list 实测：left20 top94 w520 h152（y94..246）
     public static final float LIST_H = 152;
+    // 实机数据行数远多于网页原型，行会一路画到 246 把 y233 的「全部 N 条 · ESC 关闭」压住。
+    // 可视区止于 230（文字上沿 233 前留 3px），行永不再与页脚文字重叠；滚动上限同步用它。
+    public static final float LIST_CLIP_H = 136;
     private static final float ROW_H = 21;
     // 网页 report 行实测：数量 div left418+list20=438、width26、text-align:right → 右边缘 464；
     // 坐标 x454+list20=474；展开符号 x526+list20=546（在 520 宽视口外，被 overflow:hidden 裁掉）
@@ -65,7 +68,7 @@ public final class TerminalReport {
 
         // 清单（裁剪，展开行高 48）
         g.enableScissor(Math.round(s.originX + LIST_X * s.scale), Math.round(s.originY + LIST_Y * s.scale),
-                Math.round(s.originX + (LIST_X + LIST_W) * s.scale), Math.round(s.originY + (LIST_Y + LIST_H) * s.scale));
+                Math.round(s.originX + (LIST_X + LIST_W) * s.scale), Math.round(s.originY + (LIST_Y + LIST_CLIP_H) * s.scale));
         float y = LIST_Y + 2 - s.reportScroll;
         int shown = 0;
         for (int i = 0; i < s.reportRows.size(); i++) {
@@ -73,7 +76,7 @@ public final class TerminalReport {
             if (!matchesFilter(s, row)) continue;
             boolean open = s.expanded[i];
             float rowH = ROW_H + (open ? 48 : 0);
-            if (y + rowH >= LIST_Y && y <= LIST_Y + LIST_H) {
+            if (y + rowH >= LIST_Y && y <= LIST_Y + LIST_CLIP_H) {
                 drawRow(g, s, row, i, y, open);
             }
             y += rowH;
@@ -147,8 +150,8 @@ public final class TerminalReport {
         // 命中区必须裁到清单视口内，否则展开行的 69px 命中矩形会压到 258 的按钮上，
         // 准星就会在按钮区画一个"看不见目标"的框。
         float top = Math.max(y, LIST_Y);
-        float bottom = Math.min(y + ROW_H + (open ? 48f : 0f), LIST_Y + LIST_H);
-        if (y < LIST_Y + LIST_H && y + ROW_H > LIST_Y && bottom - top > 2f) {
+        float bottom = Math.min(y + ROW_H + (open ? 48f : 0f), LIST_Y + LIST_CLIP_H);
+        if (y < LIST_Y + LIST_CLIP_H && y + ROW_H > LIST_Y && bottom - top > 2f) {
             s.hit(20, top, 520, bottom - top, row.name(), () -> s.toggleRow(index), false);
         }
     }

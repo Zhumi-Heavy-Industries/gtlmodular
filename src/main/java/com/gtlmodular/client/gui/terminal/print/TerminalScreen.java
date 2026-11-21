@@ -52,7 +52,7 @@ public final class TerminalScreen extends Screen {
     public float seconds;
 
     public String playerName = "wangxiaoai";
-    public String machineName = "恒星炎炀容器";
+    public String machineName = "待扫描目标";
     public String boundAeText = "OVERWORLD 128, 64, -37";
     public String tierName = "恒星炽热外壳";
     public String family = "sc";
@@ -153,6 +153,9 @@ public final class TerminalScreen extends Screen {
     }
 
     private void loadState() {
+        // 主机名先回到中性态：只有真正绑定到已加载控制器时才显示机器名，
+        // 否则（预览/未手持/报告直达）一律保持网页端的「待扫描目标」。
+        machineName = "待扫描目标";
         if (preview) {
             reportRows = sampleRows();
             expanded = new boolean[reportRows.size()];
@@ -201,7 +204,7 @@ public final class TerminalScreen extends Screen {
             var machine = com.gregtechceu.gtceu.api.machine.MetaMachine.getMachine(mc.level, ctrl.pos());
             if (machine instanceof com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine controller) {
                 var def = controller.getDefinition();
-                if (def != null) machineName = def.asStack().getHoverName().getString();
+                if (def != null) machineName = stripColorCodes(def.asStack().getHoverName().getString());
             }
         }
 
@@ -295,7 +298,9 @@ public final class TerminalScreen extends Screen {
         List<String> displayNames = new ArrayList<>(names.size());
         for (Component name : names) displayNames.add(displayName(name.getString()));
         List<String> categoryNames = new ArrayList<>(cats.size());
-        for (ShanhaiTerminalReport.Category category : cats) categoryNames.add(category.label().getString());
+        for (ShanhaiTerminalReport.Category category : cats) {
+            categoryNames.add(stripColorCodes(category.label().getString()));
+        }
         for (ShanhaiTerminalReport.Line line : report.lines()) {
             if (line.category() < 0 || line.category() >= cats.size()
                     || line.name() < 0 || line.name() >= names.size()) continue;
@@ -321,7 +326,22 @@ public final class TerminalScreen extends Screen {
         if (name == null) return "";
         int cut = name.indexOf('、');
         if (cut > 0) name = name.substring(0, cut);
+        // 真实物品名带 MC 颜色码（§8/§r 等）；AWT 字体不解析，会把 § 和码字都画出来
+        // （实机截图「§ 8ULV § r巨型输出总线」）。网页原型是纯文本，这里在显示层剥离以对齐。
+        name = stripColorCodes(name);
         return TerminalFonts.clip(Fam.CN, 8f, name, 330f);
+    }
+
+    /** 剥离 Minecraft § 颜色码及其后的一个格式字符（§8/§r/§b/§l…），供所有真实数据显示前调用。 */
+    public static String stripColorCodes(String s) {
+        if (s == null || s.indexOf('§') < 0) return s == null ? "" : s;
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '§' && i + 1 < s.length()) { i++; continue; } // 跳过 § 与紧跟的格式字符
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     private static List<ReportRow> sampleRows() {
@@ -804,7 +824,7 @@ public final class TerminalScreen extends Screen {
             if (!rowVisible(reportRows.get(i))) continue;
             total += 21 + (expanded[i] ? 48 : 0);
         }
-        return (int) Math.max(0, total - TerminalReport.LIST_H);
+        return (int) Math.max(0, total - TerminalReport.LIST_CLIP_H);
     }
 
     @Override
