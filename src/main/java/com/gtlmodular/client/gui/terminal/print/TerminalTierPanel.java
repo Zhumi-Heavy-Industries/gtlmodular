@@ -101,10 +101,12 @@ public final class TerminalTierPanel {
         TerminalDraw.rect(g, 20, 14, 520, 284, TerminalTheme.PAPER);
         TerminalDraw.outline(g, 20, 14, 520, 284, TerminalTheme.INK);
         TerminalDraw.rect(g, 20, 14, 520, 12, TerminalTheme.INK);
+        g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5.5f,
                 "REPLACE / 替换部件 · " + totalTiers() + " 档 · 点击即选中",
-                25, 16.5f, 1.1f, 0xFFFFFFFF);
-        TerminalFonts.draw(g, Fam.MONO, 7f, "×", 524, 15, TerminalTheme.PAPER);
+                26, 17, 1.1f, 0xFFFFFFFF);
+        // 网页 .tier-x：right:5px、宽 10 → 文字左缘 524；top 1.5
+        TerminalFonts.draw(g, Fam.MONO, 7f, "×", 524, 15.5f, TerminalTheme.PAPER);
         s.hit(522, 14, 14, 12, "返回", s::closeTier, false);
 
         // 面板内容区高度固定（14..298），实际档位数可能多于设计的 39；先算总行数再压行距，
@@ -163,7 +165,7 @@ public final class TerminalTierPanel {
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f,
                 "方块来自 BlockMap.tierBlockMap · 点击即时返回",
-                32, 280, 0.8f, TerminalTheme.INK_FAINT);
+                32, 281, 0.8f, TerminalTheme.INK_FAINT);
     }
 
     /** 当前网页展示的格数（SEPM 收口到 5）。 */

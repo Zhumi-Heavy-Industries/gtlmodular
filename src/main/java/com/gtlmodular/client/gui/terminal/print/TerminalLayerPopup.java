@@ -17,19 +17,21 @@ public final class TerminalLayerPopup {
         TerminalDraw.rect(g, x, y, w, h, TerminalTheme.PAPER);
         TerminalDraw.outline(g, x, y, w, h, TerminalTheme.INK);
         TerminalDraw.rect(g, x, y, w, 9, TerminalTheme.INK);
+        g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "STRUCTURE / 结构层数", x + 5, y + 2, 1.2f, 0xFFFFFFFF);
         TerminalFonts.draw(g, Fam.MONO, 7f, "×", x + 180, y + 1, TerminalTheme.PAPER);
         s.hit(x + 178, y, 16, 10, "关闭", s::closeLayer, false);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "默认 001 · 上限 648 · 步进 1",
-                x + 6, y + 14, 0.6f, TerminalTheme.INK_FAINT);
+                x + 7, y + 15, 0.6f, TerminalTheme.INK_FAINT);
 
-        // − / 数字 / +
+        // − / 数字 / +（网页实测：− 按钮 x+6 y+26 20×20；大数字盒 x+52..x+108 居中、top+24、19px；
+        // + 按钮 x+120 y+26；「/ 648」盒 x+144 top+32）
         button(g, s, x + 6, y + 26, 20, 20, "−", () -> s.layerDraft = Math.max(1, s.layerDraft - 1));
         button(g, s, x + 120, y + 26, 20, 20, "+", () -> s.layerDraft = Math.min(MAX, s.layerDraft + 1));
-        TerminalFonts.drawCentered(g, Fam.MONO, 24f, String.format("%03d", s.layerDraft), x + 80, y + 19,
+        TerminalFonts.drawCentered(g, Fam.MONO, 19f, String.format("%03d", s.layerDraft), x + 80, y + 24,
                 TerminalTheme.COBALT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "/ 648", x + 148, y + 32, 0f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "/ 648", x + 145, y + 33, 0f, TerminalTheme.INK_FAINT);
 
         // 刻度尺
         float rx = x + 8, ry = y + 55, rw = 180;
@@ -40,12 +42,12 @@ public final class TerminalLayerPopup {
         }
         float cursor = rx + 2 + (s.layerDraft - 1) / (float) (MAX - 1) * (rw - 4);
         TerminalDraw.rect(g, cursor, ry - 2, 2, 10, TerminalTheme.COBALT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "1", rx, ry + 9, 0f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "1", rx + 1, ry + 9, 0f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRight(g, Fam.MONO, 5f, String.valueOf(MAX), rx + rw, ry + 9, TerminalTheme.INK_FAINT);
         s.hit(rx, ry - 4, rw, 14, "刻度", s::layerFromMouse, false);
 
         // PRESET
-        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "PRESET / 预设", x + 6, y + 86, 1.2f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "PRESET / 预设", x + 7, y + 87, 1.2f, TerminalTheme.INK_SOFT);
         preset(g, s, x + 6, y + 96, 38, "001", 1);
         preset(g, s, x + 48, y + 96, 38, "008", 8);
         preset(g, s, x + 90, y + 96, 38, "064", 64);

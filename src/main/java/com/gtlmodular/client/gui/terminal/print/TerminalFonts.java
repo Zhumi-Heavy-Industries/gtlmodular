@@ -192,7 +192,12 @@ public final class TerminalFonts {
                 int th = Math.max(1, fm.getAscent() + fm.getDescent());
                 pg.dispose();
 
-                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(tw, th,
+                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
+                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
+                int finalW = outW * (int) gs;
+                int finalH = outH * (int) gs;
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
                 g2.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING,
@@ -206,13 +211,13 @@ public final class TerminalFonts {
 
                 com.mojang.blaze3d.platform.NativeImage ni =
                         new com.mojang.blaze3d.platform.NativeImage(
-                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, tw, th, false);
+                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, finalW, finalH, false);
                 // 批量取 ARGB，避免逐像素 getRGB 的色彩模型转换（首帧主要开销之一）
                 int[] argbPixels = ((java.awt.image.DataBufferInt)
                         img.getRaster().getDataBuffer()).getData();
                 int idx = 0;
-                for (int yy = 0; yy < th; yy++) {
-                    for (int xx = 0; xx < tw; xx++) {
+                for (int yy = 0; yy < finalH; yy++) {
+                    for (int xx = 0; xx < finalW; xx++) {
                         int argb = argbPixels[idx++];
                         int a = (argb >>> 24) & 0xFF;
                         int r = (argb >>> 16) & 0xFF;
@@ -225,7 +230,7 @@ public final class TerminalFonts {
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_" + (texSeq++), dyn);
-                tex = new Tex(rl, Math.max(1, Math.round(tw / gs)), Math.max(1, Math.round(th / gs)), tw, th);
+                tex = new Tex(rl, outW, outH, finalW, finalH);
                 if (TEX.size() > 2048) {
                     var it = TEX.entrySet().iterator();
                     if (it.hasNext()) {
@@ -282,7 +287,12 @@ public final class TerminalFonts {
                 int pad = (int) Math.ceil(sw) + 2;
                 int tw = Math.max(1, (int) Math.ceil(b.getWidth()) + pad * 2);
                 int th = Math.max(1, (int) Math.ceil(b.getHeight()) + pad * 2);
-                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(tw, th,
+                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
+                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
+                int finalW = outW * (int) gs;
+                int finalH = outH * (int) gs;
+                java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
                 g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
@@ -295,7 +305,7 @@ public final class TerminalFonts {
                 int[] argb = ((java.awt.image.DataBufferInt) img.getRaster().getDataBuffer()).getData();
                 com.mojang.blaze3d.platform.NativeImage ni =
                         new com.mojang.blaze3d.platform.NativeImage(
-                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, tw, th, false);
+                                com.mojang.blaze3d.platform.NativeImage.Format.RGBA, finalW, finalH, false);
                 int idx = 0;
                 for (int yy = 0; yy < th; yy++) {
                     for (int xx = 0; xx < tw; xx++) {
@@ -308,7 +318,7 @@ public final class TerminalFonts {
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_outline_" + (texSeq++), dyn);
-                tex = new Tex(rl, Math.max(1, Math.round(tw / gs)), Math.max(1, Math.round(th / gs)), tw, th);
+                tex = new Tex(rl, outW, outH, finalW, finalH);
                 OTEX.put(key, tex);
             }
             g.blit(tex.rl, Math.round(x), Math.round(y), tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
@@ -516,8 +526,9 @@ public final class TerminalFonts {
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             String ch = new String(Character.toChars(cp));
-            rawDraw(g, fam, size, ch, cx, y, color);
-            float aw = awtWidth(fam, size, ch);
+            Fam use = isCjk(cp) ? Fam.CN : fam;
+            rawDraw(g, use, size, ch, cx, y, color);
+            float aw = awtWidth(use, size, ch);
             cx += (aw >= 0 ? aw : advanceOf(font, cp)) + tracking;
             i += Character.charCount(cp);
         }

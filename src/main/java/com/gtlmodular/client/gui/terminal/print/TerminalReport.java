@@ -14,11 +14,16 @@ public final class TerminalReport {
     private static final float LIST_X = 20;
     private static final float LIST_Y = 94;
     private static final float LIST_W = 520;
-    // 清单底边留到 226，232 的「全部 N 条」才不会被最后一行压住
+    // 清单底边留到 246，232 的「全部 N 条」才不会被最后一行压住
+    // 网页 .rep-list 实测：left20 top94 w520 h152（y94..246）
     public static final float LIST_H = 152;
     private static final float ROW_H = 21;
+    // 网页 report 行实测：数量 div left418+list20=438、width26、text-align:right → 右边缘 464；
+    // 坐标 x454+list20=474；展开符号 x526+list20=546（在 520 宽视口外，被 overflow:hidden 裁掉）
     private static final float C_QTY_RIGHT = 464;
+    private static final float C_QTY_HEAD = 428;
     private static final float C_COORD = 474;
+    private static final float C_COORD_HEAD = 464;
     private static final float C_TOGGLE = 526;
 
     public static void draw(GuiGraphics g, TerminalScreen s) {
@@ -48,10 +53,11 @@ public final class TerminalReport {
         }
         TerminalDraw.hline(g, 524, 540, 75, TerminalTheme.INK_FAINT);
 
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "类", 20, 82, 1.4f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "材料", 62, 82, 1.4f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawRightMixed(g, Fam.MONO, 6.5f, "数量", C_QTY_RIGHT, 82, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "坐标", 474, 82, 1.4f, TerminalTheme.INK_FAINT);
+        // 表头与行使用同一套列坐标（网页实测：类 20 / 材料 62 / 数量头左对齐 428、行值右对齐 464 / 坐标头 464、行坐标 474）
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "类", 20, 82, 1.6f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "材料", 62, 82, 1.6f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "数量", C_QTY_HEAD, 82, 1.6f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, "坐标", C_COORD_HEAD, 82, 1.6f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 20, 540, 91, TerminalTheme.RULE);
 
         // 清单（裁剪，展开行高 48）
@@ -78,7 +84,8 @@ public final class TerminalReport {
         String omitted = s.reportOmitted > 0
                 ? "另有 " + s.reportOmitted + " 条已省略 · ESC 关闭"
                 : "全部 " + shown + " 条 · ESC 关闭";
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, omitted, 20, 232, 0.6f, TerminalTheme.INK_FAINT);
+        // 网页实测：文本盒 top232（字号6，行高1.2）→ 字形顶约 233.5；分隔线 y248
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, omitted, 20, 233, 0.6f, TerminalTheme.INK_FAINT);
 
         // v32 源码按钮位置/宽度：20/100/180/476，74/74/96/64
         button(g, s, 20, 258, 74, "复制全部", false, TerminalTheme.INK, s::copyReport, 1);
@@ -108,27 +115,24 @@ public final class TerminalReport {
         TerminalDraw.hline(g, 20, 540, y + 19, TerminalTheme.RULE_SOFT);
         TerminalDraw.rect(g, 20, y + 5, 2, 11, row.color());
 
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, row.category(), 26, y + 6, 0f, TerminalTheme.INK_SOFT);
-        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(),
-                68, y + 3, 0f, TerminalTheme.INK);
-        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 3, TerminalTheme.INK);
+        // 网页实测（相对行顶）：类 x26/y+0 6.5px；材料 x68/y-1 8px + 字距.8；数量右对齐 464/y+0；坐标 x474/y+1
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, row.category(), 26, y, 0f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(), 68, y - 1, 0.8f, TerminalTheme.INK);
+        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y, TerminalTheme.INK);
         // 网页 rep-coord：展开时显示第一条坐标，折叠显示「—」
         String coord = open && !row.coords().isEmpty() ? fmt(row.coords().get(0)) : "—";
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 6, 0.4f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 1, 0.4f, TerminalTheme.INK_SOFT);
 
-        TerminalFonts.drawMixed(g, Fam.MONO, 7f, open ? "−" : "+", C_TOGGLE, y + 4, 0f,
-                open ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
+        // 网页 .rep-tog 在 left526，而 .rep-list 只有 520 宽（overflow:hidden），实测被裁掉不可见。
+        // 这里不画 +/−，保持与网页一致；整行仍可点。
 
         if (open && !row.coords().isEmpty()) {
+            // 网页 .rep-sub: left48+20=68、top21，每条 14px、前缀「↳ 」，下方没有分隔线
             float cy = y + 21;
             for (int k = 0; k < row.coords().size() && k < 3; k++) {
-                // 网页展开行用小拐角而不是 »；用两笔线画，避免字体缺字
-                TerminalDraw.hline(g, 74, 78, cy + 7, TerminalTheme.INK_FAINT);
-                TerminalDraw.vline(g, 74, cy + 3, cy + 7, TerminalTheme.INK_FAINT);
-                TerminalFonts.drawMixed(g, Fam.MONO, 6f, fmt(row.coords().get(k)), 82, cy + 3, 0.4f,
+                TerminalFonts.drawMixed(g, Fam.MONO, 6f, "↳ " + fmt(row.coords().get(k)), 68, cy, 0.4f,
                         TerminalTheme.INK_FAINT);
-                TerminalDraw.hline(g, 74, 520, cy + 14, 0x141F2427);
-                cy += 16;
+                cy += 14;
             }
         }
         // 命中区必须裁到清单视口内，否则展开行的 69px 命中矩形会压到 258 的按钮上，

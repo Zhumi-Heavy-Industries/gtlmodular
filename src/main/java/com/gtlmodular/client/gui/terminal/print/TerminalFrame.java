@@ -147,19 +147,22 @@ public final class TerminalFrame {
     }
 
     private static void stamp(GuiGraphics g, float left, float top, String text) {
+        // 网页 .stamp 实测：left455.4 top282.7 w64.8 h20.6（含 rotate -6°）；内高 13、内边距 2px 5px、opacity .72
         float tw = Math.min(150f, TerminalFonts.trackedWidth(Fam.MONO, 6f, text, 1.4f));
-        float w = tw + 12f;
+        float w = tw + 10f;
         float h = 13f;
+        int c = 0xB83A5BC2;
         g.pose().pushPose();
         g.pose().translate(left + w / 2f, top + h / 2f, 0);
         g.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(-6f));
         g.pose().translate(-w / 2f, -h / 2f, 0);
-        TerminalDraw.outline(g, 0, 0, w, h, 0xB83A5BC2);
-        TerminalFonts.drawTracked(g, Fam.MONO, 6f, text, 6f, 3f, 1.4f, 0xB83A5BC2);
+        TerminalDraw.outline(g, 0, 0, w, h, c);
+        TerminalFonts.drawTracked(g, Fam.MONO, 6f, text, 5f, 3f, 1.4f, c);
         g.pose().popPose();
     }
 
     private static void navTabs(GuiGraphics g, Page active) {
+        // 网页 .navfoot 实测：x36、gap26、单页签 38.6 宽；文字盒 y326（相对页签 +4）；下划线 y322 h2 左右各外扩 4
         float x = 36;
         for (Page p : Page.values()) {
             float numW = TerminalFonts.mixedWidth(Fam.MONO, 6f, p.num, 0f);
@@ -168,9 +171,9 @@ public final class TerminalFrame {
             if (on) {
                 TerminalDraw.rect(g, x - 4, 322, numW + 5 + nameW + 8, 2, TerminalTheme.COBALT);
             }
-            TerminalFonts.drawMixed(g, Fam.MONO, 6f, p.num, x, 324f, 0f,
+            TerminalFonts.drawMixed(g, Fam.MONO, 6f, p.num, x, 326, 0f,
                     on ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
-            TerminalFonts.drawMixed(g, Fam.MONO, 7f, p.cn, x + numW + 5f, 323f, 1.2f,
+            TerminalFonts.drawMixed(g, Fam.MONO, 7f, p.cn, x + numW + 5f, 326, 1.2f,
                     on ? TerminalTheme.INK : TerminalTheme.INK_FAINT);
             x += numW + 5f + nameW + 26f;
         }

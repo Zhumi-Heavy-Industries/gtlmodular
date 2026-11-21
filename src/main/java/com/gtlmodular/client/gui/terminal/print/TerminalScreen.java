@@ -410,14 +410,19 @@ public final class TerminalScreen extends Screen {
         TerminalFonts.draw(g, Fam.SERIF, 26f, "A", 2, 250, alpha(TerminalTheme.INK, 26));
         TerminalFonts.draw(g, Fam.SERIF, 16f, "L", 14, 40, alpha(TerminalTheme.INK, 31));
 
-        // CONFIG 徽标
+        // CONFIG 徽标（网页 .chip-d 实测：黑底 x36 w65.4 h10，红块 x76.8 w15.7，两段文字 top 46）
+        // CSS .chip-d{padding:2px 6px} + .chip-d em{padding:0 3px;margin-left:4px}：
+        // 文字左边 = 36+6 = 42；红块左 = 42+cw+4；红块后仍有 6px 黑底拖尾。
         float cw = TerminalFonts.trackedWidth(Fam.MONO, 5.5f, "CONFIG", 1.8f);
-        TerminalDraw.rect(g, 36, 44, cw + 12, 10, TerminalTheme.INK);
+        float cw06 = TerminalFonts.trackedWidth(Fam.MONO, 5.5f, "06", 1.8f);
+        float redX = 42 + cw + 4;
+        float redW = cw06 + 6;
+        TerminalDraw.rect(g, 36, 44, redX + redW + 6 - 36, 10, TerminalTheme.INK);
+        TerminalDraw.rect(g, redX, 44, redW, 10, TerminalTheme.RED);
+        g.flush();
         TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "CONFIG", 42, 46, 1.8f, 0xFFFFFFFF);
-        float emW = TerminalFonts.trackedWidth(Fam.MONO, 5.5f, "06", 1.8f) + 6;
         // 网页 CSS：.chip-d 黑底纸白字，.chip-d em(06) 红底 #B43A34、纸白字
-        TerminalDraw.rect(g, 36 + cw + 10, 44, emW, 10, TerminalTheme.RED);
-        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", 36 + cw + 13, 46, 1.8f, 0xFFFFFFFF);
+        TerminalFonts.drawTracked(g, Fam.MONO, 5.5f, "06", redX + 3, 46, 1.8f, 0xFFFFFFFF);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "06 / GTL MODULAR", 110, 46, 1.6f, TerminalTheme.INK_FAINT);
 
         TerminalDraw.rect(g, 36, 66, 2, 30, TerminalTheme.COBALT);
@@ -425,7 +430,8 @@ public final class TerminalScreen extends Screen {
                 TerminalFonts.clip(Fam.CN, 26f, machineName, 196f), 46, 64, 2f, TerminalTheme.INK);
         TerminalFonts.draw(g, Fam.SERIF_IT, 13f, playerName, 46, 102, TerminalTheme.INK_SOFT);
         float sigW = TerminalFonts.width(Fam.SERIF_IT, 13f, playerName);
-        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "OPERATOR", 46 + sigW + 8, 106, 1.6f, TerminalTheme.INK_FAINT);
+        // 网页 .kicker 实测 OPERATOR 盒 (114.6,108)：签名起点 46 + 签名宽 + 8，top 108
+        TerminalFonts.drawMixed(g, Fam.MONO, 5f, "OPERATOR", 46 + sigW + 8, 108, 2f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 36, 266, 126, TerminalTheme.RULE);
 
         // 三卡
@@ -438,9 +444,10 @@ public final class TerminalScreen extends Screen {
             boolean hover = isHover(x, 136, 72, 36);
             TerminalDraw.outline(g, x, 136, 72, 36, hover ? TerminalTheme.COBALT : TerminalTheme.RULE);
             if (hover) TerminalDraw.rect(g, x, 136, 72, 36, 0x0D3A5BC2);
-            TerminalFonts.drawMixed(g, Fam.CN, 7.5f, titles[i], x + 5, 142, 0f, TerminalTheme.INK);
-            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 5, 158, 0f, TerminalTheme.INK_SOFT);
-            TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 63, 148, TerminalTheme.COBALT);
+            // 网页 .qa 实测：.t1 (x+6,y+7) 7.5px；.t2 (x+6,y+23) 5.5px 且 letter-spacing .6；.ar 右内边距 6
+            TerminalFonts.drawMixed(g, Fam.CN, 7.5f, titles[i], x + 6, 143, 0f, TerminalTheme.INK);
+            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f, TerminalTheme.INK_SOFT);
+            TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 61, 150, TerminalTheme.COBALT);
             final int idx = i;
             hit(x, 136, 72, 36, titles[i], () -> {
                 if (idx == 0) {                     // 手持扫描：收起界面并提示
@@ -499,24 +506,26 @@ public final class TerminalScreen extends Screen {
     }
 
     private void echo(GuiGraphics g, float x, float y) {
+        // 网页 .echo: letter-spacing .6px，字号6.5——所有段统一带字距，否则三组数值会逐段左移。
+        final float ls = 0.6f;
         String pre = "上次扫描 · 可放置 ";
         float cx = x;
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, pre, cx, y, 0f, TerminalTheme.INK_SOFT);
-        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, pre, 0f);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, pre, cx, y, ls, TerminalTheme.INK_SOFT);
+        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, pre, ls);
         cx = echoValue(g, cx, y, String.valueOf(placeCount));
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 冲突 ", cx, y, 0f, TerminalTheme.INK_SOFT);
-        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 冲突 ", 0f);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 冲突 ", cx, y, ls, TerminalTheme.INK_SOFT);
+        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 冲突 ", ls);
         cx = echoValue(g, cx, y, String.valueOf(conflictCount));
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 缺失 ", cx, y, 0f, TerminalTheme.INK_SOFT);
-        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 缺失 ", 0f);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 缺失 ", cx, y, ls, TerminalTheme.INK_SOFT);
+        cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 缺失 ", ls);
         cx = echoValue(g, cx, y, String.valueOf(missingCount));
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 查看详情 ›", cx, y, 0f, TerminalTheme.COBALT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 查看详情 ›", cx, y, ls, TerminalTheme.COBALT);
         hit(x, y - 2, 230, 12, "查看详情", () -> page = Page.REPORT, false);
     }
 
     private float echoValue(GuiGraphics g, float x, float y, String v) {
-        TerminalFonts.drawMixedHeavy(g, Fam.MONO, 6.5f, v, x, y, 0f, TerminalTheme.INK);
-        return x + TerminalFonts.mixedWidth(Fam.MONO, 6.5f, v, 0f);
+        TerminalFonts.drawMixedHeavy(g, Fam.MONO, 6.5f, v, x, y, 0.6f, TerminalTheme.INK);
+        return x + TerminalFonts.mixedWidth(Fam.MONO, 6.5f, v, 0.6f);
     }
 
     private void bind(GuiGraphics g, float x, float y, String title, String num, boolean on,
@@ -525,14 +534,19 @@ public final class TerminalScreen extends Screen {
         TerminalDraw.rect(g, x, y, 230, 36, 0xE6EFF1EF);
         TerminalDraw.outline(g, x, y, 230, 36, hover ? TerminalTheme.COBALT : 0x801F2427);
         TerminalDraw.rect(g, x, y, 230, 9, on || hover ? TerminalTheme.COBALT : TerminalTheme.INK);
+        g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, title, x + 4, y + 1.5f, 1.2f, TerminalTheme.PAPER);
-        TerminalFonts.drawMixed(g, Fam.MONO, 5f, num, x + 222, y + 1.5f, 0f, TerminalTheme.PAPER);
+        // 网页 .bind .bh em{right:4px}：编号右对齐到卡片内边距 4
+        TerminalFonts.drawRightMixed(g, Fam.MONO, 5f, num, x + 226, y + 1.5f, TerminalTheme.PAPER);
         g.pose().pushPose();
-        g.pose().translate(x + 7.5f, y + 16.5f, 0);
+        // 网页 .dot{left:5px;top:14px;5×5} 旋转 45° 后包围盒 (x+5..x+12, y+14..y+21)，中心 (x+8.5,y+17.5)
+        g.pose().translate(x + 8.5f, y + 17.5f, 0);
         g.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(45f));
         if (on) TerminalDraw.rect(g, -2.5f, -2.5f, 5, 5, TerminalTheme.COBALT);
         else TerminalDraw.outline(g, -2.5f, -2.5f, 5, 5, TerminalTheme.INK);
         g.pose().popPose();
+        // 网页：.bind .st{top:12px} 盒 y+12.5；未绑定色是 INK_SOFT(85,96,95)，已绑定是 INK。
+        // 之前一律用 INK 导致「未绑定」显得过重（与网页对照不一致）。
         TerminalFonts.drawMixed(g, Fam.CN, 8f, TerminalFonts.clip(Fam.CN, 8f, status, 200f), x + 15, y + 12, 0f,
                 on ? TerminalTheme.INK : TerminalTheme.INK_SOFT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, TerminalFonts.clip(Fam.MONO, 5.5f, coord, 200f),
@@ -545,27 +559,33 @@ public final class TerminalScreen extends Screen {
         TerminalDraw.rect(g, x, y, 132, 46, 0xF0EFF1EF);
         TerminalDraw.outline(g, x, y, 132, 46, TerminalTheme.INK);
         TerminalDraw.rect(g, x, y, 132, 9, TerminalTheme.INK);
+        g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "SYSTEM / 系统状态", x + 4, y + 1.5f, 1.2f, TerminalTheme.PAPER);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "配置 ", x + 5, y + 11, 0f, TerminalTheme.INK);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, placed + "/8", x + 27, y + 11, 0f, TerminalTheme.COBALT);
+        // 网页实测：配置行 y+12；5/8 钴蓝起点 x+21.3；「· 扫描未执行」紧跟
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "配置 ", x + 5, y + 12, 0f, TerminalTheme.INK);
+        float cfgX = x + 5 + TerminalFonts.mixedWidth(Fam.MONO, 6f, "配置 ", 0f);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, placed + "/8", cfgX, y + 12, 0f, TerminalTheme.COBALT);
+        float cfgW = TerminalFonts.mixedWidth(Fam.MONO, 6f, placed + "/8", 0f);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, report == null ? " · 扫描未执行" : " · 已扫描",
-                x + 43, y + 11, 0f, TerminalTheme.INK);
+                cfgX + cfgW, y + 12, 0f, TerminalTheme.INK);
 
         float ox = menu.px * 1.5f, oy = menu.py * 1.5f;
         boolean goHover = isHover(x + 4 + ox, y + 19 + oy, 124, 12);
         if (goHover) TerminalDraw.rect(g, x + 4, y + 19, 124, 12, 0x123A5BC2);
+        // 网页 .cfg-go-label (x+6,y+21)、.cfg-go-ar 右内边距 2
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, placed >= 8 ? "开始扫描" : "完成配置",
-                x + 5, y + 20, 0f, TerminalTheme.COBALT);
-        TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 19, TerminalTheme.COBALT);
+                x + 6, y + 21, 0f, TerminalTheme.COBALT);
+        TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 20, TerminalTheme.COBALT);
         hit(x + 4 + ox, y + 19 + oy, 124, 12, placed >= 8 ? "开始扫描" : "完成配置",
                 () -> { if (placed >= 8) onClose(); else page = Page.OPTIONS; }, false);
 
         TerminalDraw.hline(g, x + 4, x + 128, y + 31, TerminalTheme.RULE);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "结构层数", x + 5, y + 34, 0f, TerminalTheme.INK_SOFT);
+        // 网页 .layer-open：结构层数(x+6,y+35)、读数(x+57,y+34) 8px、/ 648(x+85,y+35) 5.5px、› 右 2
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "结构层数", x + 6, y + 35, 0f, TerminalTheme.INK_SOFT);
         String read = String.format("%03d", repeat);
-        TerminalFonts.drawMixed(g, Fam.MONO, 8f, read, x + 66, y + 33, 0f, TerminalTheme.COBALT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, "/ 648", x + 94, y + 35, 0f, TerminalTheme.INK_FAINT);
-        TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 33, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 8f, read, x + 57, y + 34, 0f, TerminalTheme.COBALT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, "/ 648", x + 85, y + 35, 0f, TerminalTheme.INK_FAINT);
+        TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 34, TerminalTheme.COBALT);
         hit(x + 4 + ox, y + 31 + oy, 124, 13, "结构层数", () -> {
             layerDraft = Math.max(1, repeat);
             layerOpen = true;

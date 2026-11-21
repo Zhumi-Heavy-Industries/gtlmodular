@@ -184,9 +184,10 @@ public final class TerminalPlate {
         }
 
         // L11 描边数字 06
-        // 网页：盘外左下双描边 06，字号 260（≈70 设计像素），两遍都是钴蓝
-        outlineNumber(g, 90, 930, "06", 1.4f, cob(102));
-        outlineNumber(g, 80, 920, "06", 1.8f, cob(140));
+        // 网页：盘外左下双描边 06，字号 260（字形盒 70.2×70.5 设计像素），两遍都是钴蓝。
+        // 两遍实测盒：x=90/y=930 → (299.2,214.3)；x=80/y=920 → (296.5,211.6)
+        outlineNumber(g, 90, 930, cob(102));
+        outlineNumber(g, 80, 920, cob(140));
 
         // L12 NESW
         TerminalFonts.draw(g, Fam.SERIF, 4.4f, "N", sx(508), sy(250), paper(220));
@@ -332,38 +333,33 @@ public final class TerminalPlate {
     }
 
     /**
-     * 空心的描边 06：AWT 轮廓在实机出现采样异常，这里直接用矢量线稿画「0」「6」，
-     * 两层错位 2.7px 叠印，保证任何 GUI scale 下都是可读的空心字。
+     * 空心的描边 06：AWT 轮廓在实机出现采样异常，这里直接用矢量线稿画「0」「6」。
+     * 尺寸/位置按网页 SVG 的 getBBox 实测：字形盒 70.2×70.5 设计像素，单遍一层。
      */
-    private static void outlineNumber(GuiGraphics g, float x, float y, String s, float w, int color) {
-        float baseX = sx(x);
-        float baseY = sy(y);
-        drawHollow06(g, baseX, baseY, color);
+    private static void outlineNumber(GuiGraphics g, float x, float y, int color) {
+        // 字形盒左上角 = sx(x)+10.9 / sy(y)-62.8（由两遍实测盒反解，两遍一致）
+        drawHollow06(g, sx(x) + 10.9f, sy(y) - 62.8f, color);
     }
 
-    private static void drawHollow06(GuiGraphics g, float baseX, float baseY, int color) {
-        // 两层叠印：错位 2.7 设计像素，透明度由调用方颜色给出
-        for (int layer = 0; layer < 2; layer++) {
-            float ox = baseX + layer * 2.7f;
-            float oy = baseY + layer * 2.7f;
-            int c = layer == 0 ? cob(102) : cob(140);
-            // 0：椭圆环，中心 (baseX+18, baseY-32)
-            TerminalDraw.ellipseRing(g, ox + 18, oy - 32, 18, 31, 1.1f, c);
-            // 6：下方闭环 + 上方弯钩
-            float cx = ox + 52, cy = oy - 18;
-            TerminalDraw.ellipseRing(g, cx, cy, 16, 18, 1.1f, c);
-            float px = cx + 12, py = cy - 12;
-            float lx = cx - 12, ly = cy - 40;
-            float cxp = cx + 16, cyp = ly + 12;
-            float lastX = px, lastY = py;
-            for (int i = 1; i <= 12; i++) {
-                float u = i / 12f, v = 1f - u;
-                float nx = v * v * px + 2 * v * u * cxp + u * u * lx;
-                float ny = v * v * py + 2 * v * u * cyp + u * u * ly;
-                TerminalDraw.line(g, lastX, lastY, nx, ny, 1.1f, c);
-                lastX = nx;
-                lastY = ny;
-            }
+    /** 单遍空心 06，本地坐标盒固定 70×70。 */
+    private static void drawHollow06(GuiGraphics g, float bx, float by, int color) {
+        // 0：竖椭圆环（盒内 x1.5..33.5 / y5..69）
+        TerminalDraw.ellipseRing(g, bx + 17.5f, by + 37f, 16f, 32f, 1f, color);
+        // 6：下方闭环（盒内 x36..67.5 / y33..68.5）
+        TerminalDraw.ellipseRing(g, bx + 52f, by + 50.5f, 15.5f, 17.5f, 1f, color);
+        // 6：上方弯钩——从右上起笔，向左上兜回接闭环左上
+        float px = bx + 67f, py = by + 6.5f;
+        float c1x = bx + 45f, c1y = by - 1f;
+        float c2x = bx + 33f, c2y = by + 18f;
+        float lx = bx + 36.5f, ly = by + 38f;
+        float lastX = px, lastY = py;
+        for (int i = 1; i <= 14; i++) {
+            float u = i / 14f, v = 1f - u;
+            float nx = v * v * v * px + 3 * v * v * u * c1x + 3 * v * u * u * c2x + u * u * u * lx;
+            float ny = v * v * v * py + 3 * v * v * u * c1y + 3 * v * u * u * c2y + u * u * u * ly;
+            TerminalDraw.line(g, lastX, lastY, nx, ny, 1f, color);
+            lastX = nx;
+            lastY = ny;
         }
     }
 
