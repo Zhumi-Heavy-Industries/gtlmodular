@@ -435,12 +435,7 @@ public final class TerminalScreen extends Screen {
             g.pose().pushPose();
             try {
                 g.pose().translate(regX, transition.shiftY(this.seconds, 0) + regY, 0);
-                TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
-                // 纸底必须立刻落地：drawManaged 会把块内所有绘制攒到 block 结束统一出队，
-                // 而 guiTextured(文字) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，
-                // 整张纸就会把页框文字整组盖掉（矢量还在，因为它和纸底在同一条 gui 缓冲里、
-                // 顶点排在纸底之后）。这里先刷一次，纸底独立成批，文字才能压在上面。
-                g.flush();
+                drawPaper(g);
                 TerminalFrame.draw(g, page);
                 navHits();
             } finally {
@@ -499,14 +494,29 @@ public final class TerminalScreen extends Screen {
 
     /** 画一整页（纸底 + 页框 + 内容），不带任何进场位移。交叉淡化时要画旧页。 */
     private void drawPageBody(GuiGraphics g, Page p) {
-        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
-        g.flush(); // 同上：纸底单独落地，避免与页框/正文文字同批出队时反向覆盖
+        drawPaper(g);
         TerminalFrame.draw(g, p);
         switch (p) {
             case MAIN -> drawMain(g);
             case OPTIONS -> TerminalOptions.draw(g, this);
             case REPORT -> TerminalReport.draw(g, this);
         }
+    }
+
+    /**
+     * 纸底 + 纸面颗粒，两者都必须先于页框/正文落地。
+     *
+     * <p>先刷一次的原因：drawManaged 会把块内所有绘制攒到 block 结束统一出队，而
+     * guiTextured(文字/贴图) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，整张纸就会把
+     * 页框文字整组盖掉（矢量还在，因为它和纸底在同一条 gui 缓冲里、顶点排在纸底之后）。</p>
+     *
+     * <p>颗粒（guiTextured）画在纸色块之后、页框之前：与网页 DOM 里 {@code .grain} 位于内容
+     * 之下一致，面板/文字压在上面不被噪点干扰。</p>
+     */
+    private static void drawPaper(GuiGraphics g) {
+        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+        g.flush();
+        TerminalGrain.draw(g);
     }
 
     /** 用纸色以 coverage 不透明度盖住整页：等效于把整页 opacity 设为 (1-coverage)。 */
