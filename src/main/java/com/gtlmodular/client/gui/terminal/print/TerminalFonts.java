@@ -134,14 +134,15 @@ public final class TerminalFonts {
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         if (text.isEmpty()) return;
-        // 主墨色 0x1F2427：MC 字体本来就渲染成近黑，直接用，省掉大量 AWT 小贴图
-        if ((color & 0xFFFFFF) == 0x1F2427) {
-            rawDrawMc(g, of(fam, size), text, x, y, color);
-            return;
-        }
+        // ★ 不再把墨色单独踢到 MC 字体路径。
+        //
+        // 旧逻辑是「0x1F2427 走 MC 字体省贴图」，但 MC 的 drawString 与 AWT 烘焙贴图
+        // 的垂直基准不同，同一条基线上会得出不同的字形位置：于是「配置 [0/8]」
+        // 「[00] 主界面」「复制全部」这些同行里，墨色字与钴蓝/灰字总是错开几个像素。
+        // 现在统一走 AWT（同一份 ascent+descent 贴图、同一个 y = 字形顶），从根上消除错位。
         if (drawAwt(g, fam, size, text, x, y, color)) return;
-        // 兜底：走原版 Font（颜色可能仍偏黑，但至少不丢字）
-        rawDrawMc(g, of(fam, size), text, x, y, color);
+        // 兜底：AWT 不可用时才走原版 Font
+        rawDrawMc(g, of(fam, size), text, x, y, size, color);
     }
 
     /** AWT 路径是否已经失败（用于黑底按钮的兜底配色）。 */
@@ -327,8 +328,14 @@ public final class TerminalFonts {
         }
     }
 
-    /** 原反射路径，仅在 AWT 不可用时兜底。 */
-    private static void rawDrawMc(GuiGraphics g, Font font, String text, float x, float y, int color) {
+    /**
+     * 原反射路径：仅在 AWT 不可用时兜底。
+     *
+     * <p>不再做基线补偿。{@code drawString} 的 {@code y} 是基线，字形本来就画在基线以上，
+     * 而本项目语义是「{@code y} = 字形顶」；两条路径不可能完全一致，
+     * 所以正常渲染一律走 AWT，这里只是「字不能丢」的最后一道防线。</p>
+     */
+    private static void rawDrawMc(GuiGraphics g, Font font, String text, float x, float y, float size, int color) {
         if (text.isEmpty()) return;
         float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
         if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
@@ -483,7 +490,7 @@ public final class TerminalFonts {
     public static void drawInkMc(GuiGraphics g, Fam fam, float size, String text,
                                  float x, float y, int color) {
         Font font = of(fam, size);
-        if (font != null) rawDrawMc(g, font, text, x, y, color);
+        if (font != null) rawDrawMc(g, font, text, x, y, size, color);
     }
 
     public static float width(Fam fam, float size, String text) {
@@ -496,14 +503,21 @@ public final class TerminalFonts {
     public static float trackedWidth(Fam fam, float size, String text, float tracking) {
         Font font = of(fam, size);
         if (font == null) return 0f;
+        Font cn = null;
         float w = 0f;
         int i = 0;
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             int n = Character.charCount(cp);
             String one = new String(Character.toChars(cp));
-            float aw = awtWidth(fam, size, one);
-            w += (aw >= 0 ? aw : advance(font, one)) + tracking;
+            // 与 drawTracked 保持一致：CJK 字符绘制时会被换成 CN 字族，
+            // 量宽必须用同一字族；否则中文标签的底色条会比实际文字窄一半
+            // （实机截图里「显示方块」蓝底只盖住了「显示方」）。
+            Fam use = isCjk(cp) ? Fam.CN : fam;
+            if (use == Fam.CN && cn == null) cn = of(Fam.CN, size);
+            Font f = (use == Fam.CN && cn != null) ? cn : font;
+            float aw = awtWidth(use, size, one);
+            w += (aw >= 0 ? aw : advance(f, one)) + tracking;
             i += n;
         }
         return w - tracking;

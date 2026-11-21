@@ -88,13 +88,19 @@ public final class ChemicalReactorMirror {
     private ChemicalReactorMirror() {
     }
 
-    /** 在 {@code @Mod} 构造里调用一次（Forge 事件总线）。 */
+    /** 在 {@code @Mod} 构造里调用一次（Forge 事件总线）。
+     *
+     * <p><b>约束</b>：构造阶段<b>绝不能</b>碰 {@link GTRecipeTypes} 的任何字段——
+     * 那会提前触发 {@code GTRecipeTypes.<clinit>}，而此时 {@code gtceu:chance_logic}
+     * 注册表已经冻结，直接 {@code IllegalStateException} 把整个 mod 拖崩
+     * （0.3.478 首次启动的 {@code ExceptionInInitializerError}）。
+     * 所以这里只挂监听器 + 打一行不带 GT 类型的日志，真正解析类型放到 server 启动后。</p>
+     */
     public static void register() {
         MinecraftForge.EVENT_BUS.addListener(ChemicalReactorMirror::onServerStarted);
-        GTLModular.LOGGER.info("[gtlmodular] 大型化学反应釜兼容镜像已挂载：{} ← {}"
-                        + "（服务端启动完成后全量复制；已有同产物 large 配方的跳过）",
-                GTRecipeTypes.LARGE_CHEMICAL_RECIPES.registryName,
-                GTRecipeTypes.CHEMICAL_RECIPES.registryName);
+        GTLModular.LOGGER.info("[gtlmodular] 大型化学反应釜兼容镜像已挂载"
+                + "（服务端启动完成后把 chemical_reactor 全量复制到 large_chemical_reactor；"
+                + "已有同产物 large 配方的跳过）");
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
@@ -111,8 +117,11 @@ public final class ChemicalReactorMirror {
         if (server == null) {
             return;
         }
+        // 注意：GTRecipeTypes 只能在这里（server 启动后）解析，构造阶段解析会崩，见 register() 注释。
         GTRecipeType source = GTRecipeTypes.CHEMICAL_RECIPES;
         GTRecipeType target = GTRecipeTypes.LARGE_CHEMICAL_RECIPES;
+        GTLModular.LOGGER.info("[gtlmodular] 大型化学反应釜兼容镜像：开始 {} → {}",
+                source.registryName, target.registryName);
         RecipeManager manager = server.getRecipeManager();
         if (manager == null) {
             GTLModular.LOGGER.warn("[gtlmodular] 大型化学反应釜兼容镜像：拿不到配方管理器 ⇒ 跳过");

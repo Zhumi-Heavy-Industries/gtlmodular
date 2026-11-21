@@ -86,6 +86,10 @@ public final class TerminalScreen extends Screen {
     private boolean reportDefaultApplied;
     private Page drawnPage;
     private long pageSwitchAt;
+    private Page prevDrawnPage = Page.MAIN;
+    /** 网页 vt-reg 抖动：最后一次点击的目标与时刻。 */
+    private float regTargetX, regTargetY, regAt = -100f;
+    private final TerminalTransition transition = new TerminalTransition();
     private @Nullable ShanhaiTerminalReport report;
 
     public TerminalScreen(InteractionHand hand, boolean preview) {
@@ -316,10 +320,13 @@ public final class TerminalScreen extends Screen {
         if (page != drawnPage) {
             drawnPage = page;
             pageSwitchAt = renderStart;
+            // 网页 go(n)：按目标页序号选变体（kinds[n % 3]），并重置 820ms 忙碌窗口；
+            // 同时记下旧页，交叉淡化时要把旧页也画出来。
+            transition.begin(this.seconds, page.ordinal(), prevDrawnPage.ordinal());
+            prevDrawnPage = page;
         }
-        float transition = Math.min(1f, (renderStart - pageSwitchAt) / 550_000_000f);
-        float transitionEase = 1f - (1f - transition) * (1f - transition) * (1f - transition);
-        float pageShift = (1f - transitionEase) * 5f;
+        // 内容进场：网页 .entering .sheet>* 的 fx-in（0.55s 从下方 5px 淡入，元素错峰）
+        float pageShift = transition.shiftY(this.seconds, 0);
         this.mouseX = (mouseX - originX) / scale;
         this.mouseY = (mouseY - originY) / scale;
         hits.clear();
@@ -337,17 +344,52 @@ public final class TerminalScreen extends Screen {
         try {
         g.pose().translate(originX, originY, 0);
         g.pose().scale(scale, scale, 1f);
-        // 三个独立 drawManaged，而不是一个批次里反复 flush。
-        // 1.20.1 的 BufferSource 按 RenderType 创建顺序出队；同一批次里先建 text 缓冲、后建 gui 缓冲，
-        // 会让后画的色块盖住先建的文字（CONFIG/BIND/SYSTEM 标题发黑就是这个原因）。
+
+        // ── 交叉淡化（网页 .sw-slot：旧页 leaving 淡出 + 新页 active 淡入，0.5s 内真重叠）
+        // MC 的 GuiGraphics 没有整页 alpha。等效做法：
+        //   1) 画旧页 → 用纸色以 fadeIn 盖一遍（旧页显得 1-fadeIn）
+        //   2) 把新页画到另一层 → 再用纸色以 1-fadeIn 盖一遍（新页显得 fadeIn）
+        // 已验证：纸上看到的颜色 = ink*a + paper*(1-a)，与网页 slot opacity 逐点一致。
+        // 注意新页的纸底不能用不透明 PAPER，否则会把旧页死死盖住，所以它一样要洗。
+        boolean crossfading = transition.crossfading(this.seconds);
+        int prevPage = transition.previousPage();
+        float fadeIn = transition.crossfade(this.seconds);
+        if (crossfading && prevPage >= 0 && prevPage != page.ordinal()) {
+            final Page oldPage = Page.values()[prevPage];
+            // 旧页完整画一遍，再用纸色盖掉 fadeIn 那么多 → 剩余 (1-fadeIn) 可见
+            g.drawManaged(() -> {
+                g.pose().pushPose();
+                try {
+                    drawPageBody(g, oldPage);
+                } finally {
+                    g.pose().popPose();
+                }
+            });
+            g.drawManaged(() -> washPage(g, fadeIn));
+            // 旧页的洗白必须落地，否则接着画的新页会与它同批排序混乱
+            g.flush();
+        }
+
+        // 网页 vt-reg：点击后内容整体抖 0.28s（25%→(1,-1)，55%→(-1,1)，100%→0）
+        float regX = regOffsetX();
+        float regY = regOffsetY();
+
+        // 新页：纸底 + 页框先落（与网页 .grain/.crop 在前一致），再画内容
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                // 网页 .entering .sheet>*：0.55s 内从下方 5px 淡入
-                g.pose().translate(0, pageShift, 0);
+                g.pose().translate(regX, transition.shiftY(this.seconds, 0) + regY, 0);
                 TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
                 TerminalFrame.draw(g, page);
                 navHits();
+            } finally {
+                g.pose().popPose();
+            }
+        });
+        g.drawManaged(() -> {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(regX, transition.shiftY(this.seconds, 3) + regY, 0);
                 switch (page) {
                     case MAIN -> drawMain(g);
                     case OPTIONS -> TerminalOptions.draw(g, this);
@@ -357,10 +399,17 @@ public final class TerminalScreen extends Screen {
                 g.pose().popPose();
             }
         });
-        if (transition < 0.999f) {
-            int veil = (int) ((1f - transitionEase) * 150f);
-            g.drawManaged(() -> TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H,
-                    (veil << 24) | 0xEFF1EF));
+        if (crossfading) {
+            // 新页也从 fadeIn 开始（等效于 .sw-slot.active 从 0 淡到 1）。
+            // 必须先 flush，否则新页的纸底/色块与洗白层可能按 RenderType 重新排序，
+            // 出现「先洗后画」导致新页完全不淡入。
+            g.flush();
+            g.drawManaged(() -> washPage(g, 1f - fadeIn));
+        }
+        if (transition.active(this.seconds)) {
+            // 删除原来的纸白遮罩（网页 v32 原话：那层 opacity .92 的全屏遮罩是「瞬间黑屏」真凶）。
+            // 现在换成网页同款四层：光幕 .12 峰值 + 构造标记三层闪切 + 变体（scan/mosaic/wipe）。
+            g.drawManaged(() -> transition.draw(g, this.seconds));
         }
         overlayHitStart = -1;
         if (layerOpen || tierOpen) {
@@ -387,14 +436,34 @@ public final class TerminalScreen extends Screen {
         }
     }
 
+    /** 画一整页（纸底 + 页框 + 内容），不带任何进场位移。交叉淡化时要画旧页。 */
+    private void drawPageBody(GuiGraphics g, Page p) {
+        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+        TerminalFrame.draw(g, p);
+        switch (p) {
+            case MAIN -> drawMain(g);
+            case OPTIONS -> TerminalOptions.draw(g, this);
+            case REPORT -> TerminalReport.draw(g, this);
+        }
+    }
+
+    /** 用纸色以 coverage 不透明度盖住整页：等效于把整页 opacity 设为 (1-coverage)。 */
+    private static void washPage(GuiGraphics g, float coverage) {
+        if (coverage <= 0.002f) return;
+        int a = Math.round(255f * Math.max(0f, Math.min(1f, coverage)));
+        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, (a << 24) | 0xEFF1EF);
+    }
+
     private void navHits() {
         float x = 36;
         for (Page p : Page.values()) {
             float numW = TerminalFonts.mixedWidth(Fam.MONO, 6f, p.num, 0f);
             float nameW = TerminalFonts.mixedWidth(Fam.MONO, 7f, p.cn, 1.2f);
             final Page target = p;
-            // 与 TerminalFrame.navTabs 的下划线（322, h2）和文字（323..330）对齐
-            hit(x - 4, 321, numW + 5 + nameW + 10, 12, p.cn, () -> {
+            // 命中区盖住「下划线 + 编号 + 名称」整块（y318..334），
+            // 与准星吸附框（目标外扩 4px）一致。原为 y321 h12，鼠标落在页签上方
+            // 几像素就会看到准星已吸附、点下去却落空（实机反馈「选中不到页面切换」）。
+            hit(x - 4, 318, numW + 5 + nameW + 14, 16, p.cn, () -> {
                 this.page = target;
                 this.tierOpen = false;
                 this.layerOpen = false;
@@ -466,7 +535,7 @@ public final class TerminalScreen extends Screen {
         echo(g, 36, 179);
         bind(g, 36, 190, "BIND 01 · AE NETWORK", "01", boundAe,
                 "AE 网络 · " + (boundAe ? "已绑定" : "未绑定"),
-                boundAe ? boundAeText : "点击绑定 / 打开子系统　›", false, null);
+                boundAe ? boundAeText : "点击绑定 / 打开子系统　›", false, null, true);
         // v32 源码 BIND 02 不是 .bind.on，表头恒为 INK 黑；状态文字仍按真实绑定
         bind(g, 36, 232, "BIND 02 · ECO SUBSYSTEM", "02", false,
                 "ECO 子系统 · " + (boundEco ? "已绑定" : "未绑定"),
@@ -483,11 +552,7 @@ public final class TerminalScreen extends Screen {
         if (!tierOpen) {
             g.pose().pushPose();
             try {
-                // v19-v22 分层入场：盘面从右侧 30*d 滑入并缓出
-                float enter = Math.min(1f, seconds / 0.9f);
-                float ease = 1f - (1f - enter) * (1f - enter) * (1f - enter);
-                float slide = (1f - ease) * 36f;
-                g.pose().translate(menu.px + slide, menu.py, 0);
+                g.pose().translate(menu.px, menu.py, 0);
                 TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
             } finally {
                 g.pose().popPose();
@@ -530,6 +595,14 @@ public final class TerminalScreen extends Screen {
 
     private void bind(GuiGraphics g, float x, float y, String title, String num, boolean on,
                       String status, String coord, boolean action, Runnable click) {
+        bind(g, x, y, title, num, on, status, coord, action, click, false);
+    }
+
+    /**
+     * @param pulseOn 网页 BIND 01 的菱形带 {@code .dot-pulse}（3s opacity 1↔.4），BIND 02 不带
+     */
+    private void bind(GuiGraphics g, float x, float y, String title, String num, boolean on,
+                      String status, String coord, boolean action, Runnable click, boolean pulseOn) {
         boolean hover = action && isHover(x, y, 230, 36);
         TerminalDraw.rect(g, x, y, 230, 36, 0xE6EFF1EF);
         TerminalDraw.outline(g, x, y, 230, 36, hover ? TerminalTheme.COBALT : 0x801F2427);
@@ -542,8 +615,19 @@ public final class TerminalScreen extends Screen {
         // 网页 .dot{left:5px;top:14px;5×5} 旋转 45° 后包围盒 (x+5..x+12, y+14..y+21)，中心 (x+8.5,y+17.5)
         g.pose().translate(x + 8.5f, y + 17.5f, 0);
         g.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(45f));
-        if (on) TerminalDraw.rect(g, -2.5f, -2.5f, 5, 5, TerminalTheme.COBALT);
-        else TerminalDraw.outline(g, -2.5f, -2.5f, 5, 5, TerminalTheme.INK);
+        if (on) {
+            // 网页 BIND 01 的 .dot 带 .dot-pulse：3s ease-in-out infinite，opacity 1↔.4
+            float pulse = 1f;
+            if (pulseOn) {
+                float cyc = (seconds % 3f) / 3f;
+                // 0%,100%→1；50%→.4，ease-in-out 近似为余弦
+                pulse = 0.7f + 0.3f * (float) Math.cos(cyc * Math.PI * 2.0);
+            }
+            int a = Math.round(255f * Math.max(0.4f, Math.min(1f, pulse)));
+            TerminalDraw.rect(g, -2.5f, -2.5f, 5, 5, (a << 24) | 0x3A5BC2);
+        } else {
+            TerminalDraw.outline(g, -2.5f, -2.5f, 5, 5, TerminalTheme.INK);
+        }
         g.pose().popPose();
         // 网页：.bind .st{top:12px} 盒 y+12.5；未绑定色是 INK_SOFT(85,96,95)，已绑定是 INK。
         // 之前一律用 INK 导致「未绑定」显得过重（与网页对照不一致）。
@@ -633,11 +717,44 @@ public final class TerminalScreen extends Screen {
             Hit h = hits.get(i);
             if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
                 reticle.click(x, y, h.label, h.ink);
+                // 网页 .item.reg / vt-reg：点击后该元素抖动 0.28s（套印错位感）
+                regTargetX = h.x;
+                regTargetY = h.y;
+                regAt = seconds;
                 h.action.run();
                 return true;
             }
         }
         return super.mouseClicked(mx, my, button);
+    }
+
+    /** 网页 {@code @keyframes vt-reg} 的抖动偏移：25%→(1,-1) 55%→(-1,1) 100%→(0,0)，总 0.28s。 */
+    public float regOffsetX() {
+        return regOffset(false);
+    }
+
+    public float regOffsetY() {
+        return regOffset(true);
+    }
+
+    private float regOffset(boolean vertical) {
+        float age = seconds - regAt;
+        if (age < 0f || age > 0.28f) return 0f;
+        float u = age / 0.28f;
+        float vx, vy;
+        if (u < 0.25f) {
+            float k = u / 0.25f;
+            vx = k; vy = -k;
+        } else if (u < 0.55f) {
+            float k = (u - 0.25f) / 0.30f;
+            vx = 1f - 2f * k;
+            vy = -1f + 2f * k;
+        } else {
+            float k = (u - 0.55f) / 0.45f;
+            vx = -1f + k;
+            vy = 1f - k;
+        }
+        return vertical ? vy : vx;
     }
 
     @Override
@@ -775,25 +892,46 @@ public final class TerminalScreen extends Screen {
     }
 
     private boolean rowVisible(ReportRow row) {
-        return switch (filter) {
-            case 1 -> "可放置".equals(row.category());
-            case 2 -> "冲突".equals(row.category());
-            case 3 -> "缺失".equals(row.category());
-            default -> true;
-        };
+        if (filter <= 0) return true;
+        java.util.List<String> cats = distinctCategories();
+        int i = filter - 1;
+        return i < cats.size() && cats.get(i).equals(row.category());
     }
 
+    /**
+     * 真实报告的分类标签是仓室名（输入仓室 / 其他仓室 …），不是
+     * 「可放置 / 冲突 / 缺失」——那三个是网页原型的假数据。
+     *
+     * <p>之前筛选器直接拿 {"可放置".equals(row.category())} 比，永远不成立，
+     * 一按整页就空白。现在：0 = 全部；1..N = 按真实出现的分类逐个筛（标签取该分类名）。
+     */
     public String filterName() {
-        return switch (filter) {
-            case 1 -> "可放置";
-            case 2 -> "冲突";
-            case 3 -> "缺失";
-            default -> "全部";
-        };
+        if (filter <= 0) return "全部";
+        java.util.List<String> cats = distinctCategories();
+        int i = filter - 1;
+        return i < cats.size() ? cats.get(i) : "全部";
+    }
+
+    /** 报告里实际出现过的分类，按首次出现顺序去重。 */
+    public java.util.List<String> distinctCategories() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (ReportRow row : reportRows) {
+            if (row.category() != null && !out.contains(row.category())) out.add(row.category());
+        }
+        return out;
+    }
+
+    /** 某个分类在报告里的行数（不是方块总数，与摘要行「分类 数量」一致）。 */
+    public int countOf(String category) {
+        int n = 0;
+        for (ReportRow row : reportRows) {
+            if (category != null && category.equals(row.category())) n++;
+        }
+        return n;
     }
 
     public void cycleFilter() {
-        filter = (filter + 1) % 4;
+        filter = (filter + 1) % (distinctCategories().size() + 1);
         reportScroll = Math.min(reportScroll, maxScroll());
     }
 

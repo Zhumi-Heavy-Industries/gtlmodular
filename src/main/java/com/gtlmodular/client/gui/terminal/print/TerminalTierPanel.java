@@ -113,12 +113,14 @@ public final class TerminalTierPanel {
         // 行距下限 18（图标固定 16×16，再小会串行），并用 scissor 兜底防止溢出到页脚。
         int rowsTotal = 0;
         for (String key : KEYS) rowsTotal += Math.max(1, (size(key) + 5) / 6);
-        float top = 38f;
+        // 网页实测：面板 (20,14)，分组标题 (33, 39/78/117/200)，首格 (33,51)。
+        // 分组标题盒高 7.2，标题→格子的间距 12；格子高 18、列距 4。
+        float top = 39f;
         float bottom = 14f + 284f - 26f;
         // 底部留 8px 给固定的说明行，避免压缩行距后最后一行文字贴到说明上
         float avail = bottom - top - KEYS.length * 12f - (KEYS.length - 1) * 5f - 8f;
-        float gy = Math.max(18f, Math.min(GY, avail / Math.max(1, rowsTotal)));
-        float ch = gy - 3f;
+        float gy = Math.max(20f, Math.min(GY, avail / Math.max(1, rowsTotal)));
+        float ch = 18f;
 
         g.enableScissor(Math.round(s.originX + 22 * s.scale), Math.round(s.originY + 27 * s.scale),
                 Math.round(s.originX + 538 * s.scale), Math.round(s.originY + 296 * s.scale));
@@ -129,11 +131,11 @@ public final class TerminalTierPanel {
             for (String key : KEYS) {
                 int n = size(key);
                 TerminalFonts.drawMixed(g, Fam.MONO, 5f, CN[index(key)] + " · " + key.toUpperCase(),
-                        32, y, 1.2f, TerminalTheme.INK_FAINT);
+                        33, y, 1.2f, TerminalTheme.INK_FAINT);
                 y += 12;
                 Block[] blocks = blocks(key);
                 for (int j = 0; j < n; j++) {
-                    float cx = 32 + (j % COLS) * (CW + GX);
+                    float cx = 33 + (j % COLS) * (CW + GX);
                     float cy = y + (j / COLS) * gy;
                     int rawIdx = rawIndex(key, j);
                     boolean on = s.family.equals(key) && s.tierIndex == rawIdx;
@@ -150,7 +152,9 @@ public final class TerminalTierPanel {
                     } else {
                         TerminalDraw.rect(g, cx + 4, cy + 1, 14, 14, on ? TerminalTheme.COBALT : 0x668B9795);
                     }
-                    TerminalFonts.drawMixed(g, Fam.CN, 6f, label, textX, cy + 5, 0f,
+                    // 文字按实际格高居中：ch 会因档位多而被压缩（gy 下限 18 → ch 15），
+                    // 固定 +5 在压缩后就会偏上。
+                    TerminalFonts.drawMixed(g, Fam.CN, 6f, label, textX, cy + Math.max(2f, (ch - 6f) / 2f), 0f,
                             on ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
 
                     final String fk = key;

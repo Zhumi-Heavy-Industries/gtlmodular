@@ -19,7 +19,7 @@ public final class TerminalLayerPopup {
         TerminalDraw.rect(g, x, y, w, 9, TerminalTheme.INK);
         g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "STRUCTURE / 结构层数", x + 5, y + 2, 1.2f, 0xFFFFFFFF);
-        TerminalFonts.draw(g, Fam.MONO, 7f, "×", x + 180, y + 1, TerminalTheme.PAPER);
+        TerminalFonts.draw(g, Fam.MONO, 7f, "×", x + 185, y + 1, TerminalTheme.PAPER);
         s.hit(x + 178, y, 16, 10, "关闭", s::closeLayer, false);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "默认 001 · 上限 648 · 步进 1",
@@ -59,6 +59,10 @@ public final class TerminalLayerPopup {
         s.hit(x + 96, y + 122, 42, 18, "取消", s::closeLayer, false);
 
         TerminalDraw.rect(g, x + 144, y + 122, 42, 18, TerminalTheme.INK);
+        // 黑底按钮必须先 flush 再画纸白字：AWT 文字走 guiTextured，与 gui 填充不是同一个
+        // RenderType，不 flush 时黑底可能后于文字出队，把「应用」盖掉（实机截图里这个按钮
+        // 就是纯黑一块、字看不见）。TerminalReport.button() 里已有同样的防护。
+        g.flush();
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, "应用", x + 165, y + 127, TerminalTheme.PAPER);
         s.hit(x + 144, y + 122, 42, 18, "应用", s::applyLayer, false);
     }

@@ -33,15 +33,18 @@ public final class TerminalReport {
 
         TerminalDraw.hline(g, 20, 540, 54, TerminalTheme.RULE);
 
-        // 摘要
-        String[] parts = {"可放置", "冲突", "缺失"};
-        int[] vals = {s.placeCount, s.conflictCount, s.missingCount};
+        // 摘要：用真实分类计数（之前写死的「可放置/冲突/缺失」在真实报告里永远后两个为 0）
         float x = 20;
-        for (int i = 0; i < 3; i++) {
-            TerminalFonts.drawMixed(g, Fam.MONO, 7f, parts[i] + " ", x, 61, 0, TerminalTheme.INK_SOFT);
-            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, parts[i] + " ", 0);
-            TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, String.valueOf(vals[i]), x, 61, 0, TerminalTheme.INK);
-            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, String.valueOf(vals[i]), 0) + 10;
+        java.util.List<String> cats = s.distinctCategories();
+        int shownCats = Math.min(cats.size(), 3);
+        for (int i = 0; i < shownCats; i++) {
+            String cat = cats.get(i);
+            String label = cat + " ";
+            TerminalFonts.drawMixed(g, Fam.MONO, 7f, label, x, 61, 0, TerminalTheme.INK_SOFT);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, label, 0);
+            String v = String.valueOf(s.countOf(cat));
+            TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, v, x, 61, 0, TerminalTheme.INK);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, v, 0) + 10;
         }
         long ms = s.scanMs();
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, "耗时 " + (ms > 0 ? ms + " ms" : "—"),
@@ -102,12 +105,12 @@ public final class TerminalReport {
     }
 
     private static boolean matchesFilter(TerminalScreen s, TerminalScreen.ReportRow row) {
-        return switch (s.filter) {
-            case 1 -> "可放置".equals(row.category());
-            case 2 -> "冲突".equals(row.category());
-            case 3 -> "缺失".equals(row.category());
-            default -> true;
-        };
+        // 与 TerminalScreen.rowVisible 保持同一套口径：按报告里实际出现的分类去筛，
+        // 不再拿「可放置 / 冲突 / 缺失」这三个原型假标签硬比（那样一筛就全空）。
+        if (s.filter <= 0) return true;
+        java.util.List<String> cats = s.distinctCategories();
+        int i = s.filter - 1;
+        return i < cats.size() && cats.get(i).equals(row.category());
     }
 
     private static void drawRow(GuiGraphics g, TerminalScreen s, TerminalScreen.ReportRow row,
@@ -115,13 +118,15 @@ public final class TerminalReport {
         TerminalDraw.hline(g, 20, 540, y + 19, TerminalTheme.RULE_SOFT);
         TerminalDraw.rect(g, 20, y + 5, 2, 11, row.color());
 
-        // 网页实测（相对行顶）：类 x26/y+0 6.5px；材料 x68/y-1 8px + 字距.8；数量右对齐 464/y+0；坐标 x474/y+1
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, row.category(), 26, y, 0f, TerminalTheme.INK_SOFT);
-        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(), 68, y - 1, 0.8f, TerminalTheme.INK);
-        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y, TerminalTheme.INK);
+        // 相对行顶：类 x26/y+0 6.5px；材料 x68/y+1 8px + 字距.8；数量右对齐 464/y+1；坐标 x474/y+2
+        // （materials 原来用 y-1，会把中文顶到分割线上；行高 21、分隔线在 y+19，
+        //   中文 8px 从 y+1 开始才居中）
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, row.category(), 26, y + 1, 0f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(), 68, y + 1, 0.8f, TerminalTheme.INK);
+        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 1, TerminalTheme.INK);
         // 网页 rep-coord：展开时显示第一条坐标，折叠显示「—」
         String coord = open && !row.coords().isEmpty() ? fmt(row.coords().get(0)) : "—";
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 1, 0.4f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 2, 0.4f, TerminalTheme.INK_SOFT);
 
         // 网页 .rep-tog 在 left526，而 .rep-list 只有 520 宽（overflow:hidden），实测被裁掉不可见。
         // 这里不画 +/−，保持与网页一致；整行仍可点。
@@ -167,7 +172,9 @@ public final class TerminalReport {
             // 否则部分批次顺序会把黑底排在文字之后，字就被盖住。
             g.flush();
         }
-        int c = fill ? (fallbackInk ? TerminalTheme.INK : textColor) : TerminalTheme.INK;
+        // 填充按钮的文字必须用纸白：调用方传的 textColor 对线框按钮没意义，
+        // 如果照搬就会变成「黑底 + 黑字」（实机截图「显示方块」按下后整块全黑）。
+        int c = fill ? (fallbackInk ? TerminalTheme.INK : TerminalTheme.PAPER) : TerminalTheme.INK;
         if (icon > 0) icon(g, icon, x + 7, y + 4, c);
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f + (icon > 0 ? 4 : 0), y + 4, c);
         s.hit(x, y, w, 16, label, action, false);
