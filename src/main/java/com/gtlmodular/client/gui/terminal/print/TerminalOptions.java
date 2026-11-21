@@ -276,7 +276,7 @@ public final class TerminalOptions {
 
     private static void panel(GuiGraphics g, float x, float y, float w, float h) {
         TerminalDraw.rect(g, x + 1, y + 1, w, h, 0x241F2427);
-        TerminalDraw.rect(g, x, y, w, h, 0xF0EFF1EF);
+        TerminalDraw.rect(g, x, y, w, h, 0xF0F4F5F3); // 网页 #F4F5F3
         TerminalDraw.outline(g, x, y, w, h, 0x801F2427);
     }
 

@@ -96,8 +96,8 @@ public final class TerminalPlate {
             leaf(g, 700, 300, 260, 18);
             leaf(g, 500, 800, 340, 22);
 
-            // L1 S 形扫掠笔刷
-            sweepBand(g, 40, 860, 980, 260, 70, 150, 0.82f, cob(26));
+            // L1 S 形扫掠笔刷（网页 _sweep_brush(...,70,150,.42) opacity .1）
+            sweepBand(g, 40, 860, 980, 260, 70, 150, 0.42f, cob(26));
         }
 // L2 外圈
         float aL1 = enter(g, t, 0.3f);
@@ -106,12 +106,13 @@ public final class TerminalPlate {
             try {
             TerminalDraw.ring(g, sx(CX), sy(CY), sr(360), 1f, ink(66));
             TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1f, ink(56));
-            // L2 放射线 72 根（每 5°）
+            // L2 放射线 72 根（每 5°）；网页 r1 = 300 if i%6 else 296，opacity .3
             for (int i = 0; i < 72; i++) {
                 double a = Math.toRadians(i * 5);
-                TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
+                float r1 = (i % 6 == 0) ? 300f : 296f;
+                TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(r1), sy(CY) + (float) Math.sin(a) * sr(r1),
                         sx(CX) + (float) Math.cos(a) * sr(520), sy(CY) + (float) Math.sin(a) * sr(520),
-                        1f, ink(54));
+                        1f, ink(77));
             }
 
                     } finally { g.pose().popPose(); }
@@ -121,17 +122,21 @@ public final class TerminalPlate {
         if (aL2 >= 0f) {
             g.pose().pushPose();
             try {
+            // 网页 L3：沿单角 a=i·τ/40+(i%3)·.02 的细长条（不是 4° 宽扇形）
             for (int i = 0; i < 40; i++) {
-                double a0 = Math.toRadians(i * 9 + 1.5);
-                double a1 = Math.toRadians(i * 9 + 5.5);
+                double a = i * (2.0 * Math.PI / 40) + (i % 3) * 0.02;
+                float rIn = 262 + (i % 4) * 6;
                 float rOut = 320 + (i % 5) * 38;
+                float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+                float px = -sa, py = ca; // 垂直方向（网页 pp=a+π/2）
+                float w = 2 + (i % 3);
                 float[] pts = {
-                        sx(CX) + (float) Math.cos(a0) * sr(262), sy(CY) + (float) Math.sin(a0) * sr(262),
-                        sx(CX) + (float) Math.cos(a0) * sr(rOut), sy(CY) + (float) Math.sin(a0) * sr(rOut),
-                        sx(CX) + (float) Math.cos(a1) * sr(rOut), sy(CY) + (float) Math.sin(a1) * sr(rOut),
-                        sx(CX) + (float) Math.cos(a1) * sr(262), sy(CY) + (float) Math.sin(a1) * sr(262),
+                        sx(CX) + ca * sr(rIn),      sy(CY) + sa * sr(rIn),
+                        sx(CX) + ca * sr(rOut),     sy(CY) + sa * sr(rOut),
+                        sx(CX) + ca * sr(rOut) + px * sr(w), sy(CY) + sa * sr(rOut) + py * sr(w),
+                        sx(CX) + ca * sr(rIn) + px * sr(w),  sy(CY) + sa * sr(rIn) + py * sr(w)
                 };
-                TerminalDraw.polygon(g, pts, ink(40 + (i % 4) * 10));
+                TerminalDraw.polygon(g, pts, ink(Math.round((0.25f + (i % 4) * 0.1f) * 255f)));
             }
 
             // L3 描边环 / 虚线环 / 刻度
@@ -146,11 +151,11 @@ public final class TerminalPlate {
                     (float) Math.toDegrees(2f / 268f), (float) Math.toDegrees(6f / 268f), ink(110));
             for (int i = 0; i < 96; i++) {
                 double a = Math.toRadians(i * 3.75);
-                boolean major = i % 12 == 0;
+                boolean major = i % 8 == 0; // 网页 r2 = 300 + (16 if i%8==0 else 8)，12 根长刻度
                 float len = sr(major ? 16 : 8);
                 TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
                         sx(CX) + (float) Math.cos(a) * (sr(300) + len),
-                        sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(120));
+                        sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(179)); // 网页 opacity .7
             }
 
             // L3 断裂轴线
@@ -189,9 +194,10 @@ public final class TerminalPlate {
         if (aL4 >= 0f) {
             g.pose().pushPose();
             try {
-            TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(140));
-            TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(80));
-            brush(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(200));
+            // 网页 L5：外环 stroke2.8 opacity1、内环 .9 opacity.6、笔刷 n=14 填充带 opacity .8
+            TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(255));
+            TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(153));
+            sweepBand(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(204));
 
                     } finally { g.pose().popPose(); }
         }
@@ -312,10 +318,11 @@ public final class TerminalPlate {
         if (aL11 >= 0f) {
             g.pose().pushPose();
             try {
-            TerminalFonts.draw(g, Fam.SERIF, 4.4f, "N", sx(508), sy(250), paper(220));
-            TerminalFonts.draw(g, Fam.SERIF, 4.4f, "E", sx(742), sy(476), paper(220));
-            TerminalFonts.draw(g, Fam.SERIF, 4.4f, "S", sx(508), sy(700), paper(220));
-            TerminalFonts.draw(g, Fam.SERIF, 4.4f, "W", sx(290), sy(476), paper(220));
+            // 网页 NESW：font-family=monospace、opacity 默认 1
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "N", sx(508), sy(250), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "E", sx(742), sy(476), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "S", sx(508), sy(700), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "W", sx(290), sy(476), paper(255));
 
                     } finally { g.pose().popPose(); }
         }
@@ -337,9 +344,9 @@ public final class TerminalPlate {
             }
         }
 
-        // v22 构造线：静止时很淡（.18），hover 才明显；它不是准星吸附框
-        TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 2.2f, 3.2f,
-                cob(hover ? 90 : 34));
+        // 网页 .pl-construct：静止 opacity .18、hover .85
+        TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 1.1f, 1.6f,
+                cob(hover ? 217 : 46));
     }
 
     /**
@@ -510,8 +517,18 @@ public final class TerminalPlate {
     }
 
     private static void bird(GuiGraphics g, float x, float y, float dx) {
-        TerminalDraw.line(g, x - 3 + dx, y, x + dx, y - 2, 1.1f, ink(200));
-        TerminalDraw.line(g, x + dx, y - 2, x + 3 + dx, y, 1.1f, ink(200));
+        // 网页 q16 -12 32 0 ×2：双拱鸥形，x 线性推进、y 沿二次曲线（峰高 sr(6)），opacity .85
+        float half = sr(32f), peak = sr(6f);
+        for (int arch = 0; arch < 2; arch++) {
+            float x0 = x + dx + arch * half, lx = x0, ly = y;
+            for (int i = 1; i <= 10; i++) {
+                float p = i / 10f;
+                float nx = x0 + half * p;
+                float ny = y - 4f * peak * p * (1f - p);
+                TerminalDraw.line(g, lx, ly, nx, ny, 1f, ink(217));
+                lx = nx; ly = ny;
+            }
+        }
     }
 
     /**

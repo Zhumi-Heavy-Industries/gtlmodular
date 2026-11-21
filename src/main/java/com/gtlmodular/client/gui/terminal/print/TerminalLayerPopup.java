@@ -38,9 +38,11 @@ public final class TerminalLayerPopup {
         TerminalDraw.hline(g, rx, rx + rw, ry, TerminalTheme.RULE);
         for (int i = 0; i <= 9; i++) {
             float tx = rx + 20f * i;
-            TerminalDraw.vline(g, tx, ry, ry + (i % 5 == 0 ? 8 : 5), 0xB055605F);
+            // 网页 tick-v：i%3==0 → 高6、其余高4
+            TerminalDraw.vline(g, tx, ry, ry + (i % 3 == 0 ? 6 : 4), 0xB055605F);
         }
-        float cursor = rx + 2 + (s.layerDraft - 1) / (float) (MAX - 1) * (rw - 4);
+        // 网页 paint() 绘制分母 MAX（点击定位另用 MAX-1，见 layerFromMouse，保持不动）
+        float cursor = rx + 2 + (s.layerDraft - 1) / (float) MAX * (rw - 4);
         TerminalDraw.rect(g, cursor, ry - 2, 2, 10, TerminalTheme.COBALT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "1", rx + 1, ry + 9, 0f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRight(g, Fam.MONO, 5f, String.valueOf(MAX), rx + rw, ry + 9, TerminalTheme.INK_FAINT);
