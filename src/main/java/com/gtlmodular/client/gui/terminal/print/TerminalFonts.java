@@ -60,6 +60,26 @@ public final class TerminalFonts {
         }
     };
 
+    /**
+     * 纸张当前的整体缩放（{@code TerminalScreen.scale}，最小窗口时 &lt; 1）。
+     *
+     * <p>文字最终落在屏幕上的物理尺寸 = 设计字号 × GUI 缩放 × 纸张缩放。
+     * 只按 GUI 缩放烘焙时，窗口不够大（纸张被缩到 0.8 左右）就会把已烘好的字形
+     * 再缩采样一次，整屏字看着发糊。这里把纸张缩放也算进超采样倍率，做到 1:1 上屏。</p>
+     */
+    private static float sheetScale = 1f;
+
+    /** 由 {@code TerminalScreen.render} 每帧同步；缺省 1 表示不额外超采样。 */
+    public static void setSheetScale(float s) {
+        sheetScale = (s > 0f && s < 8f) ? s : 1f;
+    }
+
+    /** 每个「设计像素」对应多少物理像素：GUI 缩放 × 纸张缩放，取整到 1..8。 */
+    private static int pixelRatio() {
+        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+        return Math.max(1, Math.min(8, Math.round(gs * sheetScale)));
+    }
+
     private static java.awt.Font awtFont(Fam fam, int px) {
         java.awt.Font base = AWTF.get(fam);
         if (base == null) {
@@ -78,8 +98,8 @@ public final class TerminalFonts {
     /** AWT 实际字宽（设计像素）；AWT 不可用时返回 -1。排版必须与绘制同源。 */
     private static float awtWidth(Fam fam, float size, String text) {
         if (text == null || text.isEmpty()) return 0f;
-        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-        int px = Math.max(2, Math.round(size * gs));
+        int k = pixelRatio();
+        int px = Math.max(2, Math.round(size * k));
         WKey wkey = new WKey(fam, px, text);
         Float cached = AW.get(wkey);
         if (cached != null) return cached;
@@ -91,7 +111,7 @@ public final class TerminalFonts {
                 probeG = probeImg.createGraphics();
             }
             probeG.setFont(af);
-            float w = probeG.getFontMetrics().stringWidth(text) / gs;
+            float w = probeG.getFontMetrics().stringWidth(text) / (float) k;
             AW.put(wkey, w);
             return w;
         } catch (Throwable t) {
@@ -168,8 +188,8 @@ public final class TerminalFonts {
     private static boolean drawAwt(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
         try {
             ensureWhiteShaderColor();
-            float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-            int px = Math.max(2, Math.round(size * gs));
+            int k = pixelRatio();
+            int px = Math.max(2, Math.round(size * k));
             Key key = new Key(fam, px, color, text);
             Tex tex = TEX.get(key);
             if (tex == null) {
@@ -193,11 +213,11 @@ public final class TerminalFonts {
                 int th = Math.max(1, fm.getAscent() + fm.getDescent());
                 pg.dispose();
 
-                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
-                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
-                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
-                int finalW = outW * (int) gs;
-                int finalH = outH * (int) gs;
+                // 纹理尺寸取 pixelRatio 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + k - 1) / k);
+                int outH = Math.max(1, (th + k - 1) / k);
+                int finalW = outW * k;
+                int finalH = outH * k;
                 java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
@@ -267,10 +287,9 @@ public final class TerminalFonts {
             ensureWhiteShaderColor();
             // 超大字号（镜像 N 900）只按 1x 烘：opacity 0.06 的水印，放大不影响观感，
             // 但能把 729px 的轮廓贴图降到 243px，首帧少几十毫秒。
-            float gs = size >= 150f ? 1f
-                    : Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-            int px = Math.max(2, Math.round(size * gs));
-            int strokeQ = Math.max(1, Math.round(stroke * gs * 10f));
+            int k = size >= 150f ? 1 : pixelRatio();
+            int px = Math.max(2, Math.round(size * k));
+            int strokeQ = Math.max(1, Math.round(stroke * k * 10f));
             OKey key = new OKey(fam, px, color, text, strokeQ);
             Tex tex = OTEX.get(key);
             if (tex == null) {
@@ -284,15 +303,15 @@ public final class TerminalFonts {
                 java.awt.font.GlyphVector gv = af.createGlyphVector(frc, text);
                 java.awt.Shape shape = gv.getOutline();
                 java.awt.geom.Rectangle2D b = shape.getBounds2D();
-                float sw = Math.max(0.6f, stroke * gs);
+                float sw = Math.max(0.6f, stroke * k);
                 int pad = (int) Math.ceil(sw) + 2;
                 int tw = Math.max(1, (int) Math.ceil(b.getWidth()) + pad * 2);
                 int th = Math.max(1, (int) Math.ceil(b.getHeight()) + pad * 2);
-                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
-                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
-                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
-                int finalW = outW * (int) gs;
-                int finalH = outH * (int) gs;
+                // 纹理尺寸取 pixelRatio 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + k - 1) / k);
+                int outH = Math.max(1, (th + k - 1) / k);
+                int finalW = outW * k;
+                int finalH = outH * k;
                 java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
@@ -308,8 +327,10 @@ public final class TerminalFonts {
                         new com.mojang.blaze3d.platform.NativeImage(
                                 com.mojang.blaze3d.platform.NativeImage.Format.RGBA, finalW, finalH, false);
                 int idx = 0;
-                for (int yy = 0; yy < th; yy++) {
-                    for (int xx = 0; xx < tw; xx++) {
+                // 必须按贴图真实尺寸 finalW×finalH 遍历：图像是按 finalW 定宽分配的行序，
+                // 用 tw×th 遍历会错行（tw 与 finalW 差 k-1 时整张斜切）。
+                for (int yy = 0; yy < finalH; yy++) {
+                    for (int xx = 0; xx < finalW; xx++) {
                         int c = argb[idx++];
                         int a = (c >>> 24) & 0xFF, r = (c >>> 16) & 0xFF, gg = (c >>> 8) & 0xFF, bb = c & 0xFF;
                         ni.setPixelRGBA(xx, yy, (a << 24) | (bb << 16) | (gg << 8) | r);

@@ -124,8 +124,9 @@ public final class TerminalScreen extends Screen {
     protected void init() {
         super.init();
         this.scale = Math.min(1f, Math.min((width - 8f) / TerminalTheme.W, (height - 8f) / TerminalTheme.H));
-        this.originX = (width - TerminalTheme.W * scale) / 2f;
-        this.originY = (height - TerminalTheme.H * scale) / 2f;
+        // 原点必须落在整数 GUI 像素上：半像素起始会让整张纸的字形被重采样，看着整体发糊。
+        this.originX = Math.round((width - TerminalTheme.W * scale) / 2f);
+        this.originY = Math.round((height - TerminalTheme.H * scale) / 2f);
         this.openedAt = System.nanoTime();
         hideCursor();
         loadState();
@@ -369,6 +370,9 @@ public final class TerminalScreen extends Screen {
         }
         long renderStart = System.nanoTime();
         this.seconds = (renderStart - openedAt) / 1_000_000_000f;
+        // 把纸张缩放交给字体系统做超采样：字号按「GUI 缩放 × 纸张缩放」烘焙，
+        // 上屏才严格 1:1，不会在窗口偏小时被二次缩采样糊掉。
+        TerminalFonts.setSheetScale(scale);
         if (page != drawnPage) {
             drawnPage = page;
             pageSwitchAt = renderStart;
