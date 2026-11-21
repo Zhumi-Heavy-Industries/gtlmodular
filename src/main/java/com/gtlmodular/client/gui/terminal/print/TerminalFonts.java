@@ -150,6 +150,8 @@ public final class TerminalFonts {
 
     private static boolean colorWarned;
     private static boolean awtLogged;
+    /** 临时诊断：页框文字整组不显示，先确认落点与姿态（确认后移除）。 */
+    private static boolean diagLogged;
     private static boolean awtFailed;
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
@@ -267,6 +269,14 @@ public final class TerminalFonts {
                 }
             }
             int dx = Math.round(x), dy = Math.round(y);
+            if (!diagLogged && text.indexOf('鲸') >= 0) {
+                diagLogged = true;
+                var m = g.pose().last().pose();
+                GTLModular.LOGGER.info("[TermFontsDiag] text={} 落点=({},{}) 贴图={}x{} 姿态平移=({},{},{}) guiScale={}",
+                        text, dx, dy, tex.w, tex.h,
+                        Math.round(m.m30() * 100f) / 100f, Math.round(m.m31() * 100f) / 100f, Math.round(m.m32() * 100f) / 100f,
+                        Minecraft.getInstance().getWindow().getGuiScale());
+            }
             g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
             return true;
         } catch (Throwable t) {

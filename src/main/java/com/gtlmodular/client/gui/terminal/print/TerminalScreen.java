@@ -436,6 +436,11 @@ public final class TerminalScreen extends Screen {
             try {
                 g.pose().translate(regX, transition.shiftY(this.seconds, 0) + regY, 0);
                 TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+                // 纸底必须立刻落地：drawManaged 会把块内所有绘制攒到 block 结束统一出队，
+                // 而 guiTextured(文字) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，
+                // 整张纸就会把页框文字整组盖掉（矢量还在，因为它和纸底在同一条 gui 缓冲里、
+                // 顶点排在纸底之后）。这里先刷一次，纸底独立成批，文字才能压在上面。
+                g.flush();
                 TerminalFrame.draw(g, page);
                 navHits();
             } finally {
@@ -495,6 +500,7 @@ public final class TerminalScreen extends Screen {
     /** 画一整页（纸底 + 页框 + 内容），不带任何进场位移。交叉淡化时要画旧页。 */
     private void drawPageBody(GuiGraphics g, Page p) {
         TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+        g.flush(); // 同上：纸底单独落地，避免与页框/正文文字同批出队时反向覆盖
         TerminalFrame.draw(g, p);
         switch (p) {
             case MAIN -> drawMain(g);
