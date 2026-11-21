@@ -80,7 +80,7 @@ public final class TerminalFonts {
     }
 
     /** 每个设计像素对应的物理像素数（可能是小数：GUI 缩放 × 纸张缩放）。 */
-    private static float deviceScale() {
+    public static float deviceScale() {
         float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
         return gs * sheetScale;
     }

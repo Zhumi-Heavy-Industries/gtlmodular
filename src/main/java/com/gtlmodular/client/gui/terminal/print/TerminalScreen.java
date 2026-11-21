@@ -87,8 +87,6 @@ public final class TerminalScreen extends Screen {
     private Page drawnPage;
     private long pageSwitchAt;
     private Page prevDrawnPage = Page.MAIN;
-    /** 网页 vt-reg 抖动：最后一次点击的目标与时刻。 */
-    private float regTargetX, regTargetY, regAt = -100f;
     private final TerminalTransition transition = new TerminalTransition();
     private @Nullable ShanhaiTerminalReport report;
     /** 聊天报告链接打开时注入的指定报告；非空则直接停在报告页，不依赖手持终端物品。 */
@@ -440,15 +438,11 @@ public final class TerminalScreen extends Screen {
             g.flush();
         }
 
-        // 网页 vt-reg：点击后内容整体抖 0.28s（25%→(1,-1)，55%→(-1,1)，100%→0）
-        float regX = regOffsetX();
-        float regY = regOffsetY();
-
         // 新页：纸底 + 页框先落（与网页 .grain/.crop 在前一致），再画内容
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                g.pose().translate(regX, transition.shiftY(this.seconds, 0) + regY, 0);
+                g.pose().translate(0f, transition.shiftY(this.seconds, 0), 0f);
                 drawPaper(g);
                 TerminalFrame.draw(g, page);
                 navHits();
@@ -459,7 +453,7 @@ public final class TerminalScreen extends Screen {
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                g.pose().translate(regX, transition.shiftY(this.seconds, 3) + regY, 0);
+                g.pose().translate(0f, transition.shiftY(this.seconds, 3), 0f);
                 switch (page) {
                     case MAIN -> drawMain(g);
                     case OPTIONS -> TerminalOptions.draw(g, this);
@@ -804,44 +798,11 @@ public final class TerminalScreen extends Screen {
             Hit h = hits.get(i);
             if (x >= h.x && x <= h.x + h.w && y >= h.y && y <= h.y + h.h) {
                 reticle.click(x, y, h.label, h.ink);
-                // 网页 .item.reg / vt-reg：点击后该元素抖动 0.28s（套印错位感）
-                regTargetX = h.x;
-                regTargetY = h.y;
-                regAt = seconds;
                 h.action.run();
                 return true;
             }
         }
         return super.mouseClicked(mx, my, button);
-    }
-
-    /** 网页 {@code @keyframes vt-reg} 的抖动偏移：25%→(1,-1) 55%→(-1,1) 100%→(0,0)，总 0.28s。 */
-    public float regOffsetX() {
-        return regOffset(false);
-    }
-
-    public float regOffsetY() {
-        return regOffset(true);
-    }
-
-    private float regOffset(boolean vertical) {
-        float age = seconds - regAt;
-        if (age < 0f || age > 0.28f) return 0f;
-        float u = age / 0.28f;
-        float vx, vy;
-        if (u < 0.25f) {
-            float k = u / 0.25f;
-            vx = k; vy = -k;
-        } else if (u < 0.55f) {
-            float k = (u - 0.25f) / 0.30f;
-            vx = 1f - 2f * k;
-            vy = -1f + 2f * k;
-        } else {
-            float k = (u - 0.55f) / 0.45f;
-            vx = -1f + k;
-            vy = 1f - k;
-        }
-        return vertical ? vy : vx;
     }
 
     @Override

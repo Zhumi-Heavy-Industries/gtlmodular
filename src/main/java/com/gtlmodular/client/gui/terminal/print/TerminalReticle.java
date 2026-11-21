@@ -30,11 +30,13 @@ public final class TerminalReticle {
         float tx, ty, tw, th;
         boolean locked = target != null;
         if (locked) {
-            // 网页 loop()：tx=(tb.left-sb.left)*sc-4、tw=tb.width*sc+8 —— 不做边界夹取
-            tx = target.x - 4f;
-            ty = target.y - 4f;
-            tw = Math.max(8f, target.w + 8f);
-            th = Math.max(8f, target.h + 8f);
+            // 网页 loop() 是 tb.left-4 / +8（外扩 4px），但外扩后「框住的范围」比真正的
+            // 可点范围大一圈，看起来就像生效范围和画面对不上。这里改为严格贴齐目标矩形：
+            // 框住哪里，就能点哪里。
+            tx = target.x;
+            ty = target.y;
+            tw = Math.max(6f, target.w);
+            th = Math.max(6f, target.h);
         } else {
             // 网页 loop()：tx=X-15, ty=Y-15, 30×30，纯跟随、不夹边。
             // 这里以前夹了 `min(mx-15, 548-30)`，指针移到纸面右侧时框被卡住不再跟手，
