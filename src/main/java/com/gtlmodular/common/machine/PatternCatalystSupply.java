@@ -102,7 +102,7 @@ public final class PatternCatalystSupply {
                     continue;   // 编程电路由 gtlcore 的共享电路/样板内嵌电路负责
                 }
                 AEKey key = preferredItemKey(pattern, ingredient);
-                if (key != null) {
+                if (key != null && !isTickConsumed(recipe, key)) {
                     keys.addTo(key, Math.max(1L, itemAmount(ingredient)));
                 }
             }
@@ -115,7 +115,7 @@ public final class PatternCatalystSupply {
                     continue;
                 }
                 AEKey key = preferredFluidKey(pattern, ingredient);
-                if (key != null) {
+                if (key != null && !isTickConsumed(recipe, key)) {
                     keys.addTo(key, Math.max(1L, ingredient.getAmount()));
                 }
             }
@@ -203,7 +203,9 @@ public final class PatternCatalystSupply {
                             continue;
                         }
                         if (ingredient.test(FluidStack.create(fluidKey.getFluid(), 1L))) {
-                            return fluidKey;
+                            // ★ 统一按「无 tag」归一：gtlcore 的虚拟原料读回来就是 AEFluidKey.of(fluid)（丢 tag），
+                            //   带 tag 的键永远比不上会变成「删了又加」的抖动（见 VERIFICATION H3）。
+                            return AEFluidKey.of(fluidKey.getFluid());
                         }
                     }
                 }
@@ -215,13 +217,54 @@ public final class PatternCatalystSupply {
             FluidStack[] stacks = ingredient.getStacks();
             for (FluidStack stack : stacks) {
                 if (stack != null && !stack.isEmpty()) {
-                    return AEFluidKey.of(stack.getFluid(), stack.getTag());
+                    return AEFluidKey.of(stack.getFluid());   // 同上：归一为无 tag
                 }
             }
         } catch (Throwable ignored) {
             // 无候选
         }
         return null;
+    }
+
+    /**
+     * 这个键是不是配方的<b>每 tick 消耗输入</b>（tickInputs 里 chance &gt; 0）。
+     *
+     * <p>为什么必须排掉：同一个键可能既是普通输入里的「不消耗」，又是 tickInputs 里的「每 tick 真扣」。
+     * 只扫 `inputs` 会把它当催化剂虚拟供给 ⇒ 那份每 tick 消耗变成免费（刷料）。上游 gtlcore 的
+     * {@code testVirtualItemInternal} 也只扫普通输入，所以这里必须自己补上这道安全线。
+     */
+    private static boolean isTickConsumed(GTRecipe recipe, AEKey key) {
+        if (recipe == null || key == null) {
+            return false;
+        }
+        try {
+            if (key instanceof AEItemKey itemKey) {
+                ItemStack probe = itemKey.toStack(1);
+                for (Content content : recipe.getTickInputContents(ItemRecipeCapability.CAP)) {
+                    if (content == null || content.content == null || content.chance <= 0) {
+                        continue;
+                    }
+                    Ingredient ingredient = ItemRecipeCapability.CAP.of(content.content);
+                    if (ingredient != null && !ingredient.isEmpty() && ingredient.test(probe)) {
+                        return true;
+                    }
+                }
+            } else if (key instanceof AEFluidKey fluidKey) {
+                FluidStack probe = FluidStack.create(fluidKey.getFluid(), 1L);
+                for (Content content : recipe.getTickInputContents(FluidRecipeCapability.CAP)) {
+                    if (content == null || content.content == null || content.chance <= 0) {
+                        continue;
+                    }
+                    FluidIngredient ingredient = FluidRecipeCapability.CAP.of(content.content);
+                    if (ingredient != null && !ingredient.isEmpty() && ingredient.test(probe)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // 读不到 tickInputs 就按"不是"处理（与上游同口径；fail-open 宁可少拦一次）
+        }
+        return false;
     }
 
     // ================= 供给 =================
@@ -417,7 +460,8 @@ public final class PatternCatalystSupply {
                     if (stack == null || stack.isEmpty()) {
                         continue;
                     }
-                    if (AEFluidKey.of(stack.getFluid(), stack.getTag()).equals(fluidKey)) {
+                    // 与 gtlcore 的虚拟原料载荷同口径：流体按无 tag 归一（见 VERIFICATION H3）
+                    if (AEFluidKey.of(stack.getFluid()).equals(AEFluidKey.of(fluidKey.getFluid()))) {
                         return true;
                     }
                 }
@@ -507,10 +551,11 @@ public final class PatternCatalystSupply {
                     }
                 }
             }
+            // ★ 每 tick 消耗的输入同样算「真消耗」（见 isTickConsumed 的说明）
+            return isTickConsumed(recipe, key);
         } catch (Throwable ignored) {
             return false;
         }
-        return false;
     }
 
     /** ME 网络里现成能拿出 1 个吗（模拟抽取，不扣能量、不动库存）。 */
