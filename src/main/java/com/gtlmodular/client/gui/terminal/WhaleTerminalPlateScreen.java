@@ -41,7 +41,7 @@ public final class WhaleTerminalPlateScreen extends Screen {
     private static final int W = 560;
     private static final int H = 340;
     /** 整体缩放：560×340 在 GUI scale 2/3 下偏大，统一缩到屏幕观感合适的大小。 */
-    private static final float UI_SCALE = 2f / 3f;
+    private static final float UI_SCALE = 0.9f;
 
     private static final int INK = 0xFF1F2427;
     private static final int MUTED = 0xFF55605F;
@@ -222,36 +222,7 @@ public final class WhaleTerminalPlateScreen extends Screen {
         hitRects.add(new int[]{x, y, w, h});
     }
 
-    /** 悬停选框：1px 钴蓝边框 + 四角小方块（对齐众生行记网页的选中表现）。 */
-    private void drawHoverBox(GuiGraphics graphics, double mouseX, double mouseY) {
-        hoverIndex = -1;
-        for (int i = 0; i < hitRects.size(); i++) {
-            int[] r = hitRects.get(i);
-            if (mouseX >= r[0] - 2 && mouseX <= r[0] + r[2] + 2
-                    && mouseY >= r[1] - 2 && mouseY <= r[1] + r[3] + 2) {
-                hoverIndex = i;
-                break;
-            }
-        }
-        if (hoverIndex < 0) {
-            return;
-        }
-        int[] r = hitRects.get(hoverIndex);
-        int x0 = r[0] - 2;
-        int y0 = r[1] - 2;
-        int x1 = r[0] + r[2] + 1;
-        int y1 = r[1] + r[3] + 1;
-        int c = 0xFF3A5BC2;
-        graphics.fill(x0, y0, x1, y0 + 1, c);          // 上
-        graphics.fill(x0, y1 - 1, x1, y1, c);          // 下
-        graphics.fill(x0, y0, x0 + 1, y1, c);          // 左
-        graphics.fill(x1 - 1, y0, x1, y1, c);          // 右
-        for (int[] corner : new int[][]{{x0, y0}, {x1 - 3, y0}, {x0, y1 - 3}, {x1 - 3, y1 - 3}}) {
-            graphics.fill(corner[0], corner[1], corner[0] + 3, corner[1] + 3, c);
-        }
-    }
-
-    /** 缩放绘制的文字（Minecraft 位图字体按整数倍放大，保证清晰不糊）。 */
+    /** 按整数倍缩放绘制原版字体文字（保持清晰）。 */
     private static final class ScaledText extends com.lowdragmc.lowdraglib.gui.widget.Widget {
 
         private final java.util.function.Supplier<String> text;
@@ -289,6 +260,56 @@ public final class WhaleTerminalPlateScreen extends Screen {
         root.addWidget(new ScaledText(x, y, w, h, value, color, scale, false));
     }
 
+    /**
+     * 悬停表现，照抄参考网页的 CSS：
+     * <pre>
+     * .line-button:hover { color: var(--accent); background: #738c8b14 }
+     * :focus-visible    { outline: 2px solid var(--accent); outline-offset: 5px }
+     * </pre>
+     * 即悬停只有「字变钴蓝 + 极淡底色」，那圈 2px 外扩 5px 的钴蓝框是焦点环。
+     */
+    private void drawHoverBox(GuiGraphics graphics, double mouseX, double mouseY) {
+        hoverIndex = -1;
+        for (int i = 0; i < hitRects.size(); i++) {
+            int[] r = hitRects.get(i);
+            if (mouseX >= r[0] && mouseX <= r[0] + r[2]
+                    && mouseY >= r[1] && mouseY <= r[1] + r[3]) {
+                hoverIndex = i;
+                break;
+            }
+        }
+        if (hoverIndex < 0) {
+            return;
+        }
+        int[] r = hitRects.get(hoverIndex);
+        int x0 = r[0] - 4;
+        int y0 = r[1] - 4;
+        int x1 = r[0] + r[2] + 3;
+        int y1 = r[1] + r[3] + 3;
+        int c = 0xFF3A5BC2;
+        int arm = 10;
+
+        // 四个 L 形角标（参考网页悬停选框的写法）
+        graphics.fill(x0, y0, x0 + arm, y0 + 1, c);
+        graphics.fill(x0, y0, x0 + 1, y0 + arm, c);
+        graphics.fill(x1 - arm, y0, x1, y0 + 1, c);
+        graphics.fill(x1 - 1, y0, x1, y0 + arm, c);
+        graphics.fill(x0, y1 - 1, x0 + arm, y1, c);
+        graphics.fill(x0, y1 - arm, x0 + 1, y1, c);
+        graphics.fill(x1 - arm, y1 - 1, x1, y1, c);
+        graphics.fill(x1 - 1, y1 - arm, x1, y1, c);
+
+        // 左下角坐标条
+        var font = Minecraft.getInstance().font;
+        String coord = "X " + String.format("%04d", Math.max(0, r[0]))
+                + "  Y " + String.format("%04d", Math.max(0, r[1]));
+        int tw = font.width(coord);
+        int bx = x0;
+        int by = y1 + 4;
+        graphics.fill(bx, by, bx + tw + 8, by + 12, 0xF21F2427);
+        graphics.drawString(font, coord, bx + 4, by + 2, 0xFFEFF1EF, false);
+    }
+
     // ─────────────────────────── 装配
     private void build() {
         root.clearAllWidgets();
@@ -307,19 +328,19 @@ public final class WhaleTerminalPlateScreen extends Screen {
         // 重复次数（值活，减/加可点）
         repeatText = new TextTexture((java.util.function.Supplier<String>) () -> String.valueOf(repeat))
                 .setColor(INK);
-        ImageWidget value = new ImageWidget(382, 132, 12, 10, repeatText);
+        ImageWidget value = new ImageWidget(368, 132, 18, 10, repeatText);
         value.setClientSideWidget();
         root.addWidget(value);
-        hit(395, 131, 10, 10, () -> setRepeat(repeat - 1));
-        scaled(396, 132, 8, 9, () -> "-", INK, 1.0f);
-        hit(405, 131, 10, 10, () -> setRepeat(repeat + 1));
-        scaled(406, 132, 8, 9, () -> "+", INK, 1.0f);
+        hit(388, 131, 10, 10, () -> setRepeat(repeat - 1));
+        scaled(390, 132, 8, 9, () -> "-", INK, 1.0f);
+        hit(398, 131, 10, 10, () -> setRepeat(repeat + 1));
+        scaled(400, 132, 8, 9, () -> "+", INK, 1.0f);
 
         // 替换档位名（活）
-        scaled(386, 142, 56, 9, this::familyLabel, MUTED, 1.0f);
+        scaled(380, 142, 86, 9, this::familyLabel, MUTED, 1.0f);
 
         // 三个按钮的点击区（边框与文字已在底图里）
-        hit(356, 141, 92, 12, this::openTierPicker);
+        hit(330, 139, 140, 13, this::openTierPicker);
         hit(400, 304, 74, 16, () -> {
             GTLModularNetwork.CHANNEL.sendToServer(new OpenEcoSubsystemPacket(hand));
             onClose();

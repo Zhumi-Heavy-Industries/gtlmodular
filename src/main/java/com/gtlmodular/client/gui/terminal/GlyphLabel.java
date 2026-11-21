@@ -22,22 +22,22 @@ final class GlyphLabel extends Widget {
     private static final ResourceLocation ATLAS =
             new ResourceLocation(GTLModular.MOD_ID, "textures/gui/terminal/nameglyphs.png");
 
-    private static final int CELL_W = 99;
-    private static final int CELL_H = 114;
+    private static final int CELL_W = 128;
+    private static final int CELL_H = 167;
     private static final int COLS = 16;
-    private static final int IMG_W = 1584;
-    private static final int IMG_H = 684;
+    private static final int IMG_W = 2048;
+    private static final int IMG_H = 1002;
     /** 图集按 3 倍渲染，绘制时缩回逻辑像素。 */
-    private static final float SHRINK = 1f / 2f;
+    private static final float SHRINK = 1f / 2.7f;
 
     /** ASCII 32..126 的步进（图集像素）。 */
     private static final int[] ADVANCE = {
-            22, 28, 37, 59, 43, 82, 72, 19, 43, 43, 43, 59, 24, 28, 28, 25,
-            43, 43, 43, 43, 43, 43, 43, 43, 43, 43, 28, 28, 59, 59, 59, 33,
-            81, 67, 61, 57, 67, 61, 61, 57, 72, 43, 52, 72, 57, 85, 72, 57,
-            61, 57, 61, 52, 61, 72, 67, 85, 72, 72, 57, 43, 25, 43, 37, 44,
-            29, 43, 38, 33, 43, 33, 28, 38, 43, 28, 28, 43, 24, 67, 48, 38,
-            44, 38, 31, 33, 24, 48, 38, 57, 43, 39, 33, 42, 46, 42, 59
+            29, 38, 50, 79, 58, 109, 96, 25, 58, 58, 58, 79, 32, 38, 38, 33,
+            58, 58, 58, 58, 58, 58, 58, 58, 58, 58, 38, 38, 79, 79, 79, 44,
+            109, 90, 82, 76, 90, 82, 82, 76, 96, 58, 70, 96, 76, 114, 96, 76,
+            82, 76, 82, 70, 82, 96, 90, 114, 96, 96, 76, 58, 33, 58, 50, 59,
+            39, 58, 50, 44, 58, 44, 38, 50, 58, 38, 38, 58, 32, 90, 64, 50,
+            59, 50, 42, 44, 32, 64, 50, 76, 58, 52, 44, 57, 62, 57, 79
     };
 
     private final Supplier<String> text;
