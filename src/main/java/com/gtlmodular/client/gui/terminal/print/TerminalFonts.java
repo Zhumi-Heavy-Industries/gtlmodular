@@ -44,7 +44,12 @@ public final class TerminalFonts {
     private record Key(Fam fam, int sizeQ, int color, String text) {}
     private static final class Tex {
         final ResourceLocation rl; final int w, h, tw, th;
-        Tex(ResourceLocation rl, int w, int h, int tw, int th) { this.rl = rl; this.w = w; this.h = h; this.tw = tw; this.th = th; }
+        /** 描边贴图四周的留白（设计像素）：blit 时要往回退这么多，调用方传的坐标才是字形盒左上。 */
+        final int pad;
+        Tex(ResourceLocation rl, int w, int h, int tw, int th) { this(rl, w, h, tw, th, 0); }
+        Tex(ResourceLocation rl, int w, int h, int tw, int th, int pad) {
+            this.rl = rl; this.w = w; this.h = h; this.tw = tw; this.th = th; this.pad = pad;
+        }
     }
     private static final Map<Key, Tex> TEX = new java.util.LinkedHashMap<>(128, 0.75f, true);
     private static final Map<Fam, java.awt.Font> AWTF = new java.util.EnumMap<>(Fam.class);
@@ -350,10 +355,12 @@ public final class TerminalFonts {
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_outline_" + (texSeq++), dyn);
-                tex = new Tex(rl, outW, outH, finalW, finalH);
+                // pad 以「设计像素」记：贴图在烘焙时按 k 倍超采样，pad 也要除以 k 才能退回字形盒左上
+                tex = new Tex(rl, outW, outH, finalW, finalH, Math.round(pad / (float) k));
                 OTEX.put(key, tex);
             }
-            g.blit(tex.rl, Math.round(x), Math.round(y), tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            g.blit(tex.rl, Math.round(x) - tex.pad, Math.round(y) - tex.pad,
+                    tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
         } catch (Throwable t) {
             drawAwt(g, fam, size, text, x, y, color);
         }

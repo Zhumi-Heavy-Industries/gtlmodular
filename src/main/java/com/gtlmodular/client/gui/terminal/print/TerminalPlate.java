@@ -308,8 +308,8 @@ public final class TerminalPlate {
             try {
             // 网页：盘外左下双描边 06，字号 260（字形盒 70.2×70.5 设计像素），两遍都是钴蓝。
             // 两遍实测盒：x=90/y=930 → (299.2,214.3)；x=80/y=920 → (296.5,211.6)
-            outlineNumber(g, 90, 930, cob(102));
-            outlineNumber(g, 80, 920, cob(140));
+            outlineNumber(g, 90, 930, cob(102), 0.38f);
+            outlineNumber(g, 80, 920, cob(140), 0.49f);
 
                     } finally { g.pose().popPose(); }
         }
@@ -535,37 +535,13 @@ public final class TerminalPlate {
      * 空心的描边 06：AWT 轮廓在实机出现采样异常，这里直接用矢量线稿画「0」「6」。
      * 尺寸/位置按网页 SVG 的 getBBox 实测：字形盒 70.2×70.5 设计像素，单遍一层。
      */
-    private static void outlineNumber(GuiGraphics g, float x, float y, int color) {
+    private static void outlineNumber(GuiGraphics g, float x, float y, int color, float stroke) {
+        // 网页写的是 <text font-size="260" stroke-width="1.4/1.8" fill="none" font-family="serif">：
+        // 真衬线字形 + 细描边，不是两个椭圆。之前手绘矢量是因为 drawOutlined 贴图按 tw×th 拷贝
+        // 导致整张错行（出过「采样异常」），该 bug 已修，这里换回真实字形轮廓。
         // 字形盒左上角 = sx(x)+10.9 / sy(y)-62.8（由两遍实测盒反解，两遍一致）
-        drawHollow06(g, sx(x) + 10.9f, sy(y) - 62.8f, color);
-    }
-
-    /** 单遍空心 06，本地坐标盒固定 70×70。
-     *
-     * <p>形状不是「两个差不多大的椭圆」——那在实机上看不出是数字。
-     * 采用：0 一竖椭圆环；6 一个小闭环（偏右下）+ 一条从右上外起笔、向左收成开口的上臂。
-     * 几何经离线栅格化验证（1.6px 描边下笔画连续、6 有明确开口）。</p>
-     */
-    private static void drawHollow06(GuiGraphics g, float bx, float by, int color) {
-        final float th = 1.6f;
-        // 0：竖椭圆环
-        TerminalDraw.ellipseRing(g, bx + 18f, by + 37f, 15f, 32f, th, color);
-        // 6：下方闭环（小、偏右下）
-        TerminalDraw.ellipseRing(g, bx + 53f, by + 55f, 15f, 15f, th, color);
-        // 6：上臂——从右上外侧起笔，向左上兜回接闭环左上（留出开口，不横穿顶部）
-        float px = bx + 67f, py = by + 8f;
-        float c1x = bx + 50f, c1y = by - 2f;
-        float c2x = bx + 36f, c2y = by + 10f;
-        float lx = bx + 38f, ly = by + 44f;
-        float lastX = px, lastY = py;
-        for (int i = 1; i <= 20; i++) {
-            float u = i / 20f, v = 1f - u;
-            float nx = v * v * v * px + 3 * v * v * u * c1x + 3 * v * u * u * c2x + u * u * u * lx;
-            float ny = v * v * v * py + 3 * v * v * u * c1y + 3 * v * u * u * c2y + u * u * u * ly;
-            TerminalDraw.line(g, lastX, lastY, nx, ny, th, color);
-            lastX = nx;
-            lastY = ny;
-        }
+        TerminalFonts.drawOutlined(g, Fam.SERIF, 70.2f, "06",
+                sx(x) + 10.9f, sy(y) - 62.8f, color, stroke);
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */

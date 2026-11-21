@@ -60,47 +60,47 @@ public final class TerminalFrame {
         TerminalDraw.hline(g, 14, 546, 29, TerminalTheme.RULE);
     }
 
+    /** 页头工具图标：直接用图标包（iconpack11）里的黑色剪影贴图，不再手绘。
+     *  映射沿用网页端：eye=0028 / star4=0020 / sun=0007 / bolt=0024 / box=0000。
+     *  图标包里没有六边形（网页那个来自 hex-set.webp），hex 仍走矢量。 */
+    private static final int ICON_SRC = 64;
+
+    /** 9×9 黑剪影图标，opacity .62（网页 <img width=9 height=9 opacity:.62> 同值）。 */
+    private static void blitIcon(GuiGraphics g, int id, float x, float y) {
+        net.minecraft.resources.ResourceLocation rl = new net.minecraft.resources.ResourceLocation(
+                com.gtlmodular.GTLModular.MOD_ID,
+                String.format("textures/gui/terminal/icons/%04d.png", id));
+        g.setColor(1f, 1f, 1f, 0.62f);
+        g.blit(rl, Math.round(x), Math.round(y), 9, 9, 0, 0, ICON_SRC, ICON_SRC, ICON_SRC, ICON_SRC);
+        g.setColor(1f, 1f, 1f, 1f);
+    }
+
     private static void toolIcon(GuiGraphics g, String kind, float x, float y) {
+        int id = switch (kind) {
+            case "eye" -> 28;
+            case "star" -> 20;
+            case "sun" -> 7;
+            case "bolt" -> 24;
+            case "box" -> 0;
+            default -> -1;
+        };
+        if (id >= 0) {
+            blitIcon(g, id, x, y);
+            return;
+        }
+        // 只剩「六边形」（图标包里没有对应素材，网页取自 hex-set.webp），继续用矢量画。
         int c = 0x9E1F2427;
         float cx = x + 4.5f, cy = y + 4.5f;
-        switch (kind) {
-            case "eye" -> {
-                TerminalDraw.arc(g, cx, cy, 3.6f, 200f, 340f, 1f, c);
-                TerminalDraw.fillCircle(g, cx, cy, 1.2f, c);
-            }
-            case "star" -> {
-                TerminalDraw.line(g, cx, y, cx, y + 9, 1f, c);
-                TerminalDraw.line(g, x, cy, x + 9, cy, 1f, c);
-                TerminalDraw.line(g, x + 1, y + 1, x + 8, y + 8, 0.8f, c);
-                TerminalDraw.line(g, x + 8, y + 1, x + 1, y + 8, 0.8f, c);
-            }
-            case "sun" -> {
-                // 网页图标是半明半月：左半实心、右半描边
-                TerminalDraw.fillCircle(g, cx, cy, 3.2f, c);
-                TerminalDraw.rect(g, cx, cy - 3.2f, 3.4f, 6.4f, TerminalTheme.PAPER);
-                TerminalDraw.ring(g, cx, cy, 3.2f, 1f, c);
-            }
-            case "bolt" -> TerminalDraw.polygon(g, new float[]{
-                    cx + 1.5f, y, x + 1, cy + 1, cx, cy + 1, x + 1.5f, y + 9, x + 8, cy - 1, cx + 1, cy - 1
-            }, c);
-            case "box" -> {
-                TerminalDraw.outline(g, x + 1, y + 1, 8, 8, c);
-                TerminalDraw.line(g, x + 2, cy, x + 4, y + 6.5f, 1f, c);
-                TerminalDraw.line(g, x + 4, y + 6.5f, x + 7.5f, y + 2.5f, 1f, c);
-            }
-            default -> {
-                float r = 4.4f;
-                float[] pts = new float[12];
-                for (int i = 0; i < 6; i++) {
-                    double a = Math.PI / 3 * i - Math.PI / 2;
-                    pts[i * 2] = cx + (float) Math.cos(a) * r;
-                    pts[i * 2 + 1] = cy + (float) Math.sin(a) * r;
-                }
-                for (int i = 0; i < 6; i++) {
-                    TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
-                            pts[((i + 1) % 6) * 2], pts[((i + 1) % 6) * 2 + 1], 0.9f, c);
-                }
-            }
+        float r = 4.4f;
+        float[] pts = new float[12];
+        for (int i = 0; i < 6; i++) {
+            double a = Math.PI / 3 * i - Math.PI / 2;
+            pts[i * 2] = cx + (float) Math.cos(a) * r;
+            pts[i * 2 + 1] = cy + (float) Math.sin(a) * r;
+        }
+        for (int i = 0; i < 6; i++) {
+            TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
+                    pts[((i + 1) % 6) * 2], pts[((i + 1) % 6) * 2 + 1], 0.9f, c);
         }
     }
 
