@@ -58,41 +58,22 @@ public final class TerminalFrame {
         TerminalDraw.hline(g, 14, 546, 29, TerminalTheme.RULE);
     }
 
-    /** 页头工具图标：直接用图标包（iconpack11）里的黑色剪影贴图，不再手绘。
-     *  映射沿用网页端：eye=0028 / star4=0020 / sun=0007 / bolt=0024 / box=0000。
-     *  图标包里没有六边形（网页那个来自 hex-set.webp），hex 仍走矢量。 */
-    /** 9×9 黑剪影图标，opacity .62（网页 <img width=9 height=9 opacity:.62> 同值）。 */
-    private static void blitIcon(GuiGraphics g, int id, float x, float y) {
-        TerminalIcons.draw(g, id, x, y, 9, 0.62f);
-    }
-
+    /**
+     * 页头工具图标：直接用网页端的资源与回退规则，不再手绘任何一支。
+     *
+     * <p>网页原文：{@code for k in ["eye","star4","sun","bolt","box","hex"]: IC.get(k, IC["box"])}
+     * —— {@code IC} 里没有 {@code "hex"} 这个键，所以第 6 个位置实际回退成 {@code 0000}（方框勾）。
+     * 为了让实机与网页逐像素一致，这里照抄这个行为（而不是补一个网页没有的六边形）。</p>
+     */
     private static void toolIcon(GuiGraphics g, String kind, float x, float y) {
         int id = switch (kind) {
-            case "eye" -> 28;
-            case "star" -> 20;
-            case "sun" -> 7;
-            case "bolt" -> 24;
-            case "box" -> 0;
-            default -> -1;
+            case "eye" -> TerminalIcons.EYE;
+            case "star" -> TerminalIcons.STAR4;
+            case "sun" -> TerminalIcons.SUN;
+            case "bolt" -> TerminalIcons.BOLT;
+            default -> TerminalIcons.BOX; // "box" 与 "hex" 在网页端都是 0000
         };
-        if (id >= 0) {
-            blitIcon(g, id, x, y);
-            return;
-        }
-        // 只剩「六边形」（图标包里没有对应素材，网页取自 hex-set.webp），继续用矢量画。
-        int c = 0x9E1F2427;
-        float cx = x + 4.5f, cy = y + 4.5f;
-        float r = 4.4f;
-        float[] pts = new float[12];
-        for (int i = 0; i < 6; i++) {
-            double a = Math.PI / 3 * i - Math.PI / 2;
-            pts[i * 2] = cx + (float) Math.cos(a) * r;
-            pts[i * 2 + 1] = cy + (float) Math.sin(a) * r;
-        }
-        for (int i = 0; i < 6; i++) {
-            TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
-                    pts[((i + 1) % 6) * 2], pts[((i + 1) % 6) * 2 + 1], 0.9f, c);
-        }
+        TerminalIcons.draw(g, id, x, y, 9, 0.62f);
     }
 
     private static void rail(GuiGraphics g) {
