@@ -127,10 +127,14 @@ public final class TerminalReport {
         // 这里不画 +/−，保持与网页一致；整行仍可点。
 
         if (open && !row.coords().isEmpty()) {
-            // 网页 .rep-sub: left48+20=68、top21，每条 14px、前缀「↳ 」，下方没有分隔线
+            // 网页 .rep-sub: left48+20=68、top21，每条 14px，前缀「↳ 」、下方无分隔线。
+            // ↳ 不交给字体（Consolas 无此码位，实机会是 tofu）：用两笔线画同样的拐角，
+            // 拐角占 4px，坐标文字仍从 68+6=74 起（与网页「↳ 」的 advance 一致）。
             float cy = y + 21;
             for (int k = 0; k < row.coords().size() && k < 3; k++) {
-                TerminalFonts.drawMixed(g, Fam.MONO, 6f, "↳ " + fmt(row.coords().get(k)), 68, cy, 0.4f,
+                TerminalDraw.hline(g, 68, 72, cy + 3, TerminalTheme.INK_FAINT);
+                TerminalDraw.vline(g, 68, cy + 3, cy + 6, TerminalTheme.INK_FAINT);
+                TerminalFonts.drawMixed(g, Fam.MONO, 6f, fmt(row.coords().get(k)), 74, cy, 0.4f,
                         TerminalTheme.INK_FAINT);
                 cy += 14;
             }
