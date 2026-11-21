@@ -43,10 +43,8 @@ public final class TerminalFrame {
     }
 
     private static void header(GuiGraphics g, Page page) {
-        // ☑ 图标
-        TerminalDraw.outline(g, 14, 10, 11, 11, 0xD91F2427);
-        TerminalDraw.line(g, 16, 15, 18, 18, 1.4f, TerminalTheme.INK);
-        TerminalDraw.line(g, 18, 18, 22, 12, 1.4f, TerminalTheme.INK);
+        // ☑ 图标（网页 <img IC.box> 11×11 @14,10 opacity .85）：用图标包真图，不再手绘
+        TerminalIcons.draw(g, TerminalIcons.BOX, 14, 10, 11, 0.85f);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, "哦鲸鲸终端", 29, 9, 1.6f, TerminalTheme.INK);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "THE WHALE TERMINAL", 29, 19, 1.6f, TerminalTheme.INK_FAINT);
@@ -63,16 +61,9 @@ public final class TerminalFrame {
     /** 页头工具图标：直接用图标包（iconpack11）里的黑色剪影贴图，不再手绘。
      *  映射沿用网页端：eye=0028 / star4=0020 / sun=0007 / bolt=0024 / box=0000。
      *  图标包里没有六边形（网页那个来自 hex-set.webp），hex 仍走矢量。 */
-    private static final int ICON_SRC = 64;
-
     /** 9×9 黑剪影图标，opacity .62（网页 <img width=9 height=9 opacity:.62> 同值）。 */
     private static void blitIcon(GuiGraphics g, int id, float x, float y) {
-        net.minecraft.resources.ResourceLocation rl = new net.minecraft.resources.ResourceLocation(
-                com.gtlmodular.GTLModular.MOD_ID,
-                String.format("textures/gui/terminal/icons/%04d.png", id));
-        g.setColor(1f, 1f, 1f, 0.62f);
-        g.blit(rl, Math.round(x), Math.round(y), 9, 9, 0, 0, ICON_SRC, ICON_SRC, ICON_SRC, ICON_SRC);
-        g.setColor(1f, 1f, 1f, 1f);
+        TerminalIcons.draw(g, id, x, y, 9, 0.62f);
     }
 
     private static void toolIcon(GuiGraphics g, String kind, float x, float y) {

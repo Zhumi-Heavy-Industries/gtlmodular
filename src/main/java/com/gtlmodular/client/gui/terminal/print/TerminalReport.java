@@ -183,28 +183,19 @@ public final class TerminalReport {
         s.hit(x, y, w, 16, label, action, false);
     }
 
-    /** 网页按钮里的小图标：☑ 复制 / ◉ 显示方块 / 筛选菱形。 */
+    /**
+     * 网页按钮里的小图标：复制全部 = 图标包 0000（方框勾）、显示方块 = 0028（眼睛）。
+     *
+     * <p>网页「筛选：全部」按钮里没有图标，所以 kind 3 不再画菱形——之前那个菱形是无中生有。</p>
+     */
     private static void icon(GuiGraphics g, int kind, float x, float y, int color) {
-        switch (kind) {
-            case 1 -> {
-                TerminalDraw.outline(g, x, y + 1, 8, 8, color);
-                TerminalDraw.line(g, x + 2, y + 5, x + 3.5f, y + 7, 1f, color);
-                TerminalDraw.line(g, x + 3.5f, y + 7, x + 6.5f, y + 2.5f, 1f, color);
-            }
-            case 2 -> {
-                TerminalDraw.ellipseRing(g, x + 4, y + 5, 4.2f, 2.4f, 1f, color);
-                TerminalDraw.fillCircle(g, x + 4, y + 5, 1.2f, color);
-            }
-            case 3 -> {
-                float[] pts = {x + 4, y + 1, x + 8, y + 5, x + 4, y + 9, x, y + 5};
-                TerminalDraw.polygon(g, pts, 0);
-                for (int i = 0; i < 4; i++) {
-                    TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
-                            pts[((i + 1) % 4) * 2], pts[((i + 1) % 4) * 2 + 1], 1f, color);
-                }
-            }
-            default -> { }
-        }
+        if (kind != 1 && kind != 2) return;
+        int id = kind == 1 ? TerminalIcons.BOX : TerminalIcons.EYE;
+        float a = (color >>> 24) / 255f;
+        // 填充态按钮底色是墨黑、图标要给纸白变体（黑色剪影乘色乘不白）
+        boolean onDark = ((color >>> 16) & 0xFF) > 0x80;
+        if (onDark) TerminalIcons.drawOnDark(g, id, x, y + 1, 8, a);
+        else TerminalIcons.draw(g, id, x, y + 1, 8, a);
     }
 
     static String fmt(BlockPos pos) {
