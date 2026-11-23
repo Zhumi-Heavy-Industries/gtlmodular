@@ -48,17 +48,36 @@ public final class OverclockHatchLogic {
      * 因此在 {@code RecipeModifier#apply(machine, ...)} 这一层记下机器，
      * 到真正执行超频时再据此替换倍率 —— 这正是 GTO 的做法
      * （它的超频仓只有一个 {@code getCurrentMultiplier()}，由超频 trait 现读）。
+     *
+     * <p>用栈而不用单值：{@code apply} 正常返回才清理，但配方修正链里存在嵌套调用
+     * （双仓 / 并行逻辑再调一次修正），单值会被内层的 {@code exit} 提前抹掉，
+     * 表现为外层后续调用拿不到机器。栈只弹一层，打断嵌套也能自洽。
      */
-    private static final ThreadLocal<MetaMachine> CURRENT_MACHINE = new ThreadLocal<>();
+    private static final ThreadLocal<java.util.ArrayDeque<MetaMachine>> CURRENT_MACHINE =
+            ThreadLocal.withInitial(java.util.ArrayDeque::new);
 
-    /** 进入一次配方修正：记下机器。 */
+    /** 进入一次配方修正：压入机器。 */
     public static void enter(MetaMachine machine) {
-        CURRENT_MACHINE.set(machine);
+        CURRENT_MACHINE.get().push(machine);
     }
 
-    /** 离开一次配方修正。 */
-    public static void exit() {
-        CURRENT_MACHINE.remove();
+    /**
+     * 离开一次配方修正：按<b>对象身份</b>回退到本次的机器。
+     *
+     * <p>不假设「栈顶就是自己」：{@code apply} 只有正常返回才走到这里，
+     * 中途抛异常的调用会把自己的条目留在栈里。按身份向下弹能顺手清掉这种残留，
+     * 避免同线程下一次配方拿到上一台机器（表现为仓倍率串到别的机器上）。
+     */
+    public static void exit(MetaMachine machine) {
+        java.util.ArrayDeque<MetaMachine> stack = CURRENT_MACHINE.get();
+        while (!stack.isEmpty()) {
+            if (stack.pop() == machine) {
+                break;
+            }
+        }
+        if (stack.isEmpty()) {
+            CURRENT_MACHINE.remove();
+        }
     }
 
     /**
@@ -72,7 +91,7 @@ public final class OverclockHatchLogic {
      */
     public static com.gregtechceu.gtceu.api.recipe.OverclockingLogic override(
             com.gregtechceu.gtceu.api.recipe.OverclockingLogic original) {
-        MetaMachine machine = CURRENT_MACHINE.get();
+        MetaMachine machine = CURRENT_MACHINE.get().peek();
         if (machine == null || !enabled()) {
             return original;
         }
