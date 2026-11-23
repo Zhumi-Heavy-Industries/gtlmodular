@@ -52,9 +52,17 @@ public final class TerminalScreen extends Screen {
     public float seconds;
 
     public String playerName = "wangxiaoai";
-    public String machineName = "恒星炎炀容器";
+    public String machineName = "待扫描目标";
     public String boundAeText = "OVERWORLD 128, 64, -37";
     public String tierName = "恒星炽热外壳";
+    /**
+     * 本次打开界面后点选过的档位名（空串 = 还没选）。
+     *
+     * <p>网页端 build_v4.py 的 .tier-cell 处理器点完会把「选择档位」卡副标写成
+     * 「&lt;档位名&gt; · 已选」再关面板；Java 端之前副标恒为「N 档可选 · 需扫描」，
+     * 于是点完格子面板一关，画面跟点之前一模一样（实机反馈「选了没变化」）。</p>
+     */
+    public String tierPicked = "";
     public String family = "sc";
     public int tierIndex;
     public int repeat = 1;
@@ -86,6 +94,8 @@ public final class TerminalScreen extends Screen {
     private boolean reportDefaultApplied;
     private Page drawnPage;
     private long pageSwitchAt;
+    private Page prevDrawnPage = Page.MAIN;
+    private final TerminalTransition transition = new TerminalTransition();
     private @Nullable ShanhaiTerminalReport report;
     /** 聊天报告链接打开时注入的指定报告；非空则直接停在报告页，不依赖手持终端物品。 */
     private final @Nullable ShanhaiTerminalReport forcedReport;
@@ -96,8 +106,7 @@ public final class TerminalScreen extends Screen {
 
     /**
      * 聊天报告链接专用入口：注入指定报告并直接打开报告页。
-     * 报告页绘制复用本类已与网页端对齐的 {@code print.TerminalReport}，
-     * 不再走差异巨大的旧烘焙版 {@code WhaleTerminalReportScreen}。
+     * 复用本类已与网页端对齐的 print.TerminalReport，不再走旧烘焙版报告屏。
      */
     public TerminalScreen(@Nullable ShanhaiTerminalReport forcedReport) {
         this(null, false, forcedReport);
@@ -121,8 +130,9 @@ public final class TerminalScreen extends Screen {
     protected void init() {
         super.init();
         this.scale = Math.min(1f, Math.min((width - 8f) / TerminalTheme.W, (height - 8f) / TerminalTheme.H));
-        this.originX = (width - TerminalTheme.W * scale) / 2f;
-        this.originY = (height - TerminalTheme.H * scale) / 2f;
+        // 原点必须落在整数 GUI 像素上：半像素起始会让整张纸的字形被重采样，看着整体发糊。
+        this.originX = Math.round((width - TerminalTheme.W * scale) / 2f);
+        this.originY = Math.round((height - TerminalTheme.H * scale) / 2f);
         this.openedAt = System.nanoTime();
         hideCursor();
         loadState();
@@ -150,6 +160,9 @@ public final class TerminalScreen extends Screen {
     }
 
     private void loadState() {
+        // 主机名先回到中性态：只有真正绑定到已加载控制器时才显示机器名，
+        // 否则（预览/未手持/报告直达）一律保持网页端的「待扫描目标」。
+        machineName = "待扫描目标";
         if (preview) {
             reportRows = sampleRows();
             expanded = new boolean[reportRows.size()];
@@ -191,14 +204,16 @@ public final class TerminalScreen extends Screen {
         if (ae != null) boundAeText = ae.dimension().location() + " " + ae.pos().toShortString();
         if (family == null || family.isEmpty()) family = "sc";
 
-        // 主机名：读物品上绑定的控制器（本次会话最近一次扫描写入的坐标）
+        // 主机名：读物品上绑定的控制器，但**必须**本次登录扫描过才算数。
+        // 绑定坐标是写在物品 NBT 里的（跨存档/重启保留），直接拿来显示的话，重进游戏后
+        // 标题还挂着上次那台机器的名字；网页端语义是「没扫过 = 待扫描目标」。
         machineName = "待扫描目标";
         var ctrl = ShanhaiUltimateTerminalConfig.getBoundController(stack);
-        if (ctrl != null && mc.level != null) {
+        if (ctrl != null && mc.level != null && scannedThisSession(ctrl.pos())) {
             var machine = com.gregtechceu.gtceu.api.machine.MetaMachine.getMachine(mc.level, ctrl.pos());
             if (machine instanceof com.gregtechceu.gtceu.api.machine.multiblock.MultiblockControllerMachine controller) {
                 var def = controller.getDefinition();
-                if (def != null) machineName = def.asStack().getHoverName().getString();
+                if (def != null) machineName = stripColorCodes(def.asStack().getHoverName().getString());
             }
         }
 
@@ -206,9 +221,20 @@ public final class TerminalScreen extends Screen {
     }
 
     /**
-     * 把一份报告填充到报告的计数/清单/舱室状态字段。
-     * 正常路径传 latestScan()；聊天报告链接注入路径传 forcedReport。
-     * 两条路径共用，保证玩家在两条入口看到的报告页完全一致（均与网页端对齐）。
+     * 本次登录（客户端进程内）是否扫描过这台控制器。
+     *
+     * <p>报告缓存 {@link ShanhaiTerminalReportClient} 只在内存里（进程退出即清空），
+     * 拿它判断「这一次登录有没有扫过」最省事，也不必往物品 NBT 里塞会话标记——
+     * 绑定坐标本身要跨存档保留（聊天指令、AE 等功能都用它）。</p>
+     */
+    private static boolean scannedThisSession(BlockPos pos) {
+        ShanhaiTerminalReport r = ShanhaiTerminalReportClient.latestScan();
+        return r != null && r.type() == ShanhaiTerminalReport.Type.SCAN && pos.equals(r.target());
+    }
+
+    /**
+     * 把一份报告填充到计数/清单/舱室状态字段。
+     * 正常路径传 latestScan()；聊天报告链接注入路径传 forcedReport，两条入口看到一致报告页。
      */
     private void applyReport(ShanhaiTerminalReport r) {
         report = r;
@@ -293,7 +319,9 @@ public final class TerminalScreen extends Screen {
         List<String> displayNames = new ArrayList<>(names.size());
         for (Component name : names) displayNames.add(displayName(name.getString()));
         List<String> categoryNames = new ArrayList<>(cats.size());
-        for (ShanhaiTerminalReport.Category category : cats) categoryNames.add(category.label().getString());
+        for (ShanhaiTerminalReport.Category category : cats) {
+            categoryNames.add(stripColorCodes(category.label().getString()));
+        }
         for (ShanhaiTerminalReport.Line line : report.lines()) {
             if (line.category() < 0 || line.category() >= cats.size()
                     || line.name() < 0 || line.name() >= names.size()) continue;
@@ -319,7 +347,22 @@ public final class TerminalScreen extends Screen {
         if (name == null) return "";
         int cut = name.indexOf('、');
         if (cut > 0) name = name.substring(0, cut);
+        // 真实物品名带 MC 颜色码（§8/§r 等）；AWT 字体不解析，会把 § 和码字都画出来
+        // （实机截图「§ 8ULV § r巨型输出总线」）。网页原型是纯文本，这里在显示层剥离以对齐。
+        name = stripColorCodes(name);
         return TerminalFonts.clip(Fam.CN, 8f, name, 330f);
+    }
+
+    /** 剥离 Minecraft § 颜色码及其后的一个格式字符（§8/§r/§b/§l…），供所有真实数据显示前调用。 */
+    public static String stripColorCodes(String s) {
+        if (s == null || s.indexOf('§') < 0) return s == null ? "" : s;
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '§' && i + 1 < s.length()) { i++; continue; } // 跳过 § 与紧跟的格式字符
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     private static List<ReportRow> sampleRows() {
@@ -347,13 +390,19 @@ public final class TerminalScreen extends Screen {
         }
         long renderStart = System.nanoTime();
         this.seconds = (renderStart - openedAt) / 1_000_000_000f;
+        // 把纸张缩放交给字体系统做超采样：字号按「GUI 缩放 × 纸张缩放」烘焙，
+        // 上屏才严格 1:1，不会在窗口偏小时被二次缩采样糊掉。
+        TerminalFonts.setSheetScale(scale);
         if (page != drawnPage) {
             drawnPage = page;
             pageSwitchAt = renderStart;
+            // 网页 go(n)：按目标页序号选变体（kinds[n % 3]），并重置 820ms 忙碌窗口；
+            // 同时记下旧页，交叉淡化时要把旧页也画出来。
+            transition.begin(this.seconds, page.ordinal(), prevDrawnPage.ordinal());
+            prevDrawnPage = page;
         }
-        float transition = Math.min(1f, (renderStart - pageSwitchAt) / 500_000_000f); // 网页 .sw-slot .5s
-        float transitionEase = 1f - (1f - transition) * (1f - transition) * (1f - transition);
-        float pageShift = (1f - transitionEase) * 5f;
+        // 内容进场：网页 .entering .sheet>* 的 fx-in（0.55s 从下方 5px 淡入，元素错峰）
+        float pageShift = transition.shiftY(this.seconds, 0);
         this.mouseX = (mouseX - originX) / scale;
         this.mouseY = (mouseY - originY) / scale;
         hits.clear();
@@ -371,17 +420,48 @@ public final class TerminalScreen extends Screen {
         try {
         g.pose().translate(originX, originY, 0);
         g.pose().scale(scale, scale, 1f);
-        // 三个独立 drawManaged，而不是一个批次里反复 flush。
-        // 1.20.1 的 BufferSource 按 RenderType 创建顺序出队；同一批次里先建 text 缓冲、后建 gui 缓冲，
-        // 会让后画的色块盖住先建的文字（CONFIG/BIND/SYSTEM 标题发黑就是这个原因）。
+
+        // ── 交叉淡化（网页 .sw-slot：旧页 leaving 淡出 + 新页 active 淡入，0.5s 内真重叠）
+        // MC 的 GuiGraphics 没有整页 alpha。等效做法：
+        //   1) 画旧页 → 用纸色以 fadeIn 盖一遍（旧页显得 1-fadeIn）
+        //   2) 把新页画到另一层 → 再用纸色以 1-fadeIn 盖一遍（新页显得 fadeIn）
+        // 已验证：纸上看到的颜色 = ink*a + paper*(1-a)，与网页 slot opacity 逐点一致。
+        // 注意新页的纸底不能用不透明 PAPER，否则会把旧页死死盖住，所以它一样要洗。
+        boolean crossfading = transition.crossfading(this.seconds);
+        int prevPage = transition.previousPage();
+        float fadeIn = transition.crossfade(this.seconds);
+        if (crossfading && prevPage >= 0 && prevPage != page.ordinal()) {
+            final Page oldPage = Page.values()[prevPage];
+            // 旧页完整画一遍，再用纸色盖掉 fadeIn 那么多 → 剩余 (1-fadeIn) 可见
+            g.drawManaged(() -> {
+                g.pose().pushPose();
+                try {
+                    drawPageBody(g, oldPage);
+                } finally {
+                    g.pose().popPose();
+                }
+            });
+            g.drawManaged(() -> washPage(g, fadeIn));
+            // 旧页的洗白必须落地，否则接着画的新页会与它同批排序混乱
+            g.flush();
+        }
+
+        // 新页：纸底 + 页框先落（与网页 .grain/.crop 在前一致），再画内容
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                // 网页 .entering .sheet>*：0.55s 内从下方 5px 淡入
-                g.pose().translate(0, pageShift, 0);
-                TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+                g.pose().translate(0f, transition.shiftY(this.seconds, 0), 0f);
+                drawPaper(g);
                 TerminalFrame.draw(g, page);
                 navHits();
+            } finally {
+                g.pose().popPose();
+            }
+        });
+        g.drawManaged(() -> {
+            g.pose().pushPose();
+            try {
+                g.pose().translate(0f, transition.shiftY(this.seconds, 3), 0f);
                 switch (page) {
                     case MAIN -> drawMain(g);
                     case OPTIONS -> TerminalOptions.draw(g, this);
@@ -391,16 +471,17 @@ public final class TerminalScreen extends Screen {
                 g.pose().popPose();
             }
         });
-        if (transition < 0.999f) {
-            // 网页 v32 交叉淡化：不再用整页纸白幕（旧实现 peak .588 会遮成白屏）。
-            // 改为一条极淡钴蓝扫光横掠，峰值 alpha ≈ .12（30），与新页淡入同时发生，全程不遮断内容。
-            float sweepK = 1f - Math.abs(transition - 0.45f) / 0.45f; // 0→1→0，mid 峰值
-            if (sweepK > 0f) {
-                int alpha = (int) (sweepK * 30f); // 网页 fx-veil 峰值 .12
-                float bandX = transition * TerminalTheme.W;
-                g.drawManaged(() -> TerminalDraw.rect(g, bandX - 40f, 0, 80f, TerminalTheme.H,
-                        (alpha << 24) | 0x3A5BC2));
-            }
+        if (crossfading) {
+            // 新页也从 fadeIn 开始（等效于 .sw-slot.active 从 0 淡到 1）。
+            // 必须先 flush，否则新页的纸底/色块与洗白层可能按 RenderType 重新排序，
+            // 出现「先洗后画」导致新页完全不淡入。
+            g.flush();
+            g.drawManaged(() -> washPage(g, 1f - fadeIn));
+        }
+        if (transition.active(this.seconds)) {
+            // 删除原来的纸白遮罩（网页 v32 原话：那层 opacity .92 的全屏遮罩是「瞬间黑屏」真凶）。
+            // 现在换成网页同款四层：光幕 .12 峰值 + 构造标记三层闪切 + 变体（scan/mosaic/wipe）。
+            g.drawManaged(() -> transition.draw(g, this.seconds));
         }
         overlayHitStart = -1;
         if (layerOpen || tierOpen) {
@@ -411,9 +492,22 @@ public final class TerminalScreen extends Screen {
             });
         }
         Target target = lockedTarget();
-        g.drawManaged(() -> reticle.draw(g, this.mouseX, this.mouseY, seconds,
-                target == null ? null : new TerminalReticle.Target(target.x, target.y, target.w, target.h,
-                        target.label, target.ink)));
+        // 准星/涟漪必须压在所有图层之上——档位面板里的方块图标是 renderItem 走 bufferSource
+        // 直接出的三维面片，深度比 z=0 的色块更靠前，同层绘制会被图标啃掉一角
+        // （实机反馈「三钛这个字被线圈方块挡住」）。
+        // 先把前面的批次刷干净，再整体前移到 z=400（原版 tooltip 的深度）画准星。
+        g.flush();
+        g.pose().pushPose();
+        try {
+            g.pose().translate(0f, 0f, 400f);
+            // 依旧走 drawManaged 合批（涟漪一圈要几十个 fill，散着画每笔都刷一次批太贵）
+            g.drawManaged(() -> reticle.draw(g, this.mouseX, this.mouseY, seconds,
+                    target == null ? null : new TerminalReticle.Target(target.x, target.y, target.w, target.h,
+                            target.label, target.ink)));
+        } finally {
+            g.pose().popPose();
+        }
+        g.flush();
         } finally {
             g.pose().popPose();
         }
@@ -427,14 +521,54 @@ public final class TerminalScreen extends Screen {
         }
     }
 
+    /** 画一整页（纸底 + 页框 + 内容），不带任何进场位移。交叉淡化时要画旧页。 */
+    private void drawPageBody(GuiGraphics g, Page p) {
+        drawPaper(g);
+        TerminalFrame.draw(g, p);
+        switch (p) {
+            case MAIN -> drawMain(g);
+            case OPTIONS -> TerminalOptions.draw(g, this);
+            case REPORT -> TerminalReport.draw(g, this);
+        }
+    }
+
+    /**
+     * 纸底 + 纸面颗粒，两者都必须先于页框/正文落地。
+     *
+     * <p>纸面用一张不透明的「纸色 + 颗粒」贴图平铺，仍保留下面那层纯色纸底做兜底
+     * （贴图万一没加载出来，至少还是白纸而不是黑屏）。</p>
+     *
+     * <p>结束后刷一次：drawManaged 会把块内所有绘制攒到 block 结束统一出队，而
+     * guiTextured(文字/贴图) 与 gui(色块) 是两套缓冲，出队时色块可能晚于文字，整张纸就会把
+     * 页框文字整组盖掉。纸面单独成批，后面的页框/正文才能稳稳压在它上面。</p>
+     */
+    private static void drawPaper(GuiGraphics g) {
+        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, TerminalTheme.PAPER);
+        // 贴图不可用就只剩纯色纸（宁可没颗粒，也不要花屏）
+        if (TerminalGrain.usable()) TerminalGrain.drawPaper(g);
+        g.flush();
+    }
+
+    /** 用纸色以 coverage 不透明度盖住整页：等效于把整页 opacity 设为 (1-coverage)。 */
+    private static void washPage(GuiGraphics g, float coverage) {
+        if (coverage <= 0.002f) return;
+        int a = Math.round(255f * Math.max(0f, Math.min(1f, coverage)));
+        TerminalDraw.rect(g, 0, 0, TerminalTheme.W, TerminalTheme.H, (a << 24) | 0xEFF1EF);
+    }
+
     private void navHits() {
         float x = 36;
         for (Page p : Page.values()) {
             float numW = TerminalFonts.mixedWidth(Fam.MONO, 6f, p.num, 0f);
             float nameW = TerminalFonts.mixedWidth(Fam.MONO, 7f, p.cn, 1.2f);
             final Page target = p;
-            // 与 TerminalFrame.navTabs 的下划线（322, h2）和文字（323..330）对齐
-            hit(x - 4, 321, numW + 5 + nameW + 10, 12, p.cn, () -> {
+            // 命中区＝页签的实际视觉块：上头贴住激活下划线（y322 h2，左右各外扩 4）、
+            // 下头包住文字（y326 起）。原来是 y318/宽 +14，方框比下划线高 4px、右多 6px，
+            // 悬停时蓝横杠和名字都差一截才被框住（实机反馈「方框要把横杠框住」）。
+            float tabW = numW + 5f + nameW + 8f;
+            // 高 13：上边 321（下划线上沿 322 再留 1px）、下边 334（文字 326..333，
+            // 正好与四角裁切标的底端 334 齐平），框住横杠又不往页脚外多伸。
+            hit(x - 4, 321, tabW, 13, p.cn, () -> {
                 this.page = target;
                 this.tierOpen = false;
                 this.layerOpen = false;
@@ -476,8 +610,13 @@ public final class TerminalScreen extends Screen {
 
         // 三卡
         String[] titles = {"开始扫描", "配置舱室", "选择档位"};
-        // 网页端第三卡固定显示总档位数与「需扫描」，不显示已选，避免暗示已完成
-        String tierSub = TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
+        // 网页端第三卡：未选时显示总档位数与「需扫描」，点选后写回「<档位名> · 已选」。
+        // 副标可用宽度只有 60px（卡宽 72、左右各 6 内边距），长档位名先按实宽截断。
+        boolean picked = tierPicked != null && !tierPicked.isEmpty();
+        String tierSub = picked
+                ? tierPicked + " · 已选"
+                : TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
+        tierSub = TerminalFonts.clip(Fam.MONO, 5.5f, tierSub, 60f);
         String[] subs = {"手持终端 · 世界扫描", "8 类 · 6 必需", tierSub};
         for (int i = 0; i < 3; i++) {
             float x = 36 + i * 78;
@@ -486,7 +625,9 @@ public final class TerminalScreen extends Screen {
             if (hover) TerminalDraw.rect(g, x, 136, 72, 36, 0x0D3A5BC2);
             // 网页 .qa 实测：.t1 (x+6,y+7) 7.5px；.t2 (x+6,y+23) 5.5px 且 letter-spacing .6；.ar 右内边距 6
             TerminalFonts.drawMixed(g, Fam.CN, 7.5f, titles[i], x + 6, 143, 0f, TerminalTheme.INK);
-            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f, TerminalTheme.INK_SOFT);
+            // 已选档位用钴蓝，跟网页 .tier-cell.on 的选中色一致，扫一眼就知道生效了
+            TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f,
+                    (i == 2 && picked) ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
             TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 61, 150, TerminalTheme.COBALT);
             final int idx = i;
             hit(x, 136, 72, 36, titles[i], () -> {
@@ -506,7 +647,7 @@ public final class TerminalScreen extends Screen {
         echo(g, 36, 179);
         bind(g, 36, 190, "BIND 01 · AE NETWORK", "01", boundAe,
                 "AE 网络 · " + (boundAe ? "已绑定" : "未绑定"),
-                boundAe ? boundAeText : "点击绑定 / 打开子系统　›", false, null);
+                boundAe ? boundAeText : "点击绑定 / 打开子系统　›", false, null, true);
         // v32 源码 BIND 02 不是 .bind.on，表头恒为 INK 黑；状态文字仍按真实绑定
         bind(g, 36, 232, "BIND 02 · ECO SUBSYSTEM", "02", false,
                 "ECO 子系统 · " + (boundEco ? "已绑定" : "未绑定"),
@@ -523,11 +664,7 @@ public final class TerminalScreen extends Screen {
         if (!tierOpen) {
             g.pose().pushPose();
             try {
-                // v19-v22 分层入场：盘面从右侧 30*d 滑入并缓出
-                float enter = Math.min(1f, seconds / 0.9f);
-                float ease = 1f - (1f - enter) * (1f - enter) * (1f - enter);
-                float slide = (1f - ease) * 36f;
-                g.pose().translate(menu.px + slide, menu.py, 0);
+                g.pose().translate(menu.px, menu.py, 0);
                 TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
             } finally {
                 g.pose().popPose();
@@ -570,6 +707,14 @@ public final class TerminalScreen extends Screen {
 
     private void bind(GuiGraphics g, float x, float y, String title, String num, boolean on,
                       String status, String coord, boolean action, Runnable click) {
+        bind(g, x, y, title, num, on, status, coord, action, click, false);
+    }
+
+    /**
+     * @param pulseOn 网页 BIND 01 的菱形带 {@code .dot-pulse}（3s opacity 1↔.4），BIND 02 不带
+     */
+    private void bind(GuiGraphics g, float x, float y, String title, String num, boolean on,
+                      String status, String coord, boolean action, Runnable click, boolean pulseOn) {
         boolean hover = action && isHover(x, y, 230, 36);
         TerminalDraw.rect(g, x, y, 230, 36, 0xE6EFF1EF);
         TerminalDraw.outline(g, x, y, 230, 36, hover ? TerminalTheme.COBALT : 0x801F2427);
@@ -582,8 +727,19 @@ public final class TerminalScreen extends Screen {
         // 网页 .dot{left:5px;top:14px;5×5} 旋转 45° 后包围盒 (x+5..x+12, y+14..y+21)，中心 (x+8.5,y+17.5)
         g.pose().translate(x + 8.5f, y + 17.5f, 0);
         g.pose().mulPose(com.mojang.math.Axis.ZP.rotationDegrees(45f));
-        if (on) TerminalDraw.rect(g, -2.5f, -2.5f, 5, 5, TerminalTheme.COBALT);
-        else TerminalDraw.outline(g, -2.5f, -2.5f, 5, 5, TerminalTheme.INK);
+        if (on) {
+            // 网页 BIND 01 的 .dot 带 .dot-pulse：3s ease-in-out infinite，opacity 1↔.4
+            float pulse = 1f;
+            if (pulseOn) {
+                float cyc = (seconds % 3f) / 3f;
+                // 0%,100%→1；50%→.4，ease-in-out 近似为余弦
+                pulse = 0.7f + 0.3f * (float) Math.cos(cyc * Math.PI * 2.0);
+            }
+            int a = Math.round(255f * Math.max(0.4f, Math.min(1f, pulse)));
+            TerminalDraw.rect(g, -2.5f, -2.5f, 5, 5, (a << 24) | 0x3A5BC2);
+        } else {
+            TerminalDraw.outline(g, -2.5f, -2.5f, 5, 5, TerminalTheme.INK);
+        }
         g.pose().popPose();
         // 网页：.bind .st{top:12px} 盒 y+12.5；未绑定色是 INK_SOFT(85,96,95)，已绑定是 INK。
         // 之前一律用 INK 导致「未绑定」显得过重（与网页对照不一致）。
@@ -695,7 +851,7 @@ public final class TerminalScreen extends Screen {
             if (!rowVisible(reportRows.get(i))) continue;
             total += 21 + (expanded[i] ? 48 : 0);
         }
-        return (int) Math.max(0, total - TerminalReport.LIST_H);
+        return (int) Math.max(0, total - TerminalReport.LIST_CLIP_H);
     }
 
     @Override
@@ -770,8 +926,16 @@ public final class TerminalScreen extends Screen {
         family = fam;
         tierIndex = tier;
         tierName = TerminalTierPanel.nameForRaw(fam, tier);
+        // 写回主界面第三卡副标（网页点完格子就改 .t2 文案再关面板）：否则面板一关，
+        // 画面与点之前一模一样，看不出到底选没选上。
+        tierPicked = tierName;
         tierOpen = false;
         if (!preview && hand != null) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                mc.player.displayClientMessage(
+                        Component.literal("§b[哦鲸鲸终端] 已选档位 · " + tierName), true);
+            }
             GTLModularNetwork.CHANNEL.sendToServer(
                     new UltimateTerminalConfigPacket(hand, Field.REPLACEMENT, tier, fam));
         }
@@ -815,25 +979,46 @@ public final class TerminalScreen extends Screen {
     }
 
     private boolean rowVisible(ReportRow row) {
-        return switch (filter) {
-            case 1 -> "可放置".equals(row.category());
-            case 2 -> "冲突".equals(row.category());
-            case 3 -> "缺失".equals(row.category());
-            default -> true;
-        };
+        if (filter <= 0) return true;
+        java.util.List<String> cats = distinctCategories();
+        int i = filter - 1;
+        return i < cats.size() && cats.get(i).equals(row.category());
     }
 
+    /**
+     * 真实报告的分类标签是仓室名（输入仓室 / 其他仓室 …），不是
+     * 「可放置 / 冲突 / 缺失」——那三个是网页原型的假数据。
+     *
+     * <p>之前筛选器直接拿 {"可放置".equals(row.category())} 比，永远不成立，
+     * 一按整页就空白。现在：0 = 全部；1..N = 按真实出现的分类逐个筛（标签取该分类名）。
+     */
     public String filterName() {
-        return switch (filter) {
-            case 1 -> "可放置";
-            case 2 -> "冲突";
-            case 3 -> "缺失";
-            default -> "全部";
-        };
+        if (filter <= 0) return "全部";
+        java.util.List<String> cats = distinctCategories();
+        int i = filter - 1;
+        return i < cats.size() ? cats.get(i) : "全部";
+    }
+
+    /** 报告里实际出现过的分类，按首次出现顺序去重。 */
+    public java.util.List<String> distinctCategories() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (ReportRow row : reportRows) {
+            if (row.category() != null && !out.contains(row.category())) out.add(row.category());
+        }
+        return out;
+    }
+
+    /** 某个分类在报告里的行数（不是方块总数，与摘要行「分类 数量」一致）。 */
+    public int countOf(String category) {
+        int n = 0;
+        for (ReportRow row : reportRows) {
+            if (category != null && category.equals(row.category())) n++;
+        }
+        return n;
     }
 
     public void cycleFilter() {
-        filter = (filter + 1) % 4;
+        filter = (filter + 1) % (distinctCategories().size() + 1);
         reportScroll = Math.min(reportScroll, maxScroll());
     }
 

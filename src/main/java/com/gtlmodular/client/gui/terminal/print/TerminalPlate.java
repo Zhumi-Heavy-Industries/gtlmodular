@@ -29,192 +29,376 @@ public final class TerminalPlate {
     private static int cob(int alpha) { return (alpha << 24) | 0x3A5BC2; }
     private static int paper(int alpha) { return (alpha << 24) | 0xEFF1EF; }
 
+    /**
+     * 网页 {@code .pl-in} 的分层入场（一层一调）。
+     *
+     * <p>{@code animation: pl-in 1s cubic-bezier(.19,1,.22,1) both calc(var(--d,0)*.16s)}；
+     * {@code from{opacity:0; translate:calc(d*30px) calc(d*-6px)}}。
+     * 即：每层延迟 {@code d*0.16s}，在这 1s 内从「右 {@code d*30}px、上 {@code d*6}px」滑到位并淡入。</p>
+     *
+     * <p>Java 没有整层 alpha，所以除了位移，本方法返回该层的<b>不透明度</b>（0..1），
+     * 由调用方用 {@link #withAlpha} 把这一层的所有颜色乘上去。</p>
+     */
+    private static float enter(GuiGraphics g, float t, float d) {
+        float delay = d * 0.16f;
+        float p = (t - delay) / 1.0f;
+        if (p <= 0f) return -1f;                       // 还没开始 → 整层不画
+        if (p >= 1f) p = 1f;
+        float e = cubicBezier(p, 0.19f, 1f, 0.22f, 1f);
+        g.pose().translate(e * 0f + (1f - e) * d * 30f, (1f - e) * d * -6f, 0);
+        return e;
+    }
+
+    /** 把 alpha(0..1) 乘到已有颜色上（网页整层 opacity 的等效做法）。 */
+    private static int withAlpha(int argb, float a) {
+        if (a >= 0.999f) return argb;
+        int base = (argb >>> 24) & 0xFF;
+        int out = Math.round(base * Math.max(0f, a));
+        return (out << 24) | (argb & 0x00FFFFFF);
+    }
+
+    private static float cubicBezier(float t, float x1, float y1, float x2, float y2) {
+        if (t <= 0f) return 0f;
+        if (t >= 1f) return 1f;
+        float lo = 0f, hi = 1f, s = t;
+        for (int i = 0; i < 22; i++) {
+            s = (lo + hi) * 0.5f;
+            float v = 1f - s;
+            float x = 3f * v * v * s * x1 + 3f * v * s * s * x2 + s * s * s;
+            if (x < t) lo = s; else hi = s;
+        }
+        float v = 1f - s;
+        return 3f * v * v * s * y1 + 3f * v * s * s * y2 + s * s * s;
+    }
+
     public static void draw(GuiGraphics g, float seconds, boolean hover, int[] flags) {
         float t = seconds;
         // L1 镜像描边大写 N（官方 scale(-1 1) + font-size 900，stroke 2）
-        float nSize = 900f * K;
-        float nTop = sy(860) - nSize * 0.82f;
-        g.pose().pushPose();
-        try {
-            g.pose().translate(sx(760), 0, 0);
-            g.pose().scale(-1f, 1f, 1f);
-            TerminalFonts.drawOutlined(g, Fam.SERIF, nSize, "N", 0, nTop, ink(16), 0.6f);
-        } finally {
-            g.pose().popPose();
+        float aL0 = enter(g, t, 0.0f);
+        if (aL0 >= 0f) {
+            g.pose().pushPose();
+            try {
+            float nSize = 900f * K;
+            float nTop = sy(860) - nSize * 0.82f;
+            g.pose().pushPose();
+            try {
+                g.pose().translate(sx(760), 0, 0);
+                g.pose().scale(-1f, 1f, 1f);
+                TerminalFonts.drawOutlined(g, Fam.SERIF, nSize, "N", 0, nTop, ink(16), 0.6f);
+            } finally {
+                g.pose().popPose();
+            }
+                    } finally { g.pose().popPose(); }
         }
-        // L1 叶片三块（官方 line176 的三个填充 path）
-        leaf(g, 220, 480, 300, 24);
-        leaf(g, 700, 300, 260, 18);
-        leaf(g, 500, 800, 340, 22);
+// L1 叶片三块（官方 line176 的三个填充 path）
+        {
+            leaf(g, 220, 480, 300, 24);
+            leaf(g, 700, 300, 260, 18);
+            leaf(g, 500, 800, 340, 22);
 
-        // L1 S 形扫掠笔刷（网页 _sweep_brush(...,70,150,.42) opacity .1）
-        sweepBand(g, 40, 860, 980, 260, 70, 150, 0.42f, cob(26));
+            // L1 S 形扫掠笔刷（网页 _sweep_brush(...,70,150,.42) opacity .1）
+            sweepBand(g, 40, 860, 980, 260, 70, 150, 0.42f, cob(26));
+        }
+// L2 外圈
+        float aL1 = enter(g, t, 0.3f);
+        if (aL1 >= 0f) {
+            g.pose().pushPose();
+            try {
+            TerminalDraw.ring(g, sx(CX), sy(CY), sr(360), 1f, ink(66));
+            TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1f, ink(56));
+            // L2 放射线 72 根（每 5°）；网页 r1 = 300 if i%6 else 296，opacity .3
+            for (int i = 0; i < 72; i++) {
+                double a = Math.toRadians(i * 5);
+                float r1 = (i % 6 == 0) ? 300f : 296f;
+                TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(r1), sy(CY) + (float) Math.sin(a) * sr(r1),
+                        sx(CX) + (float) Math.cos(a) * sr(520), sy(CY) + (float) Math.sin(a) * sr(520),
+                        1f, ink(77));
+            }
 
-        // L2 外圈
-        TerminalDraw.ring(g, sx(CX), sy(CY), sr(360), 1f, ink(66));
-        TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1f, ink(56));
-        // L2 放射线 72 根（每 5°）
-        for (int i = 0; i < 72; i++) {
-            double a = Math.toRadians(i * 5);
-            TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
-                    sx(CX) + (float) Math.cos(a) * sr(520), sy(CY) + (float) Math.sin(a) * sr(520),
-                    1f, ink(54));
+                    } finally { g.pose().popPose(); }
+        }
+// L3 放射楔形 40 个
+        float aL2 = enter(g, t, 0.4f);
+        if (aL2 >= 0f) {
+            g.pose().pushPose();
+            try {
+            // 网页 L3：沿单角 a=i·τ/40+(i%3)·.02 的细长条（不是 4° 宽扇形）
+            for (int i = 0; i < 40; i++) {
+                double a = i * (2.0 * Math.PI / 40) + (i % 3) * 0.02;
+                float rIn = 262 + (i % 4) * 6;
+                float rOut = 320 + (i % 5) * 38;
+                float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+                float px = -sa, py = ca; // 垂直方向（网页 pp=a+π/2）
+                float w = 2 + (i % 3);
+                float[] pts = {
+                        sx(CX) + ca * sr(rIn),      sy(CY) + sa * sr(rIn),
+                        sx(CX) + ca * sr(rOut),     sy(CY) + sa * sr(rOut),
+                        sx(CX) + ca * sr(rOut) + px * sr(w), sy(CY) + sa * sr(rOut) + py * sr(w),
+                        sx(CX) + ca * sr(rIn) + px * sr(w),  sy(CY) + sa * sr(rIn) + py * sr(w)
+                };
+                TerminalDraw.polygon(g, pts, ink(Math.round((0.25f + (i % 4) * 0.1f) * 255f)));
+            }
+
+            // L3 描边环 / 虚线环 / 刻度
+            // 网页：{@code .pl-draw} = stroke-dasharray:1 + pl-draw 1.6s cubic-bezier(.6,0,.2,1) both .15s
+            //       （stroke-dashoffset 1→0，即「描边自己画出来」）。
+            // 这里按进度逐段画圆弧来等价实现（进度 0 不画，进度 1 画满整整一圈）。
+            float drawP = drawProgress(t);
+            if (drawP > 0f) {
+                TerminalDraw.arc(g, sx(CX), sy(CY), sr(300), -90f, -90f + 360f * drawP, 1.3f, ink(150));
+            }
+            TerminalDraw.dashedRing(g, sx(CX), sy(CY), sr(268), 1f,
+                    (float) Math.toDegrees(2f / 268f), (float) Math.toDegrees(6f / 268f), ink(110));
+            for (int i = 0; i < 96; i++) {
+                double a = Math.toRadians(i * 3.75);
+                boolean major = i % 8 == 0; // 网页 r2 = 300 + (16 if i%8==0 else 8)，12 根长刻度
+                float len = sr(major ? 16 : 8);
+                TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
+                        sx(CX) + (float) Math.cos(a) * (sr(300) + len),
+                        sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(179)); // 网页 opacity .7
+            }
+
+            // L3 断裂轴线
+            dashed(g, sx(CX), sy(80), sx(CX), sy(900), 2.6f, 2.1f, ink(60));
+            dashed(g, sx(90), sy(CY), sx(950), sy(CY), 2.6f, 2.1f, ink(60));
+
+                    } finally { g.pose().popPose(); }
+        }
+// L4 环绕文字（r450，慢转）
+        float aL3 = enter(g, t, 0.45f);
+        if (aL3 >= 0f) {
+            g.pose().pushPose();
+            try {
+            String legend = "GREGTECH LEISURE · LATERANO 1099 · FAITH · ORDER · FREEDOM · SIDESTORY 06 · ";
+            // v22 的 textPath 放了两遍，保证整圈铺满。
+            // 网页 {@code .pl-spin{animation:pl-spin 120s linear infinite}}：120 秒才转一圈。
+            // 之前写的是 seconds * 3.0（每秒 3°，约 20 秒一圈，比网页快 6 倍）。
+            ringText(g, CX, CY, 450f, (t / 120f) * 360f, legend + legend);
+
+            // L4 点线圈 + 节点
+            TerminalDraw.dottedRing(g, sx(CX), sy(CY), sr(382), 1.4f,
+                    (float) Math.toDegrees(11f / 382f), ink(120));
+            for (int i = 0; i < 4; i++) {
+                double a = Math.toRadians(i * 90 + 30);
+                float nx = sx(CX) + (float) Math.cos(a) * sr(382);
+                float ny = sy(CY) + (float) Math.sin(a) * sr(382);
+                float pulse = 0.6f + 0.4f * (float) Math.sin(t * 1.7f + i);
+                TerminalDraw.fillCircle(g, nx, ny, 2.4f + pulse * 1.2f, paper(210));
+                TerminalDraw.ring(g, nx, ny, 2.4f + pulse * 1.2f, 1f, cob(200));
+            }
+
+                    } finally { g.pose().popPose(); }
+        }
+// L5 土星环
+        float aL4 = enter(g, t, 0.5f);
+        if (aL4 >= 0f) {
+            g.pose().pushPose();
+            try {
+            // 网页 L5：外环 stroke2.8 opacity1、内环 .9 opacity.6、笔刷 n=14 填充带 opacity .8
+            TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(255));
+            TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(153));
+            sweepBand(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(204));
+
+                    } finally { g.pose().popPose(); }
+        }
+// L6 实心钴蓝盘
+        float aL5 = enter(g, t, 0.6f);
+        if (aL5 >= 0f) {
+            g.pose().pushPose();
+            try {
+            TerminalDraw.fillCircle(g, sx(CX), sy(CY), sr(R), TerminalTheme.COBALT);
+            TerminalDraw.ring(g, sx(CX), sy(CY), sr(R), 1f, ink(210));
+            // 盘上半调白点（黄金角）
+            for (int i = 0; i < 90; i++) {
+                double a = i * 2.39996;
+                double rr = 20 + Math.sqrt(i / 90.0) * 210;
+                float dx = sx(CX) + (float) Math.cos(a) * sr((float) rr);
+                float dy = sy(CY) + (float) Math.sin(a) * sr((float) rr);
+                // 网页 L6 半调是静态 opacity .22，不做呼吸
+                TerminalDraw.fillCircle(g, dx, dy, 1.6f, paper(56));
+            }
+
+                    } finally { g.pose().popPose(); }
+        }
+// L7 主扫掠带（纸白）
+        float aL6 = enter(g, t, 0.9f);
+        if (aL6 >= 0f) {
+            g.pose().pushPose();
+            try {
+            sweepBand(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(153));
+
+            // L7 星座
+            float[] stars = {250, 700, 300, 670, 350, 720, 290, 760};
+            for (int i = 0; i < stars.length; i += 2) {
+                TerminalDraw.fillCircle(g, sx(stars[i]), sy(stars[i + 1]), 1.6f, ink(160));
+            }
+            for (int i = 0; i < 3; i++) {
+                TerminalDraw.line(g, sx(stars[i * 2]), sy(stars[i * 2 + 1]),
+                        sx(stars[i * 2 + 2]), sy(stars[i * 2 + 3]), 1f, cob(140));
+            }
+
+            // L7 星盘符号（双圆 + 8 放射线 + 中心点）
+            starCompass(g, 408, 340);
+
+            // L7 蜂巢 ×5
+            float[][] hex = {{850, 690}, {790, 690}, {820, 745}, {760, 745}, {850, 800}};
+            for (int i = 0; i < hex.length; i++) {
+                hexagon(g, sx(hex[i][0]), sy(hex[i][1]), sr(26), ink(120));
+                TerminalFonts.draw(g, Fam.MONO, 3f, String.format("%02d", i + 1),
+                        sx(hex[i][0]) + 1, sy(hex[i][1]) - 2, ink(200));
+            }
+
+            // L7 马赛克块 ×4
+            float[][] mosaic = {{170, 300}, {190, 300}, {170, 320}, {210, 310}};
+            for (float[] m : mosaic) {
+                TerminalDraw.rect(g, sx(m[0]), sy(m[1]), sr(16), sr(16), cob(200));
+            }
+
+                    } finally { g.pose().popPose(); }
+        }
+// L8 遮挡色块 ×4（硬闪）
+        float aL7 = enter(g, t, 0.95f);
+        if (aL7 >= 0f) {
+            g.pose().pushPose();
+            try {
+            float[][] blocks = {{220, 420, 60, 26}, {200, 560, 44, 18}, {700, 400, 40, 22}, {600, 640, 50, 18}};
+            // 网页 --d:0.95 那层带 pl-flick：整组同步硬闪，63%~64% 还会右移 6 CSS px
+            // 6 CSS px 在 1000 坐标系里 = 6*1000/270 ≈ 22.2，再经 sr() 换成设计像素
+            float shiftInternal = flickerShiftCssPx(t) * (1000f / 270f);
+            for (int i = 0; i < blocks.length; i++) {
+                float[] b = blocks[i];
+                int a = flickerAlpha(t, i);
+                TerminalDraw.rect(g, sx(b[0] + shiftInternal), sy(b[1]), sr(b[2]), sr(b[3]), ink(a));
+            }
+
+                    } finally { g.pose().popPose(); }
+        }
+// L9 档案卡 ×3
+        float aL8 = enter(g, t, 0.98f);
+        if (aL8 >= 0f) {
+            g.pose().pushPose();
+            try {
+            card(g, 110, 560, 200, 96, "RECORD · 06");
+            card(g, 760, 520, 186, 88, "LATERANO");
+            card(g, 640, 90, 170, 70, "SANCTUM");
+
+                    } finally { g.pose().popPose(); }
+        }
+// L10 信封 ×3 + 飞鸟 ×7（网页同属 --d:1.2 一层）
+        float aL9 = enter(g, t, 1.2f);
+        if (aL9 >= 0f) {
+            g.pose().pushPose();
+            try {
+            envelope(g, 330, 300);
+            envelope(g, 860, 430);
+            envelope(g, 150, 700);
+            for (int i = 0; i < 7; i++) {
+                float bx = 580 + i * 44;
+                float by = 230 - i * 18 + (i % 3) * 12 + (float) Math.sin(t * 0.9 + i * 0.8) * 5f;
+                float dx = (float) Math.cos(t * 1.3 + i) * 1.5f;
+                bird(g, sx(bx), sy(by + (by - 230) * 0.02f), dx);
+            }
+
+                    } finally { g.pose().popPose(); }
+        }
+// L11 描边数字 06
+        float aL10 = enter(g, t, 1.35f);
+        if (aL10 >= 0f) {
+            g.pose().pushPose();
+            try {
+            // 网页：盘外左下双描边 06，字号 260（字形盒 70.2×70.5 设计像素），两遍都是钴蓝。
+            // 两遍实测盒：x=90/y=930 → (299.2,214.3)；x=80/y=920 → (296.5,211.6)
+            outlineNumber(g, 90, 930, cob(102), 0.38f);
+            outlineNumber(g, 80, 920, cob(140), 0.49f);
+
+                    } finally { g.pose().popPose(); }
+        }
+// L12 NESW
+        float aL11 = enter(g, t, 1.15f);
+        if (aL11 >= 0f) {
+            g.pose().pushPose();
+            try {
+            // 网页 NESW：font-family=monospace、opacity 默认 1
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "N", sx(508), sy(250), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "E", sx(742), sy(476), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "S", sx(508), sy(700), paper(255));
+            TerminalFonts.draw(g, Fam.MONO, 4.4f, "W", sx(290), sy(476), paper(255));
+
+                    } finally { g.pose().popPose(); }
+        }
+// L12 扫描线：{@code .pl-sweep}，9s 周期、延迟 2.4s、cubic-bezier(.6,0,.3,1)
+        // 网页：x=250 y=80 w=3 h=760，translate 0 → 230 CSS px（= 230*1000/270 ≈ 852 内部），
+        //       opacity 0%→0, 5%→.85, 24%→0, 100%→0（剩下 76% 时间停在终点、不可见）
+        float sweepPhase = ((t - 2.4f) % 9f + 9f) % 9f / 9f;
+        if (sweepPhase > 0f && sweepPhase < 0.24f) {
+            float sp;
+            if (sweepPhase < 0.05f) {
+                sp = easeSweep(0f);                       // 移动量按 bezier 推进
+                float aIn = sweepPhase / 0.05f;
+                drawSweep(g, sp, 0.85f * aIn);
+            } else {
+                float k = (sweepPhase - 0.05f) / (0.24f - 0.05f);
+                sp = easeSweep(k);
+                float aOut = 1f - k;
+                drawSweep(g, sp, 0.85f * aOut);
+            }
         }
 
-        // L3 放射楔形 40 个：网页是沿单一角度 a=i·τ/40+(i%3)·.02 的细长条，
-        // 起点 r=262+(i%4)*6、终点 320+(i%5)*38、宽 w=2+(i%3)（1000系），opacity .25+(i%4)*.1。
-        // 旧实现画成 4° 扇形（宽 6~10×）且偏淡，这里改为单角细条以贴合网页质感。
-        for (int i = 0; i < 40; i++) {
-            double a = i * Math.PI * 2 / 40 + (i % 3) * .02;
-            float rIn = 262 + (i % 4) * 6;
-            float rOut = 320 + (i % 5) * 38;
-            float w = sr(2 + (i % 3));
-            TerminalDraw.line(g,
-                    sx(CX) + (float) Math.cos(a) * sr(rIn), sy(CY) + (float) Math.sin(a) * sr(rIn),
-                    sx(CX) + (float) Math.cos(a) * sr(rOut), sy(CY) + (float) Math.sin(a) * sr(rOut),
-                    w, ink(64 + (i % 4) * 26));
-        }
-
-        // L3 描边环 / 虚线环 / 刻度
-        TerminalDraw.ring(g, sx(CX), sy(CY), sr(300), 1.2f, ink(150));
-        TerminalDraw.dashedRing(g, sx(CX), sy(CY), sr(268), 1f,
-                (float) Math.toDegrees(2f / 268f), (float) Math.toDegrees(6f / 268f), ink(110));
-        for (int i = 0; i < 96; i++) {
-            double a = Math.toRadians(i * 3.75);
-            boolean major = i % 8 == 0; // 网页 r2 = 300 + (16 if i%8==0 else 8)
-            float len = sr(major ? 16 : 8);
-            TerminalDraw.line(g, sx(CX) + (float) Math.cos(a) * sr(300), sy(CY) + (float) Math.sin(a) * sr(300),
-                    sx(CX) + (float) Math.cos(a) * (sr(300) + len),
-                    sy(CY) + (float) Math.sin(a) * (sr(300) + len), 1f, ink(178)); // 网页 opacity .7
-        }
-
-        // L3 断裂轴线
-        dashed(g, sx(CX), sy(80), sx(CX), sy(900), 2.6f, 2.1f, ink(60));
-        dashed(g, sx(90), sy(CY), sx(950), sy(CY), 2.6f, 2.1f, ink(60));
-
-        // L4 环绕文字（r450，慢转）
-        String legend = "GREGTECH LEISURE · LATERANO 1099 · FAITH · ORDER · FREEDOM · SIDESTORY 06 · ";
-        // v22 的 textPath 放了两遍，保证整圈铺满
-        ringText(g, CX, CY, 450f, seconds * 3.0f, legend + legend);
-
-        // L4 点线圈 + 节点
-        TerminalDraw.dottedRing(g, sx(CX), sy(CY), sr(382), 1.4f,
-                (float) Math.toDegrees(11f / 382f), ink(120));
-        for (int i = 0; i < 4; i++) {
-            double a = Math.toRadians(i * 90 + 30);
-            float nx = sx(CX) + (float) Math.cos(a) * sr(382);
-            float ny = sy(CY) + (float) Math.sin(a) * sr(382);
-            float pulse = 0.6f + 0.4f * (float) Math.sin(t * 1.7f + i);
-            TerminalDraw.fillCircle(g, nx, ny, 2.4f + pulse * 1.2f, paper(210));
-            TerminalDraw.ring(g, nx, ny, 2.4f + pulse * 1.2f, 1f, cob(200));
-        }
-
-        // L5 土星环（网页：外环 stroke 2.8 opacity 1，内环 .9 opacity .6，笔刷为 n=14 填充带）
-        TerminalDraw.ellipseRing(g, sx(CX), sy(196), sr(190), sr(40), 2f, ink(230));
-        TerminalDraw.ellipseRing(g, sx(CX), sy(198), sr(150), sr(31), 1f, ink(153));
-        sweepBand(g, 360, 210, 680, 182, 6, 11, 0.5f, cob(204));
-
-        // L6 实心钴蓝盘
-        TerminalDraw.fillCircle(g, sx(CX), sy(CY), sr(R), TerminalTheme.COBALT);
-        TerminalDraw.ring(g, sx(CX), sy(CY), sr(R), 1f, ink(210));
-        // 盘上半调白点（黄金角）
-        for (int i = 0; i < 90; i++) {
-            double a = i * 2.39996;
-            double rr = 20 + Math.sqrt(i / 90.0) * 210;
-            float dx = sx(CX) + (float) Math.cos(a) * sr((float) rr);
-            float dy = sy(CY) + (float) Math.sin(a) * sr((float) rr);
-            // 网页 L6 半调是静态 opacity .22，不做呼吸
-            TerminalDraw.fillCircle(g, dx, dy, 1.6f, paper(56));
-        }
-
-        // L7 主扫掠带（纸白）
-        sweepBand(g, 330, 600, 720, 380, 16, 22, 0.45f, paper(153));
-
-        // L7 星座
-        float[] stars = {250, 700, 300, 670, 350, 720, 290, 760};
-        for (int i = 0; i < stars.length; i += 2) {
-            TerminalDraw.fillCircle(g, sx(stars[i]), sy(stars[i + 1]), 1.6f, ink(160));
-        }
-        for (int i = 0; i < 3; i++) {
-            TerminalDraw.line(g, sx(stars[i * 2]), sy(stars[i * 2 + 1]),
-                    sx(stars[i * 2 + 2]), sy(stars[i * 2 + 3]), 1f, cob(140));
-        }
-
-        // L7 星盘符号（双圆 + 8 放射线 + 中心点）
-        starCompass(g, 408, 340);
-
-        // L7 蜂巢 ×5
-        float[][] hex = {{850, 690}, {790, 690}, {820, 745}, {760, 745}, {850, 800}};
-        for (int i = 0; i < hex.length; i++) {
-            hexagon(g, sx(hex[i][0]), sy(hex[i][1]), sr(26), ink(120));
-            TerminalFonts.draw(g, Fam.MONO, 3f, String.format("%02d", i + 1),
-                    sx(hex[i][0]) + 1, sy(hex[i][1]) - 2, ink(200));
-        }
-
-        // L7 马赛克块 ×4
-        float[][] mosaic = {{170, 300}, {190, 300}, {170, 320}, {210, 310}};
-        for (float[] m : mosaic) {
-            TerminalDraw.rect(g, sx(m[0]), sy(m[1]), sr(16), sr(16), cob(200));
-        }
-
-        // L8 遮挡色块 ×4（硬闪）
-        float[][] blocks = {{220, 420, 60, 26}, {200, 560, 44, 18}, {700, 400, 40, 22}, {600, 640, 50, 18}};
-        for (int i = 0; i < blocks.length; i++) {
-            float[] b = blocks[i];
-            int a = flickerAlpha(t, i);
-            TerminalDraw.rect(g, sx(b[0]), sy(b[1]), sr(b[2]), sr(b[3]), ink(a));
-        }
-
-        // L9 档案卡 ×3
-        card(g, 110, 560, 200, 96, "RECORD · 06");
-        card(g, 760, 520, 186, 88, "LATERANO");
-        card(g, 640, 90, 170, 70, "SANCTUM");
-
-        // L10 信封 ×3
-        envelope(g, 330, 300);
-        envelope(g, 860, 430);
-        envelope(g, 150, 700);
-
-        // L10 飞鸟 ×7
-        for (int i = 0; i < 7; i++) {
-            float bx = 580 + i * 44;
-            float by = 230 - i * 18 + (i % 3) * 12 + (float) Math.sin(t * 0.9 + i * 0.8) * 5f;
-            float dx = (float) Math.cos(t * 1.3 + i) * 1.5f;
-            bird(g, sx(bx), sy(by + (by - 230) * 0.02f), dx);
-        }
-
-        // L11 描边数字 06
-        // 网页：盘外左下双描边 06，字号 260（字形盒 70.2×70.5 设计像素），两遍都是钴蓝。
-        // 两遍实测盒：x=90/y=930 → (299.2,214.3)；x=80/y=920 → (296.5,211.6)
-        outlineNumber(g, 90, 930, cob(102));
-        outlineNumber(g, 80, 920, cob(140));
-
-        // L12 NESW
-        TerminalFonts.draw(g, Fam.SERIF, 4.4f, "N", sx(508), sy(250), paper(220));
-        TerminalFonts.draw(g, Fam.SERIF, 4.4f, "E", sx(742), sy(476), paper(220));
-        TerminalFonts.draw(g, Fam.SERIF, 4.4f, "S", sx(508), sy(700), paper(220));
-        TerminalFonts.draw(g, Fam.SERIF, 4.4f, "W", sx(290), sy(476), paper(220));
-
-        // L12 扫描线（9s 掠过）
-        float p = (t % 9f) / 9f;
-        if (p > 0.05f && p < 0.35f) {
-            float k = (p - 0.05f) / 0.3f;
-            float x = sx(250) + k * (sx(480) - sx(250));
-            float a = (float) (Math.sin(k * Math.PI)) * 0.85f;
-            TerminalDraw.rect(g, x, sy(80), 1.2f, sr(760), paper((int) (a * 255)));
-        }
-
-        // v22 构造线：静止 opacity .18、hover .85（网页 .pl-construct）；不是准星吸附框
-        TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 2.2f, 3.2f,
+        // 网页 .pl-construct：静止 opacity .18、hover .85
+        TerminalDraw.dashedRect(g, sx(300), sy(250), sr(440), sr(440), 1.1f, 1.6f,
                 cob(hover ? 217 : 46));
     }
 
+    /**
+     * 网页 {@code .pl-flick}（所有遮挡块共享同一时间轴，不是各自错峰）。
+     *
+     * <pre>
+     * animation: pl-flick 5.2s steps(1) infinite;
+     * @keyframes pl-flick{
+     *   0%,100%{opacity:1}  61%{opacity:.25}  62%{opacity:1}
+     *   63%{opacity:.55;translate:6px 0}  64%{opacity:1;translate:0 0}
+     *   88%{opacity:0}  89%{opacity:1} }
+     * </pre>
+     *
+     * <p>{@code steps(1)} 表示每一段内保持不变、到下一个关键帧才跳变（硬闪卡帧）。
+     * 之前这里给每块加了 {@code i*0.37} 相位偏移，四块各自闪，与网页「整组同步硬闪」完全不同。</p>
+     */
+    /** {@code .pl-draw}：1.6s cubic-bezier(.6,0,.2,1)，延迟 0.15s，{@code both} 填充。 */
+    private static float drawProgress(float t) {
+        float p = (t - 0.15f) / 1.6f;
+        if (p <= 0f) return 0f;
+        if (p >= 1f) return 1f;
+        return cubicBezier(p, 0.6f, 0f, 0.2f, 1f);
+    }
+
+    /** {@code cubic-bezier(.6,0,.3,1)}：pl-sweep 的位移缓动。 */
+    private static float easeSweep(float k) {
+        return cubicBezier(Math.max(0f, Math.min(1f, k)), 0.6f, 0f, 0.3f, 1f);
+    }
+
+    /** 画扫描条：x=250 起点，位移 230 CSS px（换算成内部 852.0）。 */
+    private static void drawSweep(GuiGraphics g, float progress, float alpha) {
+        if (alpha <= 0.002f) return;
+        float x = 250f + progress * (230f * 1000f / 270f);
+        TerminalDraw.rect(g, sx(x), sy(80), sr(3f), sr(760f), paper((int) (alpha * 255)));
+    }
+
     private static int flickerAlpha(float t, int i) {
-        float phase = (t + i * 0.37f) % 5.2f / 5.2f;
-        if (phase > 0.61f && phase < 0.62f) return 64;
-        if (phase > 0.63f && phase < 0.64f) return 140;
-        if (phase > 0.88f && phase < 0.89f) return 0;
-        return 199;
+        float phase = (t % 5.2f) / 5.2f;       // 共享时间轴（不再 + i*0.37）
+        if (phase >= 0.61f && phase < 0.62f) return 64;    // .25
+        if (phase >= 0.63f && phase < 0.64f) return 140;   // .55
+        if (phase >= 0.88f && phase < 0.89f) return 0;     // 0
+        return 199;                                        // 1 → ink(199) 的等效
+    }
+
+    /** {@code pl-flick} 在 63%~64% 处还有 6px 的横向位移（translate:6px 0）。
+     *
+     * <p>注意：该 6px 是 <b>CSS 像素</b>，作用在 270px 显示 / 1000 坐标系的 SVG 上，
+     * 换算成内部坐标是 {@code 6 * 1000/270 ≈ 22.2}，再乘 {@code K=0.27} 才得到设计像素。</p>
+     */
+    private static float flickerShiftCssPx(float t) {
+        float phase = (t % 5.2f) / 5.2f;
+        return (phase >= 0.63f && phase < 0.64f) ? 6f : 0f;
     }
 
     private static void dashed(GuiGraphics g, float x1, float y1, float x2, float y2,
@@ -312,10 +496,15 @@ public final class TerminalPlate {
     }
 
     private static void card(GuiGraphics g, float x, float y, float w, float h, String title) {
-        TerminalDraw.rect(g, sx(x), sy(y), sr(w), sr(h), paper(235));
-        TerminalDraw.outline(g, sx(x), sy(y), sr(w), sr(h), ink(170));
-        TerminalDraw.rect(g, sx(x), sy(y), sr(w), sr(22), ink(235));
-        TerminalFonts.draw(g, Fam.MONO, 3.4f, title, sx(x + 6), sy(y + 6), paper(235));
+        float bx = sx(x), by = sy(y), bw = sr(w), bh = sr(h), barH = sr(22);
+        TerminalDraw.rect(g, bx, by, bw, bh, paper(235));
+        TerminalDraw.outline(g, bx, by, bw, bh, ink(170));
+        TerminalDraw.rect(g, bx, by, bw, barH, ink(235));
+        // 标题必须落在黑条内（barH ≈ 5.9 设计像素）：字号 3.4，垂直居中到条内。
+        // 原来用 sy(y+6)，已经掉到黑条外面 → 纸白字画在纸底上看不见（实机三张卡的黑条是空的）。
+        g.flush();
+        TerminalFonts.draw(g, Fam.MONO, 3.4f, title, bx + sr(6), by + Math.max(1f, (barH - 3.4f) / 2f),
+                paper(235));
         for (int k = 0; k < 2; k++) {
             TerminalDraw.hline(g, sx(x + 10), sx(x + w - 16), sy(y + 40 + k * 18), ink(110));
         }
@@ -328,49 +517,31 @@ public final class TerminalPlate {
     }
 
     private static void bird(GuiGraphics g, float x, float y, float dx) {
-        // 网页 d="M x y q16 -12 32 0 q16 -12 32 0"：双拱鸥形，跨度 ~9px、每拱高 ~3px。
-        // 用两段折线近似每段二次曲线（起→拱顶→落），得到「M 形双拱」而非单尖角。
-        // 每拱 q16 -12 32 0：跨度 32 单位、控制点抬高 12 单位；两拱共 64 单位。
-        float span = sr(32f); // 单拱跨度 → 设计像素
-        float h = sr(12f);    // 控制点抬高 → 设计像素
-        float x0 = x + dx - span; // 以 x 为鸟身中心
-        // 第一拱（二次曲线用两段折线近似，拱顶取控制点高度的一半）
-        TerminalDraw.line(g, x0, y, x0 + span / 2, y - h / 2, 1f, ink(217));
-        TerminalDraw.line(g, x0 + span / 2, y - h / 2, x0 + span, y, 1f, ink(217));
-        // 第二拱
-        TerminalDraw.line(g, x0 + span, y, x0 + span * 1.5f, y - h / 2, 1f, ink(217));
-        TerminalDraw.line(g, x0 + span * 1.5f, y - h / 2, x0 + span * 2, y, 1f, ink(217));
+        // 网页 q16 -12 32 0 ×2：双拱鸥形，x 线性推进、y 沿二次曲线（峰高 sr(6)），opacity .85
+        float half = sr(32f), peak = sr(6f);
+        for (int arch = 0; arch < 2; arch++) {
+            float x0 = x + dx + arch * half, lx = x0, ly = y;
+            for (int i = 1; i <= 10; i++) {
+                float p = i / 10f;
+                float nx = x0 + half * p;
+                float ny = y - 4f * peak * p * (1f - p);
+                TerminalDraw.line(g, lx, ly, nx, ny, 1f, ink(217));
+                lx = nx; ly = ny;
+            }
+        }
     }
 
     /**
      * 空心的描边 06：AWT 轮廓在实机出现采样异常，这里直接用矢量线稿画「0」「6」。
      * 尺寸/位置按网页 SVG 的 getBBox 实测：字形盒 70.2×70.5 设计像素，单遍一层。
      */
-    private static void outlineNumber(GuiGraphics g, float x, float y, int color) {
+    private static void outlineNumber(GuiGraphics g, float x, float y, int color, float stroke) {
+        // 网页写的是 <text font-size="260" stroke-width="1.4/1.8" fill="none" font-family="serif">：
+        // 真衬线字形 + 细描边，不是两个椭圆。之前手绘矢量是因为 drawOutlined 贴图按 tw×th 拷贝
+        // 导致整张错行（出过「采样异常」），该 bug 已修，这里换回真实字形轮廓。
         // 字形盒左上角 = sx(x)+10.9 / sy(y)-62.8（由两遍实测盒反解，两遍一致）
-        drawHollow06(g, sx(x) + 10.9f, sy(y) - 62.8f, color);
-    }
-
-    /** 单遍空心 06，本地坐标盒固定 70×70。 */
-    private static void drawHollow06(GuiGraphics g, float bx, float by, int color) {
-        // 0：竖椭圆环（盒内 x1.5..33.5 / y5..69）
-        TerminalDraw.ellipseRing(g, bx + 17.5f, by + 37f, 16f, 32f, 1f, color);
-        // 6：下方闭环（盒内 x36..67.5 / y33..68.5）
-        TerminalDraw.ellipseRing(g, bx + 52f, by + 50.5f, 15.5f, 17.5f, 1f, color);
-        // 6：上方弯钩——从右上起笔，向左上兜回接闭环左上
-        float px = bx + 67f, py = by + 6.5f;
-        float c1x = bx + 45f, c1y = by - 1f;
-        float c2x = bx + 33f, c2y = by + 18f;
-        float lx = bx + 36.5f, ly = by + 38f;
-        float lastX = px, lastY = py;
-        for (int i = 1; i <= 14; i++) {
-            float u = i / 14f, v = 1f - u;
-            float nx = v * v * v * px + 3 * v * v * u * c1x + 3 * v * u * u * c2x + u * u * u * lx;
-            float ny = v * v * v * py + 3 * v * v * u * c1y + 3 * v * u * u * c2y + u * u * u * ly;
-            TerminalDraw.line(g, lastX, lastY, nx, ny, 1f, color);
-            lastX = nx;
-            lastY = ny;
-        }
+        TerminalFonts.drawOutlined(g, Fam.SERIF, 70.2f, "06",
+                sx(x) + 10.9f, sy(y) - 62.8f, color, stroke);
     }
 
     /** 沿圆弧逐字排布并旋转（SVG textPath 的等价实现）。 */

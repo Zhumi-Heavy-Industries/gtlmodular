@@ -17,6 +17,9 @@ public final class TerminalReport {
     // 清单底边留到 246，232 的「全部 N 条」才不会被最后一行压住
     // 网页 .rep-list 实测：left20 top94 w520 h152（y94..246）
     public static final float LIST_H = 152;
+    // 实机数据行数远多于网页原型，行会一路画到 246 把 y233 的「全部 N 条 · ESC 关闭」压住。
+    // 可视区止于 230（文字上沿 233 前留 3px），行永不再与页脚文字重叠；滚动上限同步用它。
+    public static final float LIST_CLIP_H = 136;
     private static final float ROW_H = 21;
     // 网页 report 行实测：数量 div left418+list20=438、width26、text-align:right → 右边缘 464；
     // 坐标 x454+list20=474；展开符号 x526+list20=546（在 520 宽视口外，被 overflow:hidden 裁掉）
@@ -33,15 +36,18 @@ public final class TerminalReport {
 
         TerminalDraw.hline(g, 20, 540, 54, TerminalTheme.RULE);
 
-        // 摘要
-        String[] parts = {"可放置", "冲突", "缺失"};
-        int[] vals = {s.placeCount, s.conflictCount, s.missingCount};
+        // 摘要：用真实分类计数（之前写死的「可放置/冲突/缺失」在真实报告里永远后两个为 0）
         float x = 20;
-        for (int i = 0; i < 3; i++) {
-            TerminalFonts.drawMixed(g, Fam.MONO, 7f, parts[i] + " ", x, 61, 0, TerminalTheme.INK_SOFT);
-            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, parts[i] + " ", 0);
-            TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, String.valueOf(vals[i]), x, 61, 0, TerminalTheme.INK);
-            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, String.valueOf(vals[i]), 0) + 10;
+        java.util.List<String> cats = s.distinctCategories();
+        int shownCats = Math.min(cats.size(), 3);
+        for (int i = 0; i < shownCats; i++) {
+            String cat = cats.get(i);
+            String label = cat + " ";
+            TerminalFonts.drawMixed(g, Fam.MONO, 7f, label, x, 61, 0, TerminalTheme.INK_SOFT);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, label, 0);
+            String v = String.valueOf(s.countOf(cat));
+            TerminalFonts.drawMixedHeavy(g, Fam.MONO, 7f, v, x, 61, 0, TerminalTheme.INK);
+            x += TerminalFonts.mixedWidth(Fam.MONO, 7f, v, 0) + 10;
         }
         long ms = s.scanMs();
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, "耗时 " + (ms > 0 ? ms + " ms" : "—"),
@@ -62,7 +68,7 @@ public final class TerminalReport {
 
         // 清单（裁剪，展开行高 48）
         g.enableScissor(Math.round(s.originX + LIST_X * s.scale), Math.round(s.originY + LIST_Y * s.scale),
-                Math.round(s.originX + (LIST_X + LIST_W) * s.scale), Math.round(s.originY + (LIST_Y + LIST_H) * s.scale));
+                Math.round(s.originX + (LIST_X + LIST_W) * s.scale), Math.round(s.originY + (LIST_Y + LIST_CLIP_H) * s.scale));
         float y = LIST_Y + 2 - s.reportScroll;
         int shown = 0;
         for (int i = 0; i < s.reportRows.size(); i++) {
@@ -70,7 +76,7 @@ public final class TerminalReport {
             if (!matchesFilter(s, row)) continue;
             boolean open = s.expanded[i];
             float rowH = ROW_H + (open ? 48 : 0);
-            if (y + rowH >= LIST_Y && y <= LIST_Y + LIST_H) {
+            if (y + rowH >= LIST_Y && y <= LIST_Y + LIST_CLIP_H) {
                 drawRow(g, s, row, i, y, open);
             }
             y += rowH;
@@ -102,12 +108,12 @@ public final class TerminalReport {
     }
 
     private static boolean matchesFilter(TerminalScreen s, TerminalScreen.ReportRow row) {
-        return switch (s.filter) {
-            case 1 -> "可放置".equals(row.category());
-            case 2 -> "冲突".equals(row.category());
-            case 3 -> "缺失".equals(row.category());
-            default -> true;
-        };
+        // 与 TerminalScreen.rowVisible 保持同一套口径：按报告里实际出现的分类去筛，
+        // 不再拿「可放置 / 冲突 / 缺失」这三个原型假标签硬比（那样一筛就全空）。
+        if (s.filter <= 0) return true;
+        java.util.List<String> cats = s.distinctCategories();
+        int i = s.filter - 1;
+        return i < cats.size() && cats.get(i).equals(row.category());
     }
 
     private static void drawRow(GuiGraphics g, TerminalScreen s, TerminalScreen.ReportRow row,
@@ -115,13 +121,15 @@ public final class TerminalReport {
         TerminalDraw.hline(g, 20, 540, y + 19, TerminalTheme.RULE_SOFT);
         TerminalDraw.rect(g, 20, y + 5, 2, 11, row.color());
 
-        // 网页实测（相对行顶）：类 x26/y+0 6.5px；材料 x68/y-1 8px + 字距.8；数量右对齐 464/y+0；坐标 x474/y+1
-        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, row.category(), 26, y, 0f, TerminalTheme.INK_SOFT);
-        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(), 68, y - 1, 0.8f, TerminalTheme.INK);
-        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y, TerminalTheme.INK);
+        // 相对行顶：类 x26/y+0 6.5px；材料 x68/y+1 8px + 字距.8；数量右对齐 464/y+1；坐标 x474/y+2
+        // （materials 原来用 y-1，会把中文顶到分割线上；行高 21、分隔线在 y+19，
+        //   中文 8px 从 y+1 开始才居中）
+        TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, row.category(), 26, y + 1, 0f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.CN, 8f, row.name(), 68, y + 1, 0.8f, TerminalTheme.INK);
+        TerminalFonts.drawRight(g, Fam.MONO, 8f, String.valueOf(row.count()), C_QTY_RIGHT, y + 1, TerminalTheme.INK);
         // 网页 rep-coord：展开时显示第一条坐标，折叠显示「—」
         String coord = open && !row.coords().isEmpty() ? fmt(row.coords().get(0)) : "—";
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 1, 0.4f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, coord, C_COORD, y + 2, 0.4f, TerminalTheme.INK_SOFT);
 
         // 网页 .rep-tog 在 left526，而 .rep-list 只有 520 宽（overflow:hidden），实测被裁掉不可见。
         // 这里不画 +/−，保持与网页一致；整行仍可点。
@@ -142,8 +150,8 @@ public final class TerminalReport {
         // 命中区必须裁到清单视口内，否则展开行的 69px 命中矩形会压到 258 的按钮上，
         // 准星就会在按钮区画一个"看不见目标"的框。
         float top = Math.max(y, LIST_Y);
-        float bottom = Math.min(y + ROW_H + (open ? 48f : 0f), LIST_Y + LIST_H);
-        if (y < LIST_Y + LIST_H && y + ROW_H > LIST_Y && bottom - top > 2f) {
+        float bottom = Math.min(y + ROW_H + (open ? 48f : 0f), LIST_Y + LIST_CLIP_H);
+        if (y < LIST_Y + LIST_CLIP_H && y + ROW_H > LIST_Y && bottom - top > 2f) {
             s.hit(20, top, 520, bottom - top, row.name(), () -> s.toggleRow(index), false);
         }
     }
@@ -167,34 +175,27 @@ public final class TerminalReport {
             // 否则部分批次顺序会把黑底排在文字之后，字就被盖住。
             g.flush();
         }
-        int c = fill ? (fallbackInk ? TerminalTheme.INK : textColor) : TerminalTheme.INK;
+        // 填充按钮的文字必须用纸白：调用方传的 textColor 对线框按钮没意义，
+        // 如果照搬就会变成「黑底 + 黑字」（实机截图「显示方块」按下后整块全黑）。
+        int c = fill ? (fallbackInk ? TerminalTheme.INK : TerminalTheme.PAPER) : TerminalTheme.INK;
         if (icon > 0) icon(g, icon, x + 7, y + 4, c);
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, label, x + w / 2f + (icon > 0 ? 4 : 0), y + 4, c);
         s.hit(x, y, w, 16, label, action, false);
     }
 
-    /** 网页按钮里的小图标：☑ 复制 / ◉ 显示方块 / 筛选菱形。 */
+    /**
+     * 网页按钮里的小图标：复制全部 = 图标包 0000（方框勾）、显示方块 = 0028（眼睛）。
+     *
+     * <p>网页「筛选：全部」按钮里没有图标，所以 kind 3 不再画菱形——之前那个菱形是无中生有。</p>
+     */
     private static void icon(GuiGraphics g, int kind, float x, float y, int color) {
-        switch (kind) {
-            case 1 -> {
-                TerminalDraw.outline(g, x, y + 1, 8, 8, color);
-                TerminalDraw.line(g, x + 2, y + 5, x + 3.5f, y + 7, 1f, color);
-                TerminalDraw.line(g, x + 3.5f, y + 7, x + 6.5f, y + 2.5f, 1f, color);
-            }
-            case 2 -> {
-                TerminalDraw.ellipseRing(g, x + 4, y + 5, 4.2f, 2.4f, 1f, color);
-                TerminalDraw.fillCircle(g, x + 4, y + 5, 1.2f, color);
-            }
-            case 3 -> {
-                float[] pts = {x + 4, y + 1, x + 8, y + 5, x + 4, y + 9, x, y + 5};
-                TerminalDraw.polygon(g, pts, 0);
-                for (int i = 0; i < 4; i++) {
-                    TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
-                            pts[((i + 1) % 4) * 2], pts[((i + 1) % 4) * 2 + 1], 1f, color);
-                }
-            }
-            default -> { }
-        }
+        if (kind != 1 && kind != 2) return;
+        int id = kind == 1 ? TerminalIcons.BOX : TerminalIcons.EYE;
+        float a = (color >>> 24) / 255f;
+        // 填充态按钮底色是墨黑、图标要给纸白变体（黑色剪影乘色乘不白）
+        boolean onDark = ((color >>> 16) & 0xFF) > 0x80;
+        if (onDark) TerminalIcons.drawOnDark(g, id, x, y + 1, 8, a);
+        else TerminalIcons.draw(g, id, x, y + 1, 8, a);
     }
 
     static String fmt(BlockPos pos) {

@@ -19,7 +19,7 @@ public final class TerminalLayerPopup {
         TerminalDraw.rect(g, x, y, w, 9, TerminalTheme.INK);
         g.flush();
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "STRUCTURE / 结构层数", x + 5, y + 2, 1.2f, 0xFFFFFFFF);
-        TerminalFonts.draw(g, Fam.MONO, 7f, "×", x + 180, y + 1, TerminalTheme.PAPER);
+        TerminalFonts.draw(g, Fam.MONO, 7f, "×", x + 185, y + 1, TerminalTheme.PAPER);
         s.hit(x + 178, y, 16, 10, "关闭", s::closeLayer, false);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "默认 001 · 上限 648 · 步进 1",
@@ -38,11 +38,11 @@ public final class TerminalLayerPopup {
         TerminalDraw.hline(g, rx, rx + rw, ry, TerminalTheme.RULE);
         for (int i = 0; i <= 9; i++) {
             float tx = rx + 20f * i;
-            // 网页 tick-v：i%3==0 → 高6/top4，其余高4/top5
+            // 网页 tick-v：i%3==0 → 高6、其余高4
             TerminalDraw.vline(g, tx, ry, ry + (i % 3 == 0 ? 6 : 4), 0xB055605F);
         }
-        // 网页 paint()：tick.left = 2 + (draft-1)/MAX*176（分母 MAX，不是 MAX-1）
-        float cursor = rx + 2 + (s.layerDraft - 1) / (float) MAX * 176f;
+        // 网页 paint() 绘制分母 MAX（点击定位另用 MAX-1，见 layerFromMouse，保持不动）
+        float cursor = rx + 2 + (s.layerDraft - 1) / (float) MAX * (rw - 4);
         TerminalDraw.rect(g, cursor, ry - 2, 2, 10, TerminalTheme.COBALT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "1", rx + 1, ry + 9, 0f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRight(g, Fam.MONO, 5f, String.valueOf(MAX), rx + rw, ry + 9, TerminalTheme.INK_FAINT);
@@ -61,6 +61,10 @@ public final class TerminalLayerPopup {
         s.hit(x + 96, y + 122, 42, 18, "取消", s::closeLayer, false);
 
         TerminalDraw.rect(g, x + 144, y + 122, 42, 18, TerminalTheme.INK);
+        // 黑底按钮必须先 flush 再画纸白字：AWT 文字走 guiTextured，与 gui 填充不是同一个
+        // RenderType，不 flush 时黑底可能后于文字出队，把「应用」盖掉（实机截图里这个按钮
+        // 就是纯黑一块、字看不见）。TerminalReport.button() 里已有同样的防护。
+        g.flush();
         TerminalFonts.drawCenteredMixed(g, Fam.MONO, 7f, "应用", x + 165, y + 127, TerminalTheme.PAPER);
         s.hit(x + 144, y + 122, 42, 18, "应用", s::applyLayer, false);
     }

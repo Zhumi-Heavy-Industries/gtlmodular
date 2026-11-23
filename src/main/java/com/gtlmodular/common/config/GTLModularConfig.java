@@ -133,6 +133,25 @@ public final class GTLModularConfig {
                             "  ②『身份闸拒绝配方』误挡提示。")
                     .define("patternAssembly.debugPatternLogs", false);
 
+    private static final ForgeConfigSpec.BooleanValue PATTERN_CATALYST_AUTO_SUPPLY =
+            BUILDER.comment("猪咪样板总成的「库存催化剂 / 免塞催化剂」开关（默认开）",
+                            "GT 配方里有一类输入是「不消耗」的（chance == 0，例如模具、催化床、催化基底）。",
+                            "开：机器自己从该样板槽解出配方、认出这些不消耗输入，并在 ME 网络里确实有存量时",
+                            "    自动往该槽的催化剂仓放一个 gtlcore 的虚拟原料标记 —— 玩家不再需要手动塞催化剂，",
+                            "    该输入按「不消耗、不限量」参与配方匹配，真正的物品始终留在 ME 网络里。",
+                            "    换样板后不再需要的虚拟标记会自动清掉；真实催化剂物品/流体一格都不动。",
+                            "关：退回老行为（玩家手动往专属催化剂槽塞催化剂或虚拟原料）。",
+                            "安全线：配方真会消耗的输入绝不会被虚拟供给；任何一步解不出来都自动放行（fail-open）。")
+                    .define("patternAssembly.catalystAutoSupply", true);
+
+    private static final ForgeConfigSpec.BooleanValue PATTERN_CATALYST_AE_FILTER =
+            BUILDER.comment("猪咪样板总成的「催化剂对 AE 隐藏」开关（默认开；依赖上面的自动供给）",
+                            "开：某个样板槽的催化剂已经全部由机器自动供给时，报给 AE 的样板会摘掉这些催化剂输入。",
+                            "    这样 AE 的合成计划就不会按批数索要催化剂（否则 64 批就要 64 个催化剂，",
+                            "    哪怕机器一个都不会消耗）。没供给上的样板原样报给 AE，行为与老版本一致。",
+                            "关：只做机器侧自动供给，AE 仍按样板声明索要催化剂（大批量下单可能被催化剂数量卡住）。")
+                    .define("patternAssembly.catalystAeFilter", true);
+
     // ---- 纳米芯片组装复合体（NAC，GTNH 移植） ----
 
     private static final ForgeConfigSpec.BooleanValue NANOCHIP_ENABLED =
@@ -1384,6 +1403,33 @@ public final class GTLModularConfig {
             return AUTO_RECIPE_MODE_SWITCH.get();
         } catch (Throwable ignored) {
             return true;
+        }
+    }
+
+    /** 猪咪样板总成：库存催化剂（不消耗输入自动供给）是否开启；读不到配置一律按「开」处理。 */
+    public static boolean isPatternAssemblyCatalystAutoSupplyEnabled() {
+        try {
+            return PATTERN_CATALYST_AUTO_SUPPLY.get();
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    /** 猪咪样板总成：已自动供给的催化剂是否对 AE 隐藏（不按批数索要）；读不到配置一律按「开」处理。 */
+    public static boolean isPatternAssemblyCatalystAeFilterEnabled() {
+        try {
+            return PATTERN_CATALYST_AE_FILTER.get();
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    /** 猪咪样板总成：调试日志开关（读不到配置按「关」处理）。 */
+    public static boolean isPatternAssemblyDebugLogsEnabled() {
+        try {
+            return PATTERN_DEBUG_LOGS.get();
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 

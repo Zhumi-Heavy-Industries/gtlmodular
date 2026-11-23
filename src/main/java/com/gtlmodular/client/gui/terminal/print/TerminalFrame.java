@@ -43,10 +43,8 @@ public final class TerminalFrame {
     }
 
     private static void header(GuiGraphics g, Page page) {
-        // ☑ 图标
-        TerminalDraw.outline(g, 14, 10, 11, 11, 0xD91F2427);
-        TerminalDraw.line(g, 16, 15, 18, 18, 1.4f, TerminalTheme.INK);
-        TerminalDraw.line(g, 18, 18, 22, 12, 1.4f, TerminalTheme.INK);
+        // ☑ 图标（网页 <img IC.box> 11×11 @14,10 opacity .85）：用图标包真图，不再手绘
+        TerminalIcons.draw(g, TerminalIcons.BOX, 14, 10, 11, 0.85f);
 
         TerminalFonts.drawMixed(g, Fam.MONO, 7f, "哦鲸鲸终端", 29, 9, 1.6f, TerminalTheme.INK);
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "THE WHALE TERMINAL", 29, 19, 1.6f, TerminalTheme.INK_FAINT);
@@ -60,48 +58,22 @@ public final class TerminalFrame {
         TerminalDraw.hline(g, 14, 546, 29, TerminalTheme.RULE);
     }
 
+    /**
+     * 页头工具图标：直接用网页端的资源与回退规则，不再手绘任何一支。
+     *
+     * <p>网页原文：{@code for k in ["eye","star4","sun","bolt","box","hex"]: IC.get(k, IC["box"])}
+     * —— {@code IC} 里没有 {@code "hex"} 这个键，所以第 6 个位置实际回退成 {@code 0000}（方框勾）。
+     * 为了让实机与网页逐像素一致，这里照抄这个行为（而不是补一个网页没有的六边形）。</p>
+     */
     private static void toolIcon(GuiGraphics g, String kind, float x, float y) {
-        int c = 0x9E1F2427;
-        float cx = x + 4.5f, cy = y + 4.5f;
-        switch (kind) {
-            case "eye" -> {
-                TerminalDraw.arc(g, cx, cy, 3.6f, 200f, 340f, 1f, c);
-                TerminalDraw.fillCircle(g, cx, cy, 1.2f, c);
-            }
-            case "star" -> {
-                TerminalDraw.line(g, cx, y, cx, y + 9, 1f, c);
-                TerminalDraw.line(g, x, cy, x + 9, cy, 1f, c);
-                TerminalDraw.line(g, x + 1, y + 1, x + 8, y + 8, 0.8f, c);
-                TerminalDraw.line(g, x + 8, y + 1, x + 1, y + 8, 0.8f, c);
-            }
-            case "sun" -> {
-                // 网页图标是半明半月：左半实心、右半描边
-                TerminalDraw.fillCircle(g, cx, cy, 3.2f, c);
-                TerminalDraw.rect(g, cx, cy - 3.2f, 3.4f, 6.4f, TerminalTheme.PAPER);
-                TerminalDraw.ring(g, cx, cy, 3.2f, 1f, c);
-            }
-            case "bolt" -> TerminalDraw.polygon(g, new float[]{
-                    cx + 1.5f, y, x + 1, cy + 1, cx, cy + 1, x + 1.5f, y + 9, x + 8, cy - 1, cx + 1, cy - 1
-            }, c);
-            case "box" -> {
-                TerminalDraw.outline(g, x + 1, y + 1, 8, 8, c);
-                TerminalDraw.line(g, x + 2, cy, x + 4, y + 6.5f, 1f, c);
-                TerminalDraw.line(g, x + 4, y + 6.5f, x + 7.5f, y + 2.5f, 1f, c);
-            }
-            default -> {
-                float r = 4.4f;
-                float[] pts = new float[12];
-                for (int i = 0; i < 6; i++) {
-                    double a = Math.PI / 3 * i - Math.PI / 2;
-                    pts[i * 2] = cx + (float) Math.cos(a) * r;
-                    pts[i * 2 + 1] = cy + (float) Math.sin(a) * r;
-                }
-                for (int i = 0; i < 6; i++) {
-                    TerminalDraw.line(g, pts[i * 2], pts[i * 2 + 1],
-                            pts[((i + 1) % 6) * 2], pts[((i + 1) % 6) * 2 + 1], 0.9f, c);
-                }
-            }
-        }
+        int id = switch (kind) {
+            case "eye" -> TerminalIcons.EYE;
+            case "star" -> TerminalIcons.STAR4;
+            case "sun" -> TerminalIcons.SUN;
+            case "bolt" -> TerminalIcons.BOLT;
+            default -> TerminalIcons.BOX; // "box" 与 "hex" 在网页端都是 0000
+        };
+        TerminalIcons.draw(g, id, x, y, 9, 0.62f);
     }
 
     private static void rail(GuiGraphics g) {

@@ -63,12 +63,12 @@ public final class DisposableToolPrintMachines {
         LV_PRINTER = GTLModularMachines.REGISTRATE
                 .machine("lv_disposable_tool_printer", holder -> new DisposableToolPrinterMachine(holder, 1))
                 .rotationState(RotationState.NON_Y_AXIS)
-                .recipeType(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC)
+                .recipeType(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING)
                 .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK
                         .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK))
                 .editableUI(SimpleTieredMachine.EDITABLE_UI_CREATOR.apply(
                         DisposableToolPrintTypes.id("lv_disposable_tool_printer"),
-                        DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC))
+                        DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING))
                 .workableTieredHullRenderer(DisposableToolPrintTypes.id("block/machines/disposable_tool_printer"))
                 .tier(1)
                 .langValue("基础3D工具打印机")
@@ -78,12 +78,12 @@ public final class DisposableToolPrintMachines {
         MV_PRINTER = GTLModularMachines.REGISTRATE
                 .machine("mv_disposable_tool_printer", holder -> new DisposableToolPrinterMachine(holder, 2))
                 .rotationState(RotationState.NON_Y_AXIS)
-                .recipeType(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC)
+                .recipeType(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING)
                 .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK
                         .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK))
                 .editableUI(SimpleTieredMachine.EDITABLE_UI_CREATOR.apply(
                         DisposableToolPrintTypes.id("mv_disposable_tool_printer"),
-                        DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC))
+                        DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING))
                 .workableTieredHullRenderer(DisposableToolPrintTypes.id("block/machines/disposable_tool_printer_mv"))
                 .tier(2)
                 .langValue("进阶3D工具打印机")
@@ -100,7 +100,7 @@ public final class DisposableToolPrintMachines {
                 tier,
                 GTValues.V[tier],
                 GTValues.V[tier] * 64L,
-                DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC,
+                DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING,
                 DisposableToolPrinterMachine.TANK_SIZE.apply(tier),
                 true);
         Component[] out = new Component[standard.length + 1];

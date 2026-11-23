@@ -41,10 +41,15 @@ public final class TerminalFonts {
     // ── AWT 直绘：MC 的 TTF 图集是单通道，某些渲染路径会把字形当黑色纹理，
     //    导致白字/钴蓝字全变黑。这里直接用系统 TTF 烘成 ARGB 小贴图再 blit，
     //    颜色、字形都与设计稿一致；按 (族,字号,颜色,文本) 缓存，LRU 512。
-    private record Key(Fam fam, int sizeQ, int color, String text) {}
+    private record Key(Fam fam, int sizeQ, int color, String text, boolean bold) {}
     private static final class Tex {
         final ResourceLocation rl; final int w, h, tw, th;
-        Tex(ResourceLocation rl, int w, int h, int tw, int th) { this.rl = rl; this.w = w; this.h = h; this.tw = tw; this.th = th; }
+        /** 描边贴图四周的留白（设计像素）：blit 时要往回退这么多，调用方传的坐标才是字形盒左上。 */
+        final int pad;
+        Tex(ResourceLocation rl, int w, int h, int tw, int th) { this(rl, w, h, tw, th, 0); }
+        Tex(ResourceLocation rl, int w, int h, int tw, int th, int pad) {
+            this.rl = rl; this.w = w; this.h = h; this.tw = tw; this.th = th; this.pad = pad;
+        }
     }
     private static final Map<Key, Tex> TEX = new java.util.LinkedHashMap<>(128, 0.75f, true);
     private static final Map<Fam, java.awt.Font> AWTF = new java.util.EnumMap<>(Fam.class);
@@ -53,12 +58,38 @@ public final class TerminalFonts {
     private static int texSeq;
     private static java.awt.image.BufferedImage probeImg;
     private static java.awt.Graphics2D probeG;
-    private record WKey(Fam fam, int px, String text) {}
+    private record WKey(Fam fam, int px, String text, boolean bold) {}
     private static final Map<WKey, Float> AW = new java.util.LinkedHashMap<>(256, 0.75f, true) {
         @Override protected boolean removeEldestEntry(Map.Entry<WKey, Float> eldest) {
             return size() > 4096;
         }
     };
+
+    /**
+     * 纸张当前的整体缩放（{@code TerminalScreen.scale}，最小窗口时 &lt; 1）。
+     *
+     * <p>文字最终落在屏幕上的物理尺寸 = 设计字号 × GUI 缩放 × 纸张缩放。
+     * 只按 GUI 缩放烘焙时，窗口不够大（纸张被缩到 0.8 左右）就会把已烘好的字形
+     * 再缩采样一次，整屏字看着发糊。这里把纸张缩放也算进超采样倍率，做到 1:1 上屏。</p>
+     */
+    private static float sheetScale = 1f;
+
+    /** 由 {@code TerminalScreen.render} 每帧同步；缺省 1 表示不额外超采样。 */
+    public static void setSheetScale(float s) {
+        sheetScale = (s > 0f && s < 8f) ? s : 1f;
+    }
+
+    /** 每个设计像素对应的物理像素数（可能是小数：GUI 缩放 × 纸张缩放）。 */
+    public static float deviceScale() {
+        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+        return gs * sheetScale;
+    }
+
+    /** 每个「设计像素」对应多少物理像素：GUI 缩放 × 纸张缩放，取整到 1..8。 */
+    private static int pixelRatio() {
+        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
+        return Math.max(1, Math.min(8, Math.round(gs * sheetScale)));
+    }
 
     private static java.awt.Font awtFont(Fam fam, int px) {
         java.awt.Font base = AWTF.get(fam);
@@ -77,21 +108,26 @@ public final class TerminalFonts {
 
     /** AWT 实际字宽（设计像素）；AWT 不可用时返回 -1。排版必须与绘制同源。 */
     private static float awtWidth(Fam fam, float size, String text) {
+        return awtWidth(fam, size, text, false);
+    }
+
+    private static float awtWidth(Fam fam, float size, String text, boolean bold) {
         if (text == null || text.isEmpty()) return 0f;
-        float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-        int px = Math.max(2, Math.round(size * gs));
-        WKey wkey = new WKey(fam, px, text);
+        int k = pixelRatio();
+        int px = Math.max(2, Math.round(size * k));
+        WKey wkey = new WKey(fam, px, text, bold);
         Float cached = AW.get(wkey);
         if (cached != null) return cached;
         java.awt.Font af = awtFont(fam, px);
         if (af == null) return -1f;
+        if (bold) af = af.deriveFont(java.awt.Font.BOLD);
         try {
             if (probeG == null) {
                 probeImg = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 probeG = probeImg.createGraphics();
             }
             probeG.setFont(af);
-            float w = probeG.getFontMetrics().stringWidth(text) / gs;
+            float w = probeG.getFontMetrics().stringWidth(text) / (float) k;
             AW.put(wkey, w);
             return w;
         } catch (Throwable t) {
@@ -130,18 +166,27 @@ public final class TerminalFonts {
 
     private static boolean colorWarned;
     private static boolean awtLogged;
+    /** 临时诊断：页框文字整组不显示，先确认落点与姿态（确认后移除）。 */
+    private static boolean diagLogged;
     private static boolean awtFailed;
 
     private static void rawDraw(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
+        rawDrawBold(g, fam, size, text, x, y, color, false);
+    }
+
+    /** bold=true 走真字重（AWT BOLD）单次绘制，不再叠印两遍。 */
+    private static void rawDrawBold(GuiGraphics g, Fam fam, float size, String text,
+                                    float x, float y, int color, boolean bold) {
         if (text.isEmpty()) return;
-        // 主墨色 0x1F2427：MC 字体本来就渲染成近黑，直接用，省掉大量 AWT 小贴图
-        if ((color & 0xFFFFFF) == 0x1F2427) {
-            rawDrawMc(g, of(fam, size), text, x, y, color);
-            return;
-        }
-        if (drawAwt(g, fam, size, text, x, y, color)) return;
-        // 兜底：走原版 Font（颜色可能仍偏黑，但至少不丢字）
-        rawDrawMc(g, of(fam, size), text, x, y, color);
+        // ★ 不再把墨色单独踢到 MC 字体路径。
+        //
+        // 旧逻辑是「0x1F2427 走 MC 字体省贴图」，但 MC 的 drawString 与 AWT 烘焙贴图
+        // 的垂直基准不同，同一条基线上会得出不同的字形位置：于是「配置 [0/8]」
+        // 「[00] 主界面」「复制全部」这些同行里，墨色字与钴蓝/灰字总是错开几个像素。
+        // 现在统一走 AWT（同一份 ascent+descent 贴图、同一个 y = 字形顶），从根上消除错位。
+        if (drawAwt(g, fam, size, text, x, y, color, bold)) return;
+        // 兜底：AWT 不可用时才走原版 Font
+        rawDrawMc(g, of(fam, size), text, x, y, size, color);
     }
 
     /** AWT 路径是否已经失败（用于黑底按钮的兜底配色）。 */
@@ -165,11 +210,15 @@ public final class TerminalFonts {
 
     /** 用 AWT 烘一张小贴图再 blit，彻底绕开 MC 图集的颜色问题。 */
     private static boolean drawAwt(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color) {
+        return drawAwt(g, fam, size, text, x, y, color, false);
+    }
+
+    private static boolean drawAwt(GuiGraphics g, Fam fam, float size, String text, float x, float y, int color, boolean bold) {
         try {
             ensureWhiteShaderColor();
-            float gs = Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-            int px = Math.max(2, Math.round(size * gs));
-            Key key = new Key(fam, px, color, text);
+            int k = pixelRatio();
+            int px = Math.max(2, Math.round(size * k));
+            Key key = new Key(fam, px, color, text, bold);
             Tex tex = TEX.get(key);
             if (tex == null) {
                 java.awt.Font base = AWTF.get(fam);
@@ -182,6 +231,7 @@ public final class TerminalFonts {
                     AWTF.put(fam, base);
                 }
                 java.awt.Font af = base.deriveFont((float) px);
+                if (bold) af = af.deriveFont(java.awt.Font.BOLD);
                 java.awt.image.BufferedImage probe = new java.awt.image.BufferedImage(1, 1,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D pg = probe.createGraphics();
@@ -192,11 +242,11 @@ public final class TerminalFonts {
                 int th = Math.max(1, fm.getAscent() + fm.getDescent());
                 pg.dispose();
 
-                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
-                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
-                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
-                int finalW = outW * (int) gs;
-                int finalH = outH * (int) gs;
+                // 纹理尺寸取 pixelRatio 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + k - 1) / k);
+                int outH = Math.max(1, (th + k - 1) / k);
+                int finalW = outW * k;
+                int finalH = outH * k;
                 java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
@@ -228,6 +278,9 @@ public final class TerminalFonts {
                 }
                 net.minecraft.client.renderer.texture.DynamicTexture dyn =
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                // 必须关掉双线性：DynamicTexture 默认 blur=true，文字贴图被线性采样后
+                // 笔画边缘会被抹成半灰，1:1 上屏也发糊（这是"字体模糊"的主因）。
+                dyn.setFilter(false, false);
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_" + (texSeq++), dyn);
                 tex = new Tex(rl, outW, outH, finalW, finalH);
@@ -245,8 +298,35 @@ public final class TerminalFonts {
                     GTLModular.LOGGER.info("[TerminalFonts] AWT 文字就绪：{} {}px texture {}x{}", fam, px, tw, th);
                 }
             }
-            int dx = Math.round(x), dy = Math.round(y);
-            g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            // 落点吸附到「设备像素」栅格：布局用设计像素，若直接 round 到设计像素，
+            // 在 3 倍 GUI 缩放下落点只会以 3 个物理像素为步长跳动，字符间距忽宽忽窄；
+            // 把小数部分交给 pose，落点就能精确到 1 个物理像素。
+            float e = deviceScale();
+            float ax = Math.round(x * e) / e;
+            float ay = Math.round(y * e) / e;
+            int dx = (int) Math.floor(ax), dy = (int) Math.floor(ay);
+            float fx = ax - dx, fy = ay - dy;
+            if (!diagLogged && text.indexOf('鲸') >= 0) {
+                diagLogged = true;
+                var m = g.pose().last().pose();
+                GTLModular.LOGGER.info(
+                        "[TermFontsDiag] text={} 落点=({},{}) 设计尺寸={}x{} 烘焙贴图={}x{} "
+                                + "guiScale={} 纸张缩放={} 物理倍率={} 取整倍率={} 过滤=NEAREST 姿态平移=({},{})",
+                        text, dx, dy, tex.w, tex.h, tex.tw, tex.th,
+                        Minecraft.getInstance().getWindow().getGuiScale(), sheetScale,
+                        Math.round(deviceScale() * 100f) / 100f, pixelRatio(),
+                        Math.round(m.m30() * 100f) / 100f, Math.round(m.m31() * 100f) / 100f);
+            }
+            boolean nudged = fx != 0f || fy != 0f;
+            if (nudged) {
+                g.pose().pushPose();
+                g.pose().translate(fx, fy, 0f);
+            }
+            try {
+                g.blit(tex.rl, dx, dy, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            } finally {
+                if (nudged) g.pose().popPose();
+            }
             return true;
         } catch (Throwable t) {
             awtFailed = true;
@@ -266,10 +346,9 @@ public final class TerminalFonts {
             ensureWhiteShaderColor();
             // 超大字号（镜像 N 900）只按 1x 烘：opacity 0.06 的水印，放大不影响观感，
             // 但能把 729px 的轮廓贴图降到 243px，首帧少几十毫秒。
-            float gs = size >= 150f ? 1f
-                    : Math.max(1f, Math.min(4f, (float) Minecraft.getInstance().getWindow().getGuiScale()));
-            int px = Math.max(2, Math.round(size * gs));
-            int strokeQ = Math.max(1, Math.round(stroke * gs * 10f));
+            int k = size >= 150f ? 1 : pixelRatio();
+            int px = Math.max(2, Math.round(size * k));
+            int strokeQ = Math.max(1, Math.round(stroke * k * 10f));
             OKey key = new OKey(fam, px, color, text, strokeQ);
             Tex tex = OTEX.get(key);
             if (tex == null) {
@@ -283,15 +362,15 @@ public final class TerminalFonts {
                 java.awt.font.GlyphVector gv = af.createGlyphVector(frc, text);
                 java.awt.Shape shape = gv.getOutline();
                 java.awt.geom.Rectangle2D b = shape.getBounds2D();
-                float sw = Math.max(0.6f, stroke * gs);
+                float sw = Math.max(0.6f, stroke * k);
                 int pad = (int) Math.ceil(sw) + 2;
                 int tw = Math.max(1, (int) Math.ceil(b.getWidth()) + pad * 2);
                 int th = Math.max(1, (int) Math.ceil(b.getHeight()) + pad * 2);
-                // 纹理尺寸取 GUI scale 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
-                int outW = Math.max(1, (tw + (int) gs - 1) / (int) gs);
-                int outH = Math.max(1, (th + (int) gs - 1) / (int) gs);
-                int finalW = outW * (int) gs;
-                int finalH = outH * (int) gs;
+                // 纹理尺寸取 pixelRatio 的整数倍，blit 到设计像素时正好 1:1，避免非整数缩放发糊
+                int outW = Math.max(1, (tw + k - 1) / k);
+                int outH = Math.max(1, (th + k - 1) / k);
+                int finalW = outW * k;
+                int finalH = outH * k;
                 java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(finalW, finalH,
                         java.awt.image.BufferedImage.TYPE_INT_ARGB);
                 java.awt.Graphics2D g2 = img.createGraphics();
@@ -307,8 +386,10 @@ public final class TerminalFonts {
                         new com.mojang.blaze3d.platform.NativeImage(
                                 com.mojang.blaze3d.platform.NativeImage.Format.RGBA, finalW, finalH, false);
                 int idx = 0;
-                for (int yy = 0; yy < th; yy++) {
-                    for (int xx = 0; xx < tw; xx++) {
+                // 必须按贴图真实尺寸 finalW×finalH 遍历：图像是按 finalW 定宽分配的行序，
+                // 用 tw×th 遍历会错行（tw 与 finalW 差 k-1 时整张斜切）。
+                for (int yy = 0; yy < finalH; yy++) {
+                    for (int xx = 0; xx < finalW; xx++) {
                         int c = argb[idx++];
                         int a = (c >>> 24) & 0xFF, r = (c >>> 16) & 0xFF, gg = (c >>> 8) & 0xFF, bb = c & 0xFF;
                         ni.setPixelRGBA(xx, yy, (a << 24) | (bb << 16) | (gg << 8) | r);
@@ -316,19 +397,41 @@ public final class TerminalFonts {
                 }
                 net.minecraft.client.renderer.texture.DynamicTexture dyn =
                         new net.minecraft.client.renderer.texture.DynamicTexture(ni);
+                dyn.setFilter(false, false); // 同 drawAwt：描边更要保持硬边，否则轮廓糊成一团
                 ResourceLocation rl = Minecraft.getInstance().getTextureManager()
                         .register("gtl_term_outline_" + (texSeq++), dyn);
-                tex = new Tex(rl, outW, outH, finalW, finalH);
+                // pad 以「设计像素」记：贴图在烘焙时按 k 倍超采样，pad 也要除以 k 才能退回字形盒左上
+                tex = new Tex(rl, outW, outH, finalW, finalH, Math.round(pad / (float) k));
                 OTEX.put(key, tex);
             }
-            g.blit(tex.rl, Math.round(x), Math.round(y), tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            float oe = deviceScale();
+            float oax = Math.round(x * oe) / oe - tex.pad;
+            float oay = Math.round(y * oe) / oe - tex.pad;
+            int odx = (int) Math.floor(oax), ody = (int) Math.floor(oay);
+            float ofx = oax - odx, ofy = oay - ody;
+            boolean onudged = ofx != 0f || ofy != 0f;
+            if (onudged) {
+                g.pose().pushPose();
+                g.pose().translate(ofx, ofy, 0f);
+            }
+            try {
+                g.blit(tex.rl, odx, ody, tex.w, tex.h, 0f, 0f, tex.tw, tex.th, tex.tw, tex.th);
+            } finally {
+                if (onudged) g.pose().popPose();
+            }
         } catch (Throwable t) {
             drawAwt(g, fam, size, text, x, y, color);
         }
     }
 
-    /** 原反射路径，仅在 AWT 不可用时兜底。 */
-    private static void rawDrawMc(GuiGraphics g, Font font, String text, float x, float y, int color) {
+    /**
+     * 原反射路径：仅在 AWT 不可用时兜底。
+     *
+     * <p>不再做基线补偿。{@code drawString} 的 {@code y} 是基线，字形本来就画在基线以上，
+     * 而本项目语义是「{@code y} = 字形顶」；两条路径不可能完全一致，
+     * 所以正常渲染一律走 AWT，这里只是「字不能丢」的最后一道防线。</p>
+     */
+    private static void rawDrawMc(GuiGraphics g, Font font, String text, float x, float y, float size, int color) {
         if (text.isEmpty()) return;
         float[] sc = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
         if (sc[0] < 0.99f || sc[1] < 0.99f || sc[2] < 0.99f || sc[3] < 0.99f) {
@@ -483,7 +586,7 @@ public final class TerminalFonts {
     public static void drawInkMc(GuiGraphics g, Fam fam, float size, String text,
                                  float x, float y, int color) {
         Font font = of(fam, size);
-        if (font != null) rawDrawMc(g, font, text, x, y, color);
+        if (font != null) rawDrawMc(g, font, text, x, y, size, color);
     }
 
     public static float width(Fam fam, float size, String text) {
@@ -496,14 +599,21 @@ public final class TerminalFonts {
     public static float trackedWidth(Fam fam, float size, String text, float tracking) {
         Font font = of(fam, size);
         if (font == null) return 0f;
+        Font cn = null;
         float w = 0f;
         int i = 0;
         while (i < text.length()) {
             int cp = text.codePointAt(i);
             int n = Character.charCount(cp);
             String one = new String(Character.toChars(cp));
-            float aw = awtWidth(fam, size, one);
-            w += (aw >= 0 ? aw : advance(font, one)) + tracking;
+            // 与 drawTracked 保持一致：CJK 字符绘制时会被换成 CN 字族，
+            // 量宽必须用同一字族；否则中文标签的底色条会比实际文字窄一半
+            // （实机截图里「显示方块」蓝底只盖住了「显示方」）。
+            Fam use = isCjk(cp) ? Fam.CN : fam;
+            if (use == Fam.CN && cn == null) cn = of(Fam.CN, size);
+            Font f = (use == Fam.CN && cn != null) ? cn : font;
+            float aw = awtWidth(use, size, one);
+            w += (aw >= 0 ? aw : advance(f, one)) + tracking;
             i += n;
         }
         return w - tracking;
@@ -519,6 +629,11 @@ public final class TerminalFonts {
     /** 带字距绘制（设计稿 63 处 letter-spacing）。 */
     public static void drawTracked(GuiGraphics g, Fam fam, float size, String text,
                                    float x, float y, float tracking, int color) {
+        drawTrackedRun(g, fam, size, text, x, y, tracking, color, false);
+    }
+
+    private static void drawTrackedRun(GuiGraphics g, Fam fam, float size, String text,
+                                       float x, float y, float tracking, int color, boolean bold) {
         Font font = of(fam, size);
         if (font == null) return;
         float cx = x;
@@ -527,8 +642,8 @@ public final class TerminalFonts {
             int cp = text.codePointAt(i);
             String ch = new String(Character.toChars(cp));
             Fam use = isCjk(cp) ? Fam.CN : fam;
-            rawDraw(g, use, size, ch, cx, y, color);
-            float aw = awtWidth(use, size, ch);
+            rawDrawBold(g, use, size, ch, cx, y, color, bold);
+            float aw = awtWidth(use, size, ch, bold);
             cx += (aw >= 0 ? aw : advanceOf(font, cp)) + tracking;
             i += Character.charCount(cp);
         }
@@ -594,8 +709,13 @@ public final class TerminalFonts {
      */
     public static void drawMixed(GuiGraphics g, Fam fam, float size, String text,
                                  float x, float y, float tracking, int color) {
+        drawMixedRun(g, fam, size, text, x, y, tracking, color, false);
+    }
+
+    private static void drawMixedRun(GuiGraphics g, Fam fam, float size, String text,
+                                     float x, float y, float tracking, int color, boolean bold) {
         if (fam == Fam.CN) {
-            drawTracked(g, Fam.CN, size, text, x, y, tracking, color);
+            drawTrackedRun(g, Fam.CN, size, text, x, y, tracking, color, bold);
             return;
         }
         Font latin = of(fam, size);
@@ -623,7 +743,7 @@ public final class TerminalFonts {
                 runFam = Fam.CN;
             }
             String runText = run.toString();
-            float aw = awtWidth(runFam, size, runText);
+            float aw = awtWidth(runFam, size, runText, bold);
             float w = 0f;
             if (aw < 0) {
                 for (int k = i; k < j; ) {
@@ -634,7 +754,7 @@ public final class TerminalFonts {
             } else {
                 w = aw;
             }
-            rawDraw(g, runFam, size, runText, cx, y, color);
+            rawDrawBold(g, runFam, size, runText, cx, y, color, bold);
             cx += w + tracking * count;
             i = j;
         }
@@ -661,11 +781,15 @@ public final class TerminalFonts {
         return w - tracking;
     }
 
-    /** 混排 + 加粗（描两遍）。 */
+    /**
+     * 混排 + 加粗：用 AWT 真字重（{@link java.awt.Font#BOLD}）单次绘制。
+     *
+     * <p>原来是「同一串字画两遍、第二遍右移 0.4px」硬凑粗体，小字号（如 echo 行的 6.5px 数字）
+     * 两遍几乎完全重叠，直接糊成一个黑团，数字完全读不出来。改真字重后笔画清晰、宽度也可量。</p>
+     */
     public static void drawMixedHeavy(GuiGraphics g, Fam fam, float size, String text,
                                       float x, float y, float tracking, int color) {
-        drawMixed(g, fam, size, text, x, y, tracking, color);
-        drawMixed(g, fam, size, text, x + 0.4f, y, tracking, color);
+        drawMixedRun(g, fam, size, text, x, y, tracking, color, true);
     }
 
     /** 按宽度截断（超出加 …），单次 advance 扫描，避免长材料名截断的 O(n²) 路径。 */

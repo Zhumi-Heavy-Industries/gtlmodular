@@ -63,9 +63,12 @@ public final class TerminalOptions {
         TerminalDraw.hline(g, 196, 540, 126, TerminalTheme.RULE_SOFT);
 
         for (int i = 0; i < 8; i++) {
+            // 网页 .ch-row：首行 y132、行高 19、行距 18；border-bottom 在行底（y+19）。
+            // 列位置（实测）：.ch-sw 中心 (206, y+9.5)；.ch-cn 220/y+3；.ch-en 300/y+6；
+            //                  .ch-need 430/y+5.5；.ch-state 496/y+5。
             float y = 132 + i * 18;
             boolean on = s.chamberOn[i];
-            TerminalDraw.hline(g, 196, 540, y + 18, 0x1A1F2427);
+            TerminalDraw.hline(g, 196, 540, y + 19, 0x1A1F2427);
             // 网页 .ch-sw 实测：left6（行内）8×8 rotate45，包围盒 11.3，中心 (206, y+9.5)
             g.pose().pushPose();
             g.pose().translate(206, y + 9.5f, 0);
@@ -86,10 +89,23 @@ public final class TerminalOptions {
      * 植物生长（网页 .grow 的对位）：56×56，茎为两段三次贝塞尔，叶片是两段二次曲线围成的尖叶，
      * 带叶脉与节点，9 秒循环。之前用短线拼，实机看起来是「虚线小虫」，这里按设计稿曲线重画。
      */
+    /** 网页 6 片叶子的独立延迟（秒）：{@code .grow .d1{.6s} .d2{1.5} .d3{2.4} .d4{3.3} .d5{4.2} .d6{5.1}}。 */
+    private static final float[] LEAF_DELAY = {0.6f, 1.5f, 2.4f, 3.3f, 4.2f, 5.1f};
+    private static final float GROW_CYCLE = 9f;
+
     private static void plant(GuiGraphics g, float ox, float oy, float w, float h, float t) {
-        float p = (t % 9f) / 9f;
-        float stem = Math.min(1f, p / 0.62f);
-        if (stem <= 0f) return;
+        // ── 茎：grow-stem 9s ease-out infinite
+        //    0%{dashoffset:100} → 62%,92%{0} → 100%{100}，即「长满→保持→缩回」
+        float stemU = (t % GROW_CYCLE) / GROW_CYCLE;
+        float stem;
+        if (stemU < 0.62f) {
+            stem = easeOut(stemU / 0.62f);            // 0→1 长满
+        } else if (stemU < 0.92f) {
+            stem = 1f;                                 // 保持
+        } else {
+            stem = 1f - easeOut((stemU - 0.92f) / 0.08f); // 缩回
+        }
+        if (stem <= 0.01f) return;
 
         // 茎：M6 50 C18 46,20 30,30 24 C40 18,44 10,50 6（设计稿数字）
         float[][] stemPts = bezier2(
@@ -103,13 +119,23 @@ public final class TerminalOptions {
 
         float[][] leaves = {{14, 44, -1}, {22, 36, 1}, {28, 29, -1}, {36, 21, 1}, {41, 15, -1}, {47, 9, 1}};
         for (int i = 0; i < leaves.length; i++) {
-            float start = 0.06f + i * 0.09f;
-            float k = Math.max(0f, Math.min(1f, (p - start) / 0.10f));
-            if (k <= 0.02f) continue;
+            // ── 叶片：grow-leaf 9s，各自延迟 LEAF_DELAY[i]
+            //    0%{opacity:0;scale:0} 6%,88%{opacity:1;scale:1} 96%,100%{opacity:0;scale:0}
+            float local = ((t - LEAF_DELAY[i]) % GROW_CYCLE + GROW_CYCLE) % GROW_CYCLE / GROW_CYCLE;
+            float grow;
+            if (local < 0.06f) {
+                grow = easeOut(local / 0.06f);            // 展开
+            } else if (local < 0.88f) {
+                grow = 1f;                                 // 保持
+            } else if (local < 0.96f) {
+                grow = 1f;                                 // 保持（88%~96% 仍可见）
+            } else {
+                grow = 1f - easeOut((local - 0.96f) / 0.04f); // 缩回
+            }
+            if (grow <= 0.02f) continue;
             float lx = ox + leaves[i][0];
             float ly = oy + leaves[i][1];
             float side = leaves[i][2];
-            float grow = 0.5f + 0.5f * k;
             float ex = lx + side * 11f * grow;
             float ey = ly - 4.95f * grow;
 
@@ -130,17 +156,28 @@ public final class TerminalOptions {
                 pts[s * 2] = poly.get(s)[0];
                 pts[s * 2 + 1] = poly.get(s)[1];
             }
-            TerminalDraw.polygon(g, pts, (int) (0.70f * k * 255) << 24 | 0xE2E7E9);
+            TerminalDraw.polygon(g, pts, (int) (0.70f * grow * 255) << 24 | 0xE2E7E9);
             // 叶缘
             for (int s = 1; s < poly.size(); s++) {
                 TerminalDraw.line(g, poly.get(s - 1)[0], poly.get(s - 1)[1],
                         poly.get(s)[0], poly.get(s)[1], 0.9f, 0xD93A5BC2);
             }
-            // 叶脉
-            TerminalDraw.line(g, lx, ly, ex, ey, 0.8f, 0xB33A5BC2);
-            // 节点
-            TerminalDraw.fillCircle(g, lx, ly, 1.4f, TerminalTheme.COBALT);
+            // 叶脉：grow-vein 只在 8%~88% 可见（峰值 .5）
+            float vein = (local >= 0.08f && local < 0.88f) ? 0.5f : 0f;
+            if (vein > 0f) {
+                TerminalDraw.line(g, lx, ly, ex, ey, 0.8f, (int) (vein * 255) << 24 | 0x3A5BC2);
+            }
+            // 节点：grow-node 4%~88% 可见
+            if (local >= 0.04f && local < 0.88f) {
+                TerminalDraw.fillCircle(g, lx, ly, 1.4f, TerminalTheme.COBALT);
+            }
         }
+    }
+
+    /** {@code ease-out}（CSS 默认的 ease-out 近似）。 */
+    private static float easeOut(float k) {
+        float u = Math.max(0f, Math.min(1f, k));
+        return 1f - (1f - u) * (1f - u);
     }
 
     private static float[] quad(float x0, float y0, float cx, float cy, float x1, float y1, float u) {
@@ -207,30 +244,41 @@ public final class TerminalOptions {
         TerminalFonts.drawMixed(g, Fam.MONO, 8f, "S-01 · 结构替换选项", 206, 58, 1.4f, 0xFFFFFFFF);
 
         for (int i = 0; i < 8; i++) {
-            // 网页 .sw-row 实测：屏幕 x205、首行 y83、行距22、高21
-            float y = 83 + i * 22;
-            boolean hover = s.isHover(205, y, 314, 21);
-            if (hover) TerminalDraw.rect(g, 205, y, 314, 21, 0x0F3A5BC2);
-            TerminalDraw.hline(g, 209, 515, y + 21, 0x1A1F2427);
+            // 完全按网页 .sw-row 的盒子来（headless 实测）：
+            //   row  x205 y83+i*21 w314 h21
+            //   .sw-mark  x209 y+0(盒顶) 9px 字形（✓ = 6.2×10.8，· = 5×10.8）
+            //   中文 x225 y+0（9px，盒高 10.8） 英文 x293 y+2（6px） ON/OFF 右缘 515 y+0
+            //   行底线 .rule-soft 固定在【行内 top:15】，不是行底 y+21！
+            //   上一版把线画在行底，整排视觉上就上移了一格。
+            // 行距 21 是排布用的，命中/吸附框只能到行底线（y+15）为止：
+            // 之前用满 21，准星方框会往下压到下一行的字上（实机反馈「判定范围往下延伸」）。
+            final float hitH = 16f;
+            float y = 83 + i * 21f;
+            boolean hover = s.isHover(205, y, 314, hitH);
+            if (hover) TerminalDraw.rect(g, 205, y, 314, hitH, 0x0F3A5BC2);
             boolean on = s.flags[i] != 0;
             if (on) {
-                TerminalDraw.line(g, 209, y + 10, 211, y + 13, 1.1f, TerminalTheme.COBALT);
-                TerminalDraw.line(g, 211, y + 13, 215.5f, y + 6, 1.1f, TerminalTheme.COBALT);
+                TerminalDraw.line(g, 209, y + 7, 211, y + 10, 1.1f, TerminalTheme.COBALT);
+                TerminalDraw.line(g, 211, y + 10, 215.5f, y + 3, 1.1f, TerminalTheme.COBALT);
             } else {
-                TerminalDraw.fillCircle(g, 212, y + 10, 1f, TerminalTheme.INK_FAINT);
+                // 网页 .sw-mark 的 OFF 是「·」（5×10.8 的 9px 字形）；用 2×2 实心块代替，
+                // 既不会像 fillCircle(r=1) 那样退化成十字，也不会比 ON 的勾重。
+                TerminalDraw.rect(g, 211, y + 5, 2, 2, TerminalTheme.INK_FAINT);
             }
-            TerminalFonts.drawMixed(g, Fam.CN, 9f, SW_CN[i], 225, y - 1, 0f, TerminalTheme.INK);
-            TerminalFonts.drawMixed(g, Fam.MONO, 6f, SW_EN[i], 293, y + 1, 0.8f, TerminalTheme.INK_FAINT);
+            TerminalFonts.drawMixed(g, Fam.CN, 9f, SW_CN[i], 225, y, 0f, TerminalTheme.INK);
+            TerminalFonts.drawMixed(g, Fam.MONO, 6f, SW_EN[i], 293, y + 2, 0.8f, TerminalTheme.INK_FAINT);
             TerminalFonts.drawRightMixed(g, Fam.MONO, 8f, on ? "ON" : "OFF", 515, y,
                     on ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
+            // 行底线：网页在行内 top:15（宽 306，x209..515）
+            TerminalDraw.hline(g, 209, 515, y + 15, 0x1A1F2427);
             final int idx = i;
-            s.hit(205, y, 314, 21, SW_CN[i], () -> s.toggleFlag(idx), false);
+            s.hit(205, y, 314, hitH, SW_CN[i], () -> s.toggleFlag(idx), false);
         }
     }
 
     private static void panel(GuiGraphics g, float x, float y, float w, float h) {
         TerminalDraw.rect(g, x + 1, y + 1, w, h, 0x241F2427);
-        TerminalDraw.rect(g, x, y, w, h, TerminalTheme.PANEL_BG); // 网页 #F4F5F3
+        TerminalDraw.rect(g, x, y, w, h, 0xF0F4F5F3); // 网页 #F4F5F3
         TerminalDraw.outline(g, x, y, w, h, 0x801F2427);
     }
 

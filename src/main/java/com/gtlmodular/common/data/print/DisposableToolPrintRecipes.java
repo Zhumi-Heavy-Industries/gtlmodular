@@ -36,20 +36,24 @@ import java.util.Map;
  *
  * <h2>配方语义（GTO gtocore {@code GTODisposableToolHandler} 的裁剪版）</h2>
  * <pre>
- * 3D 打印表： 一次性模具（不消耗）+ 1~6 号编程电路（不消耗）+ 72mB 白名单流体
+ * 3D 打印表： 一次性模具（不消耗）+ 72mB 白名单流体
  *            → 脆弱工具 × (材料耐久 / consume)，EUt 30，时长 = 材料质量
  * </pre>
+ *
+ * <p><b>2026-11-21 合并</b>：此前为兼容单方块另建了 {@code disposable_tool_printing_basic}
+ * （模具+流体、不带电路），电路版留给多方块 ⇒ 同一把工具在 JEI 里出现两份。
+ * 现在只保留<b>一张</b> {@code gtlmodular:disposable_tool_printing}，
+ * 单方块与多方块共用，配方统一为「模具 + 流体」，不再带编程电路。</p>
  * 其中 consume 取 GTO 原表（锉4/扳手8/撬棍3/剪线钳9/锻造锤6/软锤6/螺丝刀4/锯4；
  * 刀/研钵为补齐的 10 种工具，按同族取 4）。出料数量 = GTO 原值，<b>不再封顶</b>。
  *
- * <h2>★ 2026-10-30 队长口径：只保留 6 种流体 + 电路额外识别</h2>
+ * <h2>★ 2026-10-30 队长口径：只保留 6 种流体</h2>
  * 只有这 6 种材料会生成打印配方（其余材料一律不生成）：
  * <pre>
- * 电路 1 = 液态铁(iron)      电路 2 = 液态钢(steel)       电路 3 = 液态钛(titanium)
- * 电路 4 = 液态硅岩合金(naquadah_alloy)  电路 5 = 液态中子素(neutronium)  电路 6 = 液态量子(quantanium)
+ * 液态铁(iron) / 液态钢(steel) / 液态钛(titanium)
+ * 液态硅岩合金(naquadah_alloy) / 液态中子素(neutronium) / 液态量子(quantanium)
  * </pre>
- * 模具<b>保留不删</b>（队长：模具不能删），电路是额外的识别维度；
- * 中子素不再替换成量子——两种流体现在各自独立成条。
+ * 模具<b>保留不删</b>（队长：模具不能删）；中子素不再替换成量子——两种流体现在各自独立成条。
  *
  * <h2>模具配方（直接套用 GTO）</h2>
  * 沿用 GTO 的流体固化：<b>576mB 钢 + 一把对应的工具（{@code forge:tools/<tag>}）→ 一次性模具</b>，
@@ -88,34 +92,32 @@ public final class DisposableToolPrintRecipes {
     public static final int MOLD_DURATION = 800;
 
     /**
-     * ★ 2026-10-30 队长口径：配方只保留这 6 种流体，且用「1~6 号编程电路」做额外识别：
+     * ★ 2026-10-30 队长口径：配方只保留这 6 种材料流体（2026-11-21 起不再带编程电路）：
      * <ol>
-     *   <li>电路 1 = 液态铁（{@code iron}）</li>
-     *   <li>电路 2 = 液态钢（{@code steel}）</li>
-     *   <li>电路 3 = 液态钛（{@code titanium}）</li>
-     *   <li>电路 4 = 液态硅岩合金（{@code naquadah_alloy}）</li>
-     *   <li>电路 5 = 液态中子素（{@code neutronium}）</li>
-     *   <li>电路 6 = 液态量子（{@code quantanium}，gtlcore 的「量子」）</li>
+     *   <li>液态铁（{@code iron}）</li>
+     *   <li>液态钢（{@code steel}）</li>
+     *   <li>液态钛（{@code titanium}）</li>
+     *   <li>液态硅岩合金（{@code naquadah_alloy}）</li>
+     *   <li>液态中子素（{@code neutronium}）</li>
+     *   <li>液态量子（{@code quantanium}，gtlcore 的「量子」）</li>
      * </ol>
-     * 每条配方 = <b>对应一次性模具（不消耗）+ 1~6 号电路（不消耗）+ 72mB 该流体</b> → 脆弱工具。
-     * 模具仍保留（队长：模具不能删），电路是额外的识别维度。
+     * 每条配方 = <b>对应一次性模具（不消耗）+ 72mB 该流体</b> → 脆弱工具。
+     * 模具仍保留（队长：模具不能删）。
      */
     private static final java.util.List<PrintMaterial> ALLOWED_MATERIALS = java.util.List.of(
-            new PrintMaterial("iron", 1),
-            new PrintMaterial("steel", 2),
-            new PrintMaterial("titanium", 3),
-            new PrintMaterial("naquadah_alloy", 4),
-            new PrintMaterial("neutronium", 5),
-            new PrintMaterial("quantanium", 6));
+            new PrintMaterial("iron"),
+            new PrintMaterial("steel"),
+            new PrintMaterial("titanium"),
+            new PrintMaterial("naquadah_alloy"),
+            new PrintMaterial("neutronium"),
+            new PrintMaterial("quantanium"));
 
-    /** 一条允许的「材料 + 电路编号」映射。 */
-    private record PrintMaterial(String materialName, int circuit) {
+    /** 一条允许的材料（按材料名生成一条打印配方）。 */
+    private record PrintMaterial(String materialName) {
     }
 
     private static List<GTRecipe> toolRecipes;
     private static Map<ResourceLocation, GTRecipe> toolRecipeMap;
-    private static List<GTRecipe> basicToolRecipes;
-    private static Map<ResourceLocation, GTRecipe> basicToolRecipeMap;
     private static List<GTRecipe> moldRecipes;
     private static Map<ResourceLocation, GTRecipe> moldRecipeMap;
     private static boolean installed;
@@ -149,12 +151,10 @@ public final class DisposableToolPrintRecipes {
             byTypeMap = byType(server.getRecipeManager());
             injectToolRecipes(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING,
                     toolRecipes, toolRecipeMap);
-            injectToolRecipes(DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC,
-                    basicToolRecipes, basicToolRecipeMap);
             injectMoldRecipes(server.getRecipeManager());
             installed = true;
-            GTLModular.LOGGER.info("[gtlmodular] 一次性工具 3D 打印配方已就绪：多方块(带电路) {} 条 / 单方块(原版) {} 条 / 模具 {} 条",
-                    toolRecipes.size(), basicToolRecipes.size(), moldRecipes == null ? 0 : moldRecipes.size());
+            GTLModular.LOGGER.info("[gtlmodular] 一次性工具 3D 打印配方已就绪：打印 {} 条（单方块/多方块共用一张表）/ 模具 {} 条",
+                    toolRecipes.size(), moldRecipes == null ? 0 : moldRecipes.size());
         } catch (Throwable t) {
             GTLModular.LOGGER.warn("[gtlmodular] 一次性工具 3D 打印配方注入失败（已忽略，不影响启动）：{}",
                     t.toString());
@@ -173,8 +173,6 @@ public final class DisposableToolPrintRecipes {
         }
         List<GTRecipe> tools = new ArrayList<>();
         Map<ResourceLocation, GTRecipe> toolsById = new LinkedHashMap<>();
-        List<GTRecipe> basicTools = new ArrayList<>();
-        Map<ResourceLocation, GTRecipe> basicToolsById = new LinkedHashMap<>();
         List<GTRecipe> molds = new ArrayList<>();
         Map<ResourceLocation, GTRecipe> moldsById = new LinkedHashMap<>();
 
@@ -231,12 +229,11 @@ public final class DisposableToolPrintRecipes {
                 //   output 分支 for-slots 循环），槽位不够的余量由机器的输出仓容量决定。
                 int count = Math.max(1, durability / tool.consume);
                 int duration = (int) Math.max(1L, Math.min(Integer.MAX_VALUE, material.getMass()));
-                // 多方块版：模具 + 1~6 号电路 + 流体
+                // 单方块 / 多方块共用同一张表：模具（不消耗）+ 流体 → 脆弱工具（2026-11-21 合并）
                 GTRecipe recipe = DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING
                         .recipeBuilder(new ResourceLocation(GTLModular.MOD_ID,
                                 safePath(material.getName() + "_to_" + tool.path)))
                         .notConsumable(mold.copy())
-                        .circuitMeta(spec.circuit())
                         .inputFluids(fluid.copy())
                         .outputItems(new ItemStack(fragile, count))
                         .duration(duration)
@@ -244,26 +241,11 @@ public final class DisposableToolPrintRecipes {
                         .buildRawRecipe();
                 tools.add(recipe);
                 toolsById.put(recipe.id, recipe);
-
-                // 单方块版（原版流程）：只有模具 + 流体，不带电路
-                GTRecipe basic = DisposableToolPrintTypes.DISPOSABLE_TOOL_PRINTING_BASIC
-                        .recipeBuilder(new ResourceLocation(GTLModular.MOD_ID,
-                                "basic_" + safePath(material.getName() + "_to_" + tool.path)))
-                        .notConsumable(mold.copy())
-                        .inputFluids(fluid.copy())
-                        .outputItems(new ItemStack(fragile, count))
-                        .duration(duration)
-                        .EUt(PRINT_EUT)
-                        .buildRawRecipe();
-                basicTools.add(basic);
-                basicToolsById.put(basic.id, basic);
             }
         }
 
         toolRecipes = tools;
         toolRecipeMap = toolsById;
-        basicToolRecipes = basicTools;
-        basicToolRecipeMap = basicToolsById;
         moldRecipes = molds;
         moldRecipeMap = moldsById;
     }

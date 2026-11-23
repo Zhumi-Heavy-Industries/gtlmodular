@@ -227,6 +227,10 @@ public final class GTLModularMachines {
         //   结构舱室位允许铝制防冻机械方块 + 本模组 7 档线程仓。
         com.gtlmodular.common.data.coolingtower.CoolingTowerCondensationCenterMachines.register();
 
+        // ★ 2026-11-22：自动补货牌（独立请求器方块）—— 不依赖 merequester，产物直接回 AE 网络。
+        //   设计/取舍见工作区文档《独立请求器方块_设计方案.md》。
+        com.gtlmodular.common.data.requester.RequesterMachines.register();
+
         // ★ 2026-11-01：恒星炎炀锻炉「换机器类 + 换描述 + 挂漩涡渲染器」必须**在这个窗口**做
         //   （机器注册 = GTM 的 RegisterEvent，早于客户端第一次资源加载；渲染器覆层贴图要在贴图集拼接时注册）。
         //   gtlcore 是本模组的依赖、先于本模组注册，这里取 gtceu:stellar_forge 一定能拿到。
