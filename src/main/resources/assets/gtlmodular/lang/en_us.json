@@ -46,7 +46,7 @@
   "gtlmodular.super_pattern_assembly.tooltip.4": "§7§bNo recipe mixing§7: mode lock on push + type gate / §bpattern identity gate§7 on consumption (turns gtlcore's inventory-driven matching into slot-identity-driven). Both toggleable in the mod config screen.",
   "gtlmodular.super_pattern_assembly.tooltip.5": "§7§bPattern scale§7: scales only what AE sees - stored pattern items are never touched; the ratio can apply to inputs or outputs.",
   "gtlmodular.super_pattern_assembly.tooltip.6": "§7§bFOA pattern mode§7: multiplies both inputs and outputs (1~30, default 15) without touching the original patterns.",
-  "gtlmodular.super_pattern_assembly.tooltip.7": "§7§bDedicated catalyst slots§7: middle/right-click a pattern slot to open them; a §bvirtual ingredient§7 there makes that input non-consumed.",
+  "gtlmodular.super_pattern_assembly.tooltip.7": "§7§bDedicated catalyst slots§7: middle/right-click a pattern slot to open them; §awith an ME network attached, non-consumed inputs are supplied automatically from network stock (no manual insertion)§7; manually placed virtual ingredients still work.",
   "gtlmodular.super_pattern_assembly.tooltip.8": "§7§bData stick mirroring§7: right-click this machine with a data stick to store its position, then right-click the pattern buffer proxy/mirror to link them.",
   "gtlmodular.pattern_assembly.scale.multiply.label": "Multiply",
   "gtlmodular.pattern_assembly.scale.divide.label": "Divide",
@@ -109,7 +109,7 @@
   "gtlmodular.pattern_assembly.tooltip.2": "§7No recipe mixing (probably)",
   "gtlmodular.pattern_assembly.tooltip.3": "§7Built-in pattern scale: the ratio can apply to inputs or outputs",
   "gtlmodular.pattern_assembly.tooltip.4": "§7Built-in FOA pattern mode",
-  "gtlmodular.pattern_assembly.tooltip.5": "§7Dedicated catalyst slots: §bmiddle-click a pattern slot§7 to open them in place and click again to collapse (same as the upstream Super Pattern Buffer); a virtual ingredient there makes that input non-consumed",
+  "gtlmodular.pattern_assembly.tooltip.5": "§7Dedicated catalyst slots: §bmiddle-click a pattern slot§7 to open them in place and click again to collapse (same as the upstream Super Pattern Buffer); §awith an ME network attached the machine now auto-supplies non-consumed inputs from network stock, so you no longer need to insert catalysts by hand§7 (virtual ingredients you place manually still work)",
   "gtlmodular.pattern_assembly.tooltip.6": "§7Every pattern slot can be assigned its own machine mode",
   "gtlmodular.pattern_assembly.tooltip.7": "§7Bind the ME pattern buffer mirror with a data stick to link machines together!",
   "gtlmodular.pattern_assembly.tooltip.slots": "§7Pattern slots: §6%s§7 (paginated, 160 per page)",
@@ -1458,7 +1458,6 @@
   "item.gtlmodular.disposable_knife_mold": "Disposable Knife Mold",
   "item.gtlmodular.disposable_mortar_mold": "Disposable Mortar Mold",
   "gtlmodular.print.tooltip.structure_source": "§7Structure source: GTO",
-  "gtlmodular.disposable_tool_printing_basic": "3D Printer: Disposable (Basic)",
   "block.gtlmodular.field_extruder_factory": "Field Force Extruder Parts Factory",
   "block.gtlmodular.nyarlathoteps_tentacle": "Nyarlathotep's Tentacle",
   "block.gtlmodular.laser_casing": "Laser Casing",
@@ -1687,5 +1686,6 @@
   "gtlmodular.cc.cc_primary_soc.name": "Packaged Primary SoC",
   "item.gtlmodular.cc_primary_soc": "Packaged Primary SoC",
   "gtlmodular.cc.cc_processed_primary_soc.name": "Cut Primary SoC",
-  "item.gtlmodular.cc_processed_primary_soc": "Cut Primary SoC"
+  "item.gtlmodular.cc_processed_primary_soc": "Cut Primary SoC",
+  "block.gtlmodular.me_requester": "ME Stock Replenisher"
 }

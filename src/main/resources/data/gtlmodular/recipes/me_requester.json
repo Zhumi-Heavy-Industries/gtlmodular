@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PCP",
+    "IHI",
+    "PSP"
+  ],
+  "key": {
+    "P": {
+      "item": "gtceu:stainless_steel_plate"
+    },
+    "C": {
+      "item": "gtceu:advanced_smd_capacitor"
+    },
+    "I": {
+      "item": "ae2:cable_interface"
+    },
+    "H": {
+      "item": "gtceu:ev_machine_hull"
+    },
+    "S": {
+      "item": "gtceu:ev_sensor"
+    }
+  },
+  "result": {
+    "item": "gtlmodular:me_requester",
+    "count": 1
+  }
+}

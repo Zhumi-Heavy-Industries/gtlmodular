@@ -1,0 +1,17 @@
+{
+  "credit": "inset overlay: 3px margin on each side so the GTCEu tier hull frame stays visible",
+  "parent": "block/block",
+  "textures": {
+    "overlay": "gtlmodular:block/machine/part/me_requester_front",
+    "particle": "gtlmodular:block/machine/part/me_requester_front"
+  },
+  "elements": [
+    {
+      "from": [3, 3, 0],
+      "to": [13, 13, 0.05],
+      "faces": {
+        "north": {"uv": [3, 3, 13, 13], "texture": "#overlay", "cullface": "north"}
+      }
+    }
+  ]
+}
