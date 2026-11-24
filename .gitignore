@@ -51,3 +51,8 @@ deps-src/
 run-test/
 run-test-nac/
 .scratch/
+
+# libs 是指向主仓 D:/gtlmodular/libs 的符号链接（本地编译依赖）。
+# 上面的 `libs/` 只匹配目录内容，匹配不到符号链接本身，所以 status 会一直显示 `?? libs`。
+# 这一行专门忽略符号链接本身；不影响已经跟踪的文件。
+libs
