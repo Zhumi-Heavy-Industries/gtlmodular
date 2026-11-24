@@ -1,0 +1,30 @@
+# 统一换行符：仓库内一律存 LF，检出也按 LF
+#
+# 为什么加这个文件：
+#   本仓是 Windows/Linux 双环境开发（D:/gtlmodular* worktree + WSL）。
+#   Windows 侧编辑器曾把 100+ 个 .java 整份重写成 CRLF，而索引里是 LF，
+#   导致 `git status` 长期显示 1100+ 个「已修改」—— 实际内容没变。
+#   这类假改动会让 `git add -A` 卷进无关文件（0.3.480 那次就中招了）。
+#
+# 规则说明：
+#   text=auto  让 git 自行识别文本文件
+#   eol=lf     仓库内和检出时都用 LF，不再随平台变化
+#   binary     明确标记二进制，避免 git 尝试转换
+
+* text=auto eol=lf
+
+# 二进制：不要做任何换行处理
+*.jar   binary
+*.png   binary
+*.ogg   binary
+*.wav   binary
+*.zip   binary
+*.jfr   binary
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析会出错
+*.bat   text eol=crlf
+*.ps1   text eol=crlf
+
+# Gradle wrapper 脚本在 Linux 上要能直接执行，必须 LF
+gradlew      text eol=lf
+gradlew.bat  text eol=crlf
