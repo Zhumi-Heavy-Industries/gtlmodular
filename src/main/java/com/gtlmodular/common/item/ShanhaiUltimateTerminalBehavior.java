@@ -194,13 +194,15 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                 sendBuildReport(serverPlayer, plan, result);
                 return result.success() ? InteractionResult.SUCCESS : InteractionResult.FAIL;
             }
-            // 第一次潜行右击：优先走 GTO 式单个 AE 订单（独立逻辑）
-            if (ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)) {
-                // GTO 单订单把全部缺口合成一个样板，AE 规划可能绕过网络里已有成品，
-                // 去从原料重算。这里改回逐材料计算：先扣库存，只对真正的缺口下单。
-                com.gtlmodular.GTLModular.LOGGER.info("终端使用逐材料订单路径（先扣 AE 库存，再计算缺口）");
+            // 第一次潜行右击：优先走单个 AE 结构订单（临时处理样板，内存态；失败自动回退逐材料）
+            if (ae != null && ShanhaiUltimateTerminalConfig.isOrderMode(terminal)
+                    && com.gtlmodular.common.item.terminal.TerminalOrderService.start(
+                            serverPlayer, terminal, plan, ae)) {
+                com.gtlmodular.common.item.terminal.TerminalAutoBuildService.register(
+                        serverPlayer, terminal, plan, true);
+                return InteractionResult.SUCCESS;
             }
-            // 旧多缺口逐单逻辑（订单服务不可用时的回退）
+            // 旧多缺口逐单逻辑（单订单不可用 / 失败时的回退）
             boolean orderStarted = requestMissingOrders(serverPlayer, terminal, plan, ae);
             if (ShanhaiTerminalCraftingManager.phase(terminal)
                     == ShanhaiTerminalCraftingManager.Phase.READY_TO_BUILD) {
