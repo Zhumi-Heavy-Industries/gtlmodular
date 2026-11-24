@@ -1,52 +1,55 @@
 {
-  "type": "gtceu:assembler",
+  "type": "gtceu:mixer",
   "conditions": [
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
-    },
-    {
-      "type": "forge:mod_loaded",
-      "modid": "gtladditions"
     }
   ],
-  "duration": 200,
+  "duration": 120,
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 5,
           "ingredient": {
-            "item": "gtceu:trinaquadalloy_frame"
+            "item": "gtceu:tin_dust"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 36,
           "ingredient": {
-            "item": "gtceu:dense_naquadah_alloy_plate"
+            "item": "gtceu:lead_dust"
           }
         }
       },
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 6,
+          "count": 8,
           "ingredient": {
-            "item": "gtceu:trinaquadalloy_plate"
+            "item": "gtceu:antimony_dust"
           }
         }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 2
+        },
+        "chance": 0
       }
     ],
     "fluid": [
       {
         "content": {
-          "amount": 576,
+          "amount": 500,
           "value": {
-            "fluid": "gtceu:naquadria"
+            "fluid": "gtceu:argon"
           }
         }
       }
@@ -57,9 +60,9 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 1,
+          "count": 49,
           "ingredient": {
-            "item": "gtladditions:extreme_density_casing"
+            "item": "gtceu:babbitt_alloy_dust"
           }
         }
       }
@@ -68,7 +71,7 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 120
+        "content": 512
       }
     ]
   }

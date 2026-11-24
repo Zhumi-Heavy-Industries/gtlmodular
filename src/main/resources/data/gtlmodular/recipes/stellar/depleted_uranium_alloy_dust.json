@@ -1,29 +1,20 @@
 {
-  "type": "gtceu:electric_blast_furnace",
+  "type": "gtceu:mixer",
   "conditions": [
     {
       "type": "forge:mod_loaded",
       "modid": "gtceu"
     }
   ],
-  "duration": 8100,
+  "duration": 120,
   "inputs": {
     "item": [
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 6,
+          "count": 9,
           "ingredient": {
-            "item": "gtceu:trinium_dust"
-          }
-        }
-      },
-      {
-        "content": {
-          "type": "gtceu:sized",
-          "count": 2,
-          "ingredient": {
-            "item": "gtceu:naquadah_dust"
+            "item": "gtceu:uranium_dust"
           }
         }
       },
@@ -32,18 +23,16 @@
           "type": "gtceu:sized",
           "count": 1,
           "ingredient": {
-            "item": "gtceu:carbon_dust"
+            "item": "gtceu:titanium_dust"
           }
         }
       },
       {
         "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:programmed_circuit"
-          }
-        }
+          "type": "gtceu:circuit",
+          "configuration": 2
+        },
+        "chance": 0
       }
     ]
   },
@@ -52,9 +41,9 @@
       {
         "content": {
           "type": "gtceu:sized",
-          "count": 8,
+          "count": 10,
           "ingredient": {
-            "item": "gtceu:hot_trinaquadalloy_ingot"
+            "item": "gtceu:depleted_uranium_alloy_dust"
           }
         }
       }
@@ -63,11 +52,8 @@
   "tickInputs": {
     "eu": [
       {
-        "content": 122880
+        "content": 512
       }
     ]
-  },
-  "data": {
-    "ebf_temp": 8747
   }
 }

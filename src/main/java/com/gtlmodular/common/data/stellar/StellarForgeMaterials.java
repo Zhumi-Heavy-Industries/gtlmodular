@@ -103,22 +103,6 @@ public final class StellarForgeMaterials {
         // GTO：.ingot() .color(0xa19ca4) .iconSet(METALLIC)
         //      .components(Tin 5, Lead 36, Antimony 8, Astatine 1) .blastTemp(737)
         //      .flags(GENERATE_FRAME, GENERATE_PLATE, GENERATE_GEAR)
-        //
-        // ★ 2026-11-24（玩家裁决 A）：blastTemp 737 → **1751**，唯一目的就是让
-        //   `TagPrefix.ingotHot` 生成 `gtceu:hot_babbitt_alloy_ingot`。
-        //   GTCEu 1.4.4 的热锭生成条件写死在 TagPrefix.java:287：
-        //     .generationCondition(hasBlastProperty
-        //         .and(mat -> mat.getProperty(PropertyKey.BLAST).getBlastTemperature() > 1750))
-        //   737 < 1750 ⇒ 没有热锭物品 ⇒ 「粉 → 热锭 → 真空冷冻 → 锭」这条链根本无从落地。
-        //
-        //   实机影响（已核对，无新增门槛）：
-        //   a) EBF 线圈要求 = 熔炉温度门槛，1751 与 737 都落在**白铜线圈（1800K）**之内
-        //      （Cupronickel 1800 / Kanthal 2700 / Nichrome 3600 …），所以搭法不用改；
-        //   b) 冷冻走「blastTemp < 5000 ⇒ 裸 hot_ingot → ingot、duration = mass×3」那一支，
-        //      不需要液氦（与贫铀合金 3450K 同支）；
-        //   c) 材料 tooltip 里的熔炼温度会从 737 显示为 1751 —— 这是本方案唯一可见的代价。
-        //   质量 = (50+68)×5 + (82+125)×36 + (51+70)×8 + (85+124)×1 = 8791
-        //   ⇒ 冷冻时长 8791 × 3 = 26373 t（GTCEu 自动生成，不由本类写）
         // components 用的 4 个字段都在 GTCEu 1.4.4 的 GTMaterials 里
         //   （_scratch/tentacle/GTMaterials.javap.txt：Tin:238 / Lead:124 / Antimony:22 / Astatine:28）
         if (!skipIfPresent("babbitt_alloy")) {
@@ -130,7 +114,7 @@ public final class StellarForgeMaterials {
                     .ingot()
                     .components(GTMaterials.Tin, 5, GTMaterials.Lead, 36,
                             GTMaterials.Antimony, 8, GTMaterials.Astatine, 1)
-                    .blastTemp(1751)
+                    .blastTemp(737)
                     .flags(MaterialFlags.GENERATE_FRAME, MaterialFlags.GENERATE_PLATE,
                             MaterialFlags.GENERATE_GEAR, MaterialFlags.GENERATE_ROD)
                     .buildAndRegister();
