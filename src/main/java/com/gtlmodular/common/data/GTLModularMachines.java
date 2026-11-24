@@ -217,6 +217,12 @@ public final class GTLModularMachines {
         //   ★ 配方表按队长口径改为本模组自建的「零部件加工」(gtlmodular:component_parts)，
         //   不再是 GTO 的压模机表。结构 B 位开放 线程/超频/加速/并行/维护 仓。
         com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryMachines.register();
+
+        // ★ 2026-11-24：集成木质生物质工厂 —— GTO「木化工厂」(gtocore:wood_distillation) 的移植体。
+        //   结构 28×56×60 逐片直转（1:1）；运行模式照搬：线圈并行 2^(⌊温度/900⌋) + 激光仓 +
+        //   附属模块口（线程/超频/加速/并行仓）；配方 = 本模组自建表 gtlmodular:wood_distillation
+        //   + 三条照搬配方（氮气/蒸汽/水）。缺的 5 件机壳见 common/data/woodfactory/WoodFactoryBlocks。
+        com.gtlmodular.common.data.woodfactory.WoodFactoryMachines.register();
         // ★ 2026-11-02：GTO 高维等离子聚变核心 —— 63×83×47 结构 1:1 照搬（新增独立机器，
         //   与 gtlcore 的 gtceu:dimensionally_transcendent_plasma_forge 并存）；
         //   配方表 = gtceu:dimensionally_transcendent_plasma_forge + gtceu:stellar_forge；
@@ -264,6 +270,11 @@ public final class GTLModularMachines {
         // ★ 2026-11-14：GTO 力场压模工厂结构里我方缺的 2 件机壳
         //   （高能耐压 / 氧化锂陶瓷防热抗震；加速管道复用 kubejs:accelerated_pipeline）—— 时序要求同上。
         com.gtlmodular.common.data.fieldforge.FieldExtruderFactoryBlocks.init();
+
+        // ★ 2026-11-24：GTO 木化工厂（本模组名「集成木质生物质工厂」）结构里我方缺的 5 件机壳
+        //   （压力容器 / 哈氏合金-N75 油膜管道 / 耐化学腐蚀管道 / 耐高压管道 / 油气输送密封管道）
+        //   —— 时序要求同上：必须在 Forge 的 RegisterEvent<Block> 之前建好 Registrate 条目。
+        com.gtlmodular.common.data.woodfactory.WoodFactoryBlocks.init();
         // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
         // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
         // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。
