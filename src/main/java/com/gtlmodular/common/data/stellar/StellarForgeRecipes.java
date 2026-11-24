@@ -22,7 +22,16 @@ import net.minecraftforge.event.server.ServerStartedEvent;
  *
  * <h2>现在的分工</h2>
  * 配方<b>只由数据包提供</b>：{@code data/gtlmodular/recipes/stellar/} 下的
- * 28 个 JSON（形态链 12 + 陶瓷 10 + 机壳 6）与 3 个合金搅拌配方。
+ * 25 个 JSON（形态链 9 + 陶瓷 10 + 机壳 6）与 3 个合金搅拌配方。
+ *
+ * <p>{@code 2026-11-24} 又把三味合金的<b>杆</b>配方删了（原形态链 12 条 → 9 条）：
+ * GTCEu 对带 {@code MaterialFlags.GENERATE_ROD} 的材料会自己生成「锭 + 杆挤压模具 → 2 杆」
+ * （GTCEu 1.4.4 {@code MaterialRecipeHandler} 里 {@code hasFlag(GENERATE_ROD)} 那一段，
+ * EU = 6 × 电压倍率、duration = mass × 2），而我们那条输入与它<b>完全相同</b>
+ * （用的是同一个 {@code gtceu:rod_extruder_mold}），只差 EU/耗时 ⇒ JEI 两条并列。
+ * 留 GT 那条以避免重复页，代价是杆变慢（巴氏合金约 100t → 368t）。
+ * 板/双板/框不受影响：GT 那几条带 {@code circuitMeta(1/2/4)} 而我们不带，
+ * 属两条不同路线，不算重复。
  * 保留数据包一侧的理由：它走标准数据包加载，不依赖 {@code RecipeManager.byType}
  * 的反射取字段（那条路一旦取不到字段就只剩 lookup，JEI 会不显示）。
  *
@@ -49,7 +58,7 @@ public final class StellarForgeRecipes {
 
     private static void onServerStarted(ServerStartedEvent event) {
         GTLModular.LOGGER.info("[gtlmodular] 恒星炎炀锻炉：配方全部由数据包 "
-                + "data/gtlmodular/recipes/stellar 提供（28 条形态链/陶瓷/机壳 + 3 条合金搅拌），"
+                + "data/gtlmodular/recipes/stellar 提供（25 条形态链/陶瓷/机壳 + 3 条合金搅拌），"
                 + "本类不再重复注册");
     }
 }
