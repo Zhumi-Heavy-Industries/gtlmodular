@@ -16,6 +16,7 @@
         "gtceu.FactoryBlockPatternGainHatchQuotaMixin",
         "gtceu.RecipeLogicAccelerateSetupMixin",
         "gtceu.RecipeLogicGainHatchTickMixin",
+        "gtceu.OverclockHatchEntryMixin",
         "gtceu.OverclockHatchLogicMixin",
         "gtceu.PredicatesExtendHatchMixin",
         "gtceu.MultiblockDefinitionExtendHatchMixin",
