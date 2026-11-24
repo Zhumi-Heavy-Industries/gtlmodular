@@ -45,7 +45,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:depleted_uranium_alloy_ingot"
+            "item": "gtceu:hot_depleted_uranium_alloy_ingot"
           }
         }
       }

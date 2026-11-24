@@ -63,7 +63,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:babbitt_alloy_ingot"
+            "item": "gtceu:hot_babbitt_alloy_ingot"
           }
         }
       }
@@ -77,6 +77,6 @@
     ]
   },
   "data": {
-    "ebf_temp": 800
+    "ebf_temp": 1751
   }
 }

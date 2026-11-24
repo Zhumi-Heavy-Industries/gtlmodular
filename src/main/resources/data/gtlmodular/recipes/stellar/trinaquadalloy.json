@@ -54,7 +54,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtceu:trinaquadalloy_ingot"
+            "item": "gtceu:hot_trinaquadalloy_ingot"
           }
         }
       }

@@ -47,12 +47,10 @@
       },
       {
         "content": {
-          "type": "gtceu:sized",
-          "count": 1,
-          "ingredient": {
-            "item": "gtceu:programmed_circuit"
-          }
-        }
+          "type": "gtceu:circuit",
+          "configuration": 6
+        },
+        "chance": 0
       }
     ]
   },
