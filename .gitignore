@@ -56,3 +56,4 @@ run-test-nac/
 # 上面的 `libs/` 只匹配目录内容，匹配不到符号链接本身，所以 status 会一直显示 `?? libs`。
 # 这一行专门忽略符号链接本身；不影响已经跟踪的文件。
 libs
+_crash_backup/
