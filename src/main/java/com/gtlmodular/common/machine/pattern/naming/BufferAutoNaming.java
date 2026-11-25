@@ -52,8 +52,12 @@ import java.util.Map;
  * ① 本模组的少量覆盖表（{@code circuit_assembly}/{@code circuit_assembler} ⇒「电路组装」、
  * {@code disposable_tool_printing} ⇒「3D打印：一次性工具」）；
  * ② {@code Component.translatable(registryName.toLanguageKey())} 真翻译（与 JEI 分类标题、模式页同一来源）；
- * ③ 连原文都取不到 ⇒ 退回注册路径名（可读、不含命名空间）。
- * <b>绝不写空、绝不把 {@code gtceu.xxx} 这类 lang 键写进玩家看到的名字。</b>
+ * ③ 再试 {@code block.<namespace>.<path>}（有些类型只在方块名下有条目）；
+ * ④ 再走 {@link ModLangIndex}：直接读 mod 文件的 {@code assets/<namespace>/lang/zh_cn.json} / {@code en_us.json}
+ * （服务端 {@code Component.translatable} 对<b>别的模组命名空间</b>的条目不一定有译文，2026-11-25 实机踩到）；
+ * ⑤ <b>都取不到 ⇒ 本轮不命名、下一 tick 再试</b>（绝不写注册路径名 —— 那会被落盘成「名字」并按「延续」永久保留，
+ * 玩家看到的就是裸 id）。
+ * <b>绝不写空、绝不把 {@code gtceu.xxx} 这类 lang 键或注册路径名写进玩家看到的名字。</b>
  *
  * <h2>纪律</h2>
  * 起名纯粹是显示层的事：整个流程包在 try 里，任何异常都静默跳过，绝不影响机器逻辑
@@ -152,6 +156,28 @@ public final class BufferAutoNaming {
             state.lockedName = "";
             state.observedName = current;
             buffer.markDirty();
+        }
+        // ★ 2026-11-25：**兜底名自愈**（队长实机：「样板总成的自动命名显示成
+        //   dimensionally_transcendent_plasma_forge」）。旧版在翻译取不到时把注册路径名
+        //   （{@code type.registryName.getPath()}）当成名字写进 customName 并落盘进 modeNames；
+        //   之后按「该模式已经记着名字 ⇒ 延续」永久保留，翻译恢复了也不会自己改回来。
+        //   这里把「某个类型的 id / 路径 / lang 键」一律当占位符：
+        //     ① 清掉落盘的兜底值（modeNames / 误锁的 lockedName）；
+        //     ② 当前名字是兜底原文 ⇒ 视觉上当它没名字，让下面的流程按现在能取到的显示名重写一次。
+        //   取不到翻译时 displayName 返回 null ⇒ 本 tick 不写，下一 tick 再试（绝不写回兜底名）。
+        if (state.observedName != null && isFallbackNameOfHost(state.observedName, types)) {
+            state.observedName = "";
+        }
+        if (!state.lockedName.isEmpty() && !state.playerLocked && isFallbackNameOfHost(state.lockedName, types)) {
+            state.lockedName = "";
+            state.playerLocked = false;
+            buffer.markDirty();
+        }
+        if (!state.modeNames.isEmpty() && state.modeNames.values().removeIf(n -> isFallbackNameOfHost(n, types))) {
+            buffer.markDirty();
+        }
+        if (isFallbackNameOfHost(current, types)) {
+            current = "";
         }
         // ① 名字被别人改了（玩家在界面里改、或别的代码写进来）⇒ 认作玩家改名，永久让位。
         //    「未命名加工模式」是上游的兜底串，不是任何人的选择 ⇒ 不算名字；名字被清空也不算改名。
@@ -344,10 +370,12 @@ public final class BufferAutoNaming {
     }
 
     /**
-     * 一个配方类型 ⇒ 可以写进自定义名的显示名；取不到就返回 {@code null}（调用方保持原名不动）。
+     * 一个配方类型 ⇒ 可以写进自定义名的显示名；取不到翻译就返回 {@code null}（调用方保持原名、下一 tick 再试）。
      *
-     * <p>与"日志用的表名"的唯一区别：日志允许退回路径名，显示名这里也退回路径名（用户口径
-     * 「取不到中文就退回英文/原文，不允许因为取不到就整条不生效」），但绝不写空、绝不写 lang 键。
+     * <p>口径（2026-11-25 修订）：<b>翻译取不到时不写注册路径名</b>。路径名会被落盘成「名字」并按
+     * 「延续」永久保留，玩家看到的就是 {@code dimensionally_transcendent_plasma_forge} 这种原文；
+     * 宁可这一轮不命名、下一 tick 再试，也不写兜底原文。已落盘的兜底名由
+     * {@link #isFallbackNameOfHost} + {@code apply} 开头的自愈段清掉重写。
      */
     public static String displayName(GTRecipeType type) {
         if (type == null || type.registryName == null) {
@@ -368,10 +396,28 @@ public final class BufferAutoNaming {
             if (translated != null && !translated.isEmpty() && !translated.equals(key)) {
                 return translated;
             }
+            // 有些类型只在 {@code block.<ns>.<path>} 下有条目（{@code gtceu.<path>} 没有）⇒ 再试一次方块名。
+            String blockKey = "block." + type.registryName.getNamespace() + "." + path;
+            String blockTranslated = Component.translatable(blockKey).getString();
+            if (blockTranslated != null && !blockTranslated.isEmpty() && !blockTranslated.equals(blockKey)) {
+                return blockTranslated;
+            }
         } catch (RuntimeException ignored) {
-            // 翻译层出问题 ⇒ 退回路径名
+            // 翻译层出问题 ⇒ 继续走下面的 mod 文件兜底
         }
-        return path.isEmpty() ? null : path;
+        // ★ 2026-11-25：服务端兜底 —— 直接去 mod 文件的 assets/<ns>/lang/*.json 查一次。
+        //   整合包的配方表大多由 gtlcore 注册在 gtceu: 命名空间下，译文在别人的 jar 里；
+        //   服务端 Component.translatable 取不到时旧版会退回注册路径名并落盘，玩家看到裸 id。
+        String namespace = type.registryName.getNamespace();
+        String fromMods = ModLangIndex.lookup(namespace, type.registryName.toLanguageKey());
+        if (fromMods != null) {
+            return fromMods;
+        }
+        String fromBlockLang = ModLangIndex.lookup(namespace, "block." + namespace + "." + path);
+        if (fromBlockLang != null) {
+            return fromBlockLang;
+        }
+        return null;
     }
 
     /** 这个字符串是不是上游 Enhancedcore 写的兜底串「未命名加工模式」（全等判据，不做模糊匹配）。 */
@@ -392,6 +438,31 @@ public final class BufferAutoNaming {
         for (GTRecipeType type : types) {
             String display = displayName(type);
             if (display != null && !display.isEmpty() && name.equals(display)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 这个名字是不是<b>「取不到翻译时的兜底」</b>——即某个配方类型的注册名/路径/lang 键
+     * （{@code gtceu:dimensionally_transcendent_plasma_forge} /
+     * {@code dimensionally_transcendent_plasma_forge} /
+     * {@code gtceu.dimensionally_transcendent_plasma_forge}）。
+     *
+     * <p>这类字符串<b>不是名字</b>，是旧版命名在翻译缺失时写下去的兜底值：它会被落盘进
+     * {@code modeNames} / {@code customName} 并按「延续」永久保留。凡是它，都必须允许自愈重写。
+     */
+    private static boolean isFallbackNameOfHost(String name, List<GTRecipeType> types) {
+        if (name == null || name.isEmpty() || types == null) {
+            return false;
+        }
+        for (GTRecipeType type : types) {
+            if (type == null || type.registryName == null) {
+                continue;
+            }
+            var id = type.registryName;
+            if (name.equals(id.getPath()) || name.equals(id.toString()) || name.equals(id.toLanguageKey())) {
                 return true;
             }
         }
