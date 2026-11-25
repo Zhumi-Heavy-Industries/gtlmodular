@@ -3,7 +3,11 @@ package com.gtlmodular.common.machine;
 import appeng.api.crafting.IPatternDetails;
 import appeng.api.crafting.PatternDetailsHelper;
 import appeng.api.networking.IGrid;
+import appeng.api.networking.IGridNode;
 import appeng.api.networking.security.IActionSource;
+import appeng.api.networking.ticking.IGridTickable;
+import appeng.api.networking.ticking.TickRateModulation;
+import appeng.api.networking.ticking.TickingRequest;
 import appeng.api.stacks.AEFluidKey;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
@@ -68,6 +72,7 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
+import org.gtlcore.gtlcore.config.ConfigHolder;
 import org.gtlcore.gtlcore.api.gui.MEPatternCatalystUIManager;
 import org.gtlcore.gtlcore.common.machine.multiblock.part.PaginationUIManager;
 import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferPartMachine;
@@ -1155,8 +1160,184 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         }
     }
 
+    // ================= 输出池（★ 2026-11-25：照 gtladditions 超级样板总成的 pending 池） =================
+
     /**
-     * 换样板时把该槽的<b>宽表库存</b>退回机器 {@code buffer}（gtlcore 的 Ticker 负责推网）。
+     * <b>产物先入池、再批量刷网</b> —— 与上游 {@code MESuperPatternBufferPartMachine.pending} 同语义。
+     *
+     * <h3>为什么要有它</h3>
+     * <p>原来的产物回流是「配方收尾 → 直接写进 gtlcore 的 {@code buffer}
+     * ({@code Object2LongOpenHashMap<AEKey>}) → 它自己的 {@code Ticker} 刷网」。两个问题：
+     * <ul>
+     *   <li>量还是 {@code long} ⇒ 一次大批量的产物会回绕成负数（与输入侧同一个病，输入这次已经换成
+     *       {@link Int128}，输出不换就成了短板）；</li>
+     *   <li>刷网节流只有 gtlcore 那一套（{@code ConfigHolder} 的 min/max 频率），
+     *       <b>没有"每次每键最多推多少"的上限</b> ⇒ 一次几百万个产物怼进网络，
+     *       AE 那边要么崩要么长时间卡。</li>
+     * </ul>
+     *
+     * <h3>口径（逐条照上游）</h3>
+     * <ol>
+     *   <li>产物池 = {@code Map<AEKey, Int128>}（物品流体混存）；</li>
+     *   <li>配方收尾时把产物<b>加进池</b>（不直接碰网络）；</li>
+     *   <li>我们自己的 {@code PendingOutputTicker} 每 tick 调
+     *       {@link WideAmounts#flushToNetwork}，<b>逐键每次最多 {@code outputTransferLimit}</b>，
+     *       推不动的留在池里下一轮继续（绝不丢）；</li>
+     *   <li>换样板退款也进这个池（退款与产物走同一条出口，顺序稳定）。</li>
+     * </ol>
+     *
+     * <p><b>存档</b>：键名 {@code buffer}（与上游同名），读档恢复。推送上限
+     * {@code outputTransferLimit} 也一起存（默认 64，范围 1~1024）。
+     */
+    public static final int DEFAULT_OUTPUT_TRANSFER_LIMIT = 64;
+    public static final int MIN_OUTPUT_TRANSFER_LIMIT = 1;
+    public static final int MAX_OUTPUT_TRANSFER_LIMIT = 1024;
+
+    /**
+     * 产物池在 NBT 里的键名。
+     *
+     * <p>刻意用<b>带命名空间前缀</b>的键，而不是上游那个 {@code buffer}：gtlcore 具体类的
+     * {@code save/loadCustomPersistedData} 也在同一个 tag 上读写，同名键会互相踩
+     * （类型还不同：它是 long 表，我们是 ListTag）⇒ 前缀隔离，互不影响。
+     */
+    private static final String TAG_PENDING_OUTPUTS = "gtlmodular$pending_outputs";
+    private static final String TAG_OUTPUT_TRANSFER_LIMIT = "gtlmodular$output_transfer_limit";
+
+    /**
+     * 产物池（<b>懒建</b>）。
+     *
+     * <p>为什么不在字段初始化里 new：{@code createRecipeHandler} 是在 gtlcore 构造器里被调的
+     * （父类 ctor → 我们的覆写 → 建 handler），那时本类的字段初始化还没跑
+     * ⇒ 字段在这里必须是 {@code null} 才安全，由 {@link #pending()} 惰性补。
+     */
+    private Object2ObjectOpenHashMap<AEKey, Int128> pendingOutputs;
+
+    /** 每键每次刷网上限（可调、落盘）。 */
+    private int outputTransferLimit = DEFAULT_OUTPUT_TRANSFER_LIMIT;
+
+    /** ticker 只装一次（{@code onLoad} 可能被多次调用）。 */
+    private boolean pendingOutputTickerInstalled;
+
+    private Object2ObjectOpenHashMap<AEKey, Int128> pending() {
+        Object2ObjectOpenHashMap<AEKey, Int128> map = this.pendingOutputs;
+        if (map == null) {
+            map = new Object2ObjectOpenHashMap<>();
+            this.pendingOutputs = map;
+        }
+        return map;
+    }
+
+    /** 物品产物：收下（不碰网络），返回空表 = 全部消费完（与父类契约一致）。 */
+    java.util.List<Ingredient> collectItemOutputs(java.util.List<Ingredient> left, boolean simulate) {
+        if (!simulate) {
+            try {
+                WideAmounts.collectItemOutput(pending(), left);
+                pokeOutputTicker();
+            } catch (Throwable ignored) {
+                // 入池失败不能影响配方收尾（父类那条路也没了，宁可少收一次也不许抛）
+            }
+        }
+        return java.util.List.of();
+    }
+
+    /** 流体产物：同上。 */
+    java.util.List<FluidIngredient> collectFluidOutputs(java.util.List<FluidIngredient> left, boolean simulate) {
+        if (!simulate) {
+            try {
+                WideAmounts.collectFluidOutput(pending(), left);
+                pokeOutputTicker();
+            } catch (Throwable ignored) {
+                // 同上
+            }
+        }
+        return java.util.List.of();
+    }
+
+    public int getOutputTransferLimit() {
+        return Math.max(MIN_OUTPUT_TRANSFER_LIMIT, Math.min(MAX_OUTPUT_TRANSFER_LIMIT, outputTransferLimit));
+    }
+
+    public void setOutputTransferLimit(int value) {
+        this.outputTransferLimit = Math.max(MIN_OUTPUT_TRANSFER_LIMIT, Math.min(MAX_OUTPUT_TRANSFER_LIMIT, value));
+        pokeOutputTicker();
+    }
+
+    /** 叫醒刷网 ticker（AE 的 grid tickable 可被 {@code wakeDevice} 立刻唤起，不必等 tick）。 */
+    private void pokeOutputTicker() {
+        try {
+            if (getMainNode() != null && getMainNode().isReady()) {
+                getMainNode().ifPresent((grid, node) -> grid.getTickManager().alertDevice(node));
+            }
+        } catch (Throwable ignored) {
+            // 叫不醒就等下一个 tick
+        }
+    }
+
+    /** 立刻把产��池推一次（读档/拆机/手动退款用）。 */
+    public boolean flushPendingOutputsNow() {
+        try {
+            if (getMainNode() == null || !getMainNode().isActive()) {
+                return false;
+            }
+            IGrid grid = getMainNode().getGrid();
+            if (grid == null) {
+                return false;
+            }
+            return !WideAmounts.flushToNetwork(pending(), grid, actionSource, getOutputTransferLimit());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * 产物池刷网 ticker：频率取 gtlcore 的 {@code MEPatternOutputMin/Max}（与它自己那个 Ticker 同源）。
+     * 池空 ⇒ 立刻睡，不占 tick；有货 ⇒ 刷一次，推完就睡、没推完就加急下一轮。
+     */
+    private final class PendingOutputTicker implements IGridTickable {
+
+        @Override
+        public TickingRequest getTickingRequest(IGridNode node) {
+            return new TickingRequest(ConfigHolder.INSTANCE.machines.MEPatternOutputMin,
+                    ConfigHolder.INSTANCE.machines.MEPatternOutputMax, false, true);
+        }
+
+        @Override
+        public TickRateModulation tickingRequest(IGridNode node, int ticksSinceLastCall) {
+            try {
+                if (getMainNode() == null || !getMainNode().isActive()) {
+                    return TickRateModulation.SLEEP;
+                }
+                if (pending().isEmpty()) {
+                    return TickRateModulation.SLEEP;
+                }
+                IGrid grid = getMainNode().getGrid();
+                if (grid == null) {
+                    return TickRateModulation.SLOWER;
+                }
+                boolean remaining = WideAmounts.flushToNetwork(pending(), grid, actionSource,
+                        getOutputTransferLimit());
+                return remaining ? TickRateModulation.URGENT : TickRateModulation.SLOWER;
+            } catch (Throwable ignored) {
+                return TickRateModulation.SLOWER;
+            }
+        }
+    }
+
+    /** 装产物池 ticker（幂等；只在 {@code onLoad} 里调一次）。 */
+    private void installPendingOutputTicker() {
+        if (pendingOutputTickerInstalled) {
+            return;
+        }
+        try {
+            getMainNode().addService(IGridTickable.class, new PendingOutputTicker());
+            pendingOutputTickerInstalled = true;
+        } catch (Throwable ignored) {
+            // 装不上就只靠退款/读档时的同步刷网（不会丢货，只是刷得慢）
+        }
+    }
+
+    /**
+     * 换样板时把该槽的<b>宽表库存</b>退回产物池（与产物走同一条出口）。
      *
      * <p>为什么必须在 {@code super.onPatternChange} <b>之前</b>自己做：父类的退款读的是它自己那两张
      * long 树（宽表模式下恒空）⇒ 不走这一步的话，换样板/拆样板的料会<b>滞留在宽表里</b>
@@ -1166,10 +1347,12 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         try {
             var internal = getInternalSlotOrNull(index);
             if (internal instanceof WidePatternBufferInternalSlot wide) {
-                WideAmounts.refundSlot(this.buffer, wide.wideInputs());
+                // ★ 2026-11-25（输出池）：退到**产物池**，与产物同一条出口（不再用 gtlcore 的 buffer）
+                WideAmounts.refundSlot(pending(), wide.wideInputs());
+                pokeOutputTicker();
             }
         } catch (Throwable ignored) {
-            // 退款失败绝不能打断换样板本身（下一 tick 的 Ticker 还会把 buffer 推走）
+            // 退款失败绝不能打断换样板本身（下一 tick 的 ticker 还会把池子推走）
         }
     }
 
@@ -1364,6 +1547,8 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         // （撤掉/换掉样板后 AE 还认为能做，下单不知去向）。现役机/超级机/gtlcore 自家样板仓走的是同一条基类链，
         // 所以队长在现役机上也看到了同样的现象。这里补一次订阅（幂等：`updateSubscription()` 内部自己判空 + 判在线）。
         updateSubscription();
+        // ★ 2026-11-25（输出池）：装我们自己的刷网 ticker（池空即睡，不占 tick；幂等）。
+        installPendingOutputTicker();
         // 自动切换配方模式：只在服务端跑
         this.autoSwitchSubscription = subscribeServerTick(this::autoSwitchTick);
     }
@@ -3994,6 +4179,16 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                 }
                 return super.meHandleRecipeInner(recipe, left, simulate, slot);
             }
+
+            /**
+             * ★ 2026-11-25（输出池）：产物不再进 gtlcore 的 {@code buffer}，改投本机的
+             * {@code pending}（{@link Int128} 宽表）。返回空表 = "全部收下"，与父类契约一致。
+             */
+            @Override
+            public java.util.List<Ingredient> meHandleRecipeOutputInner(java.util.List<Ingredient> left,
+                                                                       boolean simulate) {
+                return machine.collectItemOutputs(left, simulate);
+            }
         }
 
         /** 流体侧：同物品侧。 */
@@ -4014,6 +4209,13 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
                     return false;
                 }
                 return super.meHandleRecipeInner(recipe, left, simulate, slot);
+            }
+
+            /** ★ 2026-11-25（输出池）：流体产物也投 {@code pending}。 */
+            @Override
+            public java.util.List<FluidIngredient> meHandleRecipeOutputInner(java.util.List<FluidIngredient> left,
+                                                                            boolean simulate) {
+                return machine.collectFluidOutputs(left, simulate);
             }
         }
     }
@@ -6396,6 +6598,14 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     @Override
     public void saveCustomPersistedData(CompoundTag tag, boolean forDrop) {
         super.saveCustomPersistedData(tag, forDrop);
+        // ★ 2026-11-25（输出池）：池子与推送上限一起落盘（键名与上游同名，便于互导）。
+        //   拆机掉落（forDrop=true）时也写：料跟着方块走，绝不能凭空消失。
+        try {
+            tag.put(TAG_PENDING_OUTPUTS, WideAmounts.write(pending()));
+            tag.putInt(TAG_OUTPUT_TRANSFER_LIMIT, getOutputTransferLimit());
+        } catch (Throwable ignored) {
+            // 写不进就只丢这一份池子（不影响其它键）
+        }
         // 类型缓存格式版本：0.3.207 起「声明类型优先 + 候选集」会改变识别结论，
         // 旧版落盘的识别结果（可能已被"串表扣料"污染成车床）不能再采信，读档时按版本号清一次。
         tag.putInt("gtlmodular$slot_recipe_type_version", SLOT_TYPE_CACHE_VERSION);
@@ -6510,6 +6720,20 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     @Override
     public void loadCustomPersistedData(CompoundTag tag) {
         super.loadCustomPersistedData(tag);
+        // ★ 2026-11-25（输出池）：恢复池子与推送上限。读档期还没挂网 ⇒ 只装状态，
+        //   真正的刷网由 onLoad 装上的 ticker 负责（或下一次 poke）。
+        try {
+            pending().clear();
+            if (tag.contains(TAG_PENDING_OUTPUTS, Tag.TAG_LIST)) {
+                pending().putAll(WideAmounts.read(tag.getList(TAG_PENDING_OUTPUTS, Tag.TAG_COMPOUND)));
+            }
+            if (tag.contains(TAG_OUTPUT_TRANSFER_LIMIT)) {
+                this.outputTransferLimit = Math.max(MIN_OUTPUT_TRANSFER_LIMIT,
+                        Math.min(MAX_OUTPUT_TRANSFER_LIMIT, tag.getInt(TAG_OUTPUT_TRANSFER_LIMIT)));
+            }
+        } catch (Throwable ignored) {
+            // 读不出来就当池子为空（旧档本来也没有这个键）
+        }
         // ★ 0.3.48（惰性 A 档第一步）：父类（含 Base）已经把样板仓反序列化完了 ⇒ 立刻按"已用最高槽"回填容量。
         //   这是防丢样板的关键一步：起步容量 32 < 存档里已有的样板数时，不回到足够容量就会被截断 ✗。
         backfillCapacityAfterLoad();

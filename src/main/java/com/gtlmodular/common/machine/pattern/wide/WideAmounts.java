@@ -187,70 +187,72 @@ public final class WideAmounts {
     /**
      * 把宽表里的一部分量推回 ME 网络（<b>逐键每次最多 {@code limitPerKey}</b>）。
      *
-     * <p>用 gtlcore 的 {@link AEUtils#reFunds} 做真正的插入：它会把自己塞不进去的量<b>留在传入的表里</b>
-     * （本仓库既有的 Ticker 就依赖这个语义），因此这里按"推前 − 推后"算实际推走量，再从宽表里扣。
+     * <p>用 gtlcore 的 {@link AEUtils#reFunds} 做真正的插入：它会把自己塞不进去的量<b>留在传入的表里</b>、
+     * 塞进去的键则从表里删掉。因此这里必须<b>先快照"打算推多少"</b>（{@code wanted}），
+     * 推完再按「快照 − 表里剩的」算实际推走量 —— <b>绝不能按"剩下的项"反推</b>：
+     * 推成功被删掉的键根本不出现，那样会把它们的量当成"没推"而重复推一次（产物翻倍）。
      *
      * @return 是否还有剩余没推完（true = 下轮继续）
      */
     public static boolean flushToNetwork(Object2ObjectMap<AEKey, Int128> pending, IGrid grid,
                                          IActionSource source, int limitPerKey) {
-        if (pending == null || pending.isEmpty()) {
+        if (pending == null || pending.isEmpty() || grid == null) {
             return false;
         }
+        // ① 快照：每个键这轮"打算推多少"
+        Object2LongOpenHashMap<AEKey> wanted = new Object2LongOpenHashMap<>();
         Object2LongOpenHashMap<AEKey> batch = new Object2LongOpenHashMap<>();
-        for (var entry : pending.entrySet()) {
-            if (entry.getKey() == null || entry.getValue() == null) {
+        for (AEKey key : new java.util.ArrayList<>(pending.keySet())) {
+            Int128 value = pending.get(key);
+            if (key == null || value == null) {
                 continue;
             }
-            long want = entry.getValue().longValue();
-            if (want <= 0L) {
+            long have = value.longValue();
+            if (have <= 0L) {
                 continue;
             }
-            batch.put(entry.getKey(), limitPerKey > 0 ? Math.min(want, limitPerKey) : want);
+            long want = limitPerKey > 0 ? Math.min(have, limitPerKey) : have;
+            wanted.put(key, want);
+            batch.put(key, want);
         }
         if (batch.isEmpty()) {
             pending.clear();
             return false;
         }
-        boolean[] pushed = new boolean[batch.size()];
+        // ② 真推：reFunds 会把塞不进去的留在 batch、塞进去的从 batch 删掉
         try {
             AEUtils.reFunds(batch, grid, source);
         } catch (Throwable ignored) {
-            // 推不动就原样留着，下一轮再来
-            return true;
+            return true;   // 推不动就原样留着，下一轮再来
         }
-        for (Object2LongMap.Entry<AEKey> entry : batch.object2LongEntrySet()) {
-            long left = entry.getLongValue();
-            long wanted = limitPerKey > 0
-                    ? Math.min(longValueOf(pending, entry.getKey()), limitPerKey)
-                    : longValueOf(pending, entry.getKey());
-            long moved = wanted - Math.max(0L, left);
+        // ③ 按快照结算：实际推走 = 打算推的 − batch 里剩的
+        for (Object2LongMap.Entry<AEKey> entry : wanted.object2LongEntrySet()) {
+            AEKey key = entry.getKey();
+            long want = entry.getLongValue();
+            long left = Math.max(0L, batch.getLong(key));   // 推成功 ⇒ 键被删 ⇒ 0
+            long moved = want - left;
             if (moved > 0L) {
-                subtract(pending, entry.getKey(), moved);
+                subtract(pending, key, moved);
             }
         }
         return !pending.isEmpty();
     }
 
-    private static long longValueOf(Object2ObjectMap<AEKey, Int128> map, AEKey key) {
-        Int128 value = map.get(key);
-        return value == null ? 0L : value.longValue();
-    }
-
     // ------------------------------------------------------------------ 退款
 
-    /** 把该槽宽表里的料整体退到机器的 {@code buffer}（gtlcore 的 Ticker 会负责推网）。 */
-    public static void refundSlot(Object2LongOpenHashMap<AEKey> buffer, Object2ObjectMap<AEKey, Int128> inputs) {
-        if (buffer == null || inputs == null || inputs.isEmpty()) {
+    /** 把该槽宽表里的料整体退到产物池（产物池由机器的刷网 ticker 负责推网）。 */
+    public static void refundSlot(Object2ObjectMap<AEKey, Int128> target, Object2ObjectMap<AEKey, Int128> inputs) {
+        if (target == null || inputs == null || inputs.isEmpty()) {
             return;
         }
-        for (var entry : inputs.entrySet()) {
-            if (entry.getKey() == null || entry.getValue() == null) {
+        for (AEKey key : new java.util.ArrayList<>(inputs.keySet())) {
+            Int128 value = inputs.get(key);
+            if (key == null || value == null) {
                 continue;
             }
-            long amount = entry.getValue().longValue();
+            long amount = value.longValue();
             if (amount > 0L) {
-                buffer.addTo(entry.getKey(), amount);
+                add(target, key, amount);
             }
         }
         inputs.clear();
@@ -394,6 +396,27 @@ public final class WideAmounts {
             AEItemKey key = AEItemKey.of(items[0]);
             if (key != null) {
                 add(out, key, outputAmount(ingredient, items[0]));
+            }
+        }
+    }
+
+    /** 流体产物 → 产物池。 */
+    public static void collectFluidOutput(Object2ObjectMap<AEKey, Int128> out,
+                                          List<? extends FluidIngredient> left) {
+        if (out == null || left == null) {
+            return;
+        }
+        for (FluidIngredient ingredient : left) {
+            if (ingredient == null) {
+                continue;
+            }
+            FluidStack[] stacks = ingredient.getStacks();
+            if (stacks.length == 0 || stacks[0] == null || stacks[0].isEmpty()) {
+                continue;
+            }
+            AEFluidKey key = AEFluidKey.of(stacks[0].getFluid());
+            if (key != null) {
+                add(out, key, Math.max(1L, ingredient.getAmount()));
             }
         }
     }
