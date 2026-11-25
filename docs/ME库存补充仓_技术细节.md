@@ -15,16 +15,16 @@
 
 ---
 
-## 1. 文件清单（2694 行）
+## 1. 文件清单（2817 行）
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `RequesterMachine.java` | 498 | 方块实体：AE 节点、持久化字段、主界面 |
+| `RequesterMachine.java` | 540 | 方块实体：AE 节点、持久化字段、外框（`createUI`）+ 主界面 |
 | `RequesterOrderEngine.java` | 491 | 下单状态机（串行 / 三重读数 / 宽限 / 冷却 / 自动缩单） |
-| `RequesterSlotWidget.java` | 568 | 单格控件：双层格、JEI 拖拽、点击同步 |
+| `RequesterSlotWidget.java` | 617 | 单格控件：双层格、JEI 拖拽、点击/滚轮同步 |
 | `RequesterSlot.java` | 260 | 单格数据模型（key/target/batch/stock）+ NBT |
-| `RequesterAmountBox.java` | 243 | 「数量 / 并发」浮动面板（可拖动） |
-| `RequesterSlotGrid.java` | 144 | 槽位网格容器（翻页只切可见性） |
+| `RequesterAmountBox.java` | 243 | 「数量 / 并发」弹层（页内、贴选中格） |
+| `RequesterSlotGrid.java` | 176 | 槽位网格容器（翻页只切可见性）+ `enableAmount/disableAmount` |
 | `RequesterSlots.java` | 135 | 槽位表容器（LDLib 托管 + 旧存档迁移） |
 | `EcoPlanningBridge.java` | 134 | ECO 规划器的反射桥接（可选） |
 | `RequesterNumbers.java` | 106 | 数字格式化/解析（科学计数、mB/B） |
@@ -164,6 +164,7 @@ deserializeNBT(): legacy = !tag.getBoolean("LayoutV2")
 | 2 | `ACTION_SET_FLUID` | LDLib `FluidStack` |
 | 3 | `ACTION_CLEAR` | – |
 | 4 | `ACTION_SELECT` | – |
+| 5 | `ACTION_WHEEL` | `boolean up` + `boolean ctrl`（滚轮调目标量：±1 / 翻倍减半） |
 | 100 | `UPDATE_SLOT`（服务端 → 客户端） | 整格 NBT + 选中布尔 |
 
 `detectAndSendChanges()` 里比较 `snapshot()`，变了才推包；`writeInitialData` 保证开界面即有值。
@@ -184,15 +185,26 @@ if (ingredient instanceof ITypedIngredient<?> typed) {
 
 另需排除"流体被 JEI 包成 ItemStack"的情况，否则会误判成物品格。
 
-### 5.3 数量/并发面板
+### 5.3 数量 / 并发弹层（0.3.487 起改为页内、贴选中格）
 
-- 位置：默认贴在主面板右边缘外（`x = GUI_WIDTH`），点格子弹 `openFor(index)`。
-- **可拖动**：抓顶部 11px 标题栏拖动，位置夹在父面板内，只存客户端（不写存档）。
-- **客户端不挂 `textSupplier`**（关键）：
+- **位置**：页内控件，74×42，锚点按「选中格所在行列」算出来，并夹在网格框 `[3..147]×[10..84]` 内；
+  右边放不下就翻到格子左侧。**不再**钉在 `x = GUI_WIDTH`（那是主面板右边缘之外，会被窗口裁掉——
+  这是 0.3.486 及以前"数量框看不见"的根因）。
+- **开关**：`RequesterSlotGrid.enableAmount(index)` / `disableAmount()`，方法名与语义对齐
+  gtlcore 的 `AEDualConfigWidget#enableAmount/disableAmount`；翻页时自动收起。
+  点击派发顺序照参照控件：页面组先 `disableAmount()`，再把这次点击照常派发下去，
+  所以点到别的格子会立刻在新格旁边重开。
+- **打开时填值**：`openFor()` 里客户端用 `setCurrentString(...)` 把当前 `target`/`batch` 写进输入框
+  （纯显示，不写存档）。
+- **两侧都不挂 `textSupplier`**（关键）：
 
-  `TextFieldWidget.detectAndSendChanges()` 每 tick 会把输入框文本改回 supplier 的值。
-  客户端那份槽位是空的（只有 `@Persisted`），挂 supplier 就会把玩家刚打的字**每秒刷回 0**
-  —— 这就是"怎么改都改不了数量"的根因。服务端挂 supplier 用于回推规范化文本。
+  `TextFieldWidget.detectAndSendChanges()` 在 supplier 非空时会把 supplier 的值直接写回输入框
+  **并推给对端，不看焦点**；客户端那份槽位快照不会因玩家键入而变，于是每 tick 都会把刚输入的数字刷回去。
+  所以构造函数两侧都传 `null`，值只在打开时填一次。
+
+- **写入路径**：客户端键入 → `onTextChanged` → 本地 responder（`apply()` 里 `isRemote` 直接 return）
+  → `writeClientAction` → 服务端 `handleClientAction` 再跑一次 responder，这次才真正写
+  `setSlotTarget` / `setSlotBatch`。写入目标永远是服务端的 `selectedSlot`，与旧版一致。
 
 ### 5.4 绘制顺序陷阱
 
@@ -215,9 +227,10 @@ if (ingredient instanceof ITypedIngredient<?> typed) {
 格子只有 18px 宽，必须用紧凑格式：
 
 ```java
-TextFormattingUtil.formatLongToCompactString(amount, 3)   // 1.8k / 1.83M / 9.2E
+TextFormattingUtil.formatLongToCompactString(amount, 4)   // 1.8k / 1.83M / 9.2E
 ```
 
+位数与 GTCEu 自己的配置槽（`AEItemConfigSlotWidget` 第 46 行）完全一致。
 不能用 `RequesterNumbers.displayFor()`（会输出 `1.83e6`、`1.5B` 这类长串并溢出格子）。
 带单位的精确值放在悬浮提示里。
 
@@ -391,8 +404,8 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 
 ### 8.4 格内用 `TextFormattingUtil`（LDLib）
 
-`formatLongToCompactString(amount, 3)`：`999` / `1.8k` / `1.83M` / `9.2E`
-（后缀表 k / M / G / T / P / E）。
+`formatLongToCompactString(amount, 4)`：`999` / `1.8k` / `1.83M` / `9.2E`
+（后缀表 k / M / G / T / P / E）。位数与 GTCEu 配置槽一致（见 §5.6）。
 
 ---
 
@@ -404,10 +417,10 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 | JEI 拖进去完全没反应 | 翻页时 `clearAllWidgets()` 重建控件，`uiAccess` 为 null，action 发不出去 | 控件**一次建好常驻**，翻页只改 `setVisible` |
 | 只能拖物品、拖不进流体 | JEI 给的是 `ITypedIngredient` 包装，真正 FluidStack 在内层 | 解包 `typed.getIngredient()` |
 | 打字了但框里没变化 | 在 `super.drawInBackground()` 之后手绘 DISPLAY 底，盖住文字 | 底板做成子控件，按「底板→输入框」加入 |
-| 数量怎么改都被刷回 0 | 客户端挂了 `textSupplier`，读的是未同步的空槽位 | 客户端 `textSupplier = null`，只服务端挂 |
+| 数量怎么改都被刷回 0 | `textSupplier` 非空时 `detectAndSendChanges` 每 tick 无条件回写并推送对端 | 两侧都不挂 supplier，打开时 `setCurrentString` 填一次（§5.3） |
 | 翻到第 2 页，第 1 页格子还在 | 可见性只在服务端 `detectAndSendChanges` 里切 | 同时挂 `updateScreen()`（客户端每帧） |
-| 数量框画到窗口外 | 旧坐标 `x = 168 − 4 = 164`，宽 96，界面只有 176 | 改为右侧可拖动面板，位置夹在父面板内 |
-| 格内数字 `1.83e6` 溢出 18px 格 | 用了科学计数格式 | 改用 `formatLongToCompactString(·, 3)` |
+| 数量框画到窗口外 | 旧坐标在主面板右边缘之外（`x = GUI_WIDTH = 150`），窗口只有 172 宽 | 改成页内弹层，按格定锚并夹在网格框内（§5.3） |
+| 格内数字 `1.83e6` 溢出 18px 格 | 用了科学计数格式 | 改用 `formatLongToCompactString(·, 4)` |
 | 正脸盖住 EV 外壳边框 | GTCEu `overlay/front` 是 -0.001~16.001 铺满整面 | 自写内缩模型 3~13 + UV 3,3→13,13 |
 | 单帧贴图显示错乱 | 保留了 4 帧 `.mcmeta` | 删掉 mcmeta |
 | `NO_SUITABLE_CPU_FOUND` 永远重试失败 | 冷却后用同样大单重试 | 自动缩单（§6.5） |
@@ -469,3 +482,28 @@ S = gtceu:ev_sensor
 | 名字 | ME自动补货牌 | **ME库存补充仓** |
 | CPU 容量不足 | 冷却后原样重试，永远失败 | **自动缩单**，分批补满 |
 | ECO | 只用 AE2 原生规划 | **可选桥接 ECO 规划器** |
+
+---
+
+## 13. 本轮界面改动（0.3.486 → 0.3.487，UI 对齐「ME输入总成」）
+
+参照物：`gtceu:me_input_assembly` = gtlcore 的 `MEDualInputHatchPartMachine`（界面只有两句：
+`createUI` + `createUIWidget`，配套控件 `AEDualConfigWidget` / `AEDualAmountSetWidget`）。
+
+| 项 | 改前（0.3.486） | 改后（0.3.487） |
+|---|---|---|
+| 外框 | 走 `IFancyUIMachine` 默认 `ModularUI(176,166)` | **`ModularUI(176,180)` + `FancyMachineUIWidget(this,176,185)`**（与参照机同一组数字） |
+| 页内底图 | 自己又叠一层 `ResourceBorderTexture.BORDERED_BACKGROUND` | **去掉**（外框已由 `FancyMachineUIWidget` 画 GT 机器背景，双层框就是"不像别的 GT 机器"的主因） |
+| 翻页条 y | 85 | **87**（= 网格底 + 3，对齐参照控件 `navigationY = rows*38+1`） |
+| 数量编辑 | 右侧常驻可拖动面板，钉在 `x = GUI_WIDTH`（窗口外，看不见） | **页内弹层 74×42，按格定锚、夹在网格框内**（`enableAmount` / `disableAmount`） |
+| 数量步进 | 只能打字 | **滚轮 ±1，Ctrl+滚轮 翻倍/减半**（照 `AEItemConfigSlotWidget#mouseWheelMove`）；新增 `ACTION_WHEEL=5` |
+| 弹层关闭 | 靠再次点其它格子 | 点弹层外任意位置、翻页、格子被清空时都自动收起 |
+| 格内数字 | `formatLongToCompactString(·, 3)` | **`(·, 4)`**，位数与 `AEItemConfigSlotWidget` 一致 |
+
+**没动的**（红线，逐条核对过）：方块 id `gtlmodular:me_requester`；`RequesterOrderEngine` 一行未改；
+`RequesterSlot`/`RequesterSlots` 的 NBT key 与 `UPDATE_SLOT=100` 协议；`target`/`batch` 的语义；
+配方仍是纯数据包 `data/gtlmodular/recipes/me_requester.json`，代码里没有第二份。
+
+**验收边界**：本机 `runServer` 起不来，所以「进游戏看效果」这一步只能由人来做；
+代码侧验收 = `mc_gradle build` 通过 + 读 jar 条目核对（`gtlmodular-0.3.487.jar` 内
+`RequesterMachine.class` 引用 `FancyMachineUIWidget`、`RequesterAmountBox.class` 含新标签串）。
