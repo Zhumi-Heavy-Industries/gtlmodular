@@ -11,7 +11,7 @@ import com.gregtechceu.gtceu.api.recipe.logic.OCResult;
 import com.gtlmodular.common.machine.engine.IIndependentThreadHost;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashSet;

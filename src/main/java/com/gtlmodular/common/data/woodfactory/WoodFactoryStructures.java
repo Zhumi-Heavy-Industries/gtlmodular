@@ -3624,7 +3624,7 @@ public final class WoodFactoryStructures {
                 .or(ability(PartAbility.MAINTENANCE).setExactLimit(1));
 
         // ── 附属模块口：线程仓 / 超频仓 / 加速仓 / 并行仓 + IO ──
-        TraceabilityPredicate moduleHatches = ability(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+        TraceabilityPredicate moduleHatches = ability(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH)
                 .setMaxGlobalLimited(1)
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate())

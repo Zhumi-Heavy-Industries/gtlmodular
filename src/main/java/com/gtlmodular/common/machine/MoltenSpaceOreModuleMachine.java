@@ -4,7 +4,7 @@ import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gtladd.gtladditions.utils.CommonUtils;
 import com.gtlmodular.common.data.module.SpaceOreModulePattern;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;

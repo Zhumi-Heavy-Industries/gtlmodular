@@ -1,4 +1,4 @@
-package com.gtlmodular.common.machine.tentacle;
+package com.gtlmodular.common.machine.thread;
 
 /**
  * ★ 2026-11-01<b>GTO「线程仓」接口</b> —— 结构里的线程仓对控制器开的口子。

@@ -74,7 +74,7 @@ final class ComponentAssemblerStructures {
                 // ★ 2026-11-05：线程仓（自定义 PartAbility，autoAbilities 不带它）。
                 //   装仓后引擎线程数 = 仓的当前设定值；没装时保持 v1=4 / v2=8（见机器 baseThreads）。
                 .or(Predicates.abilities(
-                        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                        com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH)
                         .setMaxGlobalLimited(1))
                 // 超频仓：凡可插线程仓的机器都同样可插
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())

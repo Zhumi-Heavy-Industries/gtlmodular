@@ -66,7 +66,7 @@ public class MoltenBlastModuleMachine extends MoltenModuleMachineBase<MoltenBlas
         // ★ 2026-11-02 队长口径（A：只取单仓）：优先读本模组线程仓（gtlmodular:thread_hatch_*），
         //   结构里最多 1 个；有它就按它的当前设定值给线程，不再走 gtladditions 天球那套 ×20。
         for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart part : getParts()) {
-            if (part instanceof com.gtlmodular.common.machine.tentacle.IThreadHatchPart hatch) {
+            if (part instanceof com.gtlmodular.common.machine.thread.IThreadHatchPart hatch) {
                 return Math.max(0, hatch.getThreads());
             }
         }

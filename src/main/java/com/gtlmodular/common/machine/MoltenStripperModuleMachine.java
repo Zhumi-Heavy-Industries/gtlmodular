@@ -17,7 +17,7 @@ import com.gregtechceu.gtceu.api.recipe.content.ContentModifier;
 import com.gregtechceu.gtceu.data.recipe.builder.GTRecipeBuilder;
 import com.gregtechceu.gtceu.utils.FormattingUtil;
 import com.gtlmodular.common.config.GTLModularConfig;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;

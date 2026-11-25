@@ -17,6 +17,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.Collection;
+import com.gtlmodular.common.data.thread.ThreadHatchMachines;
 
 /**
  * 奈亚拉托提普之触（{@code gtlmodular:nyarlathoteps_tentacle}）的结构 —— GTO

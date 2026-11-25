@@ -1053,7 +1053,7 @@ public final class NanochipComplexPattern {
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1))
                 // 线程仓：主机 H 位可选，最多 1 台；引擎会按仓内设定值取线程数。
                 .or(com.gtlmodular.common.data.HatchPredicates.lowCostAbilities(
-                                com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                                com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH)
                         .setMinGlobalLimited(0).setMaxGlobalLimited(1))
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());

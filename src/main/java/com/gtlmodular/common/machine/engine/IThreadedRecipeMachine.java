@@ -2,7 +2,7 @@ package com.gtlmodular.common.machine.engine;
 
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
  * ★ <b>独立线程引擎 · 机器侧契约</b>。

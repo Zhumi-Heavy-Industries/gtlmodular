@@ -127,7 +127,7 @@ import com.gtlmodular.common.machine.nanochip.NanochipPipeGraph;
 import com.gtlmodular.common.machine.nanochip.NanochipStructureLogGate;
 import com.gtlmodular.common.machine.nanochip.NanochipStructureRefresh;
 import com.gtlmodular.common.machine.nanochip.NanochipVacuumNetwork;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import com.hepdd.gtmthings.api.misc.WirelessEnergyManager;
 import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
 import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;

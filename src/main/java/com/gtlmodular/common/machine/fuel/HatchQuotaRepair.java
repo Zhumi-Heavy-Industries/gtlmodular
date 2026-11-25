@@ -6,7 +6,7 @@ import com.gregtechceu.gtceu.api.pattern.predicates.PredicateBlocks;
 import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
 import com.gtlmodular.common.data.fuel.AccelerateHatches;
 import com.gtlmodular.common.data.fuel.OverclockHatches;
-import com.gtlmodular.common.data.tentacle.ThreadHatchMachines;
+import com.gtlmodular.common.data.thread.ThreadHatchMachines;
 import net.minecraft.world.level.block.Block;
 
 import java.util.ArrayList;

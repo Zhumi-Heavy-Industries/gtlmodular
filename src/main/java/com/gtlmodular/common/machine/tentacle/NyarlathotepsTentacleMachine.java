@@ -17,6 +17,7 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
  * 奈亚拉托提普之触（{@code gtlmodular:nyarlathoteps_tentacle}）—— GTO

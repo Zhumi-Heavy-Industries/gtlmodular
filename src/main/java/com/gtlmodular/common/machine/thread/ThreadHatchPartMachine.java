@@ -1,4 +1,4 @@
-package com.gtlmodular.common.machine.tentacle;
+package com.gtlmodular.common.machine.thread;
 
 import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.gui.GuiTextures;

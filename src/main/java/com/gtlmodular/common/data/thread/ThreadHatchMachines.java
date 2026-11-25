@@ -1,4 +1,4 @@
-package com.gtlmodular.common.data.tentacle;
+package com.gtlmodular.common.data.thread;
 
 import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.data.RotationState;
@@ -7,7 +7,7 @@ import com.gregtechceu.gtceu.api.machine.multiblock.PartAbility;
 import com.gregtechceu.gtceu.client.renderer.machine.WorkableTieredHullMachineRenderer;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.GTLModularMachines;
-import com.gtlmodular.common.machine.tentacle.ThreadHatchPartMachine;
+import com.gtlmodular.common.machine.thread.ThreadHatchPartMachine;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 

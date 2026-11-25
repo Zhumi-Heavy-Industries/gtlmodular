@@ -397,7 +397,7 @@ public final class FieldExtruderFactoryStructures {
                 .or(ability(PartAbility.INPUT_ENERGY).setMaxGlobalLimited(8, 0))
                 .or(ability(PartAbility.INPUT_LASER).setMaxGlobalLimited(4, 1))
                 // —— 线程仓（GTO 线程仓的等价物；GTO 原机允许 1 个）
-                .or(ability(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+                .or(ability(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH)
                         .setMaxGlobalLimited(1))
                 // —— 超频仓 / 加速仓（本模组自建，GTO 同名能力的等价物；凡可插线程仓的机器都同样可插）
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())

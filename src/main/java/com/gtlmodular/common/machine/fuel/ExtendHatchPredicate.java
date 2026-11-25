@@ -8,7 +8,7 @@ import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.data.fuel.OverclockHatches;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayDeque;

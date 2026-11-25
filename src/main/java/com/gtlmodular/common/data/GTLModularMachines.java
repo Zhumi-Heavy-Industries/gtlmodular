@@ -191,7 +191,7 @@ public final class GTLModularMachines {
         //   ★ 必须排在 NAC / 奈亚拉托提普之触**之前**：PartAbility.getAllBlocks() 是 memoize 的，
         //     而 Predicates.abilities(...) 在构建结构谓词时就把方块表取走了 ⇒ 后注册的话
         //     线程仓谓词会拿到空表（7 台仓永远放不进结构）。
-        com.gtlmodular.common.data.tentacle.ThreadHatchMachines.register();
+        com.gtlmodular.common.data.thread.ThreadHatchMachines.register();
         // ★ 超频仓 17 档（对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」的要求。
         com.gtlmodular.common.data.fuel.OverclockHatches.register();
         // ★ 加速仓 14 档（LV~MAX，对齐 GTO）：与线程仓同一条「必须先于使用它的结构谓词注册」。
@@ -630,7 +630,7 @@ public final class GTLModularMachines {
                 blocks(blockOf("gtceu:heatproof_machine_casing")).or(ioUnlimited(true));
         // ★ 2026-11-02 队长口径（口径 A：只取单仓）：本机允许安装本模组线程仓（限 1 个），
         //   不再接受 gtladditions 的 Ω-天球分歧引擎。
-        casing = casing.or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH)
+        casing = casing.or(abilities(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH)
                 .setMaxGlobalLimited(1))
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
@@ -660,7 +660,7 @@ public final class GTLModularMachines {
         // 壳格：任意一格都能换成 输入/输出 物品或流体仓（下限 0、不限上限）
         TraceabilityPredicate casing =
                 blocks(blockOf("gtlcore:hyper_mechanical_casing")).or(ioUnlimited(false))
-                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(abilities(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         // 管道格：必须为硅岩管道，不可替换
@@ -694,7 +694,7 @@ public final class GTLModularMachines {
             MultiblockMachineDefinition def) {
         // 机械方块格：可换输入/输出仓与并行仓
         TraceabilityPredicate casing = SpaceOreModulePattern.casing().or(ioUnlimited(true))
-                .or(abilities(com.gtlmodular.common.data.tentacle.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
+                .or(abilities(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH).setMaxGlobalLimited(1))
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
         FactoryBlockPattern f = FactoryBlockPattern.start();

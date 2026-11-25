@@ -26,7 +26,7 @@ import com.gtlmodular.common.machine.engine.ConcurrentRecipeEngine;
 import com.gtlmodular.common.machine.engine.IThreadBatchLogic;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import com.gtlmodular.common.machine.fuel.DualFluidTax;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;

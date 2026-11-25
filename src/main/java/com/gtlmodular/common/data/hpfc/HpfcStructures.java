@@ -9,7 +9,7 @@ import com.gregtechceu.gtceu.api.pattern.Predicates;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
 import com.gregtechceu.gtceu.api.pattern.predicates.SimplePredicate;
 import com.gtlmodular.GTLModular;
-import com.gtlmodular.common.data.tentacle.ThreadHatchMachines;
+import com.gtlmodular.common.data.thread.ThreadHatchMachines;
 import com.lowdragmc.lowdraglib.utils.BlockInfo;
 import com.tterrag.registrate.util.entry.BlockEntry;
 import net.minecraft.core.registries.BuiltInRegistries;

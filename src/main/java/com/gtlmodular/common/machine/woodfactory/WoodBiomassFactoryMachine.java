@@ -121,7 +121,7 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
         threadStateTick = (int) now;
         boolean independent = false;
         for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart part : getParts()) {
-            if (part instanceof com.gtlmodular.common.machine.tentacle.IThreadHatchPart hatch
+            if (part instanceof com.gtlmodular.common.machine.thread.IThreadHatchPart hatch
                     && hatch.isIndependentThread()) {
                 independent = true;
                 break;
