@@ -122,6 +122,41 @@
 | `block/machines/thread_hatch/thread_hatch_mk6/overlay_front_active.png` | `block/machines/thread_hatch/thread_hatch_mk6/overlay_front_active.png` | `1ddaaee588bf302e` |
 | `block/machines/thread_hatch/thread_hatch_mk7/overlay_front.png` | `block/machines/thread_hatch/thread_hatch_mk7/overlay_front.png` | `1e49e35f9af026ea` |
 | `block/machines/thread_hatch/thread_hatch_mk7/overlay_front_active.png` | `block/machines/thread_hatch/thread_hatch_mk7/overlay_front_active.png` | `e131809cae7ecf0d` |
+| `block/machines/overclock_hatch/overclock_hatch_mk1/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk1/overlay_front.png` | `8aed32dca2f2a0d3` |
+| `block/machines/overclock_hatch/overclock_hatch_mk2/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk2/overlay_front.png` | `7731a0f62f83175d` |
+| `block/machines/overclock_hatch/overclock_hatch_mk3/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk3/overlay_front.png` | `ef3148dbf19da3a2` |
+| `block/machines/overclock_hatch/overclock_hatch_mk4/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk4/overlay_front.png` | `2a59cbf63c9b344c` |
+| `block/machines/overclock_hatch/overclock_hatch_mk5/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk5/overlay_front.png` | `aa876c0e664ef3cc` |
+| `block/machines/overclock_hatch/overclock_hatch_mk6/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk6/overlay_front.png` | `007bdbc8a36c273a` |
+| `block/machines/overclock_hatch/overclock_hatch_mk7/overlay_front.png` | `block/machines/overclock_hatch/overclock_hatch_mk7/overlay_front.png` | `03687ffea7cdd969` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk1/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk1/overlay_front.png` | `8493142ac1e9fcab` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk1/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk1/overlay_front_active.png` | `0243d3fd5cf107fe` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk2/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk2/overlay_front.png` | `1197e33d2bd31883` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk2/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk2/overlay_front_active.png` | `d71afedff68ca2cb` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk3/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk3/overlay_front.png` | `e13d0390a9bbbcd3` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk3/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk3/overlay_front_active.png` | `193df88845b2c06a` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk4/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk4/overlay_front.png` | `28dcb1f00670a029` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk4/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk4/overlay_front_active.png` | `65a021c7a68336c5` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk5/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk5/overlay_front.png` | `272b0e084c835428` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk5/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk5/overlay_front_active.png` | `92c11566c110425f` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk6/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk6/overlay_front.png` | `2b3742813cb49d29` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk6/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk6/overlay_front_active.png` | `66dcdf4aae2e7508` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk7/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk7/overlay_front.png` | `58c66b392aeb64ea` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk7/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk7/overlay_front_active.png` | `186c31dbafcaa7a1` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk8/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk8/overlay_front.png` | `e13d0390a9bbbcd3` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk8/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk8/overlay_front_active.png` | `193df88845b2c06a` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk9/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk9/overlay_front.png` | `068338f96ccedd15` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk9/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk9/overlay_front_active.png` | `1eec3da3bfee2a6b` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk10/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk10/overlay_front.png` | `1ff1e3c4814bd2bf` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk10/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk10/overlay_front_active.png` | `4fff5b800f4a499b` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk11/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk11/overlay_front.png` | `69e839691f219bf8` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk11/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk11/overlay_front_active.png` | `280bd80bf1560014` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk12/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk12/overlay_front.png` | `38ac6854c687ef10` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk12/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk12/overlay_front_active.png` | `187b53ac58536b6e` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk13/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk13/overlay_front.png` | `25e7303c162540cd` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk13/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk13/overlay_front_active.png` | `1efb1353264bba65` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk14/overlay_front.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk14/overlay_front.png` | `dc19ec2f5e4d951f` |
+| `block/machines/accelerate_hatch/accelerate_hatch_mk14/overlay_front_active.png` | `block/machines/accelerate_hatch/accelerate_hatch_mk14/overlay_front_active.png` | `ef586c6eba7bdeec` |
 | `item/cerebrum.png` | `item/cerebrum.png` | `f5c418a241f646cb` |
 | `item/gwca_computing_component.png` | `block/casings/about_computer/gwca_computing_components.png` | `c9b59864dfba777d` |
 | `item/gwca_empty_component.png` | `block/casings/about_computer/gwca_empty_component.png` | `bd9b0ec22992e53e` |
@@ -354,6 +389,101 @@
 | `block/multiblock/general1/overlay_front_active_emissive.png` | `block/multiblock/general1/overlay_front_active_emissive.png` | "128ef6c323b6edb5…e88e" |
 | `block/multiblock/general1/overlay_front_emissive.png` | `block/multiblock/general1/overlay_front_emissive.png` | "b7bc03a3cc6df5a3…0ecd" |
 
+### 3.10 石化线两台机器：集成石油化工处理工厂 / 燃料精炼复合体（2026-11-26 批次，0.3.485）
+
+> 来源：GTOCore `pattern/petrochemical_plant.mbs`、`pattern/petrochem_crossrecipe.mbs`（未搬）、
+> `pattern/fuel_refining_complex.mbs`、`pattern/fuel_refining_crossrecipe.mbs`（未搬）、
+> `assets/gtocore/textures/`（8 张机壳贴图）、
+> `com/gtocore/common/data/machines/MultiBlockA.java:162`（石化工厂谓词表）、
+> `MultiBlockB.java:79`（燃料精炼复合体谓词表）、
+> `com/gtocore/common/data/GTORecipeTypes.java`（两张配方表参数）、
+> `com/gtocore/data/recipe/classified/PetrochemicalPlant.java`（8 条处理配方）、
+> `com/gtocore/data/recipe/classified/Assembler.java`（石化工厂本体配方）、
+> `AssemblyLine.java`（燃料精炼复合体本体配方）、`GTOMachineStories` + `assets/gtocore/lang/zh_cn.json`（机器描述）。
+> **本模组里**：
+> - `gtlmodular:petrochemical_plant` = **集成石油化工处理工厂**（GTO 原名「石化工厂」
+>   `gtocore:petrochemical_plant`）—— 按队长口径**改名**，结构 / 运行模式照搬；
+> - `gtlmodular:fuel_refining_complex` = **燃料精炼复合体**（GTO 同名机器）—— 按队长口径
+>   **机器本体不做改动**，配方沿用整合包已有的 `gtceu:fuel_refining`。
+
+**方块贴图（8 件，逐字节拷贝）**
+
+| 本模组文件（`assets/gtlmodular/textures/`） | GTOCore 原件（`assets/gtocore/textures/`） | sha256 |
+|---|---|---|
+| `block/casings/supercritical_turbine_casing.png` | `block/casings/supercritical_turbine_casing.png` | "e513a0094eb4fff8…6306" |
+| `block/casings/pikyonium_machine_casing.png` | `block/casings/pikyonium_machine_casing.png` | "d3e21ec17e12fc3e…e716" |
+| `block/casings/chemical_grade_glass.png` | `block/casings/chemical_grade_glass.png` | "b780662d3d293757…f8e5" |
+| `block/casings/iridium_pipe_casing.png` | `block/machine_casing_pipe_iridium.png` | "3e2f0be8e7ce3b3c…8ee4" |
+| `block/casings/pps_corrosion_resistant_mechanical_housing.png` | `block/pps_corrosion_resistant_mechanical_housing.png` | "213cb462f62cc40b…3d2c" |
+| `block/casings/high_strength_support_mechanical_casing.png` | `block/casings/high_strength_support_mechanical_casing.png` | "d798524016f6ff09…64d5" |
+| `block/casings/calcium_oxide_ceramic_anti_metal_corrosion_mechanical_block.png` | `block/calcium_oxide_ceramic_anti_metal_corrosion_mechanical_block.png` | "34849b6eadbcf545…567a" |
+| `block/casings/industrial_frameless_glass.png` | `block/industrial_frameless_glass.png` | "5ea51e823ef69bb8…7f9d" |
+
+> 8 张均为 16×16 本体贴图，**不拷源 `.mcmeta`**（同 §3.8：源 mcmeta 是 LDLib 的 CTM 声明，
+> 指向 gtocore 的 `*_ctm` 图）。两件玻璃（化学级 / 工业无框）按 `Blocks.GLASS` 口径注册，
+> 模型 `render_type: minecraft:translucent`。
+
+**结构数据（等价转写，逐格 0 差异）**
+
+- `gtlmodular:petrochemical_plant`：**28 (X) × 60 (Y) × 65 (Z) = 109,200 格**（实心 11,729 格），
+  来自 `pattern/petrochemical_plant.mbs`（gzip 4,068 B → 解开 117,075 B，解析 **0 字节剩余**；
+  65 过道 × 每过道 60 行 × 每行 28 字符），转写为 `PetrochemicalPlantStructures.SLICES`；
+  控制器 `U` 在 `[Z=64][Y=3][X=22]`；
+- `gtlmodular:fuel_refining_complex`：**31 (X) × 27 (Y) × 63 (Z) = 52,731 格**（实心 10,597 格），
+  来自 `pattern/fuel_refining_complex.mbs`（gzip 3,133 B → 解开 56,206 B，解析 **0 字节剩余**；
+  63 过道 × 每过道 27 行 × 每行 31 字符），转写为 `FuelRefiningComplexStructures.SLICES`；
+  控制器 `` ` `` 在 `[Z=61][Y=2][X=7]`；
+- 各符号 → 方块的语义映射取自 `MultiBlockA.java:162` / `MultiBlockB.java:79` 的谓词表
+  （石化 29 个符号位、燃料 31 个符号位），逐一在类注释里点名。
+
+**文本（CC BY-NC-SA 4.0）**
+
+| 本模组 lang 键 | GTOCore 原键 | 改动 |
+|---|---|---|
+| `gtlmodular.petrochemical_plant.tooltip.0` | `gtocore.lang.petrochemical_plant.0` | 逐字照搬（加色码） |
+| `gtlmodular.petrochemical_plant.tooltip.1` | `gtocore.lang.petrochemical_plant.1` | 逐字照搬（加色码） |
+| `gtlmodular.petrochemical_plant.tooltip.2` | `gtocore.lang.petrochemical_plant.2` | 逐字照搬（加色码） |
+| `gtlmodular.petrochemical_plant.tooltip.3` | `gtocore.lang.petrochemical_plant.3` | 逐字照搬（加色码） |
+| `gtlmodular.petrochemical_plant.tooltip.4` | `gtocore.lang.petrochemical_plant.4` | 逐字照搬（加色码） |
+| `gtlmodular.petrochemical_plant.tooltip.5` | `gtocore.lang.petrochemical_plant.5` | 逐字照搬（原文是高亮行） |
+| `gtlmodular.petrochemical_plant.tooltip.6` … `10` | —（GTO 由 `.laserTooltips()` / `.coilParallelTooltips()` / `.moduleTooltips()` 代码生成） | **本模组自写**：运行模式 / 仓室 / 配方类型说明 |
+| `gtlmodular.fuel_refining_complex.tooltip.0` | `gtceu.machine.electric_blast_furnace.tooltip.2` | 逐字照搬（GTO 原机 `tooltipsKey` 那一行，GTCEu 自带的键） |
+| `gtlmodular.fuel_refining_complex.tooltip.1` … `7` | — | **本模组自写** |
+| `block.gtlmodular.<8 件机壳>` | `block.gtocore.<同名>` | 中文名逐字照搬 |
+
+**配方数值（按 GTO 运行时配方数值重写，不含 GTOCore 代码）**
+
+| 配方 | 数值 |
+|---|---|
+| 石化工厂本体（装配机，**三个主机 ×2**） | 16× 水密钢框架 + **16× 大型蒸馏机**（GTO 8）+ **8× 大型裂化机**（GTO 4）+ **2× 化工厂**（GTO 1） + 4× `#gtceu:circuits/uhv` + 4× ZPM 发射器 + 16× ZPM 流体校准器 + 16× 不锈钢巨型流体管道 + 32× 双层不锈钢板 + 1296mB 焊锡 → 1× 本机；**122,880 EU/t，1000 tick** |
+| 燃料精炼复合体本体（装配线） | 4× LuV 搅拌机 + 4× LuV 离心机 + 4× LuV 蒸馏机 + 4× LuV 化学反应釜 + 8× 碳化钨巨型流体管道 + 4× LuV 发射器 + 4× `#gtceu:circuits/zpm` + 8× ZPM 电动泵 + 16× 双层 HSSE 板 + 2304mB 焊锡 + 2304mB PTFE + 1152mB 水密钢 → 1× 本机；**122,880 EU/t，1000 tick**（GTO 的「研究」门槛本包没有研究站，未搬） |
+| 氢化 1~4（`gtceu:petrochemical_plant`） | 1000mB 油品（oil / oil_medium / oil_heavy / oil_light）+ 1000mB 氢 → 甲烷 / 丁烷 / 丙烷 / 乙烷 / 氦 / 环己烷 / 苯 / 辛烷；**1920 EU/t，600 tick**，四项数值逐项照 GTO `PetrochemicalPlant.java` 的 `hydro1..4` |
+
+**材料替代（GTO 专属、本包没有）**
+
+1. `GTOMaterials.Cetane`（十六烷，GTOCore 独有材料）→ **并入 `gtceu:octane`**：
+   GTO 的 `hydro1..4` 各产 Cetane 30 / 60 / 45 / 15 mB，本包全栈（gtceu 1.4.4 + gtlcore +
+   gtladditions + Enhancedcore）**只有 `cetane_boosted_diesel`，没有 Cetane**，
+   故与原有的辛烷 60 / 120 / 90 / 30 合并为 90 / 180 / 135 / 45；
+2. `GTOMaterials.StainlessSteelGC4` 框架（石化工厂 `N` 位，78 格）→ **`gtceu:stainless_steel_frame`**
+   （同族同形状，本包无 GC4 材料）；
+3. 其余方块（应力外壳 / 水密外壳 / 洁净不锈钢 / 坚固钨钢 / 钛·钢·钨钢·PTFE 管道 / 聚变玻璃 /
+   计算机外壳 / 电解槽 / 各材料框架 / GT 灯）本包全部现成。
+
+**未纳入（明确没搬）**
+
+- GTO 的两个附属模块子结构（`pattern/petrochem_crossrecipe.mbs` 29×51×65、
+  `pattern/fuel_refining_crossrecipe.mbs` 29×20×63）与 GTO 的模块框架
+  （`Piece` / `Slot` / `StructureModuleKeys` / `MultiBlockFileReader`）—— 本模组没有该框架，
+  模块口改成主结构舱面：石化工厂 `H` 26 格、燃料精炼复合体 `^` 26 格
+  （方块一格未动，只是那些格多允许插 线程仓 / 超频仓 / 加速仓 / 并行仓）；
+- GTOLib 的 `CoilCrossRecipeMultiblockMachine`（上游以 native 方式发布，无源码）——
+  并行按 GTO 自己的 tooltip 重写为 `2^(⌊温度/900⌋)`，温度闸沿用 GTCEu 自带的
+  `GTRecipeModifiers.ebfOverclock`（`线圈温度 + 100×max(0, 档位-MV)`）；
+- GTO 的 `FuelRefining.java`（整套燃料精炼配方，引用大量 GTOCore 独有材料）——
+  按队长口径改用整合包已有的 `gtceu:fuel_refining` 配方（`nuclear_rocket_fuels.js`）；
+- GTO 装配线配方的「研究」门槛（`researchStation` / `MachinesNode`）—— 本包没有研究站。
+
 ## 4. 本模组未使用的内容
 
 - GTOCore 任务数据（`quest/`、任务贴图、`questbook.json`、`gtocore.quest.*` 文本）；
@@ -384,3 +514,18 @@ Required Notice: Copyright GregTech Odyssey (https://github.com/GregTech-Odyssey
 > 取证方式（2026-11-01）：GitHub API
 > `GET https://api.github.com/repos/GregTech-Odyssey/GTOCore-Main/contents/LICENSE?ref=0.6.0`
 > （base64 解码，5,127 B）；同仓库 `licenses/` 目录下另有 `CC-BY-NC-SA-4.0.txt`（20,849 B）等全文。
+
+## 7. 山海渲染特效（历史：0.3.299 移植 → 0.3.328 移除）
+
+> 2026-11-02 的 0.3.299 曾把 **dishanhai/gtl_shanhai-dishanhai**（
+> <https://github.com/dishanhai/gtl_shanhai-dishanhai>，commit
+> `d3012f051d1b5da98b46b0d5292bec015fa4a5c2`）的 5 个几何/渲染类移植进
+> `client.renderer.preview`（黑日 / 密文 / 电弧 / 冲击环）。
+>
+> **0.3.328 按玩家要求「之前做的那些全部都去掉」**：这 5 个类以及 0.3.306 的
+> 「千面」几何类已全部从源码树删除，**不再随包分发**。上游文件的逐字节留档仍在
+> `_scratch/shanhai_port_upstream/`（仅作历史核对，不参与构建）。
+>
+> 唯一保留的是 `ShanhaiInstabilityRenderTypes`（两条 RenderType 的状态组合，代码自写，
+> 状态语义参考上游 `HostFxDraw#beamLayer() / blackCoreLayer()`）；它不含任何上游几何/着色器代码，
+> 现由奈亚中央黑日（`BlackSunRenderer`）与恒星炎炀锻炉的几何兜底共用。
