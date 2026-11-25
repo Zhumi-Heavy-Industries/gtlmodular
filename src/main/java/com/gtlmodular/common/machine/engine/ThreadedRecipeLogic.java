@@ -92,6 +92,15 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     private final BatchWatchdog watchdog;
 
     /**
+     * ★ 2026-11-25：<b>多配方表机器空闲时跟随样板轮换配方表</b>（见 {@link IdleTableFollow}）。
+     *
+     * <p>解决的问题：统合样板总成一类「按控制器<b>激活表</b>展开样板」的仓，在机器停在另一张表上时
+     * 根本展不开样板 ⇒ 没有料可推 ⇒ 只有本模组的猪咪（自带自动切模式）能用。
+     * 本类让引擎在<b>真空闲</b>时按圈挪一格激活表，任何家的样板总成都能轮到自己的那张表。
+     */
+    private final IdleTableFollow idleTableFollow = new IdleTableFollow();
+
+    /**
      * ★ 2026-11-10：<b>EU 能源缓冲</b>——配方每 tick 要的电先由它支付，每 N tick 才穿一次能源仓。
      * 配置 {@code threading.energyBuffer=false} 时为 {@code null}（逐 tick 直扣，旧行为）。
      */
@@ -317,6 +326,10 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         watchdog.tick(engine, machine);
         // ③.5 诊断：空转时每 100 tick 打一行「为什么没配方」。
         diag.logIdle(isCrossTable(), engine.size());
+        // ③.6 ★ 2026-11-25：多表机器真空闲时轮换激活配方表（见 IdleTableFollow）。
+        //   放在「找过一轮配方」之后、「收尾退订」之前：本 tick 已经试过当前表且一条没开出来，
+        //   换个表下一 tick 再试 —— 这正是统合样板总成的展开条件。引擎有批次时它自己不动作。
+        idleTableFollow.tick(machine, engine.size());
         // ④ 展示回写：把第 0 条批次的进度写进基类的同步字段（GUI/Jade/TOP 由此看到进度条）
         writeDisplay();
         // ★ 2026-11-08（按需订阅）：本 tick 收尾时，空表 + 无料 + 没被强制 ⇒ 退订。
@@ -839,5 +852,21 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             }
         }
         return false;
+    }
+
+    /**
+     * ★ 2026-11-25：结构里的 ME 样板仓<b>手里真有样板</b>吗（供 {@link BatchFinder} 的
+     * 「ME 缓存为空时要不要扫整表」判据用）。
+     *
+     * <p>为什么必须有这一条：gtlcore 的 ME 样板仓 handler 不是 GTCEu 的 {@code IRecipeHandler}
+     * ⇒ {@link #hasRealItemOrFluidInput()} 看不到它槽里的料 ⇒ 冷槽阶段会被当成「机器是空的」
+     * 而跳过整表扫描 ⇒ 样板插着也永远不跑。这就是「高维等离子聚变核心只有挂猪咪样板总成才能工作」
+     * 的直接原因（猪咪有「直供配方」，把冷槽提前热起来，正好绕过那道闸）。
+     *
+     * <p>只在冷路径被调用（ME 缓存为空 + 通用 handler 看不到料），且受 {@link BatchFinder} 的
+     * 退避冷却限流 ⇒ 不进每 tick 热路径，这里不做缓存。
+     */
+    protected boolean hasWaitingMePattern() {
+        return BatchSupport.hasWaitingMePattern(machine);
     }
 }

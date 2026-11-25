@@ -12,6 +12,8 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
 import com.google.common.collect.Table;
 import com.lowdragmc.lowdraglib.side.fluid.FluidStack;
+import appeng.api.crafting.IPatternDetails;
+import appeng.api.networking.crafting.ICraftingProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEPatternPartMachine;
@@ -43,6 +45,58 @@ final class BatchSupport {
             }
         } catch (Throwable ignored) {
             // 拿不到部件表就不拦（宁可多扫）
+        }
+        return false;
+    }
+
+    /**
+     * ★ 2026-11-25：结构里的 ME 样板仓<b>是否真有样板</b>（不分哪家的样板总成）。
+     *
+     * <h3>为什么需要它（这就是「只能挂猪咪样板总成才能工作」的根因补丁）</h3>
+     * <p>gtlcore 的 ME 样板仓把 AE 推来的料放在<b>自己的槽</b>里，它的 handler
+     * （{@code IMERecipeHandler}）继承的是 {@code IFilteredHandler}，
+     * <b>不是</b> GTCEu 的 {@code IRecipeHandler} ⇒ 不进 {@code capabilitiesProxy}、
+     * 也没有 {@code getContents()}。所以：
+     * <ul>
+     *   <li>{@link #hasMePatternPart}（ME 口径）= 真；</li>
+     *   <li>{@link com.gtlmodular.common.machine.engine.ThreadedRecipeLogic#hasRealItemOrFluidInput}
+     *       （通用 handler 口径）= <b>假</b>，哪怕料已经推进槽里。</li>
+     * </ul>
+     * <p>{@link BatchFinder} 用的是后者 ⇒ ME 缓存为空（冷槽）时直接跳过整表扫描
+     * ⇒ 样板插着、料也到了，机器却永远 IDLE。而猪咪两台总成有「直供配方」
+     * （{@code setSlotCacheRecipe}）先把冷槽热起来，正好绕过这道闸
+     * ⇒ 表象就是「只有猪咪的样板总成能用」。
+     *
+     * <h3>口径与纪律</h3>
+     * <ul>
+     *   <li>问的是 AE 的 {@link ICraftingProvider#getAvailablePatterns()}（gtlcore 样板仓
+     *       与该接口的 javap 取证：{@code MEPatternBufferPartMachineBase implements PatternContainer,
+     *       ICraftingProvider}）；<b>不看配方类型</b> —— 原生/超级样板总成本身就不按类型过滤，
+     *       统合样板总成的类型过滤由它自己 + {@link IdleTableFollow} 负责；</li>
+     *   <li><b>只在冷路径调用</b>（{@code ME 缓存为空} + {@code 通用 handler 看不到料}），
+     *       且被 {@link BatchFinder} 的退避冷却（10→80 tick）限流 ⇒ 不会进每 tick 热路径；</li>
+     *   <li>任何异常 ⇒ {@code false}（退回旧行为，绝不影响别的判据）。</li>
+     * </ul>
+     */
+    static boolean hasWaitingMePattern(IRecipeLogicMachine machine) {
+        try {
+            if (machine.self() instanceof IMultiController controller && controller.isFormed()) {
+                for (IMultiPart part : controller.getParts()) {
+                    if (!(part instanceof ICraftingProvider provider)) {
+                        continue;
+                    }
+                    try {
+                        List<IPatternDetails> patterns = provider.getAvailablePatterns();
+                        if (patterns != null && !patterns.isEmpty()) {
+                            return true;
+                        }
+                    } catch (Throwable ignored) {
+                        // 单个部件读失败不影响其它部件
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // 拿不到部件表就不拦（宁可多扫，绝不因此把该跑的单挡住）
         }
         return false;
     }

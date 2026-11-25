@@ -200,8 +200,20 @@ final class BatchFinder {
             //   ≈ 6~7ms/轮），这就是空闲延迟的来源。这里改用 hasRealItemOrFluidInput()：
             //   仓里真的没东西 ⇒ 直接跳过整表扫描（不扣料、不改状态，只省掉必然失败的匹配）。
             //   来料/推样板仍会由「内容变化 → 重新订阅」或 pokeScan 叫醒，不会漏单。
-            if (!owner.hasRealItemOrFluidInput()) {
-                diag.reject("无实际物品/流体输入（ME 样板缓存为空，跳过整表扫描）｜"
+            //
+            //   ★★ 2026-11-25（队长：「高维等离子聚变核心只能挂猪咪样板总成才能工作」）：
+            //   **上面这条 11-08 的收紧会误杀 ME 样板仓驱动的一切机器**，必须补第二道豁免。
+            //   取证：gtlcore 的 ME 样板仓把 AE 推来的料放在自己的槽里，它的 handler
+            //   （gtlcore `IMERecipeHandler`）继承 `IFilteredHandler`，**不是** GTCEu 的
+            //   `IRecipeHandler` ⇒ 不进 capabilitiesProxy、没有 getContents() ⇒
+            //   hasRealItemOrFluidInput() 恒 false（哪怕料已经推进槽里）。
+            //   ⇒ 冷槽（还没配上过配方的样板）阶段：ME 缓存空 + 看不到料 = 跳过整表扫描 = 永久 IDLE。
+            //   而猪咪两台总成有「直供配方」（setSlotCacheRecipe）先把冷槽热起来，正好绕过这道闸
+            //   ⇒ 表象就是「只有猪咪能用」。这里补上「样板仓里真有样板 ⇒ 也扫」，
+            //   任何家的样板总成（gtlcore 原生 / 统合 / gtladditions 超级）都吃得下。
+            //   成本：只在 ME 缓存为空 + 看不到料时才问一次，且受上面 state.cooldownUntil 退避限流。
+            if (!owner.hasRealItemOrFluidInput() && !owner.hasWaitingMePattern()) {
+                diag.reject("无实际物品/流体输入（ME 样板缓存为空、样板仓里也没有样板，跳过整表扫描）｜"
                         + BatchSupport.describeInputCaps(machine), null, null);
                 state.cooldownUntil = now + idleCooldown(state);
                 return null;
