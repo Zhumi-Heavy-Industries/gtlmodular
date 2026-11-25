@@ -10,6 +10,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.fuel.AccelerateHatchLogic;
+import com.gtlmodular.common.machine.fuel.ExtendedOverclockLogic;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
@@ -634,7 +635,14 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         //
         // 作用于 fullModifyRecipe 返回的副本（每次扫候选都是 raw.copy() 的新对象），
         // 天然幂等：不会像 setupRecipe 那条路那样对同一对象重复相乘。
-        return AccelerateHatchLogic.applyIfNeeded(machine.self(), modified);
+        // ★ 0.3.488：超频仓的「MAX 之上」档。
+        //   GTCEu 的档位函数在 2^31-1 处饱和（recipeTier 与 maximumTier 都恒为 14），
+        //   于是按 n × VA[MAX] 定价的配方（超维度熔炼那批）原生永远是 0 档，
+        //   仓的耗时倍率无处可乘。这里按「每 tick 真买得起的 4 倍功率档」补算，
+        //   公式仍用 GTCEu 自己的 standardOverclockingLogic，只换档数。
+        //   先超频（改 EUt）再加速（改时长），两者串联相乘，顺序不影响结果。
+        GTRecipe overclocked = ExtendedOverclockLogic.apply(machine.self(), modified);
+        return AccelerateHatchLogic.applyIfNeeded(machine.self(), overclocked);
     }
 
     /** 每 tick 输入的 chance cache（{@link RecipeLogic#getChanceCaches()} 的子类读口）。 */

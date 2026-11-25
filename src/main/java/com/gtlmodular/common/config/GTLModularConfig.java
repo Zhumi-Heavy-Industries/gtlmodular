@@ -959,6 +959,35 @@ public final class GTLModularConfig {
                     .define("accelerateHatch.anyMultiblock", true);
 
     // ==================================================================
+    // 超频仓 · 越界超频（MAX 之上）
+    //   GTCEu 的档位函数对 > 2^31-1 的电压一律返回 14（MAX），
+    //   于是 recipeEUt 与机器可超频电压都被钳在 14 ⇒ 档数恒 0，
+    //   按「n × VA[MAX]」定价的配方（超维度熔炼那批）装了超频仓也一格不动。
+    //   本节让装了超频仓的机器按「每 tick 真买得起的 4 倍功率档」继续超频。
+    // ⚠️ 本节必须在 SPEC = BUILDER.build() 之前。
+    // ==================================================================
+
+    private static final ForgeConfigSpec.BooleanValue EXTENDED_OVERCLOCK_ENABLED =
+            BUILDER.comment("超频仓是否在 MAX 之上继续超频（默认开）",
+                            "Allow overclock hatches to overclock past MAX (default true).",
+                            "开：装了超频仓的机器按「能源仓每 tick 可输入功率」继续 ×4 功率 / ×仓倍率 耗时；",
+                            "关：逐字回到 GTCEu 原口径（EUt 超过 MAX 的配方永远 0 档）。",
+                            "只影响装了超频仓的机器；没装仓的机器行为不变。")
+                    .define("extendedOverclock.enabled", true);
+
+    private static final ForgeConfigSpec.IntValue EXTENDED_OVERCLOCK_MAX_LEVELS =
+            BUILDER.comment("越界超频最多补几档（默认 4）",
+                            "MAX 档超频仓每补一档 = EUt ×4、耗时 ×0.125；4 档 = EUt ×256、耗时 ×1/4096。",
+                            "实际档数取「买得起的档数」与本值的较小者；时长有 1 tick 底线。")
+                    .defineInRange("extendedOverclock.maxLevels", 4, 0, 16);
+
+    private static final ForgeConfigSpec.LongValue EXTENDED_OVERCLOCK_POWER_CAP =
+            BUILDER.comment("越界超频的功率上限（EU/t，默认 0 = 用能源仓每 tick 可输入功率）",
+                            "填正数直接以该值为上限（无线电网供电、能源仓只是过路的机器可以调大）。",
+                            "0 = 自动：getInputVoltage() × getInputAmperage()。")
+                    .defineInRange("extendedOverclock.powerCap", 0L, 0L, Long.MAX_VALUE);
+
+    // ==================================================================
     // 超频仓 · 只装到增强版核心的机器上
     //   范围口径与加速仓不同：增强版自己注册的机器 + 它改写过的机器，
     //   不包括 gtceu / gtlcore 原生机器和第三方附属。
@@ -1659,6 +1688,35 @@ public final class GTLModularConfig {
             return THREADING_GRID_POWER.get();
         } catch (IllegalStateException notLoaded) {
             return THREADING_GRID_POWER.getDefault();
+        }
+    }
+
+    // ---- 超频仓 · 越界超频（配置未加载时一律回落默认值） ----
+
+    /** 超频仓是否在 MAX 之上继续超频（默认 true）。 */
+    public static boolean isExtendedOverclockEnabled() {
+        try {
+            return EXTENDED_OVERCLOCK_ENABLED.get();
+        } catch (IllegalStateException notLoaded) {
+            return EXTENDED_OVERCLOCK_ENABLED.getDefault();
+        }
+    }
+
+    /** 越界超频最多补几档（默认 4）。 */
+    public static int getExtendedOverclockMaxLevels() {
+        try {
+            return EXTENDED_OVERCLOCK_MAX_LEVELS.get();
+        } catch (IllegalStateException notLoaded) {
+            return EXTENDED_OVERCLOCK_MAX_LEVELS.getDefault();
+        }
+    }
+
+    /** 越界超频功率上限（EU/t；0 = 用能源仓每 tick 可输入功率）。 */
+    public static long getExtendedOverclockPowerCap() {
+        try {
+            return EXTENDED_OVERCLOCK_POWER_CAP.get();
+        } catch (IllegalStateException notLoaded) {
+            return EXTENDED_OVERCLOCK_POWER_CAP.getDefault();
         }
     }
 
