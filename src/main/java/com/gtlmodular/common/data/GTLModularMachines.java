@@ -223,6 +223,16 @@ public final class GTLModularMachines {
         //   附属模块口（线程/超频/加速/并行仓）；配方 = 本模组自建表 gtlmodular:wood_distillation
         //   + 三条照搬配方（氮气/蒸汽/水）。缺的 5 件机壳见 common/data/woodfactory/WoodFactoryBlocks。
         com.gtlmodular.common.data.woodfactory.WoodFactoryMachines.register();
+        // ★ 2026-11-26：石化线两台 GTO 机器 ——
+        //   (1) 集成石油化工处理工厂 gtlmodular:petrochemical_plant（= GTO「石化工厂」，
+        //       按队长口径改名；结构 28×60×65 逐片直转 1:1；线圈并行 2^(⌊温度/900⌋) + 激光仓 +
+        //       H 面线程/超频/加速/并行仓；配方表沿用整合包 gtlcore 的 gtceu:petrochemical_plant，
+        //       本模组只补 GTO 的 4 条氢化配方）；
+        //   (2) 燃料精炼复合体 gtlmodular:fuel_refining_complex（= GTO 同名机器，本体不改；
+        //       结构 31×27×63 直转；并行 2^(⌊有效温度/900⌋)，有效温度 = 线圈温度 + 100×(档位-MV)，
+        //       配方表沿用整合包的 gtceu:fuel_refining）。
+        //   缺的 8 件机壳见 common/data/petrochem/PetrochemBlocks（在 initBlocks 里建）。
+        com.gtlmodular.common.data.petrochem.PetrochemMachines.register();
         // ★ 2026-11-02：GTO 高维等离子聚变核心 —— 63×83×47 结构 1:1 照搬（新增独立机器，
         //   与 gtlcore 的 gtceu:dimensionally_transcendent_plasma_forge 并存）；
         //   配方表 = gtceu:dimensionally_transcendent_plasma_forge + gtceu:stellar_forge；
@@ -275,6 +285,10 @@ public final class GTLModularMachines {
         //   （压力容器 / 哈氏合金-N75 油膜管道 / 耐化学腐蚀管道 / 耐高压管道 / 油气输送密封管道）
         //   —— 时序要求同上：必须在 Forge 的 RegisterEvent<Block> 之前建好 Registrate 条目。
         com.gtlmodular.common.data.woodfactory.WoodFactoryBlocks.init();
+        // ★ 2026-11-26：石化线两台机器（集成石油化工处理工厂 / 燃料精炼复合体）结构里我方缺的
+        //   8 件机壳（超临界涡轮 / 皮基翁合金 / 化学级玻璃 / 铱管道 / PPS 耐腐蚀外壳 /
+        //   高强度支撑 / 氧化钙陶瓷 / 工业无框玻璃）—— 时序要求同上。
+        com.gtlmodular.common.data.petrochem.PetrochemBlocks.init();
         // NAC 的电路组件（CC）真实物品层：176 件（99 未处理 + 77 已处理），
         // 同样必须在 Forge 的 RegisterEvent<Item> 之前建好 Registrate 条目，
         // 否则这些物品永远进不了物品注册表（与上面方块的时序要求同一原因）。

@@ -1,0 +1,99 @@
+{
+  "type": "gtceu:petrochemical_plant",
+  "duration": 600,
+  "inputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:oil_medium"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:hydrogen"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "fluid": [
+      {
+        "content": {
+          "amount": 150,
+          "value": {
+            "fluid": "gtceu:methane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 850,
+          "value": {
+            "fluid": "gtceu:butane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 350,
+          "value": {
+            "fluid": "gtceu:propane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 150,
+          "value": {
+            "fluid": "gtceu:ethane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 70,
+          "value": {
+            "fluid": "gtceu:helium"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 240,
+          "value": {
+            "fluid": "gtceu:cyclohexane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 140,
+          "value": {
+            "fluid": "gtceu:benzene"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 180,
+          "value": {
+            "fluid": "gtceu:octane"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 1920
+      }
+    ]
+  }
+}
