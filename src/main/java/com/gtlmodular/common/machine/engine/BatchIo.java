@@ -27,14 +27,15 @@ final class BatchIo {
     static final int BATCH_LOG_WINDOW_TICKS = 20;
 
     private final IRecipeLogicMachine machine;
-    private final ThreadedRecipeLogic owner;
+    /** ★ 2026-11-25：只认 {@link IBatchLogicOwner} 契约（不再绑死通用引擎的具体类）。 */
+    private final IBatchLogicOwner owner;
     private final BatchFinder finder;
     private final BatchDiagnostics diag;
 
     private long batchLogWindow = Long.MIN_VALUE;
     private int batchLogUsed;
 
-    BatchIo(IRecipeLogicMachine machine, ThreadedRecipeLogic owner,
+    BatchIo(IRecipeLogicMachine machine, IBatchLogicOwner owner,
             BatchFinder finder, BatchDiagnostics diag) {
         this.machine = machine;
         this.owner = owner;

@@ -71,7 +71,7 @@ import java.util.Map;
  * @see IThreadedRecipeMachine
  * @see ConcurrentRecipeEngine
  */
-public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogic {
+public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogic, IBatchLogicOwner {
 
     /** 并发批次表（纯调度，不依赖任何机器类；见 {@link ConcurrentRecipeEngine}）。 */
     private final ConcurrentRecipeEngine engine = new ConcurrentRecipeEngine();
@@ -594,13 +594,19 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * <p>单独成方法是因为 {@code ocParams}／{@code ocResult} 是 {@link RecipeLogic} 的
      * protected 字段，只有子类自己能碰；{@link BatchFinder} 只负责编排。
      */
-    GTRecipe modifyRecipe(GTRecipe raw) {
+    public GTRecipe modifyRecipe(GTRecipe raw) {
         return machine.fullModifyRecipe(raw.copy(), ocParams, ocResult);
     }
 
     /** 每 tick 输入的 chance cache（{@link RecipeLogic#getChanceCaches()} 的子类读口）。 */
-    Map<RecipeCapability<?>, Object2IntMap<?>> chanceCaches() {
+    public Map<RecipeCapability<?>, Object2IntMap<?>> chanceCaches() {
         return getChanceCaches();
+    }
+
+    /** ★ 2026-11-25：{@link IBatchLogicOwner} 契约 —— 配方条件判定的落脚点就是本逻辑。 */
+    @Override
+    public RecipeLogic asRecipeLogic() {
+        return this;
     }
 
     /**
@@ -741,7 +747,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * <p><b>子类可覆写</b>：某个总成/机器需要自定义候选来源时，覆写本方法；
      * 机器类在 {@code createRecipeLogic} 里返回对应的子类即可。
      */
-    protected List<GTRecipe> meCachedCandidates(GTRecipeType type) {
+    public List<GTRecipe> meCachedCandidates(GTRecipeType type) {
         ObjectSet<GTRecipe> set = new ObjectOpenHashSet<>();
         // ① 原版通道：IRecipeCapabilityMachine.getMEPatternRecipeHandleParts()
         if (machine.self() instanceof IRecipeCapabilityMachine recipeMachine) {
@@ -822,7 +828,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * <p>用途：{@code BatchFinder} 在「ME 样板缓存为空」时用本方法决定要不要回落到整表扫描；
      * 真正的唤醒仍由「AE 推样板 → {@code pokeScan}/内容变化 → 重新订阅」负责，不会漏单。
      */
-    protected boolean hasRealItemOrFluidInput() {
+    public boolean hasRealItemOrFluidInput() {
         var proxy = machine.getCapabilitiesProxy();
         if (proxy == null) {
             return true; // 拿不到能力表就不跳过，宁可多扫也不卡死

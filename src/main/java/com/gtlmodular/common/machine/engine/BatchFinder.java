@@ -40,7 +40,7 @@ import java.util.Map;
  *   <li>「跨表轮转起点」与旧实现一样<b>每 tick 归零</b>（旧实现每 tick {@code new HostImpl()}）。</li>
  * </ul>
  */
-final class BatchFinder {
+public final class BatchFinder {
 
     /** 没有 ME 样板缓存时，一次 findBatch 最多试多少条配方。 */
     static final int SCAN_BUDGET = 24;
@@ -48,11 +48,24 @@ final class BatchFinder {
     /** 整轮没找到配方后的冷却 tick 数（期间 findBatch 直接返回 null）。 */
     static final int IDLE_COOLDOWN_TICKS = 10;
 
+    /**
+     * ★ 2026-11-25：<b>每 tick 最多新开几条批次</b>。
+     *
+     * <p>熔岩模块那份引擎一直有这个限速（{@code ENGINE_MAX_STARTS_PER_TICK = 8}），通用引擎没有
+     * ⇒ 256 槽的机器首轮填槽会一次扫出几百条候选，把一整个 tick 吃掉。合并两套引擎时按较严的
+     * 一边统一：**首轮填槽最多 8 条/tick**，空出来的槽下一个 tick 立刻补（引擎每 tick 都会调
+     * {@link #findBatch()} 直到返回 null，槽位填满只是慢几 tick，吞吐不变）。
+     */
+    static final int MAX_STARTS_PER_TICK = 8;
+
     private final IRecipeLogicMachine machine;
     private final IThreadedRecipeMachine threaded;
-    private final ThreadedRecipeLogic owner;
+    private final IBatchLogicOwner owner;
     private final ConcurrentRecipeEngine engine;
     private final BatchDiagnostics diag;
+
+    /** 本 tick 已经新开出几条（{@link #beginTick()} 归零）。 */
+    private int startsThisTick;
 
     /**
      * 每张配方表各自的扫描游标与冷却。
@@ -82,8 +95,8 @@ final class BatchFinder {
     /** 上次成功开出配方的配方表下标（跨表轮转的起点）。 */
     private int lastSuccessfulTypeIdx;
 
-    BatchFinder(IRecipeLogicMachine machine, IThreadedRecipeMachine threaded,
-                ThreadedRecipeLogic owner, ConcurrentRecipeEngine engine, BatchDiagnostics diag) {
+    public BatchFinder(IRecipeLogicMachine machine, IThreadedRecipeMachine threaded,
+                       IBatchLogicOwner owner, ConcurrentRecipeEngine engine, BatchDiagnostics diag) {
         this.machine = machine;
         this.threaded = threaded;
         this.owner = owner;
@@ -97,12 +110,13 @@ final class BatchFinder {
      * <p>旧实现的 {@code HostImpl} 是每 tick {@code new} 一次，字段天然归零；现在
      * {@link BatchFinder} 常驻，所以显式补这一句，保证「每 tick 都从第一张表开始找」的旧语义。
      */
-    void beginTick() {
+    public void beginTick() {
         lastSuccessfulTypeIdx = 0;
+        startsThisTick = 0;
     }
 
     /** 清掉所有表的扫描冷却（{@code pokeScan} / 扣料成功后调用）。 */
-    void clearCooldowns() {
+    public void clearCooldowns() {
         for (TableScanState s : scanStates.values()) {
             s.cooldownUntil = 0;
             s.idlePasses = 0;
@@ -110,7 +124,7 @@ final class BatchFinder {
     }
 
     /** 结构失形 / 读档：本世界的扫描游标与冷却全部作废。 */
-    void reset() {
+    public void reset() {
         scanStates.clear();
         lastSuccessfulTypeIdx = 0;
     }
@@ -132,7 +146,12 @@ final class BatchFinder {
      * <p>跨表机器从上次成功的表开始轮转（<b>每 tick 归零</b>，见 {@link #beginTick()}），
      * 第一张能开的配方就返回；单表机器只扫当前选中表。
      */
-    GTRecipe findBatch() {
+    public GTRecipe findBatch() {
+        // ★ 2026-11-25：每 tick 新开批次的上限（见 MAX_STARTS_PER_TICK）。到顶就交还控制权，
+        //   剩下的空槽下一个 tick 继续填 —— 引擎每 tick 都会重试到 null，吞吐不受影响。
+        if (startsThisTick >= MAX_STARTS_PER_TICK) {
+            return null;
+        }
         GTRecipeType current = machine.getRecipeType();
         if (current == null) {
             return null;
@@ -140,7 +159,9 @@ final class BatchFinder {
         GTRecipeType[] types = machine.getRecipeTypes();
         // ★ 2026-11-07 GTO 口径：线程仓的「独立线程」= 每条线程独立拉满功率，
         //   不再管「用哪张配方表」。装仓后只要机器有 2 张以上表，就自动全部扫（公平轮转）。
-        boolean allTypes = types != null && types.length > 1;
+        // ★ 2026-11-25：是否跨表由逻辑壳决定（owner.crossTableScan()）—— 熔岩模块按
+        //   engineCrossTable() 开关走，通用引擎恒 true，两边判定口径由此统一到一处。
+        boolean allTypes = owner.crossTableScan() && types != null && types.length > 1;
         if (!allTypes) {
             return findBatchForType(current);
         }
@@ -246,6 +267,29 @@ final class BatchFinder {
                 diag.noteScanReject(type, raw, "原料不足(含ME样板仓)", null);
                 continue;
             }
+            // ★ 2026-11-25：机器自己的准入门槛（层级 / 配方条件 / EBF 温度…）。
+            //   熔岩模块过去在它自己的扫描里判这几条，现在统一挂到这里，引擎只问一句。
+            if (!owner.acceptsCandidate(raw)) {
+                diag.noteScanReject(type, raw, "机器准入门槛拒绝（层级/条件/温度）", null);
+                continue;
+            }
+            // ★ 2026-11-25：自备折算分支（熔岩模块的 gtlcore 口径）。
+            //   引擎只负责「挑候选 + 限速 + 记账」，并行算法与耗电模型由逻辑壳自己决定。
+            if (!owner.usesStandardParallel()) {
+                GTRecipe prepared;
+                try {
+                    prepared = owner.prepareBatch(raw);
+                } catch (RuntimeException e) {
+                    // 单条候选的折算异常不能掀翻服务端主线程：跳过这条，继续扫下一条。
+                    diag.noteScanReject(type, raw, "自备折算异常：" + e, null);
+                    continue;
+                }
+                if (prepared == null) {
+                    diag.noteScanReject(type, raw, "自备折算返回 null", null);
+                    continue;
+                }
+                return acceptBatch(raw, prepared, fromMeCache, state, candidates, idx);
+            }
             GTRecipe modified = owner.modifyRecipe(raw);
             if (modified == null) {
                 diag.noteScanReject(type, raw, "配方修改器返回 null（去重/门槛拒绝）", null);
@@ -288,18 +332,12 @@ final class BatchFinder {
                 diag.noteScanReject(type, scaled, "每tick输入不足(EU等)", BatchSupport.reasonText(tickResult));
                 continue;
             }
-            GTRecipe.ActionResult conditionResult = scaled.checkConditions(owner);
+            GTRecipe.ActionResult conditionResult = scaled.checkConditions(owner.asRecipeLogic());
             if (!conditionResult.isSuccess()) {
                 diag.noteScanReject(type, scaled, "配方条件不满足", BatchSupport.reasonText(conditionResult));
                 continue;
             }
-            diag.reject("有配方可跑", null, null);
-            state.cooldownUntil = 0;
-            state.idlePasses = 0;
-            if (!fromMeCache) {
-                state.cursor = (idx + 1) % candidates.size();
-            }
-            return scaled;
+            return acceptBatch(raw, scaled, fromMeCache, state, candidates, idx);
         }
 
         // 本轮没有结果：ME 缓存/整表都冷却一会儿，别在空转时每 tick 重复扫。
@@ -326,6 +364,27 @@ final class BatchFinder {
             diag.dumpScanDetail(type);
         }
         return null;
+    }
+
+    /**
+     * ★ 2026-11-25：两条折算分支（标准链 / 自备链）共用的「收下这条候选」收尾。
+     *
+     * <p>清冷却、推进本表游标、记一次开批额度、写诊断。两条分支过去各写一遍，
+     * 合并后只留这一处 —— 游标推进或限速口径要改时只改这里。
+     *
+     * @param raw      原始候选（保留给后续诊断扩展，当前只作上下文）
+     * @param selected 折算完成、可以直接进批次表的配方
+     */
+    private GTRecipe acceptBatch(GTRecipe raw, GTRecipe selected, boolean fromMeCache,
+                                 TableScanState state, List<GTRecipe> candidates, int idx) {
+        diag.reject("有配方可跑", raw, null);
+        state.cooldownUntil = 0;
+        state.idlePasses = 0;
+        if (!fromMeCache && candidates != null && !candidates.isEmpty()) {
+            state.cursor = (idx + 1) % candidates.size();
+        }
+        startsThisTick++;
+        return selected;
     }
 
     /** 「并行重复配方」关闭时：同一条配方是否已被别的线程占用。 */

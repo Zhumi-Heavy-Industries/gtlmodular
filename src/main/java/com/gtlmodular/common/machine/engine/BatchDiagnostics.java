@@ -30,7 +30,7 @@ import java.util.Set;
  *
  * <p>行为与原实现逐字一致（同一批字段、同一批日志文本、同一套限频规则），只是搬家。
  */
-final class BatchDiagnostics {
+public final class BatchDiagnostics {
 
     /** 诊断行正文里的默认值（还没试过任何配方时显示这个）。 */
     private static final String NOT_TRIED = "（还没试）";
@@ -76,7 +76,7 @@ final class BatchDiagnostics {
     private final Set<GTRecipeType> scanDumpDone =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
-    BatchDiagnostics(IRecipeLogicMachine machine) {
+    public BatchDiagnostics(IRecipeLogicMachine machine) {
         this.machine = machine;
     }
 
@@ -231,7 +231,7 @@ final class BatchDiagnostics {
      * <p>每个不同的真实原因最多 12 行；原因不变不重复刷，换原因重新计数；
      * 扫描冷却不再覆盖原因（见 {@link #diagReject} 的注释）。
      */
-    void logIdle(boolean crossTable, int engineSize) {
+    public void logIdle(boolean crossTable, int engineSize) {
         if (engineSize != 0 || machine.self().getOffsetTimer() % 100L != 0L) {
             return;
         }
