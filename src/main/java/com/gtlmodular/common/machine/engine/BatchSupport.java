@@ -16,7 +16,9 @@ import appeng.api.crafting.IPatternDetails;
 import appeng.api.networking.crafting.ICraftingProvider;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import org.gtlcore.gtlcore.api.capability.IMERecipeHandler;
 import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEPatternPartMachine;
+import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferProxyPartMachine;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -82,16 +84,24 @@ final class BatchSupport {
         try {
             if (machine.self() instanceof IMultiController controller && controller.isFormed()) {
                 for (IMultiPart part : controller.getParts()) {
-                    if (!(part instanceof ICraftingProvider provider)) {
-                        continue;
+                    // ① 直连总成：问 AE 口径的样板表（原生 / 统合 / gtladditions 超级 / 本模组猪咪都实现该接口）。
+                    if (part instanceof ICraftingProvider provider && hasAvailablePattern(provider)) {
+                        return true;
                     }
-                    try {
-                        List<IPatternDetails> patterns = provider.getAvailablePatterns();
-                        if (patterns != null && !patterns.isEmpty()) {
-                            return true;
-                        }
-                    } catch (Throwable ignored) {
-                        // 单个部件读失败不影响其它部件
+                    // ② 代理 / 镜像总成：本体（真正的样板仓）挂在别的结构里，getParts() 里看不到它，
+                    //    顺着 gtlcore 的公开口 getBuffer() 再问一次（未连线返回 null ⇒ 安全跳过）。
+                    //    gtladditions 的 MESuperPatternBufferProxyPartMachine 也继承这个代理类 ⇒ 一并覆盖。
+                    if (part instanceof MEPatternBufferProxyPartMachine proxy
+                            && hasAvailablePattern(proxy.getBuffer())) {
+                        return true;
+                    }
+                    // ③ 最后一道保险：任何 ME 样板部件只要有「活跃槽」（槽里有样板 **且** 槽里有料），
+                    //    这台机器就该扫整表。依据 gtlcore MEPatternBufferPartMachineBase#getActiveSlots()
+                    //    → InternalSlot#isActive()（hasPatternInSlot && 槽库存非空）；代理 handler 会委托真实仓。
+                    //    这条与「AE 样板表」解耦：即使 getAvailablePatterns() 因上游改动/未刷新而为空，
+                    //    「样板 + 料都在」这一手读数也能把冷槽救活。
+                    if (part instanceof IMEPatternPartMachine me && hasActiveMeSlot(me)) {
+                        return true;
                     }
                 }
             }
@@ -99,6 +109,42 @@ final class BatchSupport {
             // 拿不到部件表就不拦（宁可多扫，绝不因此把该跑的单挡住）
         }
         return false;
+    }
+
+    /** 这个样板仓（可为 {@code null}）当前向 AE 报出的样板表是否非空。 */
+    private static boolean hasAvailablePattern(ICraftingProvider provider) {
+        if (provider == null) {
+            return false;
+        }
+        try {
+            List<IPatternDetails> patterns = provider.getAvailablePatterns();
+            return patterns != null && !patterns.isEmpty();
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 该 ME 样板部件是否至少有一个「活跃槽」（有样板且槽里有料）。 */
+    private static boolean hasActiveMeSlot(IMEPatternPartMachine me) {
+        try {
+            var pair = me.getMERecipeHandlerTraits();
+            return pair != null && (hasActiveSlot(pair.left()) || hasActiveSlot(pair.right()));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** ME 口径 handler 的活跃槽数是否 &gt; 0（不是 ME handler ⇒ {@code false}）。 */
+    private static boolean hasActiveSlot(Object handler) {
+        if (!(handler instanceof IMERecipeHandler<?, ?> meHandler)) {
+            return false;
+        }
+        try {
+            int[] slots = meHandler.getActiveSlots();
+            return slots != null && slots.length > 0;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     /**
