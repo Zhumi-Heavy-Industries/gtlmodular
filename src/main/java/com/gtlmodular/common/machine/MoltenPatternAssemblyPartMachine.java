@@ -74,7 +74,15 @@ import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferPart
 import org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferRecipeHandlerTrait;
 import org.gtlcore.gtlcore.integration.ae2.widget.AEPatternViewExtendSlotWidget;
 
+import org.gtlcore.gtlcore.utils.datastructure.Int128;
+
 import it.unimi.dsi.fastutil.objects.Object2LongMap;
+import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectList;
+
+import com.gtlmodular.common.machine.pattern.wide.WideAmounts;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -851,6 +859,320 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     /** 本类自动补过的槽级电路：槽位 → 电路号（只清我们自己设的那一份）。 */
     private final java.util.Map<Integer, Integer> autoCircuitSlots = new java.util.HashMap<>();
 
+    // ================= 宽表存储（★ 2026-11-25：照 gtladditions「超级样板总成」的模型） =================
+
+    /**
+     * <b>槽库存改用 {@link Int128} 宽表</b>的总开关（一行回退）。
+     *
+     * <p>{@code true}（默认）= 每个样板槽的库存是 {@code Map<AEKey, Int128>}（物品流体混存），
+     * 上限从 {@code long} 提升到 128 位；{@code false} = 逐字退回 gtlcore 的
+     * {@code Object2LongOpenHashMap} 实现（{@code createInternalSlot} 直接给父类）。
+     *
+     * <h3>为什么要它（照搬上游的判断）</h3>
+     * <p>gtladditions 的「超级样板总成」({@code MESuperPatternBufferPartMachine}) 正是这么做的
+     * （{@code Int128} 宽表 + 自己的 {@code handleItemInternal}/{@code isActive}/
+     * {@code getItemStackInputMap} 全套覆写）。原因：AE 一次合成单的物料量可以突破
+     * {@code long}（神锻 ×15、超高并行、超大配方），long 表会<b>回绕成负数</b> ⇒ 匹配永远"不够"。
+     *
+     * <h3>与上游的差别（刻意如此）</h3>
+     * <ul>
+     *   <li>上游的 {@code WideBufferTools}/{@code SlotCacheManagerExtensions} 在
+     *       <b>gtladditions</b> 里，而本模组把它声明为 {@code mandatory=false} ⇒ 硬链接会
+     *       NoClassDefFoundError。所以那一套语义由我们自研的
+     *       {@link WideAmounts} 重写（只依赖 gtlcore 的 Int128 + AE2）。</li>
+     *   <li><b>输出侧这次不动</b>：产物仍走 gtlcore 的 {@code buffer} + 它自己的 {@code Ticker}
+     *       （上游是用自造的 {@code pending} 池）。输入宽表是"能不能吃下这单"的关键，
+     *       输出池是另一件事，分开落、分开验。</li>
+     * </ul>
+     *
+     * <p><b>存档</b>：新档写 {@code wideInput}；旧档（{@code inventory}/{@code fluidInventory}）
+     * 读进来时自动迁移，<b>双向兼容</b>（旧版本读到新档会看到空库存 —— 所以降级前要先退料，
+     * 这条写在迁移注释里）。
+     */
+    public static boolean WIDE_SLOT_STORAGE = true;
+
+    /** 父类建槽的唯一入口：换成宽表槽（构造期就会被调到，故此处只依赖静态开关）。 */
+    @Override
+    protected org.gtlcore.gtlcore.common.machine.multiblock.part.ae.MEPatternBufferPartMachineBase.InternalSlot
+    createInternalSlot(int index) {
+        if (!WIDE_SLOT_STORAGE) {
+            return super.createInternalSlot(index);
+        }
+        return new WidePatternBufferInternalSlot(index);
+    }
+
+    /**
+     * 宽表槽：库存是 {@code Map<AEKey, Int128>}，把 gtlcore 里所有"读/写库存"的入口全部接管。
+     *
+     * <p>逐条对齐上游 {@code MESuperPatternBufferPartMachine$SuperPatternBufferInternalSlot}
+     * 的覆写集合；语义注释写在每个方法上。
+     */
+    public class WidePatternBufferInternalSlot
+            extends MEPatternBufferPartMachine.PatternBufferInternalSlot {
+
+        /** 本槽库存（物品 + 流体混存，键是 AEKey，量是 Int128）。 */
+        private final Object2ObjectOpenHashMap<AEKey, Int128> wideInputs = new Object2ObjectOpenHashMap<>();
+
+        WidePatternBufferInternalSlot(int index) {
+            super(index);
+        }
+
+        /** 给退款/诊断用的只读视图（**不要**外部改它）。 */
+        public Object2ObjectMap<AEKey, Int128> wideInputs() {
+            return wideInputs;
+        }
+
+        private boolean hasWideInputsOf(Class<?> kind) {
+            for (AEKey key : wideInputs.keySet()) {
+                if (kind.isInstance(key)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** 上游同款：有样板 + 宽表非空 = 这个槽"在干活"。 */
+        @Override
+        public boolean isActive() {
+            return hasPatternInSlot(getSlotIndex()) && !wideInputs.isEmpty();
+        }
+
+        /** 上游同款：真有物品输入算活跃；模拟时把共享催化剂/电路/虚拟供给也算上。 */
+        @Override
+        public boolean isItemActive(boolean simulate) {
+            if (!hasPatternInSlot(getSlotIndex())) {
+                return false;
+            }
+            if (hasWideInputsOf(AEItemKey.class)) {
+                return true;
+            }
+            return simulate && (!sharedCatalystInventory.isEmpty()
+                    || !getCircuitForRecipe(getSlotIndex()).isEmpty()
+                    || hasItemCatalystInventory()
+                    || hasVirtualItemSupply());
+        }
+
+        /** 上游同款（流体）。 */
+        @Override
+        public boolean isFluidActive(boolean simulate) {
+            if (!hasPatternInSlot(getSlotIndex())) {
+                return false;
+            }
+            if (hasWideInputsOf(AEFluidKey.class)) {
+                return true;
+            }
+            return simulate && (!sharedCatalystTank.isEmpty()
+                    || hasFluidCatalystInventory()
+                    || hasVirtualFluidSupply());
+        }
+
+        /**
+         * 入料：普通料进宽表；<b>虚拟原料（{@code gtlcore:virtual_ingredient}）仍交父类</b> ——
+         * 它在那儿负责解出货真价实的"电路缓存/虚拟供给标记"，我们不该抢。
+         */
+        @Override
+        public void add(AEKey what, long amount) {
+            if (amount <= 0L || what == null) {
+                return;
+            }
+            if (what instanceof AEItemKey itemKey
+                    && org.gtlcore.gtlcore.common.data.GTLItems.VIRTUAL_INGREDIENT.isIn(itemKey.getReadOnlyStack())) {
+                super.add(what, amount);
+                return;
+            }
+            WideAmounts.add(wideInputs, what, amount);
+        }
+
+        /** 入料（AE 推样板）：照父类用 AEUtils 拆包，逐项走 {@link #add}。 */
+        @Override
+        public void pushPattern(KeyCounter[] inputHolder) {
+            org.gtlcore.gtlcore.integration.ae2.AEUtils.pushInputsToMEPatternBufferInventory(inputHolder, this::add);
+            this.onContentsChanged.run();
+        }
+
+        /** 物品输入表（索引侧/诊断）：宽表 → {@code ItemStack → 数量}。 */
+        @Override
+        public Object2LongMap<ItemStack> getItemStackInputMap() {
+            Object2LongOpenHashMap<ItemStack> map = new Object2LongOpenHashMap<>();
+            for (var entry : wideInputs.entrySet()) {
+                if (entry.getKey() instanceof AEItemKey itemKey && entry.getValue() != null) {
+                    long amount = entry.getValue().longValue();
+                    if (amount > 0L) {
+                        map.addTo(itemKey.toStack(1), amount);
+                    }
+                }
+            }
+            return map;
+        }
+
+        /** 流体输入表（同上）。 */
+        @Override
+        public Object2LongMap<FluidStack> getFluidStackInputMap() {
+            Object2LongOpenHashMap<FluidStack> map = new Object2LongOpenHashMap<>();
+            for (var entry : wideInputs.entrySet()) {
+                if (entry.getKey() instanceof AEFluidKey fluidKey && entry.getValue() != null) {
+                    long amount = entry.getValue().longValue();
+                    if (amount > 0L) {
+                        map.addTo(FluidStack.create(fluidKey.getFluid(), 1L), amount);
+                    }
+                }
+            }
+            return map;
+        }
+
+        /** 索引侧（配方查找看到的"料"）：宽表 + 专属催化剂 + 虚拟供给，与父类同序。 */
+        @Override
+        public ObjectList<ItemStack> getLimitItemStackInput() {
+            ObjectList<ItemStack> out = WideAmounts.limitItems(wideInputs);
+            appendLimitItemCatalystInputs(out);
+            appendVirtualItemInputs(out);
+            return out;
+        }
+
+        @Override
+        public ObjectList<FluidStack> getLimitFluidStackInput() {
+            ObjectList<FluidStack> out = WideAmounts.limitFluids(wideInputs);
+            appendLimitFluidCatalystInputs(out);
+            appendVirtualFluidInputs(out);
+            return out;
+        }
+
+        /**
+         * 物品匹配/扣料 —— <b>与 gtlcore 同一条判据顺序</b>（电路闸在最前），只是把库存换成宽表：
+         * <ol>
+         *   <li>{@code leftCircuit != circuitCache} ⇒ 直接拒（这道闸在物品匹配之前，
+         *       所以"样板电路不接受"时连虚拟催化剂都用不上）；</li>
+         *   <li>逐条原料找"够数"的 AE 键（模拟时额外允许该槽催化剂表）；</li>
+         *   <li>非模拟时按同一顺序真扣（宽表扣减）。</li>
+         * </ol>
+         */
+        @Override
+        public boolean handleItemInternal(Object2LongMap<Ingredient> left, int leftCircuit, boolean simulate) {
+            if (left.isEmpty() && leftCircuit < 0) {
+                return true;
+            }
+            if (simulate && leftCircuit > 0 && leftCircuit != getCacheManager().getCircuitCache()) {
+                return false;
+            }
+            var iterator = it.unimi.dsi.fastutil.objects.Object2LongMaps.fastIterator(left);
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                if (entry.getLongValue() <= 0L) {
+                    iterator.remove();
+                    continue;
+                }
+                Ingredient ingredient = entry.getKey();
+                long need = entry.getLongValue();
+                AEItemKey best = simulate
+                        ? WideAmounts.bestItemMatchSimulate(ingredient, wideInputs, getItemCatalystInventory(), need)
+                        : WideAmounts.bestItemMatch(ingredient, wideInputs, need);
+                if (best == null) {
+                    return false;
+                }
+            }
+            if (!simulate) {
+                var consume = it.unimi.dsi.fastutil.objects.Object2LongMaps.fastIterator(left);
+                while (consume.hasNext()) {
+                    var entry = consume.next();
+                    AEItemKey best = WideAmounts.bestItemMatch(entry.getKey(), wideInputs, entry.getLongValue());
+                    if (best != null) {
+                        WideAmounts.subtract(wideInputs, best, entry.getLongValue());
+                        consume.remove();
+                    }
+                }
+            }
+            return true;
+        }
+
+        /** 流体版（同口径）。 */
+        @Override
+        public boolean handleFluidInternal(Object2LongMap<FluidIngredient> left, boolean simulate) {
+            var iterator = it.unimi.dsi.fastutil.objects.Object2LongMaps.fastIterator(left);
+            while (iterator.hasNext()) {
+                var entry = iterator.next();
+                if (entry.getLongValue() <= 0L) {
+                    iterator.remove();
+                    continue;
+                }
+                FluidIngredient ingredient = entry.getKey();
+                long need = entry.getLongValue();
+                AEFluidKey best = simulate
+                        ? WideAmounts.bestFluidMatchSimulate(ingredient, wideInputs, getFluidCatalystInventory(), need)
+                        : WideAmounts.bestFluidMatch(ingredient, wideInputs, need);
+                if (best == null) {
+                    return false;
+                }
+            }
+            if (!simulate) {
+                var consume = it.unimi.dsi.fastutil.objects.Object2LongMaps.fastIterator(left);
+                while (consume.hasNext()) {
+                    var entry = consume.next();
+                    AEFluidKey best = WideAmounts.bestFluidMatch(entry.getKey(), wideInputs, entry.getLongValue());
+                    if (best != null) {
+                        WideAmounts.subtract(wideInputs, best, entry.getLongValue());
+                        consume.remove();
+                    }
+                }
+            }
+            return true;
+        }
+
+        /** 存档：新档只写 {@code wideInput}。 */
+        @Override
+        public CompoundTag serializeNBT() {
+            CompoundTag tag = super.serializeNBT();
+            tag.remove("inventory");
+            tag.remove("fluidInventory");
+            tag.put(WideAmounts.TAG_WIDE_INPUT, WideAmounts.write(wideInputs));
+            return tag;
+        }
+
+        /**
+         * 读档：优先 {@code wideInput}；没有就按<b>旧档迁移</b>（读父类的 long 表 → 搬进宽表 → 清空父类）。
+         *
+         * <p>⚠️ 迁移是<b>单向</b>的：迁完之后父类那两张表就是空的。若把新档给旧版本模组读，
+         * 它会看到"空库存"（料会留在存档里但不参与匹配）—— 降级前请先用「退款」把料退回网络。
+         */
+        @Override
+        public void deserializeNBT(CompoundTag tag) {
+            wideInputs.clear();
+            if (tag.contains(WideAmounts.TAG_WIDE_INPUT, Tag.TAG_LIST)) {
+                wideInputs.putAll(WideAmounts.read(
+                        tag.getList(WideAmounts.TAG_WIDE_INPUT, Tag.TAG_COMPOUND)));
+                return;
+            }
+            super.deserializeNBT(tag);
+            Object2LongOpenHashMap<AEItemKey> oldItems = super.getItemInventory();
+            for (Object2LongMap.Entry<AEItemKey> entry : oldItems.object2LongEntrySet()) {
+                WideAmounts.add(wideInputs, entry.getKey(), entry.getLongValue());
+            }
+            oldItems.clear();
+            Object2LongOpenHashMap<AEFluidKey> oldFluids = super.getFluidInventory();
+            for (Object2LongMap.Entry<AEFluidKey> entry : oldFluids.object2LongEntrySet()) {
+                WideAmounts.add(wideInputs, entry.getKey(), entry.getLongValue());
+            }
+            oldFluids.clear();
+        }
+    }
+
+    /**
+     * 换样板时把该槽的<b>宽表库存</b>退回机器 {@code buffer}（gtlcore 的 Ticker 负责推网）。
+     *
+     * <p>为什么必须在 {@code super.onPatternChange} <b>之前</b>自己做：父类的退款读的是它自己那两张
+     * long 树（宽表模式下恒空）⇒ 不走这一步的话，换样板/拆样板的料会<b>滞留在宽表里</b>
+     * 再也不会被退回网络（既丢料又可能被新样板误用）。
+     */
+    private void refundWideStorageToBuffer(int index) {
+        try {
+            var internal = getInternalSlotOrNull(index);
+            if (internal instanceof WidePatternBufferInternalSlot wide) {
+                WideAmounts.refundSlot(this.buffer, wide.wideInputs());
+            }
+        } catch (Throwable ignored) {
+            // 退款失败绝不能打断换样板本身（下一 tick 的 Ticker 还会把 buffer 推走）
+        }
+    }
+
     // ================= 读档补齐槽级电路缓存（★ 2026-11-25） =================
 
     /**
@@ -1569,6 +1891,9 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         //   这是"写前增长"的兜底入口：界面放/取/换样板（InternalSlot.setOnContentsChanged → 这里）、
         //   AE 推送落地都会经过它；先增长可避免父类在该下标上读写越界。
         ensureCapacityForSlot(index);
+        // ★ 2026-11-25（宽表存储）：换样板先把该槽的宽表库存退回 buffer。
+        //   父类的 refundSlot 读的是它自己那两张 long 表（宽表模式下恒空）⇒ 不在这里做就等于不退。
+        refundWideStorageToBuffer(index);
         super.onPatternChange(index);
         refreshSlotPatternMirror(index);   // ★ A 层：记录该槽样板身份（只建表 ✓ 不拦截 ✓）
         // ★ 2026-10-02：归档批量窗口内（AE 面 setItemDirect 的逐槽回调）只做"父类记账"，
