@@ -9,6 +9,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.machine.fuel.AccelerateHatchLogic;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
@@ -343,6 +344,40 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     }
 
     /**
+     * ★ 0.3.487：<b>外部推动进度</b> —— 时间扭曲者一类的加速道具把 tick 加给「机器的进度」，
+     * 本引擎必须自己接住，否则加多少都会被下个 tick 的 {@link #writeDisplay()} 抹掉。
+     *
+     * <h2>为什么必须覆写</h2>
+     * <p>基类 {@code setProgress} 只写 {@code RecipeLogic.progress} 这一个字段。原版逻辑自己
+     * 推进它（{@code handleRecipeWorking} 里 {@code progress++}），所以外部改它有效；
+     * 但本引擎的进度在批次表里，基类字段只是显示镜像 ⇒ 外部改动等于没发生。
+     * 实测（0.3.486）：对高维等离子聚变核心用无线时间扭曲者，网格被扣了
+     * {@code (剩余时长 × EUt × 4)} 的电，进度条一格没动——**扣钱的是外部模组，抹掉的是我们自己**。
+     *
+     * <h2>为什么只推第 0 条批次</h2>
+     * <p>外部计费口径是「单条批次」：{@code 剩余时长 × getInputEUt(lastRecipe) × 4}，
+     * 而 {@code lastRecipe} 就是镜像里的第 0 条批次。若把增量平摊给全部 N 条线程，
+     * 等于用 1/N 的价钱买 N 倍工作量（可刷）；若每条都加满，就是 N 倍白送。所以这里
+     * <b>一价一货</b>：只推第 0 条，封顶到它的总时长。
+     *
+     * <p>外部传「更小」的进度（复位/回退）本类不接受：批次表是权威，回退由
+     * {@code resetRecipeLogic()} 统一处理。
+     */
+    @Override
+    public void setProgress(int progress) {
+        if (!originalActive() && engine.size() > 0) {
+            int delta = progress - this.progress;
+            if (delta > 0) {
+                ConcurrentRecipeEngine.Batch primary = engine.get(0);
+                primary.progress = Math.min(primary.duration, primary.progress + delta);
+                writeDisplay();
+            }
+            return;
+        }
+        super.setProgress(progress);
+    }
+
+    /**
      * ★ 2026-11-08（GTO 口径）：<b>按需订阅</b> —— 只在「有活 / 可能有活」时挂在服务器 tick 上。
      *
      * <p>规则（{@link #wantsTick()}）：
@@ -582,7 +617,24 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * protected 字段，只有子类自己能碰；{@link BatchFinder} 只负责编排。
      */
     GTRecipe modifyRecipe(GTRecipe raw) {
-        return machine.fullModifyRecipe(raw.copy(), ocParams, ocResult);
+        GTRecipe modified = machine.fullModifyRecipe(raw.copy(), ocParams, ocResult);
+        if (modified == null) {
+            return null;
+        }
+        // ★ 0.3.487：<b>加速仓在本引擎上的唯一落地口</b>。
+        //
+        // 加速仓的换算只有一份，就是 AccelerateHatchLogic#applyIfNeeded；它平时由
+        // RecipeLogicAccelerateSetupMixin 挂在 RecipeLogic#setupRecipe 的 RETURN 上触发。
+        // 本类覆写了 serverTick() 且从不调 super，开批只走
+        // 「fullModifyRecipe → accurateParallel → new Batch(...)」，**不经过 setupRecipe**
+        // ⇒ 那个 mixin 永不触发，结构里装了加速仓也一格都不快
+        // （修复前实测：配方 25600 t 的线程照跑 1280 秒，加速仓 24% 一点没体现）。
+        // 第二道补算口 RecipeLogicGainHatchTickMixin 挂在基类 serverTick 的 RETURN 上，
+        // 同样因为不走 super 而失效，所以这里必须自己补这一次。
+        //
+        // 作用于 fullModifyRecipe 返回的副本（每次扫候选都是 raw.copy() 的新对象），
+        // 天然幂等：不会像 setupRecipe 那条路那样对同一对象重复相乘。
+        return AccelerateHatchLogic.applyIfNeeded(machine.self(), modified);
     }
 
     /** 每 tick 输入的 chance cache（{@link RecipeLogic#getChanceCaches()} 的子类读口）。 */
