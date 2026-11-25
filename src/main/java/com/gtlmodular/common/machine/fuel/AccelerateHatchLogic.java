@@ -71,10 +71,11 @@ public final class AccelerateHatchLogic {
      * 若每次都乘一次百分比，时长会递进塌缩（实测 99 → 66 → 1），
      * 表现成「越跑越快」。
      *
-     * <p>所以第一次进来时把<b>原始时长</b>记进 {@code recipe.data}，之后每次都从
-     * 原始值重算。写的是「原始值」而不是「已加速」标记 —— 原始值对同一配方恒定，
-     * 被 {@code copy()} 共享出去也无害；而标记一旦共享就会让后续副本全部跳过换算
-     * （那正是「拆了重放反而没效果」的成因）。
+     * <p>所以第一次进来时把<b>上一次结果</b>按「机器 + 配方 id」记下来，之后每次都从
+     * 原始值重算。<b>不再写 {@code recipe.data}</b>：{@code GTRecipe.copy()} 按引用共享 data，
+     * 同一配方被多台机器共用时，一台机器的结果会串到另一台（2026-11-25 实机事故）。
+     * 记录的是「结果值」而不是「已完成」布尔标记 —— 结果值只在当前时长确实等于它时才命中，
+     * 换配方或换档位就不匹配，不会让后续副本全部跳过换算。
      *
      * @param machine 正在处理配方的机器
      * @param recipe  它的配方（就地修改）
@@ -97,26 +98,48 @@ public final class AccelerateHatchLogic {
         if (base <= 0) {
             return recipe;
         }
-        if (recipe.data.contains(LAST_RESULT) && recipe.data.getInt(LAST_RESULT) == base) {
+        // 幂等：记住上一次本方法写出的结果；当前时长正好等于它 就说明是
+        // setupRecipe 对同一配方的重复调用，不重复乘。
+        // ★ 2026-11-25：判重状态**不再写进 recipe.data**（GTRecipe.copy() 按引用共享 data，
+        //   同一配方被多台机器共用时，一台机器的结果会串到另一台）。改为按「机器 + 配方 id」记。
+        Integer last = lastResult(machine, recipe);
+        if (last != null && last == base) {
             return recipe;
         }
         GTRecipe result = AccelerateHatchPartMachine.applyTo(
                 recipe, hatch.getPercentage(), hatch.getTier());
         if (result == recipe) {
-            recipe.data.putInt(LAST_RESULT, recipe.duration);
+            rememberResult(machine, recipe, recipe.duration);
         }
         return result;
     }
 
-    /**
-     * 上一次换算结果的时长，记在 {@code data} 里用于判重。
-     *
-     * <p>存的是「结果值」而不是「已完成」布尔标记：结果值只在时长确实等于它时才命中，
-     * 换配方或换档位就不匹配，不会污染后续副本。
-     *
-     * <p>与超频仓的键分开，两者串联相乘时才不会互相覆盖。
-     */
-    private static final String LAST_RESULT = "gtlmodular_accelerate_last_result";
+    /** 机器 →（配方 id / 配方对象 → 上一次换算结果）。机器弱引用，不阻止回收。 */
+    private static final java.util.Map<MetaMachine, java.util.Map<Object, Integer>> LAST_RESULTS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    private static Integer lastResult(MetaMachine machine, GTRecipe recipe) {
+        synchronized (LAST_RESULTS) {
+            java.util.Map<Object, Integer> byRecipe = LAST_RESULTS.get(machine);
+            return byRecipe == null ? null : byRecipe.get(resultKey(recipe));
+        }
+    }
+
+    private static void rememberResult(MetaMachine machine, GTRecipe recipe, int duration) {
+        synchronized (LAST_RESULTS) {
+            java.util.Map<Object, Integer> byRecipe =
+                    LAST_RESULTS.computeIfAbsent(machine, m -> new java.util.HashMap<>());
+            if (byRecipe.size() > 512) {
+                byRecipe.clear();
+            }
+            byRecipe.put(resultKey(recipe), duration);
+        }
+    }
+
+    /** 同一条配方的稳定身份：优先 recipe id（副本之间相同），没有 id 时退回对象身份。 */
+    private static Object resultKey(GTRecipe recipe) {
+        return recipe.id != null ? recipe.id : recipe;
+    }
 
     /**
      * 纯数值版：按本仓的百分比把一段时长缩短。

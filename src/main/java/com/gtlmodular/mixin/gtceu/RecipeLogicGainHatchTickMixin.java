@@ -6,8 +6,8 @@ import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gtlmodular.common.machine.fuel.AccelerateHatchLogic;
+import com.gtlmodular.common.machine.fuel.AccelerateHatchPredicate;
 import com.gtlmodular.common.machine.fuel.OverclockHatchLogic;
-import net.minecraft.nbt.CompoundTag;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -51,8 +51,6 @@ import java.lang.reflect.Field;
  */
 @Mixin(value = RecipeLogic.class, remap = false, priority = 800)
 public abstract class RecipeLogicGainHatchTickMixin {
-
-    private static final String ORIGINAL = "gtlmodular_tick_original_duration";
 
     /**
      * {@code RecipeLogic#duration} 的反射句柄。
@@ -98,22 +96,30 @@ public abstract class RecipeLogicGainHatchTickMixin {
         if (recipe == null) {
             return;
         }
+        // ★ 2026-11-25：诊断 —— 时长离谱（> 1,000,000 tick ≈ 13.9 游戏小时）时每台机器 5 分钟打一条 WARN。
+        //   这次事故（11/72000000）的写入点不在本模组，日志是为了把它钉在「哪台机器、哪条配方、哪套逻辑」上。
+        //   ★ 放在「有没有仓」的早退之前：出事的通用组装厂-plus 就没有加速/超频仓。
+        gtlmodular$warnSuspiciousDuration(self, machine, recipe);
+        // ★★ 2026-11-25（队长：「组装机制作部件组装机，配方耗时异常（11/72000000）」）：
+        //   **没有任何影响时长的仓 ⇒ 一个字都不写。**
+        //   旧版不管装没装仓都会走到下面：original 从 recipe.data 取、adjusted 与 current 不等就写回
+        //   ⇒ 无仓机器也会被「校正」成 recipe.data 里记的原始时长。而 GTRecipe.copy() 把 data
+        //   **按引用**传给副本、同一条配方又会被多台机器共用 ⇒ 任何一台机器（走能量换算链的
+        //   IvRecipeLogic / MultipleRecipesLogic）在某条配方上记下的巨大时长，会被另一台
+        //   （通用组装厂-plus 这类）**每 tick 重放**，进度条分母就永远是 72,000,000。
+        //   没有仓的机器本来就轮不到本 mixin 管，直接早退。
+        if (!AccelerateHatchPredicate.runtimeEnabled() && !OverclockHatchLogic.enabled()) {
+            return;
+        }
+        if (AccelerateHatchLogic.find(machine) == null && OverclockHatchLogic.find(machine) == null) {
+            return;
+        }
         try {
             int current = field.getInt(self);
             if (current <= 0) {
                 return;
             }
-            // 原始时长只在第一次看到这条配方时记一次。
-            // 记「原始值」而不是「已完成」标记：原始值对同一配方恒定，复制出去也无害；
-            // 标记一旦共享就会让后续副本全部跳过换算。
-            CompoundTag data = recipe.data;
-            int original;
-            if (data.contains(ORIGINAL)) {
-                original = data.getInt(ORIGINAL);
-            } else {
-                original = recipe.duration;
-                data.putInt(ORIGINAL, original);
-            }
+            int original = gtlmodular$originalFor(machine, recipe);
             if (original <= 0) {
                 return;
             }
@@ -122,11 +128,75 @@ public abstract class RecipeLogicGainHatchTickMixin {
             long maxEUt = machine instanceof IOverclockMachine oc ? oc.getOverclockVoltage() : 0L;
             adjusted = OverclockHatchLogic.applyToDuration(
                     machine, adjusted, maxEUt, RecipeHelper.getInputEUt(recipe), 0.25D);
-            if (adjusted != current) {
+            if (adjusted > 0 && adjusted != current) {
                 field.setInt(self, adjusted);
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // 字段被改名 / 无权访问 ⇒ 本次不生效，不影响游戏其它部分。
+        }
+    }
+
+    /**
+     * 「这条配方在这台机器上的原始时长」——按 <b>机器 + 配方 id</b> 记，<b>不写进 {@code recipe.data}</b>。
+     *
+     * <p>为什么不能写进 {@code recipe.data}：{@code GTRecipe.copy()} 把 {@code data} 按引用传给副本，
+     * 同一配方（同一 id）会被多台机器共用 ⇒ 一台机器记下的值会被别的机器读到并每 tick 重放
+     * （2026-11-25「72,000,000 时长」实机事故的传播链）。按机器隔离就只影响它自己。
+     *
+     * <p>为什么按 {@code recipe.id} 而不是对象身份：gtlcore / 增强版会在每次 setup 时复制配方，
+     * 对象身份每个副本都不同；id 才是「同一条配方」的稳定身份。id 为 {@code null} 时退回对象身份。
+     */
+    private static int gtlmodular$originalFor(MetaMachine machine, GTRecipe recipe) {
+        synchronized (ORIGINALS) {
+            java.util.Map<Object, Integer> byRecipe =
+                    ORIGINALS.computeIfAbsent(machine, m -> new java.util.HashMap<>());
+            if (byRecipe.size() > 512) {
+                byRecipe.clear();
+            }
+            Object key = recipe.id != null ? recipe.id : recipe;
+            Integer cached = byRecipe.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            int original = recipe.duration;
+            if (original > 0) {
+                byRecipe.put(key, original);
+            }
+            return original;
+        }
+    }
+
+    /** 机器 →（配方 id / 配方对象 → 原始时长）。机器弱引用，不阻止回收；条目按机器上限清空。 */
+    private static final java.util.Map<MetaMachine, java.util.Map<Object, Integer>> ORIGINALS =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /** 时长超过这个值就当成异常（1,000,000 tick ≈ 13.9 游戏小时），打一条限频 WARN。 */
+    private static final int SUSPICIOUS_DURATION = 1_000_000;
+
+    /** 每台机器上一次打异常时长日志的 gameTime（5 分钟限频）。 */
+    private static final java.util.Map<MetaMachine, Long> LAST_WARN =
+            java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    private static void gtlmodular$warnSuspiciousDuration(RecipeLogic self, MetaMachine machine, GTRecipe recipe) {
+        try {
+            int duration = GTLMODULAR$DURATION == null ? 0 : GTLMODULAR$DURATION.getInt(self);
+            if (duration <= SUSPICIOUS_DURATION) {
+                return;
+            }
+            var level = machine.getLevel();
+            long now = level == null ? 0L : level.getGameTime();
+            Long last = LAST_WARN.get(machine);
+            if (last != null && now - last < 6000L) {
+                return;
+            }
+            LAST_WARN.put(machine, now);
+            com.gtlmodular.GTLModular.LOGGER.warn(
+                    "[gtlmodular] 配方时长异常：{} tick（≈{} 秒）@{} logic={} recipe={}"
+                            + "（0.3.491 起已停止把「原始时长」写进 recipe.data；若仍出现，请把这行发给开发）",
+                    duration, duration / 20, machine.self().getPos(),
+                    self.getClass().getSimpleName(), recipe.id);
+        } catch (Throwable ignored) {
+            // 诊断失败绝不影响配方逻辑
         }
     }
 }
