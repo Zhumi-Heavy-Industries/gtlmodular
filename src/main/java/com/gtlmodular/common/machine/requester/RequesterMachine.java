@@ -4,6 +4,7 @@ import appeng.api.networking.IGridNodeListener.State;
 import appeng.api.networking.IManagedGridNode;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEFluidKey;
+import com.gregtechceu.gtceu.api.gui.fancy.FancyMachineUIWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.TickableSubscription;
@@ -11,7 +12,7 @@ import com.gregtechceu.gtceu.api.machine.feature.IFancyUIMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IMachineLife;
 import com.gregtechceu.gtceu.integration.ae2.machine.feature.IGridConnectedMachine;
 import com.gregtechceu.gtceu.integration.ae2.machine.trait.GridNodeHolder;
-import com.lowdragmc.lowdraglib.gui.texture.ResourceBorderTexture;
+import com.lowdragmc.lowdraglib.gui.modular.ModularUI;
 import com.lowdragmc.lowdraglib.gui.widget.LabelWidget;
 import com.lowdragmc.lowdraglib.gui.widget.Widget;
 import com.lowdragmc.lowdraglib.gui.widget.WidgetGroup;
@@ -48,9 +49,11 @@ import java.util.function.Supplier;
  * 所以这里自绘槽位（{@link RequesterSlotWidget}），自己实现 JEI 拖拽
  * （{@code IGhostItemTarget} + {@code IGhostFluidTarget}）。
  *
- * <h2>批量为什么单独一个子页</h2>
- * <p>批量要能填到 9.2e18 并用科学计数法显示，输入框放主界面会很挤（还会盖住槽位格）；
- * 所以主界面只放状态行 + 槽网格 + 翻页，批量和逐格目标量都进「批量设置」子页。
+ * <h2>批量 / 目标量怎么填</h2>
+ * <p>点格子 → 那一格旁边弹出「数量 / 并发」弹层（{@link RequesterAmountBox}）；
+ * 滚轮 = 目标量 ±1，Ctrl+滚轮 = 翻倍/减半。整套交互照 ME 输入总成的
+ * {@code AEDualConfigWidget#enableAmount} 模式自绘（那个控件要求 AE2 的
+ * {@code ExportOnlyAEItemList}，塞不进本机的 {@link RequesterSlots}）。
  *
  * <h2>产物去向（阶段 0 源码验证结论，2026-11-22）</h2>
  * <p>{@code submitJob(plan, null, ...)} ⇒ standalone 链接 ⇒ {@code CraftingService.addLink} 跳过
@@ -104,13 +107,29 @@ public class RequesterMachine extends MetaMachine
     /** 单格控件总高（配置 18 + 库存 18）。 */
     public static final int SLOT_HEIGHT = SLOT_SIZE * 2;
 
+    /** 网格左上角（页面坐标，与参照控件同为 x=3,y=10）。 */
+    public static final int GRID_X = 3;
+    public static final int GRID_Y = 10;
+
     /** 主界面宽（= AEDualConfigWidget 的 144 + 左右各 3）。 */
     public static final int GUI_WIDTH = 150;
+
     /**
-     * 主界面高：状态行 10 + 网格 74 + 翻页条 19 + 底部提示 14 + 余量。
+     * 翻页条 y：网格底 + 3。
      *
-     * <p>数量 / 并发面板从<b>右侧</b>弹出（{@link RequesterAmountBox}），
-     * 不再占主界面高度，所以这里能保持与 ME 输入总成同级的窄版式。
+     * <p>= {@code 10 + 74 + 3 = 87}；参照控件里是 {@code navigationY = rows*38+1 = 77}
+     * （相对网格原点），换算到页面坐标同样是「末行底 + 3」。
+     */
+    public static final int PAGE_BAR_Y = GRID_Y + RequesterSlotGrid.height() + 3;
+
+    /** 底部阻塞提示 y。 */
+    public static final int HINT_Y = 108;
+
+    /**
+     * 主界面高：翻页条 87+18 + 提示行 + 余量。
+     *
+     * <p>数量 / 并发弹层是<b>页内控件</b>（{@link RequesterAmountBox}）：点格子后贴到那一格旁边、
+     * 夹在网格范围内，所以不占主界面高度，也不会跑到窗口外去。
      */
     public static final int GUI_HEIGHT = 122;
 
@@ -154,7 +173,7 @@ public class RequesterMachine extends MetaMachine
     @DescSynced
     private int page = 1;
 
-    /** 「数量设置」子页当前选中的槽位下标；-1 = 未选。 */
+    /** 「数量 / 并发」弹层当前编辑的槽位下标；-1 = 未选。 */
     @Persisted
     @DescSynced
     private int selectedSlot = -1;
@@ -364,7 +383,7 @@ public class RequesterMachine extends MetaMachine
         int next = Math.max(1, Math.min(value, PAGES));
         if (next == page) return;
         page = next;
-        // 翻页后原选中格不在本页了：清掉选中，避免子页编辑一个看不见的格子。
+        // 翻页后原选中格不在本页了：清掉选中，避免弹层编辑一个看不见的格子。
         int from = (next - 1) * PAGE_SIZE;
         if (selectedSlot >= 0 && (selectedSlot < from || selectedSlot >= from + PAGE_SIZE)) {
             selectedSlot = -1;
@@ -373,7 +392,7 @@ public class RequesterMachine extends MetaMachine
     }
 
     // ------------------------------------------------------------------
-    // 「数量设置」子页的选中格
+    // 「数量 / 并发」弹层的选中格
     // ------------------------------------------------------------------
 
     /** 当前选中的槽位下标；-1 = 未选。 */
@@ -382,7 +401,7 @@ public class RequesterMachine extends MetaMachine
         return selectedSlot;
     }
 
-    /** 只允许选中当前页内的格子（子页编辑的就是它）。 */
+    /** 只允许选中当前页内的格子（弹层编辑的就是它）。 */
     public void setSelectedSlot(int index) {
         int from = (getPage() - 1) * PAGE_SIZE;
         int next = (index < from || index >= from + PAGE_SIZE) ? -1 : index;
@@ -418,36 +437,59 @@ public class RequesterMachine extends MetaMachine
     // 界面
     // ------------------------------------------------------------------
 
+    /**
+     * 外框：<b>照抄 ME 输入总成</b>（{@code MEDualInputHatchPartMachine#createUI} 的同一组数字）。
+     *
+     * <p>{@code ModularUI(176, 180)} + {@code FancyMachineUIWidget(this, 176, 185)}。
+     * {@code IFancyUIMachine} 自带的默认实现是 176×166，本来就带外框；
+     * 这里覆写不是为了"补外框"，而是让起手尺寸与参照机一致——载入后
+     * {@code FancyMachineUIWidget#setupFancyUI} 会按「页面尺寸 + 四边留白」重新调窗口大小，
+     * 所以这两个数只影响观感的一致性（标题栏 / 侧边页签 / 配置按钮 / 物品栏的位置）。
+     */
+    @Override
+    public ModularUI createUI(Player player) {
+        return new ModularUI(176, 180, this, player).widget(new FancyMachineUIWidget(this, 176, 185));
+    }
+
     @Override
     public Widget createUIWidget() {
-        // 严格对齐 ME 输入总成（AEDualConfigWidget）：
-        //   3，0   网络状态
-        //   3，10  网格（8 列 × 2 行双层格 = 144×74）
-        //   3，85  翻页条（箭头贴网格两端，页码居中）
-        //   3，105 阻塞提示
-        // 数量 / 并发面板挂在窗口右侧（点击格子才显示），不占主面板高度。
-        WidgetGroup group = new WidgetGroup(0, 0, GUI_WIDTH, GUI_HEIGHT);
-        group.setBackground(new ResourceBorderTexture[]{ResourceBorderTexture.BORDERED_BACKGROUND});
+        // 页面布局严格对齐 ME 输入总成（AEDualConfigWidget）：
+        //   3，0    网络状态
+        //   3，10   网格（8 列 × 2 行双层格 = 144×74）
+        //   3，87   翻页条（网格底 + 3，= 参照控件的 navigationY = rows*38+1）
+        //   3，108  阻塞提示
+        // 数量 / 并发弹层是页内控件：点格子才出现、贴在那一格旁边、夹在网格范围内，
+        // 所以永远在窗口里（旧版把它钉在 x=GUI_WIDTH=150，也就是主面板右边缘之外 → 被窗口裁掉）。
+        //
+        // 页面不再自带 ResourceBorderTexture 底图：外框由 FancyMachineUIWidget 画 GT 机器背景，
+        // 页面里再套一层边框就是双层框——这是旧版"看着不像别的 GT 机器"的主因。
+        RequesterSlotGrid grid = new RequesterSlotGrid(this, GRID_X, GRID_Y);
+        RequesterAmountBox amountBox = new RequesterAmountBox(this, GRID_X, GRID_Y);
+        amountBox.attachGrid(grid);
+        grid.attachAmountBox(amountBox);
 
-        int gridX = 3;
-        int gridWidth = RequesterSlotGrid.width();
-        int pageY = 10 + RequesterSlotGrid.height() + 1;
+        WidgetGroup group = new WidgetGroup(0, 0, GUI_WIDTH, GUI_HEIGHT) {
+            @OnlyIn(Dist.CLIENT)
+            @Override
+            public boolean mouseClicked(double mouseX, double mouseY, int button) {
+                // 点到弹层以外的地方就收起（照参照控件：先 disableAmount()，再把这次点击照常派发下去，
+                // 这样点到别的格子时会重新在该格旁边弹出）。
+                if (amountBox.isVisible() && !amountBox.isMouseOverElement(mouseX, mouseY)) {
+                    grid.disableAmount();
+                }
+                return super.mouseClicked(mouseX, mouseY, button);
+            }
+        };
 
-        group.addWidget(new LabelWidget(gridX, 0, (Supplier<String>) () -> isOnline
+        group.addWidget(new LabelWidget(GRID_X, 0, (Supplier<String>) () -> isOnline
                 ? "网络状态：§2在线§r"
                 : "网络状态：§4离线§r"));
 
-        RequesterSlotGrid grid = new RequesterSlotGrid(this, gridX, 10);
         group.addWidget(grid);
-        group.addWidget(new RequesterPageBar(this, gridX, pageY, gridWidth));
-
-        // 面板紧贴在主面板右边缘之外：正常看不见，点格子才弹出来。
-        RequesterAmountBox amountBox = new RequesterAmountBox(this, GUI_WIDTH, 10);
-        amountBox.attachGrid(grid);
-        grid.attachAmountBox(amountBox);
+        group.addWidget(new RequesterPageBar(this, GRID_X, PAGE_BAR_Y, RequesterSlotGrid.width()));
+        group.addWidget(new LabelWidget(GRID_X, HINT_Y, (Supplier<String>) this::blockedLine));
+        // 弹层最后加：控件按加入顺序绘制，这样它画在网格和翻页条之上。
         group.addWidget(amountBox);
-
-        group.addWidget(new LabelWidget(gridX, GUI_HEIGHT - 10, (Supplier<String>) this::blockedLine));
         return group;
     }
 

@@ -3,7 +3,6 @@ package com.gtlmodular.common.machine.requester;
 import appeng.api.stacks.AEFluidKey;
 import com.gregtechceu.gtceu.api.gui.GuiTextures;
 import com.lowdragmc.lowdraglib.LDLib;
-import com.lowdragmc.lowdraglib.gui.texture.ColorRectTexture;
 import com.lowdragmc.lowdraglib.gui.util.DrawerHelper;
 import com.lowdragmc.lowdraglib.gui.widget.ImageWidget;
 import com.lowdragmc.lowdraglib.gui.widget.TextFieldWidget;
@@ -16,72 +15,88 @@ import net.minecraftforge.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.NotNull;
 
 /**
- * 「数量 / 并发」面板：点格子后在窗口内出现，<b>可拖动</b>。
+ * 「数量 / 并发」弹层：点格子后<b>贴在该格旁边</b>弹出，按格定锚，收起即无。
  *
- * <h2>版式照抄 ME 输入总成的 AEDualAmountSetWidget</h2>
+ * <h2>版式照 ME 输入总成的 {@code AEDualAmountSetWidget}</h2>
  * <pre>
- *   背景  GuiTextures.BACKGROUND
- *   标题  数量 / 数量(mB)，颜色 0x404040
- *   输入  DISPLAY 底 + 无边框 TextFieldWidget
- *   第二行 并发 / 并发(mB)
+ *   背景  GuiTextures.BACKGROUND（与参照控件同一张底图）
+ *   标签  数量 / 并发（流体格带 mB 提示，颜色 0x404040）
+ *   输入  GuiTextures.DISPLAY 底 + 无边框 TextFieldWidget
  * </pre>
+ * 参照控件是 80×30 单字段；补货牌要同时给「目标量」和「单次批量」两个值，所以是 74×42 双行,
+ * 但底图、字号、输入框观感与它一致。
  *
- * <h2>怎么拖</h2>
- * <p>抓住<b>标题栏</b>（顶部 11px）拖动即可；位置只存在客户端，不写存档（纯显示偏好）。
- * 位置被夹在父面板范围内，避免拖出窗口后点不到。
+ * <h2>位置为什么由自己算</h2>
+ * <p>原版实现把面板钉在 {@code (GUI_WIDTH, 10)}，也就是<b>主面板右边缘之外</b>——
+ * 主面板宽只有 150，面板落在窗口外面，玩家看到的是一块被窗口裁掉的东西。
+ * 现在按选中格的行列算出锚点，并夹在网格范围（144×74）内，所以弹层永远在窗口里、
+ * 且总是贴着被点的那一格。
  *
- * <h2>为什么客户端不挂 textSupplier</h2>
- * <p>{@code TextFieldWidget.detectAndSendChanges()} 每 tick 用 supplier 的值覆盖输入框；
- * 客户端那份槽位数据未同步（{@code @Persisted} 非 {@code @DescSynced}），挂了就会把
- * 玩家刚输入的数字刷回 0。
+ * <h2>为什么两侧都不挂 textSupplier</h2>
+ * <p>{@code TextFieldWidget.detectAndSendChanges()} 在 supplier 非空时会把 supplier 的值
+ * 直接写回输入框并推给对端，<b>不看焦点</b>；客户端那份槽位快照不会因玩家键入而变化，
+ * 于是每 tick 都会把刚输入的数字刷回去。所以这里两侧都传 {@code null}，
+ * 由 {@link #openFor(int)} 在打开时把当前值填进输入框（纯客户端显示）。
+ *
+ * <h2>写入路径</h2>
+ * <p>客户端键入 → {@code onTextChanged} → 本地 responder（{@link #apply} 里 isRemote 直接返回）
+ * → {@code writeClientAction} → 服务端 {@code handleClientAction} 再跑一次 responder，
+ * 这次才真正写 {@link RequesterMachine#setSlotTarget}/{@link RequesterMachine#setSlotBatch}。
+ * 写入目标永远是服务端的 {@code selectedSlot}，与旧版完全一致。
  */
 public class RequesterAmountBox extends WidgetGroup {
 
-    public static final int WIDTH = 118;
-    public static final int HEIGHT = 62;
-    /** 标题栏高度：只有这块区域响应拖动。 */
-    private static final int TITLE_H = 11;
+    public static final int WIDTH = 74;
+    public static final int HEIGHT = 42;
 
-    private static final int PAD_X = 3;
-    private static final int FIELD_W = WIDTH - PAD_X * 2;
+    private static final int PAD = 3;
+    private static final int LABEL_W = 15;
+    private static final int FIELD_X = PAD + LABEL_W;
+    private static final int FIELD_W = WIDTH - FIELD_X - PAD;
     private static final int FIELD_H = 14;
+    /** 「数量」行输入框的 y。 */
+    private static final int ROW_TARGET = 2;
+    /** 「并发」行输入框的 y。 */
+    private static final int ROW_BATCH = 23;
 
-    private static final int FIELD_TARGET_Y = 14;
-    private static final int FIELD_BATCH_Y = 40;
+    private static final int COLUMN_PITCH = RequesterMachine.SLOT_SIZE;
+    private static final int ROW_PITCH = RequesterMachine.SLOT_HEIGHT + 2;
 
     private final RequesterMachine machine;
+    /** 网格原点（页面坐标）：弹层按它算锚点。 */
+    private final int gridX;
+    private final int gridY;
     private RequesterSlotGrid grid;
-    private int forcedIndex = -1;
+
+    /** 正在编辑的槽位（全局下标）；-1 = 收起。 */
+    private int index = -1;
 
     private final TextFieldWidget targetField;
     private final TextFieldWidget batchField;
 
-    /** 拖动状态（客户端）。 */
-    private boolean draggingTitle;
-    private double grabOffsetX;
-    private double grabOffsetY;
-
-    public RequesterAmountBox(RequesterMachine machine, int x, int y) {
-        super(new Position(x, y), new Size(WIDTH, HEIGHT));
+    public RequesterAmountBox(RequesterMachine machine, int gridX, int gridY) {
+        super(new Position(gridX, gridY), new Size(WIDTH, HEIGHT));
         this.machine = machine;
+        this.gridX = gridX;
+        this.gridY = gridY;
         setBackground(GuiTextures.BACKGROUND);
 
-        boolean client = LDLib.isRemote();
-
-        addWidget(new ImageWidget(PAD_X, FIELD_TARGET_Y, FIELD_W, FIELD_H, GuiTextures.DISPLAY));
-        this.targetField = new TextFieldWidget(PAD_X + 2, FIELD_TARGET_Y + 1, FIELD_W - 4, FIELD_H - 2,
-                client ? null : this::targetText, raw -> apply(raw, true));
-        targetField.setMaxStringLength(20).setBordered(false);
+        addWidget(new ImageWidget(FIELD_X, ROW_TARGET, FIELD_W, FIELD_H, GuiTextures.DISPLAY));
+        this.targetField = createField(FIELD_X + 2, ROW_TARGET + 1, FIELD_W - 4, FIELD_H - 2, true);
         addWidget(targetField);
 
-        addWidget(new ImageWidget(PAD_X, FIELD_BATCH_Y, FIELD_W, FIELD_H, GuiTextures.DISPLAY));
-        this.batchField = new TextFieldWidget(PAD_X + 2, FIELD_BATCH_Y + 1, FIELD_W - 4, FIELD_H - 2,
-                client ? null : this::batchText, raw -> apply(raw, false));
-        batchField.setMaxStringLength(20).setBordered(false);
+        addWidget(new ImageWidget(FIELD_X, ROW_BATCH, FIELD_W, FIELD_H, GuiTextures.DISPLAY));
+        this.batchField = createField(FIELD_X + 2, ROW_BATCH + 1, FIELD_W - 4, FIELD_H - 2, false);
         addWidget(batchField);
 
         setVisible(false);
         setEditable(false);
+    }
+
+    private TextFieldWidget createField(int x, int y, int width, int height, boolean target) {
+        return new TextFieldWidget(x, y, width, height, null, raw -> apply(raw, target))
+                .setMaxStringLength(20)
+                .setBordered(false);
     }
 
     public void attachGrid(RequesterSlotGrid grid) {
@@ -89,38 +104,89 @@ public class RequesterAmountBox extends WidgetGroup {
     }
 
     // ------------------------------------------------------------------
-    // 选中格
+    // 开 / 关
     // ------------------------------------------------------------------
 
-    private int selectedIndex() {
-        if (forcedIndex >= 0) return forcedIndex;
-        if (LDLib.isRemote()) {
-            return grid == null ? -1 : grid.clientSelectedIndex();
+    /** 打开并定位到某一格（照 {@code AEDualConfigWidget.enableAmount(index)} 的语义）。 */
+    public void openFor(int globalIndex) {
+        if (globalIndex < 0) {
+            close();
+            return;
         }
-        return machine.getSelectedSlot();
+        this.index = globalIndex;
+        moveTo(globalIndex);
+        setVisible(true);
+        setEditable(true);
+        if (LDLib.isRemote()) {
+            RequesterSlot slot = current();
+            if (slot != null && !slot.isEmpty()) {
+                targetField.setCurrentString(Long.toString(slot.target()));
+                batchField.setCurrentString(slot.batch() > 0L ? Long.toString(slot.batch()) : "");
+            }
+        }
     }
 
+    /** 收起弹层（照 {@code disableAmount()}）。 */
+    public void close() {
+        if (index < 0 && !isVisible()) return;
+        index = -1;
+        setVisible(false);
+        setEditable(false);
+    }
+
+    public boolean isEditing() {
+        return index >= 0 && isVisible();
+    }
+
+    public int editingIndex() {
+        return index;
+    }
+
+    private void setEditable(boolean editable) {
+        if (targetField.isActive() != editable) targetField.setActive(editable);
+        if (batchField.isActive() != editable) batchField.setActive(editable);
+    }
+
+    // ------------------------------------------------------------------
+    // 锚点
+    // ------------------------------------------------------------------
+
+    /** 按行列把弹层贴到格边，并夹在网格范围里，保证不会跑到窗口外。 */
+    private void moveTo(int globalIndex) {
+        int visible = globalIndex - (machine.getPage() - 1) * RequesterMachine.PAGE_SIZE;
+        if (visible < 0 || visible >= RequesterMachine.PAGE_SIZE) visible = 0;
+        int col = visible % RequesterMachine.COLUMNS;
+        int row = visible / RequesterMachine.COLUMNS;
+
+        int cellX = gridX + col * COLUMN_PITCH;
+        int cellY = gridY + row * ROW_PITCH;
+        int maxX = gridX + RequesterSlotGrid.width() - WIDTH;
+        int maxY = gridY + RequesterSlotGrid.height() - HEIGHT;
+
+        // 优先贴在格子右侧（照参照控件「浮在格旁」的手感），放不下就翻到左侧。
+        int x = cellX + RequesterMachine.SLOT_SIZE + 1;
+        if (x > maxX) x = cellX - WIDTH - 1;
+        setSelfPosition(new Position(clamp(x, gridX, maxX), clamp(cellY, gridY, maxY)));
+    }
+
+    private static int clamp(int value, int min, int max) {
+        if (max < min) return min;
+        return Math.max(min, Math.min(value, max));
+    }
+
+    // ------------------------------------------------------------------
+    // 读写
+    // ------------------------------------------------------------------
+
+    /** 客户端读自己的同步快照，服务端读真数据。 */
     private RequesterSlot current() {
-        int sel = selectedIndex();
+        int sel = LDLib.isRemote()
+                ? index
+                : (machine.getSelectedSlot() >= 0 ? machine.getSelectedSlot() : index);
         if (sel < 0) return null;
         return LDLib.isRemote()
                 ? (grid == null ? null : grid.snapshotOf(sel))
                 : machine.slot(sel);
-    }
-
-    private boolean fluid() {
-        RequesterSlot slot = current();
-        return slot != null && slot.key() instanceof AEFluidKey;
-    }
-
-    private String targetText() {
-        RequesterSlot slot = current();
-        return slot == null || slot.isEmpty() ? "0" : Long.toString(slot.target());
-    }
-
-    private String batchText() {
-        RequesterSlot slot = current();
-        return slot == null || slot.isEmpty() ? "0" : Long.toString(slot.batch());
     }
 
     private void apply(String raw, boolean target) {
@@ -137,78 +203,11 @@ public class RequesterAmountBox extends WidgetGroup {
         }
     }
 
-    // ------------------------------------------------------------------
-    // 显隐
-    // ------------------------------------------------------------------
-
-    public void openFor(int slotIndex) {
-        forcedIndex = slotIndex;
-        setVisible(true);
-        setEditable(true);
-    }
-
-    private void setEditable(boolean editable) {
-        if (targetField.isActive() != editable) targetField.setActive(editable);
-        if (batchField.isActive() != editable) batchField.setActive(editable);
-    }
-
     @Override
     public void detectAndSendChanges() {
         super.detectAndSendChanges();
         RequesterSlot slot = current();
-        boolean show = slot != null && !slot.isEmpty();
-        if (isVisible() != show) setVisible(show);
-        setEditable(show);
-        if (forcedIndex >= 0 && forcedIndex != selectedIndex()) {
-            forcedIndex = -1;
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // 拖动
-    // ------------------------------------------------------------------
-
-    @OnlyIn(Dist.CLIENT)
-    private boolean overTitle(double mouseX, double mouseY) {
-        Position pos = getPosition();
-        return isMouseOver(pos.x, pos.y, WIDTH, TITLE_H, mouseX, mouseY);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!isVisible()) return false;
-        if (button == 0 && overTitle(mouseX, mouseY)) {
-            draggingTitle = true;
-            grabOffsetX = mouseX - getPositionX();
-            grabOffsetY = mouseY - getPositionY();
-            return true;
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (isVisible() && draggingTitle) {
-            WidgetGroup parent = getParent();
-            int maxX = (parent == null ? WIDTH : parent.getSizeWidth()) - WIDTH;
-            int maxY = (parent == null ? HEIGHT : parent.getSizeHeight()) - HEIGHT;
-            int nx = (int) Math.round(mouseX - grabOffsetX);
-            int ny = (int) Math.round(mouseY - grabOffsetY);
-            nx = Math.max(0, Math.min(nx, Math.max(0, maxX)));
-            ny = Math.max(0, Math.min(ny, Math.max(0, maxY)));
-            setSelfPosition(new Position(nx, ny));
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @OnlyIn(Dist.CLIENT)
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        draggingTitle = false;
-        return super.mouseReleased(mouseX, mouseY, button);
+        if (slot == null || slot.isEmpty()) close();
     }
 
     // ------------------------------------------------------------------
@@ -221,23 +220,24 @@ public class RequesterAmountBox extends WidgetGroup {
         super.drawInBackground(graphics, mouseX, mouseY, partialTicks);
         if (!isVisible()) return;
         Position pos = getPosition();
-        boolean fluid = fluid();
-
-        // 标题栏（拖动把手）：浅色底条 + 文字，与输入总成同款字号/颜色
-        int barColor = draggingTitle ? 0x40A0A0A0 : 0x20FFFFFF;
-        new ColorRectTexture(barColor).draw(graphics, mouseX, mouseY, pos.x, pos.y, WIDTH, TITLE_H);
-        DrawerHelper.drawStringSized(graphics, fluid ? "数量(mB)" : "数量",
-                pos.x + PAD_X, pos.y + 2, 0x404040, false, 1.0F, false);
-        DrawerHelper.drawStringSized(graphics, fluid ? "并发(mB)" : "并发",
-                pos.x + PAD_X, pos.y + FIELD_BATCH_Y - 9, 0x404040, false, 1.0F, false);
+        // 标签用 0.75 倍字号：两字 CJK 约 13.5px，正好塞进 LABEL_W=15，不会压到输入框。
+        // 流体格的 mB 单位不写在标签里（会挤出标签宽度），改在输入框右侧用 0.5 倍字号标。
+        boolean fluid = isFluid();
+        DrawerHelper.drawStringSized(graphics, "数量",
+                pos.x + PAD, pos.y + ROW_TARGET + 3, 0x404040, false, 0.75F, false);
+        DrawerHelper.drawStringSized(graphics, "并发",
+                pos.x + PAD, pos.y + ROW_BATCH + 3, 0x404040, false, 0.75F, false);
+        if (fluid) {
+            int unitX = pos.x + WIDTH - PAD - 9;
+            DrawerHelper.drawStringSized(graphics, "mB", unitX, pos.y + ROW_TARGET + 4,
+                    0x808080, false, 0.5F, false);
+            DrawerHelper.drawStringSized(graphics, "mB", unitX, pos.y + ROW_BATCH + 4,
+                    0x808080, false, 0.5F, false);
+        }
     }
 
-    /** 隐藏时不向 JEI 上报“额外区域”，免得 JEI 面板无故让位。 */
-    @Override
-    public java.util.List<net.minecraft.client.renderer.Rect2i> getGuiExtraAreas(
-            net.minecraft.client.renderer.Rect2i guiRect,
-            java.util.List<net.minecraft.client.renderer.Rect2i> list) {
-        if (!isVisible()) return list;
-        return super.getGuiExtraAreas(guiRect, list);
+    private boolean isFluid() {
+        RequesterSlot slot = current();
+        return slot != null && slot.key() instanceof AEFluidKey;
     }
 }

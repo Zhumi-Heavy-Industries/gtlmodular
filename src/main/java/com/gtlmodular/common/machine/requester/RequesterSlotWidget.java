@@ -44,9 +44,10 @@ import java.util.Optional;
  * 角标显示 {@code L}。物品格则是 {@code SLOT} + 物品图标。
  *
  * <h2>点格子做什么</h2>
- * <p>左键=选中该格（把下标写进 {@link RequesterMachine#setSelectedSlot}），
- * 然后到左侧「数量设置」子页去改目标量 / 并发量；右键=清空。
- * 不再弹浮动「数量」框（旧实现把它画到了窗口外）。
+ * <p>空手左键 = 选中该格，并让它旁边的「数量 / 并发」弹层弹出来（{@link RequesterSlotGrid#enableAmount}，
+ * 语义照 gtlcore 的 {@code AEDualConfigWidget#enableAmount}）；
+ * 滚轮 = 目标量 ±1，Ctrl+滚轮 = 翻倍/减半；右键 = 清空。
+ * 手上拿着物品/流体左键 = 直接填进配置格（与 GTCEu 配置槽同款手感）。
  *
  * <h2>网络同步</h2>
  * <p>槽内容（key + 目标量 + 批量 + 库存）是<b>服务端权威</b>：客户端只发 action，
@@ -60,8 +61,10 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
     private static final int ACTION_SET_FLUID = 2;
     /** 客户端 → 服务端：清空本格。 */
     private static final int ACTION_CLEAR = 3;
-    /** 客户端 → 服务端：选中本格（供「数量设置」子页编辑）。 */
+    /** 客户端 → 服务端：选中本格（供「数量 / 并发」弹层编辑）。 */
     private static final int ACTION_SELECT = 4;
+    /** 客户端 → 服务端：滚轮调目标量（up=增，ctrl=翻倍/减半）。 */
+    private static final int ACTION_WHEEL = 5;
     /** 服务端 → 客户端：整格快照。 */
     private static final int UPDATE_SLOT = 100;
 
@@ -95,10 +98,10 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
     }
 
     /**
-     * 供其它界面（如「数量设置」子页）读取本格的显示数据。
+     * 供其它控件（如「数量 / 并发」弹层）读取本格的显示数据。
      *
      * <p>客户端返回 widget 自己同步下来的快照，服务端返回真实槽位；
-     * 这样子页不需要再发一份包，也能看到服务端权威的数值。
+     * 这样弹层不需要再发一份包，也能看到服务端权威的数值。
      */
     public RequesterSlot displayedSlot() {
         return displaySlot();
@@ -123,8 +126,8 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
 
     /** 客户端选中态副本。 */
     private boolean clientSelected;
-    /** 「数量」弹窗（可选；由界面层注入）。 */
-    private RequesterAmountBox amountBox;
+    /** 所在网格（可选；由 {@link RequesterSlotGrid} 构造时注入），用来弹「数量」弹层。 */
+    private RequesterSlotGrid grid;
 
     // ------------------------------------------------------------------
     // 绘制
@@ -194,14 +197,19 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
      * 格子内的数量文字：<b>必须能放进 18px 宽、9px 高的角落</b>。
      *
      * <p>不能用 {@link RequesterNumbers#displayFor}——它会输出 {@code 1.83e6}、{@code 1.5B}
-     * 这类长串（截图里数字挤出格子就是这么来的）。这里统一走 LDLib 的紧凑格式：
-     * {@code 1.8k} / {@code 1.83M} / {@code 9.2E}，与 GTCEu 配置槽同款；
+     * 这类长串（截图里数字挤出格子就是这么来的）。这里统一走 LDLib 的紧凑格式
+     * {@code TextFormattingUtil.formatLongToCompactString(amount, 4)}，
+     * 与 GTCEu 自己的配置槽（{@code AEItemConfigSlotWidget} 第 46 行）完全同一个口径、
+     * 同一个位数：{@code 1.8k} / {@code 1.83M} / {@code 9.2E}；
      * 带单位的准确数值在悬浮提示里看。
+     *
+     * <p>注意<b>只换显示</b>：{@link RequesterNumbers#parse(String)} 的解析口径不动，
+     * 输入框仍然能吃 {@code 64000} / {@code 1.5e6}。
      */
     @OnlyIn(Dist.CLIENT)
     private static String compact(long amount) {
         return com.lowdragmc.lowdraglib.gui.util.TextFormattingUtil
-                .formatLongToCompactString(amount, 3);
+                .formatLongToCompactString(amount, 4);
     }
 
     /** 在 16×16 区域内画一个 key（物品图标 / 液体贴图）；amount 决定液体填充高度。 */
@@ -261,7 +269,8 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
             lines.add(Component.literal("§7单次批量 §f" + RequesterNumbers.displayFor(batch, fluid)
                     + (slot.batch() > 0L ? "" : " §8(默认)")));
             lines.add(Component.literal("§8状态 " + statusName(machine.slotStatusAt(index))));
-            lines.add(Component.literal("§7左键打开数量设置"));
+            lines.add(Component.literal("§7左键 §f弹出数量 / 并发"));
+            lines.add(Component.literal("§7滚轮 §f目标量 ±1§7，§fCtrl+滚轮 §7翻倍/减半"));
             lines.add(Component.literal("§8右键清空"));
         }
         graphics.renderTooltip(net.minecraft.client.Minecraft.getInstance().font, lines,
@@ -310,19 +319,42 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
                     return true;
                 }
             }
-            // 空手左键：选中该格，并立即在主界面下方弹出「数量」框
+            // 空手左键：选中该格，并在格边弹出「数量 / 并发」弹层
             writeClientAction(ACTION_SELECT, buf -> {});
-            if (amountBox != null) {
-                amountBox.openFor(index);
+            if (grid != null) {
+                grid.enableAmount(index);
             }
             return true;
         }
         return false;
     }
 
-    /** 由界面层注入「数量」弹窗（点格子时立即打开）。 */
-    public void setAmountBox(RequesterAmountBox amountBox) {
-        this.amountBox = amountBox;
+    /**
+     * 滚轮调目标量，照 GTCEu 配置槽（{@code AEItemConfigSlotWidget#mouseWheelMove}）的约定：
+     * <b>普通滚轮 ±1，按住 Ctrl 翻倍/减半</b>。只认上半格（配置格），空槽不响应。
+     *
+     * <p>为什么不做成客户端本地改：目标量是服务端权威字段（{@code @Persisted}），
+     * 客户端改完会立刻被同步刷回去，所以只发动作、由服务端写。
+     */
+    @OnlyIn(Dist.CLIENT)
+    @Override
+    public boolean mouseWheelMove(double mouseX, double mouseY, double wheelDelta) {
+        if (wheelDelta == 0.0D || !isMouseOverElement(mouseX, mouseY)) return false;
+        Position pos = getPosition();
+        if (!isMouseOver(pos.x, pos.y, CELL, CELL, mouseX, mouseY)) return false;
+        if (displaySlot().isEmpty()) return false;
+        boolean up = wheelDelta > 0.0D;
+        boolean ctrl = isCtrlDown();
+        writeClientAction(ACTION_WHEEL, buf -> {
+            buf.writeBoolean(up);
+            buf.writeBoolean(ctrl);
+        });
+        return true;
+    }
+
+    /** 由网格在构造时注入（弹「数量」弹层用）。 */
+    public void attachGrid(RequesterSlotGrid grid) {
+        this.grid = grid;
     }
 
     // ------------------------------------------------------------------
@@ -418,6 +450,23 @@ public class RequesterSlotWidget extends Widget implements IGhostIngredientTarge
                 }
             }
             case ACTION_SELECT -> machine.setSelectedSlot(index);
+            case ACTION_WHEEL -> {
+                boolean up = buffer.readBoolean();
+                boolean ctrl = buffer.readBoolean();
+                RequesterSlot slot = machine.slot(index);
+                if (!slot.isEmpty()) {
+                    long cur = slot.target();
+                    long next;
+                    if (ctrl) {
+                        next = up
+                                ? (cur > RequesterSlot.MAX_AMOUNT / 2L ? RequesterSlot.MAX_AMOUNT : cur * 2L)
+                                : cur / 2L;
+                    } else {
+                        next = up ? cur + 1L : cur - 1L;
+                    }
+                    machine.setSlotTarget(index, Math.max(0L, Math.min(next, RequesterSlot.MAX_AMOUNT)));
+                }
+            }
             default -> {
             }
         }

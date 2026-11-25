@@ -52,6 +52,7 @@ public class RequesterSlotGrid extends WidgetGroup {
                     RequesterSlotWidget widget = new RequesterSlotWidget(machine, globalIndex,
                             col * COLUMN_PITCH,
                             row * ROW_PITCH);
+                    widget.attachGrid(this);
                     widgets[globalIndex] = widget;
                     addWidget(widget);
                 }
@@ -60,15 +61,43 @@ public class RequesterSlotGrid extends WidgetGroup {
         applyPageVisibility();
     }
 
-    /** 由界面层注入「数量」弹窗：点格子时立即打开它。 */
+    /** 由界面层注入「数量」弹层：点格子时立即打开它。 */
     public void attachAmountBox(RequesterAmountBox amountBox) {
         this.amountBox = amountBox;
-        for (RequesterSlotWidget widget : widgets) {
-            if (widget != null) widget.setAmountBox(amountBox);
-        }
     }
 
-    /** 给外部（如「数量设置」子页）按全局下标取控件，用来读它同步下来的快照。 */
+    // ------------------------------------------------------------------
+    // 「数量」弹层：API 形态对齐 gtlcore 的 AEDualConfigWidget
+    // ------------------------------------------------------------------
+
+    /** 打开某一格的数量弹层（= {@code AEDualConfigWidget#enableAmount}）。 */
+    public void enableAmount(int globalIndex) {
+        if (amountBox == null) return;
+        if (globalIndex < 0 || globalIndex >= RequesterMachine.SLOT_COUNT) return;
+        amountBox.openFor(globalIndex);
+    }
+
+    /** 收起数量弹层（= {@code disableAmount}）。 */
+    public void disableAmount() {
+        if (amountBox != null) amountBox.close();
+    }
+
+    /** 本网格是否支持逐格编辑数量（= {@code isAmountEditingEnabled}）。 */
+    public boolean isAmountEditingEnabled() {
+        return amountBox != null;
+    }
+
+    /** 当前正在编辑的槽位全局下标；-1 = 无。 */
+    public int editingIndex() {
+        return amountBox == null ? -1 : amountBox.editingIndex();
+    }
+
+    /** 页内可见下标 → 全局槽位下标（= {@code AEDualConfigWidget#getSlotIndex}）。 */
+    public int getSlotIndex(int visibleIndex) {
+        return (machine.getPage() - 1) * RequesterMachine.PAGE_SIZE + visibleIndex;
+    }
+
+    /** 给外部（如「数量 / 并发」弹层）按全局下标取控件，用来读它同步下来的快照。 */
     public RequesterSlotWidget widgetAt(int globalIndex) {
         if (globalIndex < 0 || globalIndex >= widgets.length) return null;
         return widgets[globalIndex];
@@ -101,6 +130,9 @@ public class RequesterSlotGrid extends WidgetGroup {
         int page = machine.getPage();
         if (page == shownPage) return;
         shownPage = page;
+        // 翻页就收起数量弹层：和参照控件 pageUp/pageDown 里先 disableAmount() 一致，
+        // 否则弹层会停在上一页的某个行列位置上，编辑的却是新一页的格子。
+        disableAmount();
         int visibleFrom = (page - 1) * RequesterMachine.PAGE_SIZE;
         int visibleTo = visibleFrom + RequesterMachine.PAGE_SIZE;
         for (int i = 0; i < widgets.length; i++) {
