@@ -40,7 +40,7 @@
   "gtlmodular.lazy_pattern_assembly.tooltip.2": "§7样板仓沿用 §fpatternInventory§7 老键名，旧档的满长度 internalInventory 一样能读（按索引对齐，读不出的槽视为空）。",
   "gtlmodular.lazy_pattern_assembly.tooltip.3": "§a已实现§7：惰性建槽 + 一次性批量扩容、分页样板区、逐槽配方模式（自动识别 / 手动指定 / 与自检冲突告警）、模式自动轮转、名字跟随、样板倍率 / 除率 / 神锻（视图改写）、样板身份闸（扣料前校验配方是否属于该槽的样板）。§7后续纵切§8：镜像代理联动、无线 ME、电路嵌入。",
   "gtlmodular.super_pattern_assembly.tooltip.0": "§7集成式§6AE2 样板供应器§7：放进多方块即自动读取控制器的§f配方类型§7；id 为 ME 风格，可接入§b无线 ME 网络§7。",
-  "gtlmodular.super_pattern_assembly.tooltip.1": "§7样板槽位：§6640§7 个（最多 4 页 × 每页 160 格），外壳贴图与 GTL Add 的§b超级样板总成§7一致。",
+  "gtlmodular.super_pattern_assembly.tooltip.1": "§7样板槽位：§6800§7 个（5 页 × 每页 160 格）。§8★ 与普通档的换算口径不同：普通档按「容量每页 128 格」算（最高 5×128=640），本档按「界面每页 160 格 × 5 页」算 ⇒ 800。旧描述写「640 个 / 4 页」是错的（已订正，容量不缩）。§7外壳贴图与 GTL Add 的§b超级样板总成§7一致。",
   "gtlmodular.super_pattern_assembly.tooltip.2": "§7§b逐槽配方模式§7：样板进槽时按§b产物§7自动识别它属于哪种模式；识别不出来时可手动指定——模式页填槽号，或 §bShift+右键/中键§7 点样板槽。",
   "gtlmodular.super_pattern_assembly.tooltip.3": "§7§b自动切换配方模式§7：当前模式的料吃完或卡住时，自动切到另一个「有料在槽里等着」的模式，一台机器就能轮流跑多种模式的样板。",
   "gtlmodular.super_pattern_assembly.tooltip.4": "§7§b不串配方§7：推样板时锁模式 + 扣料时类型闸/§b样板身份闸§7（把 gtlcore 的「库存驱动」纠正成「样板槽身份驱动」），两层都可在模组配置界面开关。",

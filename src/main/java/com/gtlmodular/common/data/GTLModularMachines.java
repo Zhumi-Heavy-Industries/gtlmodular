@@ -363,9 +363,19 @@ public final class GTLModularMachines {
     }
 
     /**
-     * 超级猪咪样板总成：UIV 级、{@value #SUPER_PATTERN_ASSEMBLY_PAGES} 页（每页 128）= 640 个样板槽
-     * （队长 2026-09-25 裁决「最多 5 页就够」，原先的 16 页/2048 槽已封顶），
-     * <b>贴图与 GTL Add 的「超级样板总成」一致</b>（无限输入总线外壳 + ME 样板总成覆盖层），
+     * 超级猪咪样板总成：<b>UEV 档</b>（{@value #SUPER_PATTERN_ASSEMBLY_TIER}）、
+     * 「界面每页 160 格 × {@value #SUPER_PATTERN_ASSEMBLY_PAGES} 页」= <b>800 个样板槽</b>。
+     *
+     * <p>★ 2026-11-25 订正（账实不符）：旧 javadoc 写「UIV 级、5 页（每页 128）= 640 槽」，
+     * 与代码实际不符 —— 本档的槽数表达式是
+     * {@code SUPER_PATTERN_ASSEMBLY_PAGES × PER_PAGE}，而 {@code PER_PAGE} 是<b>界面每页 160 格</b>，
+     * 不是普通档用的 {@code CAPACITY_PER_PAGE = 128}。于是实机是 800 槽（注册日志一直打的就是 800）。
+     *
+     * <p><b>为什么不改成 640</b>（本仓库铁律「绝不缩容」）：① 现役存档里可能已经有槽位号 ≥ 640 的样板，
+     * 缩到 640 会把它们直接抹掉；② 容量对玩家只有多得没有少得。所以这里只把文档/工具提示改对，
+     * 容量保持 800 不动。真要让两档口径统一，正确做法是**把普通档也放大**，而不是把超级档缩小。
+     *
+     * <p>外壳贴图与 GTL Add 的「超级样板总成」一致（无限输入总线外壳 + ME 样板总成覆盖层），
      * 功能与普通猪咪样板总成完全一样，只是槽位更多。
      */
     private static void registerSuperPatternAssembly() {
