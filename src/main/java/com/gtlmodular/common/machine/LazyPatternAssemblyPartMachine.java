@@ -619,6 +619,25 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
     /** {@link #TYPE_UNKNOWN} 槽的重试时刻（gameTime）；只对识别失败的槽记账，成功即清零。 */
     private long[] slotTypeRetryAt = new long[0];
 
+    // ==================== 样板自带电路（★ 2026-11-25） ====================
+
+    /**
+     * 逐槽「样板自身带的编程电路」值 —— 等价 gtlcore 具体类
+     * {@code MEPatternBufferPartMachine#patternCircuitConfigs}，<b>0 = 该槽样板没写电路</b>。
+     *
+     * <p>为什么不照抄它的 {@code -1} 哨兵：本机这张表只在「读样板 → 写槽缓存」这条链上用，
+     * 0 与「没电路」同义（电路值合法区间是 1~32），少一次 {@code Arrays.fill} 也就少一处能写错的地方。
+     */
+    private int[] slotPatternCircuit = new int[0];
+
+    /** 读档补齐的游标 / 完成标记（见 {@link #backfillSlotCircuits()}）。 */
+    private int circuitBackfillCursor;
+    private boolean circuitBackfillDone;
+
+    /** 读档补齐每个 tick 最多处理多少个槽（只对非空样板槽真正解码）。 */
+    private static final int CIRCUIT_BACKFILL_PER_TICK = 8;
+
+
     /**
      * 手动指定的「样板槽位（0 起） → 配方类型 id」。
      * <b>优先于自动识别</b>，用于产物有歧义、自动识别不出来的样板；只在服务端用，走存档。
@@ -5544,6 +5563,10 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
         // ★【① 冷槽重识别】并进**这一个**已有的服务端 tick 订阅（不新增第二个 subscribeServerTick）。
         //   它同时解决外部建议里的「重置缓存」与「读取缓存」两半，依据见该方法的完整 javadoc。
         selfHealColdSlotCaches();
+        // ★★ 2026-11-25：读档补齐「槽级电路缓存」（SlotCacheManager 不落盘 circuitCache）。
+        //   不补 ⇒ 重进世界后所有「样板自带电路」的槽都退回 −1 ⇒ 要电路的配方全被模拟闸门拒。
+        //   有界：每 tick 最多 CIRCUIT_BACKFILL_PER_TICK 个槽，扫完一遍即停（见方法 javadoc）。
+        backfillSlotCircuits();
         // ★ 0.3.5 一次性取证（只打一条）：基类那条「needPatternSync → requestUpdate」的 tick 到底挂上没有？
         //   取证依据：基类 `updateSubscription()` 只在 `onMainNodeStateChanged`（节点状态**变化**）里被调用，
         //   而 `updateSubs` 是基类 protected 字段，我们这边读得到。若这里打出「未订阅」，就等于证明了
@@ -5868,6 +5891,147 @@ public class LazyPatternAssemblyPartMachine extends MEPatternBufferPartMachineBa
             coldSlotHealPattern.remove(slot);
         } catch (Throwable ignored) {
             // 清缓存失败不影响换样板本身
+        }
+        // ★★ 2026-11-25【队长：「不能接受来自样板的编码电路」】★★
+        //   上面那句 clearAllCaches() 连**槽级电路缓存**一起清了（SlotCacheManager.clearAllCaches
+        //   内部就是 clearCircuitCache）。而 gtlcore 具体类 MEPatternBufferPartMachine.onPatternChange
+        //   在清完之后紧跟一句 `if (patternCircuitConfigs[index] >= 0) setCircuitCache(...)`
+        //   —— 本类的 diffSlotPatterns/onSlotPatternChanged 当初只搬了「清」，把「补」漏了。
+        //   ⇒ 样板自带电路永远进不了 circuitCache ⇒ handleItemInternal 的模拟闸门
+        //   `leftCircuit != circuitCache` 恒为真 ⇒ 任何要编程电路的配方在模拟阶段就被拒，
+        //   表现为「电路发了、虚拟原料的不消耗物品也供了，机器还是不吃单」。
+        //   这里把「补」原样补上（只在新样板真的带电路时才写，没写电路的样板保持清空语义 ✓）。
+        syncSlotCircuitFromPattern(slot);
+    }
+
+    // ==================== 样板自带电路：读样板 → 写槽级电路缓存 ====================
+
+    /**
+     * ★ 2026-11-25：<b>把该槽样板自带的编程电路写进槽级电路缓存</b>（逐条对齐 gtlcore 具体类
+     * {@code MEPatternBufferPartMachine#getRealPattern(int, ItemStack)} + {@code #onPatternChange(int)}
+     * 的最后一步）。
+     *
+     * <h3>为什么必须有（这是「不能接受来自样板的编码电路」的唯一根因）</h3>
+     * <p>gtlcore 的「电路」是<b>不走物品匹配</b>的：{@code MEPatternBufferPartMachineBase$InternalSlot
+     * #handleItemInternal(...)} 的模拟分支第一条硬闸就是
+     * <pre>
+     * if (simulate &amp;&amp; leftCircuit &gt; 0 &amp;&amp; leftCircuit != this.cacheManager.getCircuitCache()) return false;
+     * </pre>
+     * ⇔ <b>配方的电路值必须等于该槽的 {@code circuitCache}</b>，否则整条配方在模拟阶段直接判「原料不足」——
+     * 与「料有没有推进来」「虚拟原料供没供上」都无关（那道闸在物品匹配<b>之前</b>）。
+     *
+     * <p>而 {@code circuitCache} 的写入方只有四处（全树取证）：
+     * <ol>
+     *   <li>gtlcore 具体类 {@code onPatternChange} → {@code patternCircuitConfigs[index]}（<b>样板自带电路</b>）；</li>
+     *   <li>基类 {@code InternalSlot#add} 里的 {@code virtualCircuitConfig}（<b>虚拟原料里的电路载荷</b>）；</li>
+     *   <li>基类同处的另一份写入（读档恢复虚拟供给时）；</li>
+     *   <li>{@code MERecipePatternBufferPartMachine} 自己那一份（统合仓）。</li>
+     * </ol>
+     * 本机继承的是<b>抽象基类</b>，第 1 条写在<b>具体类</b>里 ⇒ 我们搬槽实现时它整条都没跟过来
+     * ⇒ 只有「样板自带电路」这一路永远进不来。这就是玩家看到的「只有猪咪不行」。
+     *
+     * <h3>口径与纪律</h3>
+     * <ul>
+     *   <li>电路值由 gtlcore 自己的解码器给（{@code processPatternWithCircuit} 的第 2 参回调），
+     *       <b>不自己解析样板 NBT</b> ⇒ 与扣料/识别完全同一口径；</li>
+     *   <li>只有 {@code circuit > 0} 才写缓存；样板没写电路 ⇒ 保持「清空」语义（不写、也不覆盖别人的值）；</li>
+     *   <li>{@code keepByProduct} 用本类既有的 {@link #IDENTITY_KEEP_ALL_OUTPUTS}（传错会改样板身份）；</li>
+     *   <li>只读 + fail-open：任何异常都吞掉，绝不影响换样板/找配方。</li>
+     * </ul>
+     *
+     * @return 该槽样板自带的电路值（0 = 没有 / 解不出来）
+     */
+    private int syncSlotCircuitFromPattern(int slot) {
+        try {
+            if (isRemote() || slot < 0 || slot >= getCapacity()) {
+                return 0;
+            }
+            ItemStack stack = patternInventory.getStackInSlot(slot);
+            int circuit = 0;
+            if (!stack.isEmpty()) {
+                Level level = getLevel();
+                if (level != null) {
+                    // Consumer<Integer>：gtlcore 解码时把样板里那个电路值交回来
+                    int[] captured = new int[] { 0 };
+                    getRealPatternHelper().processPatternWithCircuit(stack,
+                            value -> captured[0] = value == null ? 0 : value,
+                            level, IDENTITY_KEEP_ALL_OUTPUTS);
+                    circuit = captured[0];
+                }
+            }
+            ensureSlotPatternCircuit();
+            if (slot < slotPatternCircuit.length) {
+                slotPatternCircuit[slot] = circuit;
+            }
+            if (circuit > 0) {
+                InternalSlot internal = getInternalSlot(slot);
+                if (internal != null && internal.getCacheManager() != null) {
+                    internal.getCacheManager().setCircuitCache(circuit);
+                }
+            }
+            return circuit;
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    /** 把逐槽电路表撑到当前容量（与 {@code slotTypeCandidates} 同款：只扩不缩）。 */
+    private void ensureSlotPatternCircuit() {
+        int need = Math.max(0, getCapacity());
+        if (slotPatternCircuit.length >= need) {
+            return;
+        }
+        int[] grown = Arrays.copyOf(slotPatternCircuit, need);
+        // 新增的那一截默认就是 0（= 没电路），不需要 fill
+        slotPatternCircuit = grown;
+    }
+
+    /**
+     * ★ 2026-11-25：<b>读档补齐槽级电路缓存</b>。
+     *
+     * <p>为什么要补：{@code SlotCacheManager.serializeNBT} 只存「某原料用哪个 AE 键最优」两张表，
+     * <b>不存 circuitCache</b>⇒ 重进世界后，存档里那些「样板自带电路」的槽全部退回 −1
+     * ⇒ 一切要电路的配方都会在模拟闸门被拒（= 玩家看到的「读档后又不干活了」）。
+     *
+     * <p>做法：每个服务端 tick 最多处理 {@value #CIRCUIT_BACKFILL_PER_TICK} 个槽，
+     * 只对<b>非空样板槽</b>真正解码；扫完一遍就置完成标记、永不重来。
+     * 代价有界（一次读档最多 capacity 次解码，摊到多个 tick），且不在任何热路径上。
+     */
+    private void backfillSlotCircuits() {
+        if (circuitBackfillDone || isRemote()) {
+            return;
+        }
+        int capacity = Math.min(getCapacity(), patternInventory.getSlots());
+        if (capacity <= 0) {
+            circuitBackfillDone = true;
+            return;
+        }
+        int budget = CIRCUIT_BACKFILL_PER_TICK;
+        int restored = 0;
+        while (budget-- > 0) {
+            if (circuitBackfillCursor >= capacity) {
+                circuitBackfillCursor = 0;
+                circuitBackfillDone = true;
+                break;
+            }
+            int slot = circuitBackfillCursor++;
+            if (!patternInventory.getStackInSlot(slot).isEmpty()) {
+                if (syncSlotCircuitFromPattern(slot) > 0) {
+                    restored++;
+                }
+            }
+        }
+        if (restored > 0) {
+            // 补出来的电路要立刻叫醒主机（否则要等下一次内容变化才重扫）—— 与 pushPattern 同一条口径
+            try {
+                IRecipeLogicMachine ctrl = firstRecipeLogicController();
+                if (ctrl != null && ctrl.getRecipeLogic()
+                        instanceof com.gtlmodular.common.machine.engine.ThreadedRecipeLogic threaded) {
+                    threaded.pokeScan();
+                }
+            } catch (Throwable ignored) {
+                // 叫不醒也不影响下次推料
+            }
         }
     }
 
