@@ -1,0 +1,112 @@
+{
+  "type": "gtlmodular:wood_distillation",
+  "duration": 300,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "tag": "minecraft:logs"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 2
+        },
+        "chance": 0
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 1000,
+          "value": {
+            "fluid": "gtceu:steam"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 2,
+          "ingredient": {
+            "item": "gtceu:ash_dust"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 600,
+          "value": {
+            "fluid": "gtceu:ammonia"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 500,
+          "value": {
+            "fluid": "gtceu:carbon_dioxide"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 500,
+          "value": {
+            "fluid": "gtceu:ethylbenzene"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 410,
+          "value": {
+            "fluid": "gtceu:naphthalene"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 307,
+          "value": {
+            "fluid": "gtceu:hydrogen_sulfide"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 205,
+          "value": {
+            "fluid": "gtceu:creosote"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 102,
+          "value": {
+            "fluid": "gtceu:phenol"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 120
+      }
+    ]
+  }
+}

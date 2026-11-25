@@ -1,0 +1,112 @@
+{
+  "type": "gtlmodular:wood_distillation",
+  "duration": 300,
+  "inputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 16,
+          "ingredient": {
+            "tag": "minecraft:logs"
+          }
+        }
+      },
+      {
+        "content": {
+          "type": "gtceu:circuit",
+          "configuration": 3
+        },
+        "chance": 0
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 6000,
+          "value": {
+            "fluid": "minecraft:water"
+          }
+        }
+      }
+    ]
+  },
+  "outputs": {
+    "item": [
+      {
+        "content": {
+          "type": "gtceu:sized",
+          "count": 6,
+          "ingredient": {
+            "item": "gtceu:fertilizer"
+          }
+        }
+      }
+    ],
+    "fluid": [
+      {
+        "content": {
+          "amount": 3300,
+          "value": {
+            "fluid": "gtceu:methane"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 2200,
+          "value": {
+            "fluid": "gtceu:carbon_dioxide"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 825,
+          "value": {
+            "fluid": "gtceu:methanol"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 825,
+          "value": {
+            "fluid": "gtceu:ethanol"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 560,
+          "value": {
+            "fluid": "gtceu:creosote"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 550,
+          "value": {
+            "fluid": "gtceu:ammonia"
+          }
+        }
+      },
+      {
+        "content": {
+          "amount": 137,
+          "value": {
+            "fluid": "gtceu:acetic_acid"
+          }
+        }
+      }
+    ]
+  },
+  "tickInputs": {
+    "eu": [
+      {
+        "content": 120
+      }
+    ]
+  }
+}

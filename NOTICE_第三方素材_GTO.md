@@ -299,6 +299,96 @@
 - **方块语义**：按 GTO 原结构符号表；GTO 专属方块由 `gtlcore` 提供，本模组**未拷贝**这批方块的贴图；
 - **配方**：GTO `ComponentRecipes` 的部件装配配方数值重写（`gtceu:component_assembly_line`）。
 
+### 3.8 集成木质生物质工厂（GTO「木化工厂」移植，2026-11-24 批次）
+
+> 来源：GTOCore `pattern/wood_distillation.mbs`（结构）、`pattern/wood_dist_crossrecipe.mbs`（未搬，见下）、
+> `assets/gtocore/textures/`（5 张机壳贴图）、`com/gtocore/common/data/machines/MultiBlockB.java:74`（谓词表）、
+> `com/gtocore/common/data/GTORecipeTypes.java:243`（配方表参数）、
+> `com/gtocore/data/recipe/MiscRecipe.java:91-93`（三条配方数值）、
+> `com/gtocore/data/recipe/classified/Assembler.java:125` 与 `AssemblerA.java:75-77`（5 件机壳的装配配方）、
+> `GTOMachineStories`（机器描述 6 行）。
+> **本模组里机器叫「集成木质生物质工厂」（`gtlmodular:wood_biomass_factory`）**，GTO 原名「木化工厂」
+> （`gtocore:wood_distillation`）—— 按队长口径**只改名字**，结构 / 运行模式 / 配方照搬。
+
+**方块贴图（5 件，逐字节拷贝）**
+
+| 本模组文件（`assets/gtlmodular/textures/`） | GTOCore 原件（`assets/gtocore/textures/`） | sha256 |
+|---|---|---|
+| `block/casings/pressure_containment_casing.png` | `block/casings/pressure_containment_casing.png` | "825a3659098e7fa4…d79a" |
+| `block/casings/hastelloy_n_75_pipe.png` | `block/hastelloy_n_75_pipe.png` | "c0f7e602db5eb414…ab0e" |
+| `block/casings/chemical_corrosion_resistant_pipe_casing.png` | `block/casings/chemical_corrosion_resistant_pipe_casing.png` | "c43a68d126ec4a79…b02f" |
+| `block/casings/high_pressure_pipe_casing.png` | `block/casings/high_pressure_pipe_casing.png` | "4ab384af0b470c9e…2d5e" |
+| `block/casings/oil_gas_transportation_pipe_casing.png` | `block/casings/oil_gas_transportation_pipe_casing.png` | "cfd95ad915e8c529…a235" |
+
+> 5 张均为 16×16 本体贴图，**不拷源 `.mcmeta`**（源 mcmeta 是 LDLib 的 CTM 声明，指向 gtocore 的
+> `*_ctm` 图；gtocore 不在整合包里，拷了会变成缺图）。与恒星炎炀锻炉 / 高维等离子聚变核心同一处理。
+
+**结构数据（等价转写）**
+
+- `gtlmodular:wood_biomass_factory` 的 **28 (X) × 56 (Y) × 60 (Z) = 94,080 格**（实心 10,400 格）
+  结构，来自 GTOCore 的 `pattern/wood_distillation.mbs`
+  （gzip 3,093 B → 解开 100,870 B，解析 **0 字节剩余**；60 过道 × 每过道 56 行 × 每行 28 字符），
+  转写为本模组 Java 字符串数组 `WoodFactoryStructures.SLICES`（逐格 0 差异）；
+- 各符号 → 方块的语义映射取自 GTOCore `MultiBlockB.java:74` 的谓词表（26 个符号位）。
+
+**文本（CC BY-NC-SA 4.0）**
+
+| 本模组 lang 键 | GTOCore 原键 | 改动 |
+|---|---|---|
+| `gtlmodular.wood_biomass_factory.tooltip.0` | `gtocore.lang.wood_distillation.0` | 逐字照搬 |
+| `gtlmodular.wood_biomass_factory.tooltip.1` | `gtocore.lang.wood_distillation.1` | 逐字照搬 |
+| `gtlmodular.wood_biomass_factory.tooltip.2` | `gtocore.lang.wood_distillation.2` | 逐字照搬 |
+| `gtlmodular.wood_biomass_factory.tooltip.3` | `gtocore.lang.wood_distillation.3` | 逐字照搬 |
+| `gtlmodular.wood_biomass_factory.tooltip.4` | `gtocore.lang.wood_distillation.4` | 逐字照搬 |
+| `gtlmodular.wood_biomass_factory.tooltip.5` | `gtocore.lang.wood_distillation.5` | 逐字照搬（原文是高亮行「可持续发展化工」） |
+| `gtlmodular.wood_biomass_factory.tooltip.6` … `11` | —（GTO 由 `.laserTooltips()` / `.coilParallelTooltips()` / `.moduleTooltips()` 代码生成） | **本模组自写**：运行模式 / 仓室 / 配方类型说明，语义与 GTO 生成行一致，未拷贝其运行时字符串 |
+| `block.gtlmodular.pressure_containment_casing` 等 5 个方块名 | `block.gtocore.<同名>` | 中文名逐字照搬（压力容器机械方块 等） |
+| `gtlmodular.wood_distillation`（配方表显示名） | `gtceu.wood_distillation` | 逐字照搬「集成木质生物质热解」 |
+
+**配方数值（按 GTO 运行时配方数值重写，不含 GTOCore 代码）**
+
+| 配方 | 数值（与 GTO 逐项一致） |
+|---|---|
+| `wood_distillation_with_nitrogen` | 16× `#minecraft:logs` + 1000mB 氮 → 2× 灰烬 + 苯 1050 / 二甲苯 1000 / 杂酚油 900 / CO₂ 490 / 甲醇 480 / CO 340 / 苯酚 225 / 甲苯 225 / 乙酸 160 / 甲烷 130 / 丙酮 80 / 乙烯 20 / 氢气 20 / 乙酸甲酯 16 / 乙醇 16；电路 1；**120 EU/t，300 tick** |
+| `wood_distillation_with_steam` | 16× `#minecraft:logs` + 1000mB 蒸汽 → 2× 灰烬 + 氨 600 / CO₂ 500 / 乙苯 500 / 萘 410 / 硫化氢 307 / 杂酚油 205 / 苯酚 102；电路 2；120 EU/t，300 tick |
+| `wood_distillation_with_water` | 16× `#minecraft:logs` + 6000mB 水 → 6× 肥料 + 甲烷 3300 / CO₂ 2200 / 甲醇 825 / 乙醇 825 / 杂酚油 560 / 氨 550 / 乙酸 137；电路 3；120 EU/t，300 tick |
+| 机器本体（装配机 ZPM） | 16× 热解炉（`gtceu:pyrolyse_oven`） + 16× 大型蒸馏塔 + 64× `#gtceu:circuits/zpm` + 32× LuV 发射器 + 64× 不锈钢巨型流体管道 + 32× IV 电动泵 + 64× 水密钢板 + 64× 双层不锈钢板 + 5184mB 焊锡 → 1× 本机；800 tick |
+| 5 件机壳（装配机） | 照 GTO `Assembler.java:125` / `AssemblerA.java:75-77` 逐项重写；**两处材料替代**见下 |
+
+**材料替代（GTO 专属、本包没有）**
+
+1. `HighPressureNitrogen`（GTO 材料）→ **氮**（`gtceu:nitrogen`），用于耐高压管道机壳；
+2. 机器本体的 `large_pyrolyse_oven`（GCyM 大型热解炉）本包**没有**该 id（gtceu 1.4.4 只到
+   `gtceu:pyrolyse_oven`）→ 换成 **`gtceu:pyrolyse_oven`**（GTCEu 自带热解炉，同语义：
+   原木 → 木炭 / 杂酚油 / 灰烬）；
+3. 压力容器机壳原配方用 **PTFE 框架**（本包未生成该材料形态）→ **水密钢框架 + 2× PTFE 板**，
+   主体化工语义（PTFE 内衬）保留；
+4. 其余材料（Hastelloy-N 75 / Mar-M 200 钢 / 水密钢 / 钛 / 钨钢 / HSS-G / 铌钛 /
+   铑镀钯 / 大马士革钢 / 焊锡）本包均有，id 逐项对过整合包脚本与 gtceu 语言文件。
+
+**未纳入（明确没搬）**
+
+- GTO 的附属模块子结构 `pattern/wood_dist_crossrecipe.mbs`（61×7×29）与 GTO 的模块框架
+  （`Piece` / `Slot` / `StructureModuleKeys` / `MultiBlockFileReader`）—— 本模组没有该框架，
+  模块口改成主结构 `Z=58/59` 两片控制舱的 71 格可装仓舱面（方块一格未动，只是那 71 格多允许插仓）；
+- GTOLib 的 `CoilCrossRecipeMultiblockMachine`（上游以 native 方式发布，无源码）——
+  线圈并行按 GTO 自己的 tooltip 与 `MultiBlockA.java:180` 的 `1L << (int)(temp / 900)` 重写；
+- GTO 的 `StainlessSteelGC4` 材料（只在模块子结构里用，随模块一起未搬）。
+
+### 3.9 补录：力场压模零件工厂批次的 6 张贴图（2026-11-24 补）
+
+> 起因：`scripts/gto_license_audit.py` 第五验（逐字节同源贴图对账）在 0.3.480 上仍报 6 条缺项，
+> 全部属于 2026-11-14「力场压模零件工厂」那批（§3.8 之前就存在），本次随木化工厂一起补齐点名。
+
+| 本模组文件（`assets/gtlmodular/textures/`） | GTOCore 原件（`assets/gtocore/textures/`） | sha256 |
+|---|---|---|
+| `block/casings/high_pressure_resistant_casing.png` | `block/high_pressure_resistant_casing.png` | "2a08599f61186a2e…ca61" |
+| `block/casings/lithium_oxide_ceramic_heat_resistant_shock_resistant_mechanical_cube.png` | `block/lithium_oxide_ceramic_heat_resistant_shock_resistant_mechanical_cube.png` | "24389f830caf3fab…fa8b" |
+| `block/multiblock/general1/overlay_front.png` | `block/multiblock/general1/overlay_front.png` | "c5793fe7540dfb45…9088" |
+| `block/multiblock/general1/overlay_front_active.png` | `block/multiblock/general1/overlay_front.png`（派生：同字节镜像，控制器未启动态） | "c5793fe7540dfb45…9088" |
+| `block/multiblock/general1/overlay_front_active_emissive.png` | `block/multiblock/general1/overlay_front_active_emissive.png` | "128ef6c323b6edb5…e88e" |
+| `block/multiblock/general1/overlay_front_emissive.png` | `block/multiblock/general1/overlay_front_emissive.png` | "b7bc03a3cc6df5a3…0ecd" |
+
 ## 4. 本模组未使用的内容
 
 - GTOCore 任务数据（`quest/`、任务贴图、`questbook.json`、`gtocore.quest.*` 文本）；

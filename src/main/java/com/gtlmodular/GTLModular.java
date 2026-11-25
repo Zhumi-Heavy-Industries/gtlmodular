@@ -75,6 +75,11 @@ public final class GTLModular {
         modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
                 com.gtlmodular.common.data.tentacle.ComponentPartsRecipeTypes::onRecipeTypeRegisterEvent);
 
+        // ★ 2026-11-24：集成木质生物质工厂配方表（gtlmodular:wood_distillation，
+        //   显示名「集成木质生物质热解」= GTO gtceu:wood_distillation 的等价表），同一注册窗口。
+        modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
+                com.gtlmodular.common.data.woodfactory.WoodFactoryRecipeTypes::onRecipeTypeRegisterEvent);
+
         // ★ 2026-10-01：**天基矿石处理厂（gtceu:space_ore_processor）配方镜像**（v2，第二轮）。
         //   起因：gtladditions 分支 3.2.8Custom_SubSpace-fix2 自带的复制逻辑
         //   （RecipesModify.initSpaceOreProcessor() → INTEGRATED_ORE_PROCESSOR.onRecipeBuild{…copyFrom…}）
