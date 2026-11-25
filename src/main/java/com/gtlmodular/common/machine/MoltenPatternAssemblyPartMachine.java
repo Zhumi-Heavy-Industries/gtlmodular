@@ -851,6 +851,42 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
     /** 本类自动补过的槽级电路：槽位 → 电路号（只清我们自己设的那一份）。 */
     private final java.util.Map<Integer, Integer> autoCircuitSlots = new java.util.HashMap<>();
 
+    // ================= 读档补齐槽级电路缓存（★ 2026-11-25） =================
+
+    /**
+     * ★★ 2026-11-25【队长：「超级猪咪不接受来自样板的编码电路 / 虚拟原料的不消耗物品」】★★
+     *
+     * <h3>它修的是一条<b>死锁</b>，不是某个分支写错</h3>
+     * <ol>
+     *   <li>{@code SlotCacheManager.circuitCache} <b>不落盘</b>（{@code serializeNBT} 只存两张
+     *       "某原料用哪个 AE 键最优"的表）⇒ 重进世界后每个槽的电路缓存都退回 −1；</li>
+     *   <li>gtlcore 的模拟闸门 {@code handleItemInternal} 第一条就是
+     *       {@code leftCircuit != circuitCache ⇒ return false} ⇒ 任何要电路的配方当场被判「原料不足」；</li>
+     *   <li>而本类既有的「槽级电路自愈」({@link #applyRecipeCircuitIfNeeded}) <b>必须先解出一条配方</b>
+     *       才有电路值 —— 可解配方又要先过第 2 条那道闸 ⇒ <b>死锁</b>；</li>
+     *   <li>唯一能打破它的只有「样板自身带的电路」（gtlcore 具体类 {@code patternCircuitConfigs}），
+     *       但那份也是内存态、读档同样没了 ⇒ 读档后<b>永久 IDLE，而且 debugLogs=false 时一句提示都没有</b>。</li>
+     * </ol>
+     *
+     * <h3>做法（与惰性机的同款补丁保持一套口径）</h3>
+     * <p>读档后每个服务端 tick 处理最多 {@value #CIRCUIT_BACKFILL_PER_TICK} 个槽，
+     * 只对<b>非空样板槽且电路缓存为空</b>的槽，用 gtlcore 自己的解码器
+     * {@code processPatternWithCircuit(..., kind, level, IDENTITY_KEEP_ALL_OUTPUTS)} 把「样板自带电路」
+     * 重新读出来写回 {@code setCircuitCache}（该调用同时会设好 {@code circuitStack}，
+     * 所以 {@code getCircuitForRecipe(slot)} / {@code getActiveAndUnCachedSlotsLimitContentsMap()} 也一起恢复）。
+     * 扫完一遍即停；恢复过东西就打<b>一条 INFO</b>（不受 debugLogs 控制）——
+     * 这样下次读档日志里能直接看出这条链有没有生效。
+     *
+     * <p><b>为什么不用 gtlcore 的 {@code getRealPattern}：它是 private</b>（反编译实证）。
+     * <p><b>纪律</b>：只写 {@code circuit > 0} 的槽（样板没电路 ⇒ 不动，保持上游语义）；
+     * 只在服务端；只扩不缩；任何异常 fail-open，绝不影响机器本身。
+     */
+    private int circuitBackfillCursor;
+    private boolean circuitBackfillDone;
+
+    /** 读档补齐每个 tick 最多处理多少个槽。 */
+    private static final int CIRCUIT_BACKFILL_PER_TICK = 8;
+
     /**
      * 已经「催化剂全部供给到位」的槽位集合（运行期缓存，不落盘）。
      * <p>给 {@link #filterCatalystsForAe} 用：AE 每秒都会来取样板表，若每次都把所有 640 槽的
@@ -3285,6 +3321,11 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
         if (isRemote()) {
             return;
         }
+        // ★★ 2026-11-25：读档后先补槽级电路缓存（SlotCacheManager 不落盘 circuitCache）。
+        //   不补 ⇒ 任何要「编程电路」的配方都会在 gtlcore 的模拟闸门 `leftCircuit != circuitCache`
+        //   被当场判「原料不足」，而且本类的「槽级电路自愈」也要先解出配方才动手 ⇒ 死锁 ⇒ 永久 IDLE。
+        //   有界：每 tick 最多 CIRCUIT_BACKFILL_PER_TICK 个槽，扫完一遍即停，恢复过就打一条 INFO。
+        backfillSlotCircuits();
         // ★ 2026-10-14（绑定模式持久化）：读档拿到的"本总成负责的模式"在这里落到模式页游标上
         //   （见 applyBoundModeTypeIfPossible 的注释）。放在本方法**最前面**的两条理由：
         //   ① 读档期类型表还没就绪 ⇒ 那时只记 id，这里等类型表就绪后补解析；
@@ -8256,6 +8297,86 @@ public class MoltenPatternAssemblyPartMachine extends MEPatternBufferPartMachine
             }
         } catch (Throwable ignored) {
             // 补不上就退回老行为（玩家共享电路 / 点应用电路）
+        }
+    }
+
+    /**
+     * ★ 2026-11-25：读档补齐槽级电路缓存（完整说明见字段区那段 javadoc）。
+     *
+     * <p>与 {@link #applyRecipeCircuitIfNeeded} 的分工：那条是「解出配方后按配方补」，
+     * 这条是「读档后按<b>样板自带电路</b>补」——后者是唯一能打破死锁的入口。
+     */
+    private void backfillSlotCircuits() {
+        if (circuitBackfillDone || isRemote()) {
+            return;
+        }
+        ItemStackTransfer inventory = getPatternInventory();
+        if (inventory == null) {
+            circuitBackfillDone = true;
+            return;
+        }
+        int capacity = Math.min(getInternalSlotCount(), inventory.getSlots());
+        if (capacity <= 0) {
+            circuitBackfillDone = true;
+            return;
+        }
+        int restored = 0;
+        int budget = CIRCUIT_BACKFILL_PER_TICK;
+        while (budget-- > 0) {
+            if (circuitBackfillCursor >= capacity) {
+                circuitBackfillCursor = 0;
+                circuitBackfillDone = true;
+                break;
+            }
+            if (restoreSlotCircuitFromPattern(circuitBackfillCursor++)) {
+                restored++;
+            }
+        }
+        if (circuitBackfillDone) {
+            // 不受 debugLogs 控制：这条是"读档后电路链到底恢复了没有"的唯一实证。
+            GTLModular.LOGGER.info("[gtlmodular] 读档补齐槽级电路缓存：本次恢复 {} 个槽（样板自带电路；"
+                    + "SlotCacheManager 不落盘 circuitCache）pos={}", restored, getPos());
+        }
+    }
+
+    /**
+     * 单个槽：样板自带电路 → 槽级电路缓存。只在「该槽电路缓存为空」时动手（不覆盖上游/玩家设过的值）。
+     *
+     * @return 是否真的写入了
+     */
+    private boolean restoreSlotCircuitFromPattern(int slot) {
+        try {
+            ItemStackTransfer inventory = getPatternInventory();
+            if (inventory == null || slot < 0 || slot >= inventory.getSlots()) {
+                return false;
+            }
+            ItemStack stack = inventory.getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                return false;
+            }
+            var internal = getInternalSlotOrNull(slot);
+            if (internal == null || internal.getCacheManager() == null) {
+                return false;
+            }
+            if (internal.getCacheManager().getCircuitCache() > 0) {
+                return false;   // 已有电路来源（上游已设 / 共享电路仓 / 玩家）⇒ 不抢
+            }
+            Level level = getLevel();
+            if (level == null) {
+                return false;
+            }
+            int[] captured = new int[] { 0 };
+            getRealPatternHelper().processPatternWithCircuit(stack,
+                    value -> captured[0] = value == null ? 0 : value,
+                    level, IDENTITY_KEEP_ALL_OUTPUTS);
+            if (captured[0] <= 0) {
+                return false;   // 这张样板没写电路 ⇒ 保持上游语义，不动
+            }
+            internal.getCacheManager().setCircuitCache(captured[0]);
+            autoCircuitSlots.put(slot, captured[0]);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
