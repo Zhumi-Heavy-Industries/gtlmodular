@@ -1,8 +1,12 @@
 # ME库存补充仓（gtlmodular:me_requester）技术细节
 
-> 版本 `0.3.480` ｜ 源码 `D:/gtlmodular-recipe`（`D:/gtlmodular` 的 git worktree）
-> 部署 `/mnt/d/gtlpack/mods/gtlmodular-0.3.480.jar`
-> 整理日期 2026-11-23
+> 首次整理 `0.3.480`（2026-11-23）｜ 复核 `0.3.486`（2026-11-25）
+> 代码位置：**已并入仓库**，提交 `3db7d43`（`feat(requester): ME库存补充仓（独立请求器方块）`）
+> 源码树 `D:/gtlmodular`（主工作区）；`D:/gtlmodular-recipe` 是它的 git worktree，内容与本提交一致
+> 部署 `/mnt/d/gtlpack/mods/gtlmodular-<version>.jar`（复核时为 0.3.486）
+>
+> ⚠ §0～§12 描述的是 `0.3.480` 的状态；`0.3.480` 之后模组其它部分的变化见 **§13**。
+> 请求器代码本身自 `3db7d43` 起**没有再改动**（逐文件 blob 比对确认）。
 
 ---
 
@@ -15,16 +19,16 @@
 
 ---
 
-## 1. 文件清单（2817 行）
+## 1. 文件清单（2694 行）
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `RequesterMachine.java` | 540 | 方块实体：AE 节点、持久化字段、外框（`createUI`）+ 主界面 |
+| `RequesterMachine.java` | 498 | 方块实体：AE 节点、持久化字段、主界面 |
 | `RequesterOrderEngine.java` | 491 | 下单状态机（串行 / 三重读数 / 宽限 / 冷却 / 自动缩单） |
-| `RequesterSlotWidget.java` | 617 | 单格控件：双层格、JEI 拖拽、点击/滚轮同步 |
+| `RequesterSlotWidget.java` | 568 | 单格控件：双层格、JEI 拖拽、点击同步 |
 | `RequesterSlot.java` | 260 | 单格数据模型（key/target/batch/stock）+ NBT |
-| `RequesterAmountBox.java` | 243 | 「数量 / 并发」弹层（页内、贴选中格） |
-| `RequesterSlotGrid.java` | 176 | 槽位网格容器（翻页只切可见性）+ `enableAmount/disableAmount` |
+| `RequesterAmountBox.java` | 243 | 「数量 / 并发」浮动面板（可拖动） |
+| `RequesterSlotGrid.java` | 144 | 槽位网格容器（翻页只切可见性） |
 | `RequesterSlots.java` | 135 | 槽位表容器（LDLib 托管 + 旧存档迁移） |
 | `EcoPlanningBridge.java` | 134 | ECO 规划器的反射桥接（可选） |
 | `RequesterNumbers.java` | 106 | 数字格式化/解析（科学计数、mB/B） |
@@ -164,7 +168,6 @@ deserializeNBT(): legacy = !tag.getBoolean("LayoutV2")
 | 2 | `ACTION_SET_FLUID` | LDLib `FluidStack` |
 | 3 | `ACTION_CLEAR` | – |
 | 4 | `ACTION_SELECT` | – |
-| 5 | `ACTION_WHEEL` | `boolean up` + `boolean ctrl`（滚轮调目标量：±1 / 翻倍减半） |
 | 100 | `UPDATE_SLOT`（服务端 → 客户端） | 整格 NBT + 选中布尔 |
 
 `detectAndSendChanges()` 里比较 `snapshot()`，变了才推包；`writeInitialData` 保证开界面即有值。
@@ -185,26 +188,15 @@ if (ingredient instanceof ITypedIngredient<?> typed) {
 
 另需排除"流体被 JEI 包成 ItemStack"的情况，否则会误判成物品格。
 
-### 5.3 数量 / 并发弹层（0.3.487 起改为页内、贴选中格）
+### 5.3 数量/并发面板
 
-- **位置**：页内控件，74×42，锚点按「选中格所在行列」算出来，并夹在网格框 `[3..147]×[10..84]` 内；
-  右边放不下就翻到格子左侧。**不再**钉在 `x = GUI_WIDTH`（那是主面板右边缘之外，会被窗口裁掉——
-  这是 0.3.486 及以前"数量框看不见"的根因）。
-- **开关**：`RequesterSlotGrid.enableAmount(index)` / `disableAmount()`，方法名与语义对齐
-  gtlcore 的 `AEDualConfigWidget#enableAmount/disableAmount`；翻页时自动收起。
-  点击派发顺序照参照控件：页面组先 `disableAmount()`，再把这次点击照常派发下去，
-  所以点到别的格子会立刻在新格旁边重开。
-- **打开时填值**：`openFor()` 里客户端用 `setCurrentString(...)` 把当前 `target`/`batch` 写进输入框
-  （纯显示，不写存档）。
-- **两侧都不挂 `textSupplier`**（关键）：
+- 位置：默认贴在主面板右边缘外（`x = GUI_WIDTH`），点格子弹 `openFor(index)`。
+- **可拖动**：抓顶部 11px 标题栏拖动，位置夹在父面板内，只存客户端（不写存档）。
+- **客户端不挂 `textSupplier`**（关键）：
 
-  `TextFieldWidget.detectAndSendChanges()` 在 supplier 非空时会把 supplier 的值直接写回输入框
-  **并推给对端，不看焦点**；客户端那份槽位快照不会因玩家键入而变，于是每 tick 都会把刚输入的数字刷回去。
-  所以构造函数两侧都传 `null`，值只在打开时填一次。
-
-- **写入路径**：客户端键入 → `onTextChanged` → 本地 responder（`apply()` 里 `isRemote` 直接 return）
-  → `writeClientAction` → 服务端 `handleClientAction` 再跑一次 responder，这次才真正写
-  `setSlotTarget` / `setSlotBatch`。写入目标永远是服务端的 `selectedSlot`，与旧版一致。
+  `TextFieldWidget.detectAndSendChanges()` 每 tick 会把输入框文本改回 supplier 的值。
+  客户端那份槽位是空的（只有 `@Persisted`），挂 supplier 就会把玩家刚打的字**每秒刷回 0**
+  —— 这就是"怎么改都改不了数量"的根因。服务端挂 supplier 用于回推规范化文本。
 
 ### 5.4 绘制顺序陷阱
 
@@ -227,10 +219,9 @@ if (ingredient instanceof ITypedIngredient<?> typed) {
 格子只有 18px 宽，必须用紧凑格式：
 
 ```java
-TextFormattingUtil.formatLongToCompactString(amount, 4)   // 1.8k / 1.83M / 9.2E
+TextFormattingUtil.formatLongToCompactString(amount, 3)   // 1.8k / 1.83M / 9.2E
 ```
 
-位数与 GTCEu 自己的配置槽（`AEItemConfigSlotWidget` 第 46 行）完全一致。
 不能用 `RequesterNumbers.displayFor()`（会输出 `1.83e6`、`1.5B` 这类长串并溢出格子）。
 带单位的精确值放在悬浮提示里。
 
@@ -404,8 +395,8 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 
 ### 8.4 格内用 `TextFormattingUtil`（LDLib）
 
-`formatLongToCompactString(amount, 4)`：`999` / `1.8k` / `1.83M` / `9.2E`
-（后缀表 k / M / G / T / P / E）。位数与 GTCEu 配置槽一致（见 §5.6）。
+`formatLongToCompactString(amount, 3)`：`999` / `1.8k` / `1.83M` / `9.2E`
+（后缀表 k / M / G / T / P / E）。
 
 ---
 
@@ -417,10 +408,10 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 | JEI 拖进去完全没反应 | 翻页时 `clearAllWidgets()` 重建控件，`uiAccess` 为 null，action 发不出去 | 控件**一次建好常驻**，翻页只改 `setVisible` |
 | 只能拖物品、拖不进流体 | JEI 给的是 `ITypedIngredient` 包装，真正 FluidStack 在内层 | 解包 `typed.getIngredient()` |
 | 打字了但框里没变化 | 在 `super.drawInBackground()` 之后手绘 DISPLAY 底，盖住文字 | 底板做成子控件，按「底板→输入框」加入 |
-| 数量怎么改都被刷回 0 | `textSupplier` 非空时 `detectAndSendChanges` 每 tick 无条件回写并推送对端 | 两侧都不挂 supplier，打开时 `setCurrentString` 填一次（§5.3） |
+| 数量怎么改都被刷回 0 | 客户端挂了 `textSupplier`，读的是未同步的空槽位 | 客户端 `textSupplier = null`，只服务端挂 |
 | 翻到第 2 页，第 1 页格子还在 | 可见性只在服务端 `detectAndSendChanges` 里切 | 同时挂 `updateScreen()`（客户端每帧） |
-| 数量框画到窗口外 | 旧坐标在主面板右边缘之外（`x = GUI_WIDTH = 150`），窗口只有 172 宽 | 改成页内弹层，按格定锚并夹在网格框内（§5.3） |
-| 格内数字 `1.83e6` 溢出 18px 格 | 用了科学计数格式 | 改用 `formatLongToCompactString(·, 4)` |
+| 数量框画到窗口外 | 旧坐标 `x = 168 − 4 = 164`，宽 96，界面只有 176 | 改为右侧可拖动面板，位置夹在父面板内 |
+| 格内数字 `1.83e6` 溢出 18px 格 | 用了科学计数格式 | 改用 `formatLongToCompactString(·, 3)` |
 | 正脸盖住 EV 外壳边框 | GTCEu `overlay/front` 是 -0.001~16.001 铺满整面 | 自写内缩模型 3~13 + UV 3,3→13,13 |
 | 单帧贴图显示错乱 | 保留了 4 帧 `.mcmeta` | 删掉 mcmeta |
 | `NO_SUITABLE_CPU_FOUND` 永远重试失败 | 冷却后用同样大单重试 | 自动缩单（§6.5） |
@@ -432,14 +423,14 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 ## 10. 构建与部署
 
 ```bash
-cd /mnt/d/gtlmodular-recipe
+cd /mnt/d/gtlmodular          # 主仓库；/mnt/d/gtlmodular-recipe 是其 worktree，两者内容一致时皆可
 export JAVA_HOME='D:\Java\jdk-21'
 export GRADLE_USER_HOME='D:\gradle-home-gtl'
 /mnt/c/Windows/System32/cmd.exe /c "chcp 65001>nul && gradlew.bat --offline build"
 ```
 
 - 判成败看日志里的 `BUILD SUCCESSFUL`（尾部 `1 个警告` 是既有的 `registerMaterials` 弃用告警）
-- 版本号唯一来源：`build.gradle:12` 的 `version = '0.3.480'`
+- 版本号唯一来源：`build.gradle:12` 的 `version = '<当前版本>'`（本文件复核时为 `0.3.486`）
 - **换版本号后必须删掉 mods 里的旧 jar**，否则同 modId 两份 jar → `Duplicate mod` 拒绝加载
 
 部署：
@@ -447,7 +438,7 @@ export GRADLE_USER_HOME='D:\gradle-home-gtl'
 ```bash
 cd /mnt/d/gtlpack/mods
 rm -f gtlmodular-<旧版本>.jar
-cp /mnt/d/gtlmodular-recipe/build/libs/gtlmodular-0.3.480.jar .
+cp <构建目录>/build/libs/gtlmodular-<当前版本>.jar .
 ```
 
 部署前确认游戏未运行（`tasklist.exe | grep -i javaw`），否则等于没部署。
@@ -485,25 +476,41 @@ S = gtceu:ev_sensor
 
 ---
 
-## 13. 本轮界面改动（0.3.486 → 0.3.487，UI 对齐「ME输入总成」）
+## 13. 自 0.3.480 以来的现状（2026-11-25 复核）
 
-参照物：`gtceu:me_input_assembly` = gtlcore 的 `MEDualInputHatchPartMachine`（界面只有两句：
-`createUI` + `createUIWidget`，配套控件 `AEDualConfigWidget` / `AEDualAmountSetWidget`）。
+> 本节由 2026-11-25 复核补写。§0～§12 的主体仍然有效 —— 请求器代码自 `3db7d43` 起**没有改动**；
+> 这里只记录「它落在仓库哪里」以及「同期模组其它部分变了什么」，避免拿老口径找东西。
 
-| 项 | 改前（0.3.486） | 改后（0.3.487） |
+### 13.1 代码与文档已全部入库
+
+| 项 | 位置 | 状态 |
 |---|---|---|
-| 外框 | 走 `IFancyUIMachine` 默认 `ModularUI(176,166)` | **`ModularUI(176,180)` + `FancyMachineUIWidget(this,176,185)`**（与参照机同一组数字） |
-| 页内底图 | 自己又叠一层 `ResourceBorderTexture.BORDERED_BACKGROUND` | **去掉**（外框已由 `FancyMachineUIWidget` 画 GT 机器背景，双层框就是"不像别的 GT 机器"的主因） |
-| 翻页条 y | 85 | **87**（= 网格底 + 3，对齐参照控件 `navigationY = rows*38+1`） |
-| 数量编辑 | 右侧常驻可拖动面板，钉在 `x = GUI_WIDTH`（窗口外，看不见） | **页内弹层 74×42，按格定锚、夹在网格框内**（`enableAmount` / `disableAmount`） |
-| 数量步进 | 只能打字 | **滚轮 ±1，Ctrl+滚轮 翻倍/减半**（照 `AEItemConfigSlotWidget#mouseWheelMove`）；新增 `ACTION_WHEEL=5` |
-| 弹层关闭 | 靠再次点其它格子 | 点弹层外任意位置、翻页、格子被清空时都自动收起 |
-| 格内数字 | `formatLongToCompactString(·, 3)` | **`(·, 4)`**，位数与 `AEItemConfigSlotWidget` 一致 |
+| 请求器代码（11 个 java） | `src/main/java/com/gtlmodular/common/machine/requester/` | 提交 `3db7d43`，此后未改 |
+| 注册类 | `src/main/java/com/gtlmodular/common/data/requester/RequesterMachines.java` | 同上 |
+| 挂载点 | `common/data/GTLModularMachines.java:232` → `RequesterMachines.register();` | 在 HEAD 上 |
+| 本文件 | `docs/ME库存补充仓_技术细节.md` | 已在仓库内，不在 WSL 临时目录 |
 
-**没动的**（红线，逐条核对过）：方块 id `gtlmodular:me_requester`；`RequesterOrderEngine` 一行未改；
-`RequesterSlot`/`RequesterSlots` 的 NBT key 与 `UPDATE_SLOT=100` 协议；`target`/`batch` 的语义；
-配方仍是纯数据包 `data/gtlmodular/recipes/me_requester.json`，代码里没有第二份。
+因此「请求器只存在于 `D:/gtlmodular-recipe` worktree」这个说法已经不成立：
+那个 worktree 里的 12 个 requester 文件与 HEAD 的 blob **逐字节相同**，没有携带任何未入库的请求器代码。
 
-**验收边界**：本机 `runServer` 起不来，所以「进游戏看效果」这一步只能由人来做；
-代码侧验收 = `mc_gradle build` 通过 + 读 jar 条目核对（`gtlmodular-0.3.487.jar` 内
-`RequesterMachine.class` 引用 `FancyMachineUIWidget`、`RequesterAmountBox.class` 含新标签串）。
+### 13.2 同期（0.3.481 → 0.3.486）模组其它部分的变化
+
+与请求器**无直接交集**，但属于同一批交付，读老文档时注意别按老口径找：
+
+| 版本 | 提交 | 改动 |
+|---|---|---|
+| 0.3.483 | `652f2ec` | 恒星炉三味合金改走搅拌粉；撤销热锭方案 |
+| 0.3.483 | `5b36b31` | 删掉与数据包重复的 28 条恒星配方（JEI 双页的根因） |
+| 0.3.483 | `aa401cf` | 删三味合金杆配方（改由 GTCEu 按 `GENERATE_ROD` 自动生成） |
+| 0.3.484 | `dbac368` | 移植 GTO 木质生物质工厂 |
+| 0.3.485 | `e428481` | 终端临时结构样板下单（gtlcore GRAPH 兼容） |
+| 0.3.486 | `b8843cd` | 零部件加工配方改为按材料自动生成；`component_parts` → `field_extruder_parts`；与奈亚之触彻底解耦 |
+| 0.3.486 | `69017e3` | 控制器外观兜底不再引用 `TentacleBlocks` |
+| 0.3.486 | `303b05f` | 线程仓三个类搬出 `tentacle` 包 → `data.thread` / `machine.thread` |
+
+### 13.3 仓库侧新规矩（与本文件直接相关的一条）
+
+**一个配方只能有一个来源。** 请求器目前的获取配方是纯数据包
+`data/gtlmodular/recipes/me_requester.json`，代码里**不要**再注册一遍 ——
+否则 JEI 会并列两页。同类事故见 `5b36b31`：恒星炉 28 条配方曾同时由 Java 与 JSON 提供，
+表现为「同一个产物两个一模一样的配方页」。
