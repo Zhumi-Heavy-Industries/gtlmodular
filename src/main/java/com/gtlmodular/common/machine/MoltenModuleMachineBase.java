@@ -29,7 +29,9 @@ import com.gtlmodular.common.machine.engine.IBatchLogicOwner;
 import com.gtlmodular.common.machine.engine.IThreadBatchLogic;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
+import com.gtlmodular.common.machine.fuel.AccelerateHatchLogic;
 import com.gtlmodular.common.machine.fuel.DualFluidTax;
+import com.gtlmodular.common.machine.fuel.ExtendedOverclockLogic;
 import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -223,6 +225,31 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     /** 引擎模式下每条线程自己的并行数（各模块覆写；这是机器的并行口径，不是线程仓适配）。 */
     public int engineParallelPerBatch() {
         return 1;
+    }
+
+    /**
+     * 每条线程的并行上限（<b>long 版</b>，自备折算路径用）。
+     *
+     * <p>引擎的 {@code engineParallelPerBatch()} 是 int（历史契约，21.4 亿封顶）；
+     * 但自备折算真正交给 gtlcore 的是 long，所以这里单独开一个 long 入口。
+     * 默认取 {@link #engineParallelPerBatch()}；天基模块覆写成 {@link Long#MAX_VALUE}，
+     * 与 gtladditions 天基无尽集成矿石处理厂同口径。
+     */
+    public long parallelLimitPerBatch() {
+        return engineParallelPerBatch();
+    }
+
+    /**
+     * 是否按 GTO「进阶集成矿石处理厂」的超频口径跑批次：<b>不把并行折成时长</b>。
+     *
+     * <p>{@code false}（默认，与天基无尽一致）：{@code 时长 = 总能耗 ÷ 超频电压}，
+     * 并行折成时间，机器永远按电压满功率、不会因缺电停摆。
+     * <p>{@code true}（GTO 口径）：保留超频后的真实 EUt 与配方时长，并行只受输入料限制，
+     * 每 tick 按 {@code EUt × 并行} 真抽电 —— 超频/加速直接体现为「更快、更费电」，
+     * 电不够就停在等待（不拖时长）。
+     */
+    public boolean usesGtoOverclockModel() {
+        return false;
     }
 
     // ================= IThreadedRecipeMachine（并入通用引擎的机器侧契约） =================
@@ -569,7 +596,46 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 if (modified == null) {
                     return null;
                 }
-                long limit = Math.max(1, module.engineParallelPerBatch());
+                // ★ 2026-11-25：本路径不经过 {@code RecipeLogic#setupRecipe}，加速仓与
+                //   超频仓「MAX 之上」补档必须在这里补一次（与通用引擎 ThreadedRecipeLogic#modifyRecipe 同口径）。
+                //   顺序：先超频（改 EUt/时长）再加速（改时长），两者串联相乘。
+                modified = ExtendedOverclockLogic.apply(machine.self(), modified);
+                modified = AccelerateHatchLogic.applyIfNeeded(machine.self(), modified);
+                if (modified == null) {
+                    return null;
+                }
+                if (module.usesGtoOverclockModel()) {
+                    // ★ 2026-11-25 GTO 口径（用户指定）：<b>不折时长</b>。
+                    //   超频/加速之后的 EUt 与时长原样保留，并行只受输入料限制；
+                    //   每 tick 真实抽电 = 超频后 EUt × 并行，主机付不起就等下一 tick
+                    //   —— 与 GTO「进阶集成矿石处理厂」同一手感（电不够就停，不偷偷拖时间）。
+                    long gtoLimit = Math.max(1L, module.parallelLimitPerBatch());
+                    if (!module.engineIndependent()) {
+                        gtoLimit -= runningParallelSum();
+                        if (gtoLimit <= 0) {
+                            return null;
+                        }
+                    }
+                    long gtoParallel = IParallelLogic.getMaxParallel(machine, modified, gtoLimit);
+                    if (gtoParallel <= 0) {
+                        return null;
+                    }
+                    GTRecipe gtoRecipe = gtoParallel > 1
+                            ? modified.copy(ContentModifier.multiplier((double) gtoParallel), false)
+                            : modified;
+                    IGTRecipe.of(gtoRecipe).setRealParallels(gtoParallel);
+                    gtoRecipe = IParallelLogic.getRecipeOutputChance(machine, gtoRecipe);
+                    if (!RecipeRunnerHelper.matchRecipeInput(machine, gtoRecipe)) {
+                        return null;
+                    }
+                    IGTRecipe.of(gtoRecipe).setHasTick(true);
+                    return gtoRecipe;
+                }
+                long overclock = getMachine().getOverclockVoltage();
+                if (overclock <= 0) {
+                    return null;
+                }
+                long limit = Math.max(1L, module.parallelLimitPerBatch());
                 // ★ 2026-11-07 GTO 口径「独立线程」：
                 //   开 = 每条线程各自一份完整并行额度；关 = 所有线程共用同一份额度。
                 if (!module.engineIndependent()) {
@@ -588,10 +654,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 IGTRecipe.of(recipe).setRealParallels(parallel);
                 recipe = IParallelLogic.getRecipeOutputChance(machine, recipe);
                 if (!RecipeRunnerHelper.matchRecipeInput(machine, recipe)) {
-                    return null;
-                }
-                long overclock = getMachine().getOverclockVoltage();
-                if (overclock <= 0) {
                     return null;
                 }
                 double totalEu = getTotalEuOfRecipe(recipe) * getEuMultiplier();

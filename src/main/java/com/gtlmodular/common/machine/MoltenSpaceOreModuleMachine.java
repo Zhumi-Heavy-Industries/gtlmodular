@@ -51,17 +51,21 @@ import java.util.List;
  * <b>没装线程仓时</b>旧合并路径的跨配方线程预算（MK1 = {@value #GTLCORE_THREADS}，每级 ×4）。
  * 旧口径（动力模块 + min(仓, 动力模块) 压制）只保留在没装仓的合并路径里。
  *
- * <p><b>界面显示与「天基无尽集成矿石处理厂」大致一致</b>：
+ * <p><b>界面显示</b>：
  * <ul>
- *   <li>并行行（{@code 同时处理至多 N 个配方}）由基类按<b>并行仓的真实数值</b>画出（装了并行仓才显示）；</li>
+ *   <li>并行行（{@code 同时处理至多 N 个配方}）固定画彩虹 {@value #DISPLAY_PARALLEL}，不读并行仓、
+ *       没装并行仓也会补出这一行；</li>
  *   <li>线程行：装了线程仓写仓值，没装写动力模块线程数（与旧版一致）；</li>
  *   <li>不显示热容行（该参考机没有这一行）。</li>
  * </ul>
  *
- * <p><b>隐性联动（不显示为说明文字）</b>：主机热容达到 {@value #HIDDEN_PARALLEL_TEMP} K 时，
- * 本机并行直接拉满到 {@link Integer#MAX_VALUE}，并且<b>并行仓的设定不再生效</b>；
- * 热容高于该值同样持续生效。界面照常画「同时处理至多 N 个配方」，此时 N 显示为 int
- * （2147483647）并套用原来「跨配方无限」的彩虹特效，但不加任何解释性文字。
+ * <p><b>并行/超频口径（2026-11-25 用户拍板：按 GTO「进阶集成矿石处理厂」）</b>：
+ * 并行上限走 long 的 {@link Long#MAX_VALUE}（{@link #parallelLimitPerBatch()}），并行仓设定不再生效；
+ * 实际并行只由<b>输入料</b>决定。<b>不把并行折成时长</b> —— 超频仓（功率×4、耗时×倍率）与
+ * 加速仓（时长×百分比）保留真实 EUt 与配方时长，每 tick 按 {@code EUt × 并行} 真抽电，
+ * 电不够就停（{@link #usesGtoOverclockModel()} = {@code true}）。
+ * 界面照常画「同时处理至多 N 个配方」，但 N 固定显示 {@value #DISPLAY_PARALLEL}
+ * （9.22E，GTO 那台的面板口径）并套用「跨配方无限」的彩虹特效，不加解释性文字。
  */
 public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
 
@@ -82,8 +86,14 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
      */
     public static final int GTLCORE_THREADS = 64;
 
-    /** 隐性联动阈值：主机热容（线圈温度）达到该值后并行拉满。 */
-    public static final int HIDDEN_PARALLEL_TEMP = 16200;
+    /**
+     * 并行行的显示值。
+     *
+     * <p>对齐 GTO「进阶集成矿石处理厂」的面板口径：那边把并行供应商写成 {@code Long.MAX_VALUE}，
+     * 按 K/M/G/T/P/E 每 1000 一档压缩后正好显示 {@code 9.22E}。本机真实并行上限也是
+     * {@link Long#MAX_VALUE}（见 {@link #parallelLimitPerBatch()}），两边对得上。
+     */
+    public static final String DISPLAY_PARALLEL = "9.22E";
 
     /** 结构里最高等级的动力模块（1 = MK1）。界面文字是客户端拼的，所以必须同步。 */
     @DescSynced
@@ -332,20 +342,44 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
         return (int) Math.min(256, Math.min(Integer.MAX_VALUE, (long) GTLCORE_THREADS + getAdditionalThread()));
     }
 
-    // ---------- 独立线程引擎（★ 2026-11-05）----------
+    // ---------- 独立线程引擎（★ 2026-11-05，口径 2026-11-25 改为天基无尽）----------
 
     /**
-     * 每条线程的并行数 = 结构并行仓的当前并行（与模块 A 同口径）。
+     * 每条线程的并行数：<b>不设上限</b>，只由输入料决定。
      *
-     * <p>线程数/开关由基座统一从线程仓现读；热容隐性联动（≥ {@value #HIDDEN_PARALLEL_TEMP} K）
-     * 照旧把每条线程的并行拉满。
+     * <p>真正的上限走 {@link #parallelLimitPerBatch()} = {@link Long#MAX_VALUE}（自备折算路径，long）；
+     * 这里的 int {@link Integer#MAX_VALUE} 只是给引擎的 int 契约（{@code parallelMultiplier()} 等）兜底，
+     * 实际限流不走它。实际并行由 gtlcore 的 {@code IParallelLogic.getMaxParallel} 按库存夹。
      */
     @Override
     public int engineParallelPerBatch() {
-        if (isHiddenParallelActive()) {
-            return Integer.MAX_VALUE;
-        }
-        return super.engineParallelPerBatch();
+        return Integer.MAX_VALUE;
+    }
+
+    /**
+     * 自备折算路径的真正并行上限：<b>{@link Long#MAX_VALUE}</b>，与 GTO「进阶集成矿石处理厂」
+     * 的 {@code createParallel(false, false, m -> Long.MAX_VALUE)} 完全同口径。
+     *
+     * <p>{@link #engineParallelPerBatch()} 是 int 只是引擎历史契约（{@code parallelMultiplier()} 等
+     * int 接口要用它）；自备折算交给 gtlcore 的是 long，所以这里必须走 long 入口，
+     * 否则并行就会被 21.4 亿悄悄封顶。
+     */
+    @Override
+    public long parallelLimitPerBatch() {
+        return Long.MAX_VALUE;
+    }
+
+    /**
+     * ★ 2026-11-25 用户拍板：<b>按 GTO「进阶集成矿石处理厂」的超频口径</b>。
+     *
+     * <p>不再把并行折成时长：超频/加速之后的 EUt 与配方时长原样保留，并行只受输入料限制，
+     * 每 tick 真实抽电 = {@code 超频后 EUt × 并行}。
+     * ⇒ 超频仓（功率×4、耗时×倍率）与加速仓（时长×百分比）都直接体现为「更快、更费电」；
+     * 电不够就停在等待，不拖时长 —— 与 GTO 那台同一手感。
+     */
+    @Override
+    public boolean usesGtoOverclockModel() {
+        return true;
     }
 
     /** 线程行由本机自己画（数字取 {@link #totalThreads()}），不让模块A 的界面逻辑重复画一遍。 */
@@ -355,20 +389,12 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
     }
 
     /**
-     * 隐性联动：热容达标时并行 = {@link Integer#MAX_VALUE}（并行仓失效）；
-     * 否则照旧走 gtlcore 的并行仓读取，并按动力模块线程数放大合并预算。
+     * 并行 = {@link Integer#MAX_VALUE}（并行仓设定不再参与），与
+     * {@link #engineParallelPerBatch()} 同口径；真正的闸是输入料与能耗预算。
      */
     @Override
     public int getMaxParallel() {
-        if (isHiddenParallelActive()) {
-            return Integer.MAX_VALUE;
-        }
-        return super.getMaxParallel();
-    }
-
-    /** 隐性并行条件是否生效（主机热容 ≥ 16200K）。 */
-    public boolean isHiddenParallelActive() {
-        return hostCoilTemperature() >= HIDDEN_PARALLEL_TEMP;
+        return Integer.MAX_VALUE;
     }
 
     // ---------- 说明 / 界面 ----------
@@ -379,6 +405,10 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
     public static void appendConfiguredTooltips(ItemStack stack, List<Component> lines) {
         lines.add(Component.translatable("block.gtlmodular.molten_space_ore_module.desc")
                 .withStyle(ChatFormatting.GRAY));
+        // 与 GTO「进阶集成矿石处理厂」一致：静态说明里就写明并行数（那边是
+        // ALLOW_PARALLEL_NUMBER.create(Long.MAX_VALUE)，格式化后正是 9.22E）。
+        lines.add(Component.translatable("gtlmodular.space.tooltip.parallel",
+                Component.literal(DISPLAY_PARALLEL).withStyle(ChatFormatting.LIGHT_PURPLE)));
         appendFluidTaxTooltip(lines);
         lines.add(Component.translatable("gtlmodular.space.tooltip.power",
                 Component.literal(String.valueOf(GTLCORE_THREADS)).withStyle(ChatFormatting.GOLD),
@@ -407,17 +437,22 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
                 : Component.translatable("gtlmodular.space.power.none").withStyle(ChatFormatting.RED);
         textList.add(Component.translatable("gtlmodular.space.power.line", module)
                 .withStyle(ChatFormatting.GRAY));
-        // 隐性联动生效时：并行行照常显示，但数字换成「跨配方无限」那套彩虹特效
-        if (isHiddenParallelActive()) {
-            for (int i = 0; i < textList.size(); i++) {
-                Component c = textList.get(i);
-                if (c.getContents() instanceof TranslatableContents tc
-                        && "gtceu.multiblock.parallel".equals(tc.getKey())) {
-                    textList.set(i, Component.translatable("gtceu.multiblock.parallel", rainbowParallel())
-                            .withStyle(ChatFormatting.GRAY));
-                    break;
-                }
+        // 并行行：数字固定显示 9.22E + 「跨配方无限」那套彩虹特效（本机不设并行上限）
+        boolean replaced = false;
+        for (int i = 0; i < textList.size(); i++) {
+            Component c = textList.get(i);
+            if (c.getContents() instanceof TranslatableContents tc
+                    && "gtceu.multiblock.parallel".equals(tc.getKey())) {
+                textList.set(i, Component.translatable("gtceu.multiblock.parallel", rainbowParallel())
+                        .withStyle(ChatFormatting.GRAY));
+                replaced = true;
+                break;
             }
+        }
+        // 没装并行仓时基类不画这一行：这里补一行，保证一定看得到 9.22E
+        if (!replaced) {
+            textList.add(Component.translatable("gtceu.multiblock.parallel", rainbowParallel())
+                    .withStyle(ChatFormatting.GRAY));
         }
         // 跨配方线程行：
         //   · 装了线程仓 ⇒ 独立线程引擎的线程数就是仓的设定值（2026-11-05 玩家口径）；
@@ -437,11 +472,11 @@ public class MoltenSpaceOreModuleMachine extends MoltenBlastModuleMachine {
     }
 
     /**
-     * 并行数字的彩虹特效（沿用原来「无限」那个彩虹组件的写法），内容是本机真实的 int 并行值
-     * {@link Integer#MAX_VALUE} = 2147483647。
+     * 并行数字的彩虹特效（沿用原来「无限」那个彩虹组件的写法），内容固定是
+     * {@link #DISPLAY_PARALLEL} = {@code 9.22E}（GTO 那台的 {@code Long.MAX_VALUE} 口径）。
      */
     private static Component rainbowParallel() {
         return CommonUtils.INSTANCE.createLanguageRainbowComponentOnServer(
-                Component.literal(String.valueOf(Integer.MAX_VALUE)));
+                Component.literal(DISPLAY_PARALLEL));
     }
 }
