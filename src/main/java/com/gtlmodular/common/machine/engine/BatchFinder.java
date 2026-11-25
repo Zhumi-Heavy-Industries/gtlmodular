@@ -233,7 +233,9 @@ public final class BatchFinder {
             //   ⇒ 表象就是「只有猪咪能用」。这里补上「样板仓里真有样板 ⇒ 也扫」，
             //   任何家的样板总成（gtlcore 原生 / 统合 / gtladditions 超级）都吃得下。
             //   成本：只在 ME 缓存为空 + 看不到料时才问一次，且受上面 state.cooldownUntil 退避限流。
-            if (!owner.hasRealItemOrFluidInput() && !owner.hasWaitingMePattern()) {
+            //   ★ 2026-11-25 合并 refactor/unify-batch-engine 后：owner 的静态类型变成 IBatchLogicOwner，
+            //     这条判据直接问 BatchSupport（按宿主机器探测，两个逻辑壳共用同一份实现）。
+            if (!owner.hasRealItemOrFluidInput() && !BatchSupport.hasWaitingMePattern(machine)) {
                 diag.reject("无实际物品/流体输入（ME 样板缓存为空、样板仓里也没有样板，跳过整表扫描）｜"
                         + BatchSupport.describeInputCaps(machine), null, null);
                 state.cooldownUntil = now + idleCooldown(state);
