@@ -122,13 +122,20 @@ public final class FieldExtruderFactoryMachines {
         return lines;
     }
 
-    /** 控制器外观方块：高能机器外壳；取不到时退回本模组自造的激光机械方块（不让注册期 NPE）。 */
+    /**
+     * 控制器外观方块：优先用 GTCEu 的高能机器外壳 {@code gtceu:high_power_casing}（GTO 原机同款）。
+     *
+     * <p>取不到时退回<b>本包自己的</b>高能耐压机械方块 —— 它本来就是这个结构
+     * {@code A} 符号（968 格）用的方块，同包同模组，不会牵出别的包。
+     * （{@code 2026-11-25} 之前兜底用的是 {@code tentacle.TentacleBlocks.LASER_CASING}，
+     * 那是奈亚之触包的方块；本机与奈亚已彻底解耦，这里一并切断。）</p>
+     */
     private static Block appearanceBlock() {
         Block block = ForgeRegistries.BLOCKS.getValue(new ResourceLocation("gtceu", "high_power_casing"));
         if (block == null || block == Blocks.AIR) {
             GTLModular.LOGGER.warn("[gtlmodular] 力场压模零件工厂：gtceu:high_power_casing 不存在，"
-                    + "控制器外观退回 gtlmodular:laser_casing");
-            return com.gtlmodular.common.data.tentacle.TentacleBlocks.LASER_CASING.get();
+                    + "控制器外观退回 gtlmodular:high_pressure_resistant_casing");
+            return FieldExtruderFactoryBlocks.HIGH_PRESSURE_RESISTANT_CASING.get();
         }
         return block;
     }
