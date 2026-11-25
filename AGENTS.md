@@ -113,3 +113,9 @@ GTCEu 在数据包配方生成阶段遍历 `AddonFinder.getAddons()` 调 `addon.
 | `_scratch\stellar-mixer-fix-20261124\scan_dupe_recipes.py` | 扫配方重复（按 机器类型+输入+输出 规范化） |
 | `_scratch\stellar-mixer-fix-20261124\compare_stellar.py` | Java 配方 vs JSON 逐项比对 |
 | `_port\tools\apply_to_repo.py --dry-run` | 移植回灌预检（只读，看会写哪些文件） |
+
+## 7 · 在途待办（做之前先读对应文档）
+
+| 待办 | 文档 | 说明 |
+|---|---|---|
+| ME请求器 UI 对齐「ME输入总成」（方案 C：外框 + 数量交互 + 格内数字格式） | `docs/待办-20261125-ME请求器UI对齐输入总成.md` | 交接文档已备齐参照物签名、现有常量、改动清单与红线；B 项会碰交互协议，风险最高 |
