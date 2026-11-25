@@ -1,8 +1,12 @@
 # ME库存补充仓（gtlmodular:me_requester）技术细节
 
-> 版本 `0.3.480` ｜ 源码 `D:/gtlmodular-recipe`（`D:/gtlmodular` 的 git worktree）
-> 部署 `/mnt/d/gtlpack/mods/gtlmodular-0.3.480.jar`
-> 整理日期 2026-11-23
+> 首次整理 `0.3.480`（2026-11-23）｜ 复核 `0.3.486`（2026-11-25）
+> 代码位置：**已并入仓库**，提交 `3db7d43`（`feat(requester): ME库存补充仓（独立请求器方块）`）
+> 源码树 `D:/gtlmodular`（主工作区）；`D:/gtlmodular-recipe` 是它的 git worktree，内容与本提交一致
+> 部署 `/mnt/d/gtlpack/mods/gtlmodular-<version>.jar`（复核时为 0.3.486）
+>
+> ⚠ §0～§12 描述的是 `0.3.480` 的状态；`0.3.480` 之后模组其它部分的变化见 **§13**。
+> 请求器代码本身自 `3db7d43` 起**没有再改动**（逐文件 blob 比对确认）。
 
 ---
 
@@ -419,14 +423,14 @@ ECOPlanningService.begin(level, grid, source, key, amount, strategy, options)
 ## 10. 构建与部署
 
 ```bash
-cd /mnt/d/gtlmodular-recipe
+cd /mnt/d/gtlmodular          # 主仓库；/mnt/d/gtlmodular-recipe 是其 worktree，两者内容一致时皆可
 export JAVA_HOME='D:\Java\jdk-21'
 export GRADLE_USER_HOME='D:\gradle-home-gtl'
 /mnt/c/Windows/System32/cmd.exe /c "chcp 65001>nul && gradlew.bat --offline build"
 ```
 
 - 判成败看日志里的 `BUILD SUCCESSFUL`（尾部 `1 个警告` 是既有的 `registerMaterials` 弃用告警）
-- 版本号唯一来源：`build.gradle:12` 的 `version = '0.3.480'`
+- 版本号唯一来源：`build.gradle:12` 的 `version = '<当前版本>'`（本文件复核时为 `0.3.486`）
 - **换版本号后必须删掉 mods 里的旧 jar**，否则同 modId 两份 jar → `Duplicate mod` 拒绝加载
 
 部署：
@@ -434,7 +438,7 @@ export GRADLE_USER_HOME='D:\gradle-home-gtl'
 ```bash
 cd /mnt/d/gtlpack/mods
 rm -f gtlmodular-<旧版本>.jar
-cp /mnt/d/gtlmodular-recipe/build/libs/gtlmodular-0.3.480.jar .
+cp <构建目录>/build/libs/gtlmodular-<当前版本>.jar .
 ```
 
 部署前确认游戏未运行（`tasklist.exe | grep -i javaw`），否则等于没部署。
@@ -469,3 +473,44 @@ S = gtceu:ev_sensor
 | 名字 | ME自动补货牌 | **ME库存补充仓** |
 | CPU 容量不足 | 冷却后原样重试，永远失败 | **自动缩单**，分批补满 |
 | ECO | 只用 AE2 原生规划 | **可选桥接 ECO 规划器** |
+
+---
+
+## 13. 自 0.3.480 以来的现状（2026-11-25 复核）
+
+> 本节由 2026-11-25 复核补写。§0～§12 的主体仍然有效 —— 请求器代码自 `3db7d43` 起**没有改动**；
+> 这里只记录「它落在仓库哪里」以及「同期模组其它部分变了什么」，避免拿老口径找东西。
+
+### 13.1 代码与文档已全部入库
+
+| 项 | 位置 | 状态 |
+|---|---|---|
+| 请求器代码（11 个 java） | `src/main/java/com/gtlmodular/common/machine/requester/` | 提交 `3db7d43`，此后未改 |
+| 注册类 | `src/main/java/com/gtlmodular/common/data/requester/RequesterMachines.java` | 同上 |
+| 挂载点 | `common/data/GTLModularMachines.java:232` → `RequesterMachines.register();` | 在 HEAD 上 |
+| 本文件 | `docs/ME库存补充仓_技术细节.md` | 已在仓库内，不在 WSL 临时目录 |
+
+因此「请求器只存在于 `D:/gtlmodular-recipe` worktree」这个说法已经不成立：
+那个 worktree 里的 12 个 requester 文件与 HEAD 的 blob **逐字节相同**，没有携带任何未入库的请求器代码。
+
+### 13.2 同期（0.3.481 → 0.3.486）模组其它部分的变化
+
+与请求器**无直接交集**，但属于同一批交付，读老文档时注意别按老口径找：
+
+| 版本 | 提交 | 改动 |
+|---|---|---|
+| 0.3.483 | `652f2ec` | 恒星炉三味合金改走搅拌粉；撤销热锭方案 |
+| 0.3.483 | `5b36b31` | 删掉与数据包重复的 28 条恒星配方（JEI 双页的根因） |
+| 0.3.483 | `aa401cf` | 删三味合金杆配方（改由 GTCEu 按 `GENERATE_ROD` 自动生成） |
+| 0.3.484 | `dbac368` | 移植 GTO 木质生物质工厂 |
+| 0.3.485 | `e428481` | 终端临时结构样板下单（gtlcore GRAPH 兼容） |
+| 0.3.486 | `b8843cd` | 零部件加工配方改为按材料自动生成；`component_parts` → `field_extruder_parts`；与奈亚之触彻底解耦 |
+| 0.3.486 | `69017e3` | 控制器外观兜底不再引用 `TentacleBlocks` |
+| 0.3.486 | `303b05f` | 线程仓三个类搬出 `tentacle` 包 → `data.thread` / `machine.thread` |
+
+### 13.3 仓库侧新规矩（与本文件直接相关的一条）
+
+**一个配方只能有一个来源。** 请求器目前的获取配方是纯数据包
+`data/gtlmodular/recipes/me_requester.json`，代码里**不要**再注册一遍 ——
+否则 JEI 会并列两页。同类事故见 `5b36b31`：恒星炉 28 条配方曾同时由 Java 与 JSON 提供，
+表现为「同一个产物两个一模一样的配方页」。

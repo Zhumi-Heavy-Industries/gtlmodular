@@ -48,6 +48,7 @@ GTL（格雷科技休闲版）的附属模组，Forge **1.20.1 / GTCEu 1.4.4**�
 | `print` | 5 | 2 | 一次性工具 3D 打印 |
 | `module` / `host` | 3 / 3 | — | 模块、线程宿主抽象 |
 | `thread` | 1 | 2 | **线程仓**（`ThreadHatchMachines` / `IThreadHatchPart` / `ThreadHatchPartMachine`）。通用设施，全模组 20+ 处引用 |
+| `requester` | 1 | 11 | **ME库存补充仓**（`gtlmodular:me_requester`）：盯 AE 库存、不足自动下单、产物回网络。自 `3db7d43` 起未改动。挂载点 `GTLModularMachines.java:232`；详细设计见 `docs/ME库存补充仓_技术细节.md` |
 
 ## 4 · 硬规则（每条都是这个仓库真实踩过的坑）
 
