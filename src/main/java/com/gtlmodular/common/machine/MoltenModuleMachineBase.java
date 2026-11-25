@@ -22,8 +22,12 @@ import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.ChatFormatting;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
+import com.gtlmodular.common.machine.engine.BatchDiagnostics;
+import com.gtlmodular.common.machine.engine.BatchFinder;
 import com.gtlmodular.common.machine.engine.ConcurrentRecipeEngine;
+import com.gtlmodular.common.machine.engine.IBatchLogicOwner;
 import com.gtlmodular.common.machine.engine.IThreadBatchLogic;
+import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import com.gtlmodular.common.machine.fuel.DualFluidTax;
 import com.gtlmodular.common.machine.thread.IThreadHatchPart;
@@ -64,6 +68,8 @@ import java.util.function.BiPredicate;
 public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<M>>
         extends CoilWorkableElectricMultipleRecipesMachine
         implements IModularMachineModule<MoltenModuleHostMachine, M>, IMachineLife,
+        // ★ 2026-11-25：并入通用独立线程引擎的机器侧契约 —— BatchFinder 靠它读线程仓与并行倍率
+        IThreadedRecipeMachine,
         // ★ 2026-11-09：必须显式实现这个 gtladditions 接口 —— 否则本类的
         //   MoltenModuleRecipeLogic（extends gtlcore MultipleRecipesLogic）在构造时，
         //   gtladditions 的 mixin 会把机器强转成它 ⇒ 加载熔融模块即 ClassCastException
@@ -219,6 +225,47 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         return 1;
     }
 
+    // ================= IThreadedRecipeMachine（并入通用引擎的机器侧契约） =================
+
+    /**
+     * 线程仓没装时的固定线程数。
+     *
+     * <p>熔岩模块的引擎只在「装了线程仓」时启用（见 {@link #engineActive()}），
+     * 所以这里给 1 就行 —— {@link #effectiveThreads()} 在装了仓时会直接改用仓的设定值。
+     */
+    @Override
+    public int baseThreads() {
+        return 1;
+    }
+
+    /**
+     * 并行倍率。
+     *
+     * <p>熔岩模块走的是自备折算（{@code usesStandardParallel() == false}），
+     * {@link BatchFinder} 不会拿它去乘并行仓；这里只为满足契约，返回机器自己的并行口径。
+     */
+    @Override
+    public int parallelMultiplier() {
+        return Math.max(1, engineParallelPerBatch());
+    }
+
+    /**
+     * 是否再乘结构里的并行仓。
+     *
+     * <p>{@code false}：熔岩模块的并行由模块自己算（{@code IParallelLogic.getMaxParallel}），
+     * 引擎不再叠一层并行仓 —— 与改造前逐字一致。
+     */
+    @Override
+    public boolean usesParallelHatch() {
+        return false;
+    }
+
+    /** 「独立线程」开关交给通用引擎读（名字对齐 IThreadedRecipeMachine 的默认方法）。 */
+    @Override
+    public boolean threadHatchIndependent() {
+        return threadHatchIndependentThread();
+    }
+
     /** 引擎模式是否启用（服务端/客户端都现读结构部件，判定一致）。 */
     public final boolean engineActive() {
         return engineThreads() > 0;
@@ -290,32 +337,32 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
      * </ul>
      * 两条路径的耗电都走「主机中央供电 + 主机线圈减免」，并行都按模块自己的口径折算。
      */
-    protected static class MoltenModuleRecipeLogic extends MultipleRecipesLogic implements IThreadBatchLogic {
-
-        /** 引擎空转时一轮最多扫多少条候选（与通用独立线程引擎一致）。 */
-        private static final int ENGINE_SCAN_BUDGET = 24;
-
-        /** 一轮没找到配方后的冷却 tick（避免空转时每 tick 全表扫）。 */
-        private static final int ENGINE_IDLE_COOLDOWN_TICKS = 10;
-
-        /** 每 tick 最多新开几条批次（大线程仓首轮填槽时避免一次扫几百条候选造成卡顿）。 */
-        private static final int ENGINE_MAX_STARTS_PER_TICK = 8;
-
-        /** 每张配方表各自的扫描游标与冷却。 */
-        private static final class ScanState {
-            int cursor;
-            long cooldownUntil;
-        }
+    protected static class MoltenModuleRecipeLogic extends MultipleRecipesLogic
+            implements IThreadBatchLogic, IBatchLogicOwner {
 
         private final MoltenModuleMachineBase<?> module;
 
         /** 独立线程批次表（只在服务端有内容）。 */
         private final ConcurrentRecipeEngine engine = new ConcurrentRecipeEngine();
 
-        private final Map<GTRecipeType, ScanState> scanStates = new IdentityHashMap<>();
-
-        /** 跨配方表的轮转起点（上次成功那张表的下标）。 */
-        private int lastTypeIndex;
+        /**
+         * ★ 2026-11-25：<b>扫描/开批纪律改用通用引擎那一份</b>。
+         *
+         * <p>本类原先自带 {@code ScanState} + 三个 {@code ENGINE_*} 常量 + 60 行
+         * {@code findBatchForType}，与通用引擎 {@link BatchFinder} 的纪律字面重复
+         * （预算 24、冷却 10 都是一模一样抄过来的）。合并后只留一个 {@link BatchFinder}：
+         * 每表游标/冷却、跨表轮转、空转退避、{@link BatchFinder#MAX_STARTS_PER_TICK 每 tick 开批上限}
+         * 全部走同一份实现，两边不会再各自漂移。
+         *
+         * <p>本类只多做两件通用引擎没有的事，都通过 {@link IBatchLogicOwner} 交回去：
+         * <ul>
+         *   <li>{@link #acceptsCandidate(GTRecipe)}：层级 / 配方条件 / EBF 温度三道门槛；</li>
+         *   <li>{@link #prepareBatch(GTRecipe)}：gtlcore 口径的并行与「每 tick EU 烘进配方」，
+         *       <b>电价数学原封不动</b>（{@link #usesStandardParallel()} 返回 false）。</li>
+         * </ul>
+         */
+        private final BatchDiagnostics diag;
+        private final BatchFinder finder;
 
         /** 状态串同步节流。 */
         private long lastSummaryTick = Long.MIN_VALUE;
@@ -325,6 +372,69 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                                           BiPredicate<CompoundTag, IRecipeLogicMachine> dataCheck) {
             super(module, dataCheck);
             this.module = module;
+            this.diag = new BatchDiagnostics(module);
+            this.finder = new BatchFinder(module, module, this, engine, diag);
+        }
+
+        // ================= IBatchLogicOwner：把「机器特有」的答案交回共享引擎 =================
+
+        /** 配方条件判定的落脚点：就是本逻辑（与通用引擎同一接法）。 */
+        @Override
+        public com.gregtechceu.gtceu.api.machine.trait.RecipeLogic asRecipeLogic() {
+            return this;
+        }
+
+        /** 每 tick 输入的 chance cache（{@link MultipleRecipesLogic} 已经实现，这里只是转出）。 */
+        @Override
+        public java.util.Map<com.gregtechceu.gtceu.api.capability.recipe.RecipeCapability<?>,
+                it.unimi.dsi.fastutil.objects.Object2IntMap<?>> chanceCaches() {
+            return getChanceCaches();
+        }
+
+        /**
+         * 熔岩模块没有 ME 样板通道 ⇒ <b>恒返回 true</b>（不跳过扫描）。
+         *
+         * <p>与改造前逐字一致：旧扫描也是每轮都扫，靠 {@code SCAN_BUDGET} 与冷却限流，
+         * 不靠「仓里有没有东西」这个判断。刻意不去套通用引擎那条「空仓跳过整表」的优化，
+         * 因为熔岩模块的料在主机侧的模块接口里，通用判断会误判成空。
+         */
+        @Override
+        public boolean hasRealItemOrFluidInput() {
+            return true;
+        }
+
+        /** 是否跨配方表轮转（模块面板的开关，语义与改造前一致）。 */
+        @Override
+        public boolean crossTableScan() {
+            return module.engineCrossTable();
+        }
+
+        /** ★ 熔岩模块走 gtlcore 口径，不套通用引擎的 accurateParallel 折算链。 */
+        @Override
+        public boolean usesStandardParallel() {
+            return false;
+        }
+
+        /**
+         * 候选准入门槛（原先写在 {@code findBatchForType} 里，现由 {@link BatchFinder} 回调）：
+         * 层级 → 配方条件 → EBF 温度 dataCheck。三条全是改造前就有的判定，顺序不变。
+         */
+        @Override
+        public boolean acceptsCandidate(GTRecipe raw) {
+            if (IGTRecipe.of(raw).getEuTier() > getMachine().getTier()) {
+                return false;
+            }
+            if (!raw.checkConditions(this).isSuccess()) {
+                return false;
+            }
+            BiPredicate<CompoundTag, IRecipeLogicMachine> check = getDataCheck();
+            return check == null || check.test(raw.data, machine);
+        }
+
+        /** 自备折算：借用 Host 的那份 {@code prepareBatch}（并行算法与电价数学原封不动）。 */
+        @Override
+        public GTRecipe prepareBatch(GTRecipe raw) {
+            return new EngineHost().prepareBatch(raw);
         }
 
         /** 引擎里正在跑的批次数（Jade/面板读取用）。 */
@@ -374,7 +484,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             if (!module.engineActive()) {
                 if (engine.size() > 0) {
                     engine.clear();
-                    scanStates.clear();
+                    finder.reset();
                     module.setEngineSummary("");
                 }
                 super.serverTick();
@@ -390,7 +500,11 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 return;
             }
             EngineHost host = new EngineHost();
+            // ★ 2026-11-25：扫描纪律交给通用引擎的 BatchFinder（跨表轮转起点每 tick 归零 + 开批限速复位）
+            finder.beginTick();
             engine.tick(host);
+            // 空转时「为什么没配方」的诊断（与通用引擎同一份实现，每种原因只打一次）
+            diag.logIdle(module.engineCrossTable(), engine.size());
             if (engine.size() > 0) {
                 // 展示回写：把第 0 条批次镜像进基类字段（GUI/Jade 的单进度条免费可用）
                 ConcurrentRecipeEngine.Batch primary = engine.get(0);
@@ -420,8 +534,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             private boolean advanced;
             /** 本 tick 是否新开出一条批次。 */
             private boolean started;
-            /** 本 tick 已经新开了几条（首轮填槽限速）。 */
-            private int startsThisTick;
             /** 本 tick 的等待原因（电量/主机不可用）。 */
             private Component waitReason;
 
@@ -437,88 +549,10 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
 
             @Override
             public GTRecipe findBatch() {
-                if (startsThisTick >= ENGINE_MAX_STARTS_PER_TICK) {
-                    return null;
-                }
-                GTRecipeType current = MoltenModuleRecipeLogic.this.machine.getRecipeType();
-                if (current == null) {
-                    return null;
-                }
-                GTRecipeType[] types = MoltenModuleRecipeLogic.this.machine.getRecipeTypes();
-                boolean crossTable = module.engineCrossTable() && types != null && types.length > 1;
-                if (!crossTable) {
-                    return findBatchForType(current);
-                }
-                int n = types.length;
-                int start = lastTypeIndex % n;
-                for (int i = 0; i < n; i++) {
-                    int idx = (start + i) % n;
-                    GTRecipe recipe = findBatchForType(types[idx]);
-                    if (recipe != null) {
-                        lastTypeIndex = idx;
-                        return recipe;
-                    }
-                }
-                return null;
-            }
-
-            /** 单张配方表的候选搜索：校验 → 逐线程并行 → 折算 EU/时长。 */
-            private GTRecipe findBatchForType(GTRecipeType type) {
-                long now = MoltenModuleRecipeLogic.this.machine.self().getOffsetTimer();
-                ScanState state = scanStates.computeIfAbsent(type, t -> new ScanState());
-                if (now < state.cooldownUntil) {
-                    return null;
-                }
-                List<GTRecipe> candidates = type.getLookup().getLookup().getRecipes(true)
-                        .filter(r -> !r.isFuel()).toList();
-                int total = candidates.size();
-                if (total == 0) {
-                    state.cooldownUntil = now + ENGINE_IDLE_COOLDOWN_TICKS;
-                    return null;
-                }
-                int start = state.cursor % total;
-                int limit = Math.min(ENGINE_SCAN_BUDGET, total);
-                for (int i = 0; i < limit; i++) {
-                    GTRecipe raw = candidates.get((start + i) % total);
-                    if (raw == null || isRunningElsewhere(raw)) {
-                        continue;
-                    }
-                    if (!RecipeRunnerHelper.matchRecipe(MoltenModuleRecipeLogic.this.machine, raw)) {
-                        continue;
-                    }
-                    if (IGTRecipe.of(raw).getEuTier() > getMachine().getTier()) {
-                        continue;
-                    }
-                    if (!raw.checkConditions(MoltenModuleRecipeLogic.this).isSuccess()) {
-                        continue;
-                    }
-                    BiPredicate<CompoundTag, IRecipeLogicMachine> check = getDataCheck();
-                    if (check != null && !check.test(raw.data, MoltenModuleRecipeLogic.this.machine)) {
-                        continue;
-                    }
-                    GTRecipe prepared;
-                    try {
-                        prepared = prepareBatch(raw);
-                    } catch (RuntimeException e) {
-                        // 单条候选的配方修改器/并行计算异常不应把服务端主线程掀翻：
-                        // 记一条 debug（限频交给日志等级），跳过这条，继续扫下一条。
-                        GTLModular.LOGGER.debug("[gtlmodular] 独立线程：候选 {} 折算失败，跳过：{}",
-                                raw.getId(), e.toString());
-                        continue;
-                    }
-                    if (prepared != null) {
-                        state.cooldownUntil = 0;
-                        state.cursor = (start + i + 1) % total;
-                        startsThisTick++;
-                        return prepared;
-                    }
-                }
-                boolean fullPass = start + limit >= total;
-                state.cursor = fullPass ? 0 : (start + limit) % total;
-                if (fullPass) {
-                    state.cooldownUntil = now + ENGINE_IDLE_COOLDOWN_TICKS;
-                }
-                return null;
+                // ★ 2026-11-25：扫描 / 折算全部交给通用引擎的 BatchFinder。
+                //   本机只通过 IBatchLogicOwner 回答「哪些候选允许」与「怎么折算」，
+                //   游标、冷却、跨表轮转、每 tick 开批上限都不再各写一份。
+                return finder.findBatch();
             }
 
             /**
@@ -572,19 +606,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 return recipe;
             }
 
-            /** 「并行重复配方」关时：同一条配方只许占一条线程。 */
-            private boolean isRunningElsewhere(GTRecipe raw) {
-                if (!module.engineDedupe() || raw.getId() == null) {
-                    return false;
-                }
-                for (int i = 0; i < engine.size(); i++) {
-                    GTRecipe running = engine.get(i).recipe;
-                    if (running != null && raw.getId().equals(running.getId())) {
-                        return true;
-                    }
-                }
-                return false;
-            }
+            /** 「并行重复配方」关时：同一条配方只许占一条线程（现由 {@link BatchFinder} 统一处理）。 */
 
             @Override
             public boolean consumeInputs(GTRecipe recipe) {
@@ -703,7 +725,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         public void resetRecipeLogic() {
             super.resetRecipeLogic();
             engine.clear();
-            scanStates.clear();
+            finder.reset();
         }
 
         @Override
@@ -715,7 +737,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         @Override
         public void loadCustomPersistedData(CompoundTag tag) {
             super.loadCustomPersistedData(tag);
-            scanStates.clear();
+            finder.reset();
             // 读档时结构通常还没成形（getParts() 为空），这里不能按 engineActive() 判空清表，
             // 否则重进存档会把独立线程批次全丢掉；成形后第一个 serverTick 若没装线程仓会自动清。
             engine.load(tag);
