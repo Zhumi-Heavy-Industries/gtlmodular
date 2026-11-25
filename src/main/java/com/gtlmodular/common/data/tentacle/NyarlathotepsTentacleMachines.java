@@ -29,8 +29,9 @@ import java.util.List;
  * {@code gtceu:suprachronal_assembly_line} / {@code gtceu:circuit_assembly_line}，
  * {@code gtceu:assembly_line} 是 GTCEu 原版），按 id 现取；取不到的自动跳过并告警，
  * 一张都取不到时才放弃注册（不崩服）。
- * <p>另外挂上了本模组自建的 {@code gtlmodular:component_parts}，
- * 使它多出一个「零部件加工」模式（一锭出全套零件的批量零件配方）。
+ * <p>{@code 2026-11-25}：本机<b>不再</b>挂「零部件加工」表 —— 那张表已整体搬到
+ * {@code com.gtlmodular.common.data.fieldforge.FieldExtruderPartsRecipeTypes}，
+ * 是力场压模零件工厂专用的，与奈亚无关。
  *
  * <h2>与原机一致的注册口径</h2>
  * <ul>
@@ -87,7 +88,7 @@ public final class NyarlathotepsTentacleMachines {
         //   2026-11-14 早先这张表是挂给奈亚的（当时还没有别的机器用它）；
         //   现在队长把这张表划给了新移植的「力场压模工厂」(gtlmodular:field_extruder_factory)，
         //   奈亚回到 GTO 原样：只跑 超时空装配线 / 装配线 / 电路装配线 三张表。
-        //   表本身仍在 ComponentPartsRecipeTypes 注册（不删），由 FieldExtruderFactoryMachines 引用。
+        //   表本身已搬到 FieldExtruderPartsRecipeTypes（fieldforge 包），由 FieldExtruderFactoryMachines 引用。
         if (types.isEmpty()) {
             GTLModular.LOGGER.warn("[gtlmodular] 跳过奈亚拉托提普之触：配方表一张都取不到");
             return;

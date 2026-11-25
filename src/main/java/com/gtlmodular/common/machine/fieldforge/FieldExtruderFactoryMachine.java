@@ -15,7 +15,9 @@ import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
  * <p>GTO 原机跑 {@code GTRecipeTypes.EXTRUDER_RECIPES}（压模机表）
  * （{@code _gto_src/.../machines/MultiBlockF.java:255}）。
  * <b>本机按队长 2026-11-14 口径改跑本模组自建的「零部件加工」表</b>
- * {@code gtlmodular:component_parts}（{@code ComponentPartsRecipeTypes}），不是压模机表。</p>
+ * {@code gtlmodular:field_extruder_parts}（{@code FieldExtruderPartsRecipeTypes}），不是压模机表。</p>
+ * <p>{@code 2026-11-25}：该表已与奈亚之触彻底解耦（包/类名/id 全部改掉），配方由
+ * {@code FieldExtruderPartsRecipes} 按材料注册表自动生成。</p>
  *
  * <h2>机器本身（照搬 GTO）</h2>
  * <ul>

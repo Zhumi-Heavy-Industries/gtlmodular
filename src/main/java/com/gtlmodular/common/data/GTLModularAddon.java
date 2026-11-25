@@ -117,6 +117,20 @@ public class GTLModularAddon implements IGTAddon {
         // 没有需要在 addon 初始化阶段做的事（材料在 MaterialEvent 里注册）
     }
 
+    /**
+     * ★ <b>配方生成的正式入口</b>：GTCEu 在数据包配方生成阶段遍历 {@code AddonFinder.getAddons()}
+     * 逐个调 {@code addon.addRecipes(consumer)}（证据：GTCEu 1.4.4 {@code GTRecipes.java:91}）。
+     * 本模组 {@code ComponentAssemblerAddon} 已在用同一套写法。
+     *
+     * <p>{@code 2026-11-25}：力场压模零件工厂的「零部件加工」配方从 112 个手写 JSON
+     * 改成按材料注册表现场生成，见
+     * {@link com.gtlmodular.common.data.fieldforge.FieldExtruderPartsRecipes}。</p>
+     */
+    @Override
+    public void addRecipes(java.util.function.Consumer<net.minecraft.data.recipes.FinishedRecipe> provider) {
+        com.gtlmodular.common.data.fieldforge.FieldExtruderPartsRecipes.addRecipes(provider);
+    }
+
     @Override
     public String addonModId() {
         return GTLModular.MOD_ID;

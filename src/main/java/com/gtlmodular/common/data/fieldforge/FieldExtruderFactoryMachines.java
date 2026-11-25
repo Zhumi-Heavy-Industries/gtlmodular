@@ -8,7 +8,6 @@ import com.gregtechceu.gtceu.api.registry.GTRegistries;
 import com.gregtechceu.gtceu.common.data.GTRecipeModifiers;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.data.GTLModularMachines;
-import com.gtlmodular.common.data.tentacle.ComponentPartsRecipeTypes;
 import com.gtlmodular.common.machine.fieldforge.FieldExtruderFactoryMachine;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -26,8 +25,12 @@ import java.util.List;
  * <h2>与 GTO 原机的差异（唯一一处实质改动）</h2>
  * <p>GTO 原机：{@code .recipeTypes(GTRecipeTypes.EXTRUDER_RECIPES)}（压模机表）。
  * <b>本机按队长 2026-11-14 口径改跑本模组自建的「零部件加工」表</b>
- * {@code gtlmodular:component_parts} —— 即奈亚拉托提普之触新增的那个模式所用的同一张表，
+ * {@code gtlmodular:field_extruder_parts}（{@link FieldExtruderPartsRecipeTypes}），
  * <b>不再是 GTO 的压模机表</b>。</p>
+ *
+ * <p>{@code 2026-11-25}：这张表已从奈亚之触名下彻底剥离 —— 包从 {@code data.tentacle}
+ * 搬到 {@code data.fieldforge}，类名与 id 都改掉，配方也改成由
+ * {@link FieldExtruderPartsRecipes} 按材料注册表现场生成。本机与奈亚机再无任何共享。</p>
  *
  * <h2>与原机一致的注册口径</h2>
  * <ul>
@@ -67,7 +70,7 @@ public final class FieldExtruderFactoryMachines {
     public static void register() {
         List<GTRecipeType> types = new ArrayList<>();
         // ★ 队长口径：跑「零部件加工」表，不跑 GTO 的压模机表。
-        GTRecipeType partsType = ComponentPartsRecipeTypes.COMPONENT_PARTS();
+        GTRecipeType partsType = FieldExtruderPartsRecipeTypes.RECIPES();
         if (partsType == null) {
             GTLModular.LOGGER.warn("[gtlmodular] 跳过力场压模零件工厂：零部件加工配方表未注册");
             return;

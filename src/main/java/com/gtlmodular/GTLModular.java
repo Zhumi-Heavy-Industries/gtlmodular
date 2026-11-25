@@ -70,10 +70,10 @@ public final class GTLModular {
         // ★ 2026-10-30：一次性工具 3D 打印配方表（gtlmodular:disposable_tool_printing），同一注册窗口。
         modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
                 com.gtlmodular.common.data.print.DisposableToolPrintTypes::onRecipeTypeRegisterEvent);
-        // ★ 奈亚机「零部件加工」专用表（gtlmodular:component_parts），同一注册窗口。
-        //   不共用 gtlcore:component_assembly_line，避免零件配方连带改写部件组装机。
+        // ★ 力场压模零件工厂「零部件加工」专用表（gtlmodular:field_extruder_parts），同一注册窗口。
+        //   2026-11-25 从奈亚之触名下彻底剥离（包/类名/id 全改），不共用 gtlcore:component_assembly_line。
         modBus.addGenericListener(com.gregtechceu.gtceu.api.recipe.GTRecipeType.class,
-                com.gtlmodular.common.data.tentacle.ComponentPartsRecipeTypes::onRecipeTypeRegisterEvent);
+                com.gtlmodular.common.data.fieldforge.FieldExtruderPartsRecipeTypes::onRecipeTypeRegisterEvent);
 
         // ★ 2026-11-24：集成木质生物质工厂配方表（gtlmodular:wood_distillation，
         //   显示名「集成木质生物质热解」= GTO gtceu:wood_distillation 的等价表），同一注册窗口。

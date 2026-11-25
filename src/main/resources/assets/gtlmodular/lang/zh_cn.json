@@ -485,7 +485,7 @@
   "gtlmodular.cc.cc_casing_uev_superconductor.name": "封装 UEV超导粗胚外壳",
   "gtlmodular.cc.cc_processed_bolt_umv_superconductor.name": "盒装传奇合金螺栓",
   "gtlmodular.nanochip_assembly_complex": "纳米芯片组装复合体",
-  "gtlmodular.component_parts": "零部件加工",
+  "gtlmodular.field_extruder_parts": "零部件加工",
   "gtlmodular.nanochip_conversion": "纳米芯片换算",
   "gtlmodular.nanochip_assembly_matrix": "纳米芯片组装矩阵",
   "gtlmodular.nanochip_smd_processor": "元件预处理装置",
