@@ -83,6 +83,10 @@ public final class CoolingTowerCondensationCenterMachines {
                     if (processed == null) {
                         return null;
                     }
+                    // ★ 2026-11-25（玩家：「冷却一个锭四千秒，给多少电都不超频」）：
+                    //   反熵冷凝多数配方是 gtladditions 从 VACUUM_RECIPES 复制的零 EU 配方，
+                    //   GT 的 applyOverclock 在 EUt==0 时什么都不做 ⇒ 这里补「零 EU 配方时间超频」。
+                    processed = CoolingTowerCondensationCenterMachine.applyTimeOverclockForFreeRecipes(processed, machine);
                     if (machine instanceof CoolingTowerCondensationCenterMachine tower) {
                         // ★ 相对论级热容：只压 tick 输入 EU（×0.09），物品/流体不动；
                         //   引擎与原版两条路都会先走本修改器，所以共用这一处。
@@ -129,7 +133,7 @@ public final class CoolingTowerCondensationCenterMachines {
     }
 
     /** 与 lang 的 {@code gtlmodular.cooling_tower_condensation_center.tooltip.N} 对应。 */
-    private static final int TOOLTIP_LINES = 8;
+    private static final int TOOLTIP_LINES = 9;
 
     private static Component[] tooltips() {
         Component[] lines = new Component[TOOLTIP_LINES];

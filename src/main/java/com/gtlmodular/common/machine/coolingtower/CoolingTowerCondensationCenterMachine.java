@@ -2,12 +2,16 @@ package com.gtlmodular.common.machine.coolingtower;
 
 import com.gregtechceu.gtceu.api.capability.recipe.EURecipeCapability;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
+import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.IMachineModifyDrops;
+import com.gregtechceu.gtceu.api.machine.feature.IOverclockMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
+import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.api.recipe.content.Content;
+import com.gregtechceu.gtceu.utils.GTUtil;
 import com.gtladd.gtladditions.common.items.GTLAddItems;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
@@ -64,6 +68,12 @@ public class CoolingTowerCondensationCenterMachine
 
     /** 嵌入相对论级热容后的耗电倍率（2026-11-10 队长文案：0.09）。 */
     public static final double HEAT_CAPACITOR_EU_MULTIPLIER = 0.09;
+
+    /** 零 EU 配方每多一档电压，耗时 ÷ 该值（完美超频）。 */
+    private static final int FREE_RECIPE_OVERCLOCK_DIVISOR = 4;
+
+    /** 零 EU 配方的超频档数上限（防 int 溢出；4000 秒 ÷ 4^12 已到下界）。 */
+    private static final int FREE_RECIPE_MAX_OVERCLOCKS = 12;
 
     /** 已嵌入相对论级热容（持久化 + 同步）。 */
     @Persisted
@@ -124,6 +134,51 @@ public class CoolingTowerCondensationCenterMachine
     // ------------------------------------------------------------------
     // 相对论级热容：EU ×0.09
     // ------------------------------------------------------------------
+
+    /**
+     * ★ 2026-11-25：<b>零 EU 配方的时间超频</b>（玩家反馈：「冷却一个锭四千秒，给多少电都不超频」）。
+     *
+     * <p><b>为什么 GT 的超频在这里无效</b>：反熵冷凝表的绝大多数配方是 gtladditions 从
+     * {@code VACUUM_RECIPES} 复制来的「冷却热锭」配方（{@code cool_hot_X_ingot}），
+     * 而 GTCEu 生成它们时<b>不写 EUt</b>（{@code GTRecipeBuilder} 不调 {@code EUt(...)} 就没有 EU 输入）。
+     * GTCEu 的 {@code RecipeHelper#applyOverclock} 在 {@code EUt == 0} 时<b>直接什么都不做</b>
+     * （只有输入/输出 EU &gt; 0 才走 {@code performOverclocking}）⇒ 能量仓电压再高，耗时一动不动。
+     *
+     * <p><b>口径</b>：把这批免费配方当成 ULV（tier 0）配方，按能量仓电压做<b>完美超频</b>
+     * （每档耗时 ×1/4、最低 1 tick）；档数 = 电压档 - 1（与 GT 对 ULV 配方的规则一致），
+     * 并钳到 {@link #FREE_RECIPE_MAX_OVERCLOCKS} 档（防 int 溢出）。
+     *
+     * <p><b>不抢</b>：只要输入或输出 EU &gt; 0 就原样返回（那些配方由 GT 标准超频负责）；
+     * 没有能量仓（{@code maxVoltage <= 0}）也不加速（免费配方本来就能跑）。
+     */
+    public static GTRecipe applyTimeOverclockForFreeRecipes(@NotNull GTRecipe recipe, @NotNull MetaMachine machine) {
+        if (RecipeHelper.getInputEUt(recipe) > 0 || RecipeHelper.getOutputEUt(recipe) > 0) {
+            return recipe;   // 有电的配方交给 GT 标准超频，别重复
+        }
+        if (recipe.duration <= 1) {
+            return recipe;
+        }
+        long maxVoltage = machine instanceof IOverclockMachine overclockMachine
+                ? overclockMachine.getOverclockVoltage() : 0L;
+        if (maxVoltage <= 0L) {
+            return recipe;   // 没有能量仓：维持原样（免费配方本来就能跑）
+        }
+        int maxTier = GTUtil.getTierByVoltage(maxVoltage);
+        int overclocks = Math.min(FREE_RECIPE_MAX_OVERCLOCKS, Math.max(0, maxTier - 1));
+        if (overclocks <= 0) {
+            return recipe;
+        }
+        int duration = recipe.duration;
+        for (int i = 0; i < overclocks && duration > 1; i++) {
+            duration = Math.max(1, duration / FREE_RECIPE_OVERCLOCK_DIVISOR);
+        }
+        if (duration >= recipe.duration) {
+            return recipe;
+        }
+        GTRecipe copy = recipe.copy();
+        copy.duration = duration;
+        return copy;
+    }
 
     /**
      * 把配方 <b>tick 输入里的 EU</b> 乘 {@link #HEAT_CAPACITOR_EU_MULTIPLIER}（向下取整、最低 1），

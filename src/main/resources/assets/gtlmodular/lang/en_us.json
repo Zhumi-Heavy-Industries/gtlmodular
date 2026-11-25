@@ -1655,6 +1655,7 @@
   "gtlmodular.cooling_tower_condensation_center.tooltip.5": "§bLaser hatches can supply enormous energy",
   "gtlmodular.cooling_tower_condensation_center.tooltip.6": "§7- Right-click with a stack of relativistic heat capacitors to embed: EU multiplier becomes 0.09",
   "gtlmodular.cooling_tower_condensation_center.tooltip.7": "§7- Recipe type: §bAnti-Entropy Condensation",
+  "gtlmodular.cooling_tower_condensation_center.tooltip.8": "§7- EU-free recipes: perfect overclock by energy hatch voltage (duration ×1/4 per tier)",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor": "§7Relativistic heat capacitor: [%s]",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor_already_installed": "This center already has a relativistic heat capacitor embedded",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor_installed": "Embedded one stack of relativistic heat capacitors",

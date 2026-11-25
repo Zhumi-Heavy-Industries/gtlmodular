@@ -1657,6 +1657,7 @@
   "gtlmodular.cooling_tower_condensation_center.tooltip.5": "§b激光仓可以提供巨大的能量",
   "gtlmodular.cooling_tower_condensation_center.tooltip.6": "§7- 手持一组相对论级热容右键嵌入后，耗能倍率变为0.09",
   "gtlmodular.cooling_tower_condensation_center.tooltip.7": "§7- 配方类型：§b反熵冷凝",
+  "gtlmodular.cooling_tower_condensation_center.tooltip.8": "§7- 零耗电配方：按能量仓电压完美超频（每档耗时 ×1/4）",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor": "§7相对论级热容嵌入：[%s]",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor_already_installed": "超级大冰箱已嵌入相对论级热容",
   "gtlmodular.cooling_tower_condensation_center.heat_capacitor_installed": "已向超级大冰箱嵌入一组相对论级热容",
