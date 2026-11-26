@@ -98,11 +98,14 @@ import net.minecraft.world.level.block.Blocks;
 public final class WoodFactoryStructures {
 
     /** X 跨度：每行 28 个字符。 */
-    public static final int WIDTH = 29;
+    public static final int WIDTH = 28;
     /** Y 跨度：每片 56 行。 */
     public static final int HEIGHT = 56;
+    /** GTO 模块并入后的升级结构维度。 */
+    public static final int UPGRADED_WIDTH = 29;
+    public static final int UPGRADED_LENGTH = 61;
     /** Z 跨度：共 60 片。 */
-    public static final int LENGTH = 61;
+    public static final int LENGTH = 60;
 
     private WoodFactoryStructures() {
     }
@@ -3599,6 +3602,9 @@ public final class WoodFactoryStructures {
      * 结构数据里允许出现的符号全集（必须与 {@link #build} 里的 {@code .where(...)} 一一对应）。
      * 加字符时两处都要改。
      */
+    /** GTO 模块并入后新增的结构符号（数字/标点，都有对应 .where 绑定）。 */
+    private static final String UPGRADED_EXTRA_SYMBOLS = "!#$%&()*0123456789=?~@";
+
     private static final String DECLARED_SYMBOLS = " ABCDEFGHIJKLMNOPQRSTUVWXYabdt";
 
     /** 结构总格数（自检用）。 */
@@ -3610,7 +3616,7 @@ public final class WoodFactoryStructures {
      * 所以<b>直填，不重排</b>。
      */
     public static BlockPattern build(MultiblockMachineDefinition definition) {
-        verifySymbols();
+        verifySymbols(SLICES, "基础", WIDTH, LENGTH, "");
 
         // ── X 位：GTO 的 autoLaserAbilities(recipeTypes) + MAINTENANCE ──
         // 20 格，够放 进出仓 / 能源 / 激光 / 维护。
@@ -3687,32 +3693,38 @@ public final class WoodFactoryStructures {
     }
 
     /** 结构自检：数据里出现的每个字符都必须在 {@link #DECLARED_SYMBOLS} 里。 */
-    private static void verifySymbols() {
-        for (int z = 0; z < SLICES.length; z++) {
-            String[] rows = SLICES[z];
+    /**
+     * 结构自检：数据里出现的每个字符都必须在 {@link #DECLARED_SYMBOLS} 里。
+     * 基础与升级切片各自校验：二者的宽度/片数可能不同（GTO 模块并入后扩展了结构）。
+     */
+    private static void verifySymbols(String[][] slices, String tag, int width, int length,
+                                      String extraSymbols) {
+        if (slices.length != length) {
+            throw new IllegalStateException("木质生物质工厂 " + tag + "结构：共 " + slices.length + " 片，应为 " + length);
+        }
+        String allowed = DECLARED_SYMBOLS + extraSymbols;
+        for (int z = 0; z < slices.length; z++) {
+            String[] rows = slices[z];
             if (rows.length != HEIGHT) {
-                throw new IllegalStateException("WoodFactory 结构：Z=" + z + " 只有 " + rows.length
+                throw new IllegalStateException("木质生物质工厂 " + tag + "结构：Z=" + z + " 只有 " + rows.length
                         + " 行，应为 " + HEIGHT);
             }
             for (int y = 0; y < rows.length; y++) {
                 String row = rows[y];
-                if (row.length() != WIDTH) {
-                    throw new IllegalStateException("WoodFactory 结构：SLICES[" + z + "][" + y + "] 行长 "
-                            + row.length() + "，应为 " + WIDTH);
+                if (row.length() != width) {
+                    throw new IllegalStateException("木质生物质工厂 " + tag + "结构：SLICES[" + z + "][" + y + "] 行长 "
+                            + row.length() + "，应为 " + width);
                 }
                 for (int x = 0; x < row.length(); x++) {
                     char c = row.charAt(x);
-                    if (DECLARED_SYMBOLS.indexOf(c) < 0) {
+                    if (c != ' ' && allowed.indexOf(c) < 0) {
                         throw new IllegalStateException(String.format(
-                                "WoodFactory 结构：符号 '%c'（0x%02X）在 SLICES[%d][%d] 第 %d 列出现，"
-                                        + "但没有对应的 .where(...) 绑定。DECLARED_SYMBOLS=%s。",
-                                c, (int) c, z, y, x, DECLARED_SYMBOLS));
+                                "木质生物质工厂 " + tag + "结构：符号 '%c'（0x%02X）在 SLICES[%d][%d] 第 %d 列出现，"
+                                        + "但没有对应的 .where(...) 绑定。allowed=%s。",
+                                c, (int) c, z, y, x, allowed));
                     }
                 }
             }
-        }
-        if (SLICES.length != LENGTH) {
-            throw new IllegalStateException("WoodFactory 结构：共 " + SLICES.length + " 片，应为 " + LENGTH);
         }
     }
 
@@ -7283,7 +7295,7 @@ public final class WoodFactoryStructures {
     public static String[][] upgradedSlices() { return UPGRADED_SLICES; }
 
     public static BlockPattern buildUpgraded(MultiblockMachineDefinition definition) {
-        verifySymbols();
+        verifySymbols(UPGRADED_SLICES, "升级", UPGRADED_WIDTH, UPGRADED_LENGTH, UPGRADED_EXTRA_SYMBOLS);
 
         // ── X 位：GTO 的 autoLaserAbilities(recipeTypes) + MAINTENANCE ──
         // 20 格，够放 进出仓 / 能源 / 激光 / 维护。

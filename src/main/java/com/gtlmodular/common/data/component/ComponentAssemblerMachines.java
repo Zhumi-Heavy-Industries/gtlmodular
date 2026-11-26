@@ -65,13 +65,9 @@ public final class ComponentAssemblerMachines {
                         CASING_TEXTURE,
                         new ResourceLocation(GTLModular.MOD_ID, "block/multiblock/component_assembler"))
                 .langValue("部件组装机")
-                .tooltips(
-                        Component.translatable("gtlmodular.component_assembler.tooltip.0"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.1"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.2"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.3"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.4"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.5"))
+                .tooltips(java.util.stream.IntStream.range(0, 8)
+                        .mapToObj(i -> Component.translatable("gtlmodular.component_assembler.tooltip." + i))
+                        .toArray(Component[]::new))
                 .register();
 
         GTLModular.LOGGER.info("[gtlmodular] 已注册部件组装机：{}（1级 IV/4线程 → 2级 UV/8线程/激光仓）",
