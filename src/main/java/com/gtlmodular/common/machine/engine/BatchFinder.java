@@ -59,24 +59,39 @@ public final class BatchFinder {
     private int lastSuccessfulTypeIdx;
 
     /**
-     * ★ 0.3.517（spark q4h63KgJFZ）：整表候选的<b>按 tick 缓存</b>。
+     * ★ 0.3.521：整表候选的<b>全局共享缓存</b>（0.3.517 的按机器 tick 缓存再进一步）。
      *
-     * <p>{@code getRecipes(true)} 每次都要展开 GTCEu 的 lookup 树并 flatMap，
-     * 同一 tick 内开 8 条线程就要重复展开 8 次；spark 里这一项占引擎自身耗时的约 1/3。
-     * 配方表在同一个 tick 内不会变，按 tick 缓存即可省掉重复展开；
-     * 跨 tick 自动失效 ⇒ 数据包 reload 最多一个 tick 后生效，无功能风险。
+     * <p>0.3.517 的缓存是每台机器一份、每 tick 清空：机器多时同一 tick 仍有 N 次重复展开。
+     * 配方表是全局只读的，改成 {@code static} 共享后所有机器只展开一次；用
+     * {@code Branch} 引用 + 两个节点表的 size 做指纹，reload/换表下一 tick 自动重建。
+     * WeakHashMap ⇒ 配方表被卸载时条目自动回收，不泄漏。
      */
-    private long recipeListTick = Long.MIN_VALUE;
-    private final Map<GTRecipeType, List<GTRecipe>> tickRecipeLists = new IdentityHashMap<>();
+    private static final class CachedTable {
+        Object branch;
+        int nodes;
+        int specialNodes;
+        List<GTRecipe> recipes;
+    }
 
-    private List<GTRecipe> recipesFor(GTRecipeType type) {
-        long now = machine.self().getOffsetTimer();
-        if (now != recipeListTick) {
-            tickRecipeLists.clear();
-            recipeListTick = now;
+    private static final Map<GTRecipeType, CachedTable> TABLE_CACHE = new java.util.WeakHashMap<>();
+
+    private static List<GTRecipe> recipesFor(GTRecipeType type) {
+        CachedTable cached = TABLE_CACHE.get(type);
+        var branch = type.getLookup().getLookup();
+        int nodes = branch.getNodes().size();
+        int special = branch.getSpecialNodes().size();
+        if (cached != null && cached.branch == branch && cached.nodes == nodes
+                && cached.specialNodes == special && cached.recipes != null) {
+            return cached.recipes;
         }
-        return tickRecipeLists.computeIfAbsent(type,
-                t -> t.getLookup().getLookup().getRecipes(true).filter(r -> !r.isFuel()).toList());
+        List<GTRecipe> recipes = branch.getRecipes(true).filter(r -> !r.isFuel()).toList();
+        CachedTable fresh = new CachedTable();
+        fresh.branch = branch;
+        fresh.nodes = nodes;
+        fresh.specialNodes = special;
+        fresh.recipes = recipes;
+        TABLE_CACHE.put(type, fresh);
+        return recipes;
     }
 
     public BatchFinder(IRecipeLogicMachine machine, IBatchLogicOwner owner,

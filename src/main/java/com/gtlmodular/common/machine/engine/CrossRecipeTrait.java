@@ -294,9 +294,17 @@ public final class CrossRecipeTrait {
         return real != null ? real : id;
     }
 
+    /**
+     * ★ 0.3.521：复用的去重集合。{@link #runningRecipeIds()} 每 tick 每轮扫描都会调用，
+     * 旧版每次 new 一个 {@link ObjectOpenHashSet}；调用方只在本次 lookup 内同步读取、
+     * 不会跨 tick 持有，因此复用一个实例即可（每次先 clear），省掉热路径的分配与 GC。
+     */
+    private final ObjectSet<ResourceLocation> runningIdsScratch = new ObjectOpenHashSet<>();
+
     /** 在跑线程占用的配方 id（GTO {@code duplicateCheck} 口径：按原始配方身份）。 */
     public ObjectSet<ResourceLocation> runningRecipeIds() {
-        ObjectSet<ResourceLocation> ids = new ObjectOpenHashSet<>();
+        ObjectSet<ResourceLocation> ids = runningIdsScratch;
+        ids.clear();
         for (int i = 0; i < engine.size(); i++) {
             GTRecipe recipe = engine.get(i).recipe;
             if (recipe != null && recipe.getId() != null) {
