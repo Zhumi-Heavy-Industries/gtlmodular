@@ -201,6 +201,10 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
     /** 「同时处理 R 次配方运行（各批次之和）」的语言键；来源同 {@link #LANG_THREADS}。 */
     private static final String LANG_THREADS_RUNS = "gtlmodular.nanochip.threads.runs";
 
+    /** ★ 0.3.515：完全照抄 GTO ParallelProvider 的两条键（深紫数字 + 深蓝补偿乘数）。 */
+    private static final String LANG_GTO_PARALLEL = "gtlmodular.nanochip.parallel.gto";
+    private static final String LANG_GTO_BATCH = "gtlmodular.nanochip.parallel.gto.batch";
+
     /**
      * ★★ 0.3.132【① 读数：把「K 条」与「K 种」分开 · 键】★★
      *
@@ -560,8 +564,9 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
                 appendCalibrationReduction(tooltip, data);
                 return;
             }
-            tooltip.add(Component.translatable(LANG_THREADS_RUNS,
-                    FormattingUtil.formatNumbers(data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS))));
+            // ★ 0.3.515：完全照抄 GTO ParallelProvider 的「并行」行口径：
+            //   parallel > 1 才画；深紫数字；batchParallel > 1 时追加深蓝「×M 补偿」后缀。
+            appendGtoParallelLine(tooltip, data);
             // ★ 2026-11-02【本轮删除】原来紧跟在这里的一行「延迟说明」
             //   （`tooltip.add(Component.translatable(NanochipJadeKeys.LANG_LATENCY_NOTE))`）
             //   连同它的常量与两份 lang 文案已整条删除（用户明确要求：不需要那行说明）。
@@ -666,6 +671,36 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
      * <p>调用处包在本类 {@code appendTooltip} 的 {@code try/catch(Throwable)} 里 ⇒
      * 任何意外只表现为「这次没显示这一行」，不会掀翻整条准星提示。
      */
+    /**
+     * ★ 0.3.515：完全照抄 GTO {@code ParallelProvider.appendTooltip} 的画法。
+     *
+     * <p>逐字对齐 GTO 字节码：{@code parallel > 1} 才画；数字用 {@code FormattingUtil.formatNumbers}
+     * 并染 {@code DARK_PURPLE}；{@code batchParallel > 1} 时 {@code append} 一段
+     * {@code DARK_BLUE} 的「×M」补偿后缀。色码写在语言键里（本工程与 GTO 共有做法），
+     * Java 侧只负责按 GTO 的条件决定是否追加第二段。
+     *
+     * <p>键缺席（老服务端 / 不实现的机器）⇒ 一个字都不画，行为与原「同时处理 R 次」行之外一致。
+     */
+    private static void appendGtoParallelLine(ITooltip tooltip, CompoundTag data) {
+        if (!data.contains(NanochipJadeKeys.KEY_GTO_PARALLEL)) {
+            // 兜底：没有 GTO 键就退回我们原来的 R 行（老存档 / 其它 provider 写入的数据）
+            tooltip.add(Component.translatable(LANG_THREADS_RUNS,
+                    FormattingUtil.formatNumbers(data.getLong(NanochipJadeKeys.KEY_THREAD_RUNS))));
+            return;
+        }
+        long parallel = data.getLong(NanochipJadeKeys.KEY_GTO_PARALLEL);
+        if (parallel <= 1L) {
+            return;
+        }
+        long batchParallel = data.getLong(NanochipJadeKeys.KEY_GTO_BATCH_PARALLEL);
+        var line = Component.translatable(LANG_GTO_PARALLEL, FormattingUtil.formatNumbers(parallel));
+        if (batchParallel > 1L) {
+            line = line.copy().append(Component.translatable(LANG_GTO_BATCH,
+                    "×" + FormattingUtil.formatNumbers(batchParallel)));
+        }
+        tooltip.add(line);
+    }
+
     private static void appendDistinctRecipes(ITooltip tooltip, CompoundTag data) {
         // 边界①：键缺失 ⇒ 整行不显示（不是我们的机器 / 服务端没写）。
         //   ★ 键的写入端是 appendServerData 里那一句 putInt：拿不到线程逻辑时它**不写**，
@@ -1384,6 +1419,21 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
         data.putLong(NanochipJadeKeys.KEY_MAX_PARALLEL, logic.maxParallel());
         data.putLong(NanochipJadeKeys.KEY_AVAILABLE_PARALLEL, logic.availableParallel());
         data.putLong(NanochipJadeKeys.KEY_LAST_PARALLEL, logic.lastParallel());
+        // ★ 0.3.515：完全照抄 GTO ParallelProvider 的写入语义：
+        //   工作态 parallel = 当前配方并行；空闲态 = 并行仓原始设定；exact = 工作态；
+        //   batchParallel = parallel / origin（GTO 无 batchParallels 时的 fallback 口径）。
+        long origin = Math.max(1L, logic.originParallel());
+        long cur = logic.currentRecipeParallel();
+        boolean working = cur > 0L;
+        long parallel = working ? cur : origin;
+        data.putLong(NanochipJadeKeys.KEY_GTO_PARALLEL, parallel);
+        if (working) {
+            data.putBoolean(NanochipJadeKeys.KEY_GTO_EXACT, true);
+        }
+        long batchParallel = origin > 0L ? parallel / origin : 0L;
+        if (batchParallel > 1L) {
+            data.putLong(NanochipJadeKeys.KEY_GTO_BATCH_PARALLEL, batchParallel);
+        }
         data.put(NanochipJadeKeys.KEY_THREAD_LIST, list);
         // 原生条会被 mixin 按 KEY_THREAD_LIMIT 取消；这里把所有批次都交给自绘。
         data.putInt(NanochipJadeKeys.KEY_MIRRORED_SLOT, -1);

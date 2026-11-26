@@ -1724,5 +1724,7 @@
   "gtlmodular.component_assembler.tooltip.4": "§7解锁二级：钢制机械外壳×32 / 高能机械外壳×32 / 洁净机械外壳×32（结构自用，无舱室）",
   "gtlmodular.wood_biomass_factory.tooltip.7": "§7解锁二级：耐腐蚀机械外壳×32 / 防水机械外壳×32 / 应力机械外壳×32（无舱室）",
   "gtlmodular.petrochemical_plant.tooltip.7": "§7解锁二级：洁净机械外壳×32 / 高能机械外壳×32 / 应力机械外壳×32（无舱室）",
-  "gtlmodular.fuel_refining_complex.tooltip.2": "§7解锁二级：坚固机械外壳×32 / 洁净机械外壳×32 / 惰性机械外壳×32（无舱室）"
+  "gtlmodular.fuel_refining_complex.tooltip.2": "§7解锁二级：坚固机械外壳×32 / 洁净机械外壳×32 / 惰性机械外壳×32（无舱室）",
+  "gtlmodular.nanochip.parallel.gto": "同时处理至多 §d%s§r 个配方",
+  "gtlmodular.nanochip.parallel.gto.batch": "（批处理/超频补偿 §9×%s§r）"
 }

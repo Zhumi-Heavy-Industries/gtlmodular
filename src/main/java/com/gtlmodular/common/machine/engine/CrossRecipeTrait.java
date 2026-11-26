@@ -234,6 +234,36 @@ public final class CrossRecipeTrait {
     }
 
     /**
+     * ★ 0.3.515：GTO {@code ParallelProvider} 口径的「当前配方并行」。
+     *
+     * <p>GTO 工作时取 {@code getLastRecipe().parallels}（第 0 条线程那条配方套过修改器后的并行），
+     * 空闲时取并行仓设定（{@code getOriginParallel()}）。这里第 0 条线程在跑就返回它的
+     * {@code recipe.parallels}；没有则返回 0，由调用方退回并行上限。
+     */
+    public long currentRecipeParallel() {
+        GTRecipe recipe = getRecipe();
+        return recipe == null ? 0L : Math.max(0L, recipe.parallels);
+    }
+
+    /**
+     * ★ 0.3.515：GTO {@code ParallelProvider.getOriginParallel()} —— 并行仓的<b>原始设定</b>
+     * （不含线程倍率）。用于算「批处理/超频补偿 = current / origin」。
+     */
+    public long originParallel() {
+        refresh();
+        long origin = 1L;
+        if (threaded.usesParallelHatch()) {
+            for (IParallelHatch hatch : parallelHatches) {
+                long cur = hatch.getCurrentParallel();
+                if (cur > origin) {
+                    origin = cur;
+                }
+            }
+        }
+        return Math.max(1L, origin);
+    }
+
+    /**
      * ★ GTO {@code getRealRecipe(RecipeHandlerUnit, GTRecipe)} 的等价物（0.3.514）。
      *
      * <p>{@code raw} 是配方表里的原始配方，{@code selected} 是经修改器/准确并行改写后的副本

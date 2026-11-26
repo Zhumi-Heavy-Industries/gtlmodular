@@ -467,6 +467,17 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             return trait.lastParallel;
         }
 
+        // ★ 0.3.515：GTO ParallelProvider 口径。
+        @Override
+        public long currentRecipeParallel() {
+            return trait.currentRecipeParallel();
+        }
+
+        @Override
+        public long originParallel() {
+            return trait.originParallel();
+        }
+
         /**
          * 每条在跑批次的只读快照 —— 供 Jade 的通用线程显示（{@code IThreadBatchLogic}）逐条画进度条。
          * 与通用引擎 {@code ThreadedRecipeLogic#snapshotBatches()} 同格式。

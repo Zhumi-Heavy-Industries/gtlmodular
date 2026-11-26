@@ -130,6 +130,11 @@ public final class NanochipJadeKeys {
     public static final String KEY_AVAILABLE_PARALLEL = "gtlmodular_jade_available_parallel";
     public static final String KEY_LAST_PARALLEL = "gtlmodular_jade_last_parallel";
 
+    /** ★ 0.3.515：GTO ParallelProvider 的 serverData 键（照抄该 provider 的 parallel/batch/exact 语义）。 */
+    public static final String KEY_GTO_PARALLEL = "parallel";
+    public static final String KEY_GTO_BATCH_PARALLEL = "batch_parallel";
+    public static final String KEY_GTO_EXACT = "exact";
+
     /** 线程明细里「槽位」的键。 */
     public static final String KEY_SLOT = "slot";
 

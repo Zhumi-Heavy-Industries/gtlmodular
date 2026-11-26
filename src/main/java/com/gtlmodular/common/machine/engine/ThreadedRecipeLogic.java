@@ -839,6 +839,17 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         return originalActive() ? 0L : trait.lastParallel;
     }
 
+    // ★ 0.3.515：GTO ParallelProvider 口径的当前配方并行 / 并行仓原始设定。
+    @Override
+    public long currentRecipeParallel() {
+        return originalActive() ? 0L : trait.currentRecipeParallel();
+    }
+
+    @Override
+    public long originParallel() {
+        return originalActive() ? 0L : trait.originParallel();
+    }
+
     /**
      * 跨配方表是否生效：★ 2026-11-07 起与「独立线程」开关解耦 ——
      * 线程本来就该各自挑不同配方，多表机器默认全部扫（GTO 同义）。

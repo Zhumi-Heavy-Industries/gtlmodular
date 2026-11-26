@@ -47,4 +47,14 @@ public interface IThreadBatchLogic {
     default long lastParallel() {
         return 0L;
     }
+
+    /** ★ 0.3.515：GTO ParallelProvider 口径 —— 当前第 0 条配方的并行（0 = 空闲）。 */
+    default long currentRecipeParallel() {
+        return 0L;
+    }
+
+    /** ★ 0.3.515：GTO ParallelProvider 口径 —— 并行仓原始设定（不含线程倍率）。 */
+    default long originParallel() {
+        return 0L;
+    }
 }
