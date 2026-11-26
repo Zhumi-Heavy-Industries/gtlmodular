@@ -627,7 +627,8 @@ public final class TerminalScreen extends Screen {
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "OPERATOR", 46 + sigW + 8, 108, 2f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 36, 266, 126, TerminalTheme.RULE);
 
-        // 三卡：首卡改为「拆除结构」——开启拆解模式并收起界面，玩家右击控制器执行拆解。
+        // 三卡：首卡「拆除结构」是一个开关——点一次开、再点一次关；状态直接写在副标上。
+        // 开启后不关界面，玩家可自行收起界面去右击控制器，回来再点即可关闭。
         String[] titles = {"拆除结构", "配置舱室", "选择档位"};
         // 网页端第三卡：未选时显示总档位数与「需扫描」，点选后写回「<档位名> · 已选」。
         // 副标可用宽度只有 60px（卡宽 72、左右各 6 内边距），长档位名先按实宽截断。
@@ -636,22 +637,25 @@ public final class TerminalScreen extends Screen {
                 ? tierPicked + " · 已选"
                 : TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
         tierSub = TerminalFonts.clip(Fam.MONO, 5.5f, tierSub, 60f);
-        String[] subs = {"开启拆解 · 右击控制器", "8 类 · " + requiredCount() + " 必需", tierSub};
+        boolean dismantleOn = flags[6] != 0;
+        String[] subs = {dismantleOn ? "已开启 · 点击关闭" : "点击开启 · 右击控制器",
+                "8 类 · " + requiredCount() + " 必需", tierSub};
         for (int i = 0; i < 3; i++) {
             float x = 36 + i * 78;
             boolean hover = isHover(x, 136, 72, 36);
-            TerminalDraw.outline(g, x, 136, 72, 36, hover ? TerminalTheme.COBALT : TerminalTheme.RULE);
-            if (hover) TerminalDraw.rect(g, x, 136, 72, 36, 0x0D3A5BC2);
+            boolean active = i == 0 && dismantleOn; // 拆解模式开启时给首卡一个可见的激活态
+            TerminalDraw.outline(g, x, 136, 72, 36, hover || active ? TerminalTheme.COBALT : TerminalTheme.RULE);
+            if (hover || active) TerminalDraw.rect(g, x, 136, 72, 36, 0x0D3A5BC2);
             // 网页 .qa 实测：.t1 (x+6,y+7) 7.5px；.t2 (x+6,y+23) 5.5px 且 letter-spacing .6；.ar 右内边距 6
             TerminalFonts.drawMixed(g, Fam.CN, 7.5f, titles[i], x + 6, 143, 0f, TerminalTheme.INK);
-            // 已选档位用钴蓝，跟网页 .tier-cell.on 的选中色一致，扫一眼就知道生效了
+            // 已选档位/已开启拆解用钴蓝，跟网页 .tier-cell.on 的选中色一致，扫一眼就知道生效了
             TerminalFonts.drawMixed(g, Fam.MONO, 5.5f, subs[i], x + 6, 159, 0.6f,
-                    (i == 2 && picked) ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
+                    active || (i == 2 && picked) ? TerminalTheme.COBALT : TerminalTheme.INK_SOFT);
             TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 61, 150, TerminalTheme.COBALT);
             final int idx = i;
             hit(x, 136, 72, 36, titles[i], () -> {
-                if (idx == 0) {                     // 拆除结构：开启拆解模式并收起界面
-                    startDismantle();
+                if (idx == 0) {                     // 拆除结构：开关拆解模式，不关界面
+                    toggleDismantle();
                 }
                 else if (idx == 1) page = Page.OPTIONS;
                 else tierOpen = true;
@@ -788,13 +792,14 @@ public final class TerminalScreen extends Screen {
         boolean goHover = isHover(x + 4 + ox, y + 19 + oy, 124, 12);
         if (goHover) TerminalDraw.rect(g, x + 4, y + 19, 124, 12, 0x123A5BC2);
         // 网页 .cfg-go-label (x+6,y+21)、.cfg-go-ar 右内边距 2
-        // SYSTEM 卡与主界面首卡口径一致：满配态也走「拆除结构」，不再出现旧的「开始扫描」。
-        String goLabel = placed >= 8 ? "拆除结构" : "完成配置";
+        // SYSTEM 卡与主界面首卡口径一致：满配态是拆解模式的另一个开关入口，标签随状态翻转。
+        boolean dismantleOn = flags[6] != 0;
+        String goLabel = placed >= 8 ? (dismantleOn ? "关闭拆解" : "拆除结构") : "完成配置";
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, goLabel,
                 x + 6, y + 21, 0f, TerminalTheme.COBALT);
         TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 20, TerminalTheme.COBALT);
         hit(x + 4 + ox, y + 19 + oy, 124, 12, goLabel,
-                () -> { if (placed >= 8) startDismantle(); else page = Page.OPTIONS; }, false);
+                () -> { if (placed >= 8) toggleDismantle(); else page = Page.OPTIONS; }, false);
 
         TerminalDraw.hline(g, x + 4, x + 128, y + 31, TerminalTheme.RULE);
         // 网页 .layer-open：结构层数(x+6,y+35)、读数(x+57,y+34) 8px、/ 648(x+85,y+35) 5.5px、› 右 2
@@ -919,19 +924,22 @@ public final class TerminalScreen extends Screen {
     }
 
     /**
-     * 主界面首卡「拆除结构」：把终端切到拆解模式（服务端下次右击控制器即回收结构），
-     * 本地同步开关状态并收起界面。原来这里是「开始扫描」只关 GUI + 一句提示，
-     * 现在给出真实动作，避免用户以为点了就能扫描/拆解却什么都没发生。
+     * 主界面首卡「拆除结构」是一个开关：点一次开、再点一次关。
+     *
+     * <p>开启后服务端下次右击控制器即回收结构；关闭后右击恢复普通施工。
+     * 本地 flags[6] 与服务端同步，卡片副标直接反映当前状态。刻意不 onClose()——
+     * 关了界面就「没法再点一次关掉」，用户需要能原地看到状态翻转。</p>
      */
-    private void startDismantle() {
-        flags[6] = 1;
-        sendSwitch(6, true);
+    private void toggleDismantle() {
+        boolean on = flags[6] == 0;
+        flags[6] = on ? 1 : 0;
+        sendSwitch(6, on);
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null && !preview) {
-            mc.player.displayClientMessage(
-                    Component.literal("§b[哦鲸鲸终端] 拆解模式已开启 · 请右击控制器拆除结构并回收方块"), true);
+            mc.player.displayClientMessage(Component.literal(on
+                    ? "§b[哦鲸鲸终端] 拆解模式已开启 · 请右击控制器拆除结构并回收方块；再点一次卡片关闭"
+                    : "§b[哦鲸鲸终端] 拆解模式已关闭 · 右击控制器恢复普通施工"), true);
         }
-        onClose();
     }
 
     private void sendSwitch(int i, boolean on) {
