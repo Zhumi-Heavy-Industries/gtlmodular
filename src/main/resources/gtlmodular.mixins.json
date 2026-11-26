@@ -21,6 +21,7 @@
         "gtceu.PredicatesExtendHatchMixin",
         "gtceu.MultiblockDefinitionExtendHatchMixin",
         "gtladditions.MutableRecipesLogicGainHatchMixin",
+        "gtladditions.ExoticChemicalTierCoilMixin",
         "order.TerminalTempPatternMixin",
         "order.TerminalOrderCpuMixin",
         "order.TerminalOrderEcoCpuMixin"

@@ -50,7 +50,7 @@ public final class WoodFactoryMachines {
     public static MultiblockMachineDefinition WOOD_BIOMASS_FACTORY;
 
     /** 工具提示行数（与 lang 里的 {@code gtlmodular.wood_biomass_factory.tooltip.N} 对应）。 */
-    private static final int TOOLTIP_LINES = 12;
+    private static final int TOOLTIP_LINES = 7;
 
     private WoodFactoryMachines() {
     }

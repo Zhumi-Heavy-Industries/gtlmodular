@@ -65,7 +65,7 @@ public final class ComponentAssemblerMachines {
                         CASING_TEXTURE,
                         new ResourceLocation(GTLModular.MOD_ID, "block/multiblock/component_assembler"))
                 .langValue("部件组装机")
-                .tooltips(java.util.stream.IntStream.range(0, 8)
+                .tooltips(java.util.stream.IntStream.range(0, 4)
                         .mapToObj(i -> Component.translatable("gtlmodular.component_assembler.tooltip." + i))
                         .toArray(Component[]::new))
                 .register();
