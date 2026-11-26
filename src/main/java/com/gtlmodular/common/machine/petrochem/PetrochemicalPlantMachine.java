@@ -91,11 +91,11 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
         if (tier != 2) {
             return null;
         }
-        return StructureUpgradeSupport.requirement(
-                // GTO petrochem_crossrecipe（多线程扩展段）：开放线程仓 / 超频仓。
-                StructureUpgradeSupport.cost("gtlcore:iridium_casing", 64),
-                StructureUpgradeSupport.cost("gtlmodular:thread_hatch_uv", 1),
-                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
+                return StructureUpgradeSupport.requirement(
+                // 结构用的基础外壳；不收舱室。
+                StructureUpgradeSupport.cost("gtceu:clean_machine_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:high_power_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:stress_proof_casing", 32));
     }
 
     @Override

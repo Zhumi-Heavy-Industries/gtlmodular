@@ -88,12 +88,12 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
             return null;
         }
         // 一次升级同时拿到原大型机的装配扩展（档位/舱位）与动力扩展（并行/超频）。
-        return StructureUpgradeSupport.requirement(
-                StructureUpgradeSupport.cost("gtlcore:multi_functional_casing", 64),
-                StructureUpgradeSupport.cost("gtlcore:process_machine_casing", 64),
-                StructureUpgradeSupport.cost("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing", 64),
-                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4),
-                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
+                return StructureUpgradeSupport.requirement(
+                // 解锁成本只用本机结构自身要用、本包稳定可产出的基础外壳；
+                // 不收超级并行仓/超频仓等舱室（玩家反馈这些根本拿不到）。
+                StructureUpgradeSupport.cost("gtceu:steel_machine_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:high_power_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:clean_machine_casing", 32));
     }
 
     @Override

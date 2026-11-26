@@ -1718,5 +1718,9 @@
   "gtlmodular.petrochemical_plant.tooltip.5": "§cMake complex chemistry simple and efficient",
   "gtlmodular.petrochemical_plant.tooltip.6": "§7Structure source: GTO",
   "gtlmodular.fuel_refining_complex.tooltip.0": "§7The technology of processing burnable things into more burnable things",
-  "gtlmodular.fuel_refining_complex.tooltip.1": "§7Structure source: GTO"
+  "gtlmodular.fuel_refining_complex.tooltip.1": "§7Structure source: GTO",
+  "gtlmodular.component_assembler.tooltip.4": "§7Tier 2 unlock: Steel Machine Casing x32 / High Power Casing x32 / Clean Machine Casing x32 (no hatches)",
+  "gtlmodular.wood_biomass_factory.tooltip.7": "§7Tier 2 unlock: Corrosion Proof Casing x32 / Watertight Casing x32 / Stress Proof Casing x32 (no hatches)",
+  "gtlmodular.petrochemical_plant.tooltip.7": "§7Tier 2 unlock: Clean Machine Casing x32 / High Power Casing x32 / Stress Proof Casing x32 (no hatches)",
+  "gtlmodular.fuel_refining_complex.tooltip.2": "§7Tier 2 unlock: Robust Machine Casing x32 / Clean Machine Casing x32 / Inert Machine Casing x32 (no hatches)"
 }

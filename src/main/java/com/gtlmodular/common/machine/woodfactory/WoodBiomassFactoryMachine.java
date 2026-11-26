@@ -91,11 +91,11 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
         if (tier != 2) {
             return null;
         }
-        return StructureUpgradeSupport.requirement(
-                // GTO wood_dist_crossrecipe（跨配方模块）：解锁线程仓 / 超频仓。
-                StructureUpgradeSupport.cost("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing", 64),
-                StructureUpgradeSupport.cost("gtlmodular:thread_hatch_uv", 1),
-                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
+                return StructureUpgradeSupport.requirement(
+                // 结构用的基础外壳，搭一级时即能攒齐；不收任何舱室。
+                StructureUpgradeSupport.cost("gtceu:corrosion_proof_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:watertight_casing", 32),
+                StructureUpgradeSupport.cost("gtceu:stress_proof_casing", 32));
     }
 
     @Override

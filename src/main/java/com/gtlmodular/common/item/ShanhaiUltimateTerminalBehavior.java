@@ -25,6 +25,7 @@ import com.gregtechceu.gtceu.api.item.component.IAddInformation;
 import com.gregtechceu.gtceu.api.item.component.IInteractionItem;
 import com.gregtechceu.gtceu.api.machine.MetaMachine;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
 
 import net.minecraft.core.GlobalPos;
 import net.minecraft.core.BlockPos;
@@ -119,6 +120,32 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
         }
 
         ShanhaiTerminalAeBinding.Context ae = resolveAeContext(serverPlayer, terminal);
+
+        // Add 3.6.2 结构升级机器：已成形时它的缺口是「下一等级段」，普通规划器
+        // 只会看到已满足的格子而"没反应"。这里照 Add 终极终端的做法，直接交给
+        // StructureTierTrait.autoBuild() —— 它按「已激活 tier+1 .. 已解锁 tier」搭升级段并自动激活。
+        // 拆解模式仍走本终端自己的拆解流程。
+        if (!ShanhaiUltimateTerminalConfig.isDismantleMode(terminal)) {
+            MetaMachine tierMachine = MetaMachine.getMachine(level, context.getClickedPos());
+            if (tierMachine instanceof IStructureTierMachine tiered) {
+                try {
+                    var setting = new org.gtlcore.gtlcore.common.item.UltimateTerminalBehavior.AutoBuildSetting();
+                    setting.setRepeatCount(ShanhaiUltimateTerminalConfig.getRepeatCount(terminal));
+                    setting.setNoHatchMode(ShanhaiUltimateTerminalConfig.isNoChamberMode(terminal));
+                    setting.setReplaceMode(ShanhaiUltimateTerminalConfig.isReplaceMode(terminal));
+                    setting.setAeMode(ShanhaiUltimateTerminalConfig.isAeMode(terminal));
+                    GlobalPos bound = ShanhaiUltimateTerminalConfig.getBoundAe(terminal);
+                    if (bound != null) setting.setBoundAE(bound);
+                    tiered.getStructureTierTrait().autoBuild(serverPlayer, setting);
+                    return InteractionResult.SUCCESS;
+                } catch (RuntimeException | LinkageError e) {
+                    serverPlayer.sendSystemMessage(Component.literal(
+                            "§c[哦鲸鲸终端] 结构升级施工失败: " + e.getMessage()));
+                    return InteractionResult.FAIL;
+                }
+            }
+        }
+
         ShanhaiStructurePlan plan;
         try {
             plan = scanPlan(serverPlayer, terminal, context.getClickedPos(), ae);

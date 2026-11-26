@@ -76,9 +76,9 @@ public final class PetrochemMachines {
     public static MultiblockMachineDefinition FUEL_REFINING_COMPLEX;
 
     /** 工具提示行数（与 lang 里的 {@code gtlmodular.petrochemical_plant.tooltip.N} 对应）。 */
-    private static final int PETROCHEM_TOOLTIP_LINES = 7;
+    private static final int PETROCHEM_TOOLTIP_LINES = 8;
     /** 工具提示行数（与 lang 里的 {@code gtlmodular.fuel_refining_complex.tooltip.N} 对应）。 */
-    private static final int FUEL_TOOLTIP_LINES = 2;
+    private static final int FUEL_TOOLTIP_LINES = 3;
 
     private PetrochemMachines() {
     }
