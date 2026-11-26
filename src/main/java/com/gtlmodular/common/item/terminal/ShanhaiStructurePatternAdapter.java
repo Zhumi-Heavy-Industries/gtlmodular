@@ -4,12 +4,17 @@ package com.gtlmodular.common.item.terminal;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.pattern.BlockPattern;
 import com.gregtechceu.gtceu.api.pattern.TraceabilityPredicate;
 import com.gregtechceu.gtceu.api.pattern.util.RelativeDirection;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
+import com.gtladd.gtladditions.api.pattern.StructureTierLayout;
+import com.gtladd.gtladditions.common.machine.trait.StructureTierTrait;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -28,6 +33,9 @@ public final class ShanhaiStructurePatternAdapter {
 
     public static List<Slot> map(IMultiController controller, int repeatCount, boolean mirrored) {
         PatternShape shape = readShape(controller.getPattern());
+        // Add 3.6.2 结构升级：一级成形只检查 tier 0；未解锁的高级格不能进施工计划，
+        // 否则终端会把 2 级扩展段当成缺口，白下单、白搭方块。
+        Set<Integer> skip = upperTierCells(controller);
         BlockPos center = controller.self().getPos();
         Direction facing = controller.self().getFrontFacing();
         Direction upwards = controller.self().getUpwardsFacing();
@@ -43,6 +51,7 @@ public final class ShanhaiStructurePatternAdapter {
                 for (int row = 0; row < shape.blockMatches()[aisle].length; row++, y++) {
                     int x = -shape.centerOffset()[0];
                     for (int column = 0; column < shape.blockMatches()[aisle][row].length; column++, x++) {
+                        if (skip.contains(pack(aisle, row, column))) continue;
                         TraceabilityPredicate predicate = shape.blockMatches()[aisle][row][column];
                         if (predicate == null || predicate.isAny()) continue;
                         BlockPos offset = setActualRelativeOffset(
@@ -54,6 +63,35 @@ public final class ShanhaiStructurePatternAdapter {
             }
         }
         return slots;
+    }
+
+    /**
+     * 收集「尚未解锁」的高级结构格，以 (aisle,row,column) 打包的 int 表示。
+     * 普通多方块返回空集；带结构升级的机器按 {@code unlockedTier} 过滤。
+     *
+     * <p>{@code StructureTierLayout.cells()} 的打包格式与这里一致（aisle<<20 | row<<10 | column）。
+     */
+    private static Set<Integer> upperTierCells(IMultiController controller) {
+        if (!(controller.self() instanceof IStructureTierMachine tierMachine)) return Set.of();
+        try {
+            StructureTierTrait trait = tierMachine.getStructureTierTrait();
+            StructureTierLayout layout = trait.getLayout();
+            int unlocked = Math.max(layout.getMinTier(), trait.getUnlockedTier());
+            Set<Integer> skip = new HashSet<>();
+            for (int tier = unlocked + 1; tier <= layout.getMaxTier(); tier++) {
+                for (int cell : layout.cells(tier)) {
+                    skip.add(cell);
+                }
+            }
+            return skip;
+        } catch (RuntimeException | LinkageError e) {
+            // 结构定义异常时退回完整图案，避免终端整体不可用。
+            return Set.of();
+        }
+    }
+
+    private static int pack(int aisle, int row, int column) {
+        return (aisle << 20) | (row << 10) | column;
     }
 
     private static PatternShape readShape(BlockPattern pattern) {

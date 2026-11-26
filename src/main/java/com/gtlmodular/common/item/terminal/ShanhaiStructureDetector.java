@@ -16,6 +16,9 @@ import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.api.pattern.error.PatternError;
 import com.gregtechceu.gtceu.api.pattern.error.PatternStringError;
 import com.gregtechceu.gtceu.api.pattern.error.SinglePredicateError;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
+import com.gtladd.gtladditions.api.pattern.StructureTierLayout;
+import com.gtladd.gtladditions.common.machine.trait.StructureTierTrait;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
@@ -104,6 +107,9 @@ public final class ShanhaiStructureDetector {
             errors.add(new PatternStringError("no pattern found"));
             return errors;
         }
+        // Add 3.6.2 结构升级：机器一级成形只检查 tier 0。用分级模板替换完整图案，
+        // 否则未搭的二级扩展段会被误报成缺口。
+        pattern = tierAwarePattern(controller, pattern);
         Direction front = controller.self().getFrontFacing();
         Direction[] facings = controller.hasFrontFacing()
                 ? new Direction[] { front }
@@ -128,6 +134,20 @@ public final class ShanhaiStructureDetector {
             }
         }
         return errors;
+    }
+
+    /** 带结构升级的机器按已解锁等级取模板；普通机器原样返回。 */
+    private static BlockPattern tierAwarePattern(IMultiController controller, BlockPattern fallback) {
+        if (!(controller.self() instanceof IStructureTierMachine tierMachine)) return fallback;
+        try {
+            StructureTierTrait trait = tierMachine.getStructureTierTrait();
+            StructureTierLayout layout = trait.getLayout();
+            int unlocked = Math.max(layout.getMinTier(), trait.getUnlockedTier());
+            // AdvancedBlockPattern 继承 BlockPattern，可直接交给 checkPatternAt。
+            return layout.template(tier -> tier <= unlocked);
+        } catch (RuntimeException | LinkageError e) {
+            return fallback;
+        }
     }
 
     /**
