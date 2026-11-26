@@ -148,8 +148,10 @@ public final class FieldExtruderPartsRecipes {
                 }
             }
             if (inputItem.isEmpty()) {
-                // 没有物品形态 ⇒ 用流体（末影珍珠 / 末影之眼 / echo shard 这几个）
-                if (material.getFluid() == null) {
+                // 没有物品形态 ⇒ 用流体（末影珍珠 / 末影之眼 / echo shard 这几个）。
+                // ★ getFluid() 对没有 FLUID 属性的材料（如 gceu:obsidian）会直接抛
+                //   IllegalArgumentException，不是返回 null；必须用 hasFluid() 先判。
+                if (!material.hasFluid()) {
                     noInput++;
                     continue;
                 }
