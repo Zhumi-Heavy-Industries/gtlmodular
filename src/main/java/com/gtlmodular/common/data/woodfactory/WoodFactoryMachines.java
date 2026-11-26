@@ -73,7 +73,7 @@ public final class WoodFactoryMachines {
                 .tier(GTValues.UEV)
                 .recipeType(recipeType)
                 // 不挂 GTRecipeModifiers.PARALLEL_HATCH：本机由独立线程引擎接管，
-                // 并行在引擎 findBatch() 里按「线圈并行 × 并行仓」算一次（与力场压模零件工厂同口径）。
+                // 并行在引擎 lookupRecipe() 里按「线圈并行 × 并行仓」算一次（与力场压模零件工厂同口径）。
                 // 超频走【通用超频口径入口】OverclockProfiles.apply：它内部读结构里的
                 // 超频仓 / 加速仓，默认完美超频 + 亚 tick。
                 .recipeModifier((machine, recipe, params, result) ->

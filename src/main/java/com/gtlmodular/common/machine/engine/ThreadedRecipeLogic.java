@@ -81,6 +81,9 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     /** 机器侧契约（构造时由传入的 machine 强转得到）。 */
     private final IThreadedRecipeMachine threaded;
 
+    /** ★ 2026-11-26：跨配方状态中枢（GTO {@code CrossRecipeTrait}），唯一额度读数口。 */
+    private final CrossRecipeTrait trait;
+
     /** 找配方（跨表 / 分片 / 并行额度）。 */
     private final BatchFinder finder;
 
@@ -110,18 +113,6 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
 
     /** ★ 2026-11-08：{@link #pokeScan()} 置位 ⇒ 下一次调度立即扫描（不等扫描冷却）。 */
     private boolean scanForced;
-
-    /**
-     * ★ 2026-11-26：<b>本 tick 的线程槽数快照</b>。
-     *
-     * <p>{@code effectiveThreads()} 每次都要遍历结构部件表找线程仓；引擎填槽时每个空槽问一次，
-     * 256 槽的机器首轮就是 256 次全表遍历。同一 tick 内部件表与仓的设定不会变
-     * （玩家改仓发生在 tick 之外，且会走 {@link #pokeScan()} 立刻清快照），所以按 tick 缓存一次。
-     */
-    private int slotCache = -1;
-
-    /** 槽数快照对应的 tick（{@link #cachedSlots()}）。 */
-    private long slotCacheTick = Long.MIN_VALUE;
 
     /** ★ 2026-11-10：<b>电网取电身份</b>（放置者 UUID；能源缓冲优先从无线电网扣电）。 */
     private java.util.UUID gridUser;
@@ -172,7 +163,9 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         super(machine);
         this.threaded = (IThreadedRecipeMachine) machine;
         this.diag = new BatchDiagnostics(machine);
-        this.finder = new BatchFinder(machine, threaded, this, engine, diag);
+        this.trait = new CrossRecipeTrait(machine, threaded, engine);
+        this.finder = new BatchFinder(machine, this, engine, diag, trait);
+        this.trait.attachFinder(finder);
         this.io = new BatchIo(machine, this, finder, diag);
         this.watchdog = new BatchWatchdog();
         // ★ 2026-11-10：EU 能源缓冲（每 N tick 才调一次能源仓）。
@@ -206,7 +199,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         if (!threaded.engineRequiresThreadHatch()) {
             return;
         }
-        boolean hatch = threaded.threadHatchThreads() > 0;
+        boolean hatch = trait.getThread() > 0;
         if (hatch) {
             if (!engineMode) {
                 engineMode = true;
@@ -332,8 +325,9 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             setWaiting(null);
             return;
         }
-        // ①②③：逐条推进 → 摘掉涨满的（先摘表再收尾出料）→ 有空位就找配方并原子扣料
+        // ①②③：逐条推进 → 摘掉涨满的 → 有空位就通过 trait.lookupRecipe 开新线程
         finder.beginTick();
+        trait.onEngineTick();
         engine.tick(new HostImpl());
 
         // ③.4 停滞看门狗（★ 2026-11-07）：引擎里还有批次、却连续 200 tick 一点进度都没有 ⇒ 打 WARN。
@@ -353,7 +347,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     /** ④ 展示回写：第 0 条批次 → 基类同步字段；空表 → 清零并置 IDLE。 */
     private void writeDisplay() {
         if (engine.size() > 0) {
-            ConcurrentRecipeEngine.Batch primary = engine.get(0);
+            Thread primary = engine.get(0);
             this.lastRecipe = primary.recipe;
             this.progress = primary.progress;
             this.duration = primary.duration;
@@ -394,7 +388,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         if (!originalActive() && engine.size() > 0) {
             int delta = progress - this.progress;
             if (delta > 0) {
-                ConcurrentRecipeEngine.Batch primary = engine.get(0);
+                Thread primary = engine.get(0);
                 primary.progress = Math.min(primary.duration, primary.progress + delta);
                 writeDisplay();
             }
@@ -519,7 +513,6 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void pokeScan() {
         finder.clearCooldowns();
         diag.onPoke();
-        slotCache = -1;   // ★ 2026-11-26：仓设定/电路可能刚变，线程数快照立刻作废
         // ★ 2026-11-08：原逻辑代跑时，AE 推样板 / 换电路同样要叫醒它（它不是本引擎的批次表）
         if (originalActive()) {
             original.markLastRecipeDirty();
@@ -569,7 +562,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void resetRecipeLogic() {
         super.resetRecipeLogic();
         engine.clear();
-        slotCache = -1;   // ★ 2026-11-26：结构变了，旧部件表算出来的线程数不能再用
+        trait.onStructureInvalid();   // ★ 2026-11-26：结构变了，trait 的部件缓存一起作废
         // ★ 2026-11-10：复位时把缓存的电退回能源仓（不能凭空留/丢）
         if (energyBuffer != null) {
             energyBuffer.flushBack();
@@ -694,36 +687,57 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             return ThreadedRecipeLogic.this.machine;
         }
 
-        /** 同时能跑几条 = 线程仓当前设定值；没装线程仓才退回机器自己的固定值。 */
+        /** 同时能跑几条 = trait 从线程仓读到的当前设定值。 */
         @Override
         public int slots() {
-            return cachedSlots();
+            return trait.getThread();
         }
 
-        /** 找一条能开的新配方（见 {@link BatchFinder#findBatch()}）。 */
+        /**
+         * GTO 式开线程：{@link CrossRecipeTrait#lookupRecipe(RecipeCharge)} 内部完成
+         * check → commit，返回已经扣好料的配方；这里只包成一条 {@link Thread}。
+         */
         @Override
-        public GTRecipe findBatch() {
-            return finder.findBatch();
-        }
-
-        /** 原子扣料（见 {@link BatchIo#consumeInputs}）。 */
-        @Override
-        public boolean consumeInputs(GTRecipe recipe) {
-            return io.consumeInputs(recipe);
+        public Thread openThread() {
+            GTRecipe recipe = trait.lookupRecipe(new ThreadCharge());
+            return recipe == null ? null : new Thread(recipe, Thread.nextId());
         }
 
         /** 每 tick 输入（见 {@link BatchIo#tickInputs}）。 */
         @Override
-        public boolean tickInputs(GTRecipe recipe) {
-            return io.tickInputs(recipe);
+        public boolean tickInputs(Thread thread) {
+            return io.tickInputs(thread.recipe);
         }
 
-        /** 批次收尾出料（见 {@link BatchIo#finishOutputs}）。 */
+        /** 线程收尾出料（见 {@link BatchIo#finishOutputs}）。 */
         @Override
-        public void finishOutputs(GTRecipe recipe) {
+        public void finishOutputs(Thread thread) {
             // ★ 2026-11-09：出料前给子类一次「按配方记账/改产出」的机会（NAC 模块用它记校准与杂质）。
-            onBatchFinished(recipe);
-            io.finishOutputs(recipe);
+            onBatchFinished(thread.recipe);
+            io.finishOutputs(thread.recipe);
+        }
+    }
+
+    /** {@link RecipeCharge} 的机器侧实现：只读匹配交给 GTCEu，真正提交交给 {@link BatchIo}。 */
+    private final class ThreadCharge implements RecipeCharge {
+
+        private GTRecipe recipe;
+
+        @Override
+        public boolean check(GTRecipe recipe) {
+            this.recipe = recipe;
+            return org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper
+                    .matchRecipeInput(machine, recipe);
+        }
+
+        @Override
+        public boolean commit() {
+            return recipe != null && io.consumeInputs(recipe);
+        }
+
+        @Override
+        public void rollback() {
+            // commit 之前没有副作用；真正的扣料是原子的，失败不留下半份库存。
         }
     }
 
@@ -760,34 +774,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public int threadLimit() {
         // ★ 2026-11-08：原逻辑代跑 ⇒ 报 1（Jade 的线程显示判据是「limit>1 或 有批次」，
         //   报 1 + runningBatches=0 就不会画出「独立线程」那一节）。
-        return originalActive() ? 1 : cachedSlots();
-    }
-
-    /**
-     * ★ 2026-11-26：按 tick 缓存的 {@code effectiveThreads()}（见字段注释）。
-     *
-     * <p>拿不到世界/时间时退化为「不缓存」，逐字保留旧行为；{@link #pokeScan()} 与
-     * {@link #resetRecipeLogic()} 会主动清快照，避免同一 tick 里改仓后出现旧值。
-     */
-    private int cachedSlots() {
-        long tick = Long.MIN_VALUE;
-        try {
-            var self = machine.self();
-            if (self != null && self.getLevel() != null) {
-                tick = self.getOffsetTimer();
-            }
-        } catch (Throwable ignored) {
-            // 未成形/未加载：不缓存
-        }
-        if (tick != Long.MIN_VALUE && tick == slotCacheTick && slotCache >= 0) {
-            return slotCache;
-        }
-        int value = Math.max(1, threaded.effectiveThreads());
-        if (tick != Long.MIN_VALUE) {
-            slotCacheTick = tick;
-            slotCache = value;
-        }
-        return value;
+        return originalActive() ? 1 : trait.getThread();
     }
 
     /** 当前在跑的批次数（Jade/面板读取用）。 */
@@ -816,7 +803,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         }
         List<BatchView> list = new ArrayList<>(engine.size());
         for (int i = 0; i < engine.size(); i++) {
-            ConcurrentRecipeEngine.Batch batch = engine.get(i);
+            Thread batch = engine.get(i);
             list.add(new BatchView(batch.recipe, batch.progress, batch.duration,
                     (int) Math.min(Integer.MAX_VALUE, Math.max(1L, batch.use))));
         }
@@ -827,7 +814,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      * 一条批次快照：配方对象 / 进度 / 已钉死的时长 / 占用额度。
      *
      * <p>{@code parallels} 这个分量名保留给 Jade 的既有读法；它现在取的是
-     * {@link ConcurrentRecipeEngine.Batch#use}（GTO {@code Thread.use} 口径），
+     * {@link Thread#use}（GTO {@code Thread.use} 口径），
      * 即开批时钉死的占用量，而不是从可能已被改过的 recipe 上现读。
      */
     public record BatchView(GTRecipe recipe, int progress, int duration, int parallels) {}

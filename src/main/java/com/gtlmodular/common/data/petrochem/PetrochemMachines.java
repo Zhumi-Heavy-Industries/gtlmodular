@@ -108,7 +108,7 @@ public final class PetrochemMachines {
                 .tier(GTValues.UEV)
                 .recipeType(recipeType)
                 // 不挂 GTRecipeModifiers.PARALLEL_HATCH：本机由独立线程引擎接管，
-                // 并行在引擎 findBatch() 里按「线圈并行 × 并行仓」算一次（与木化工厂同口径）。
+                // 并行在引擎 lookupRecipe() 里按「线圈并行 × 并行仓」算一次（与木化工厂同口径）。
                 .recipeModifier((machine, recipe, params, result) ->
                         OverclockProfiles.apply(machine, recipe, params, result))
                 .appearanceBlock(PetrochemMachines::appearanceBlock)

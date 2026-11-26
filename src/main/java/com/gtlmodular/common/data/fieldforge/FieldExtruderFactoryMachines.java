@@ -87,7 +87,7 @@ public final class FieldExtruderFactoryMachines {
                 .recipeTypes(types.toArray(new GTRecipeType[0]))
                 // ★ 2026-11-15：**不再挂 GTRecipeModifiers.PARALLEL_HATCH**。
                 //   本机已由独立线程引擎（ThreadedRecipeLogic）接管，并行在引擎的
-                //   findBatch() 里按「parallelMultiplier() × 并行仓并行数」乘一次；
+                //   lookupRecipe() 里按「parallelMultiplier() × 并行仓并行数」乘一次；
                 //   再挂 PARALLEL_HATCH 会**重复乘一遍**（并行被平方）。
                 //   对照：奈亚拉托提普之触 / 高维等离子聚变核心两台引擎机都只挂超频、不挂并行仓修饰。
                 //   并行口径见 FieldExtruderFactoryMachine#parallelMultiplier() / usesParallelHatch()。

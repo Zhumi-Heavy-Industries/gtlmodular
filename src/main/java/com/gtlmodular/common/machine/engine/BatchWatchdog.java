@@ -40,7 +40,7 @@ final class BatchWatchdog {
                 && nowTick - lastProgressSumTick >= STUCK_WARN_TICKS
                 && (lastStuckWarnTick == Long.MIN_VALUE || nowTick - lastStuckWarnTick >= STUCK_WARN_TICKS)) {
             lastStuckWarnTick = nowTick;
-            ConcurrentRecipeEngine.Batch primary = engine.get(0);
+            Thread primary = engine.get(0);
             boolean tickInputOk;
             try {
                 tickInputOk = primary.recipe.matchTickRecipe(machine).isSuccess();

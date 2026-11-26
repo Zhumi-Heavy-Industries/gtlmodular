@@ -25,9 +25,12 @@ import com.gtlmodular.common.config.GTLModularConfig;
 import com.gtlmodular.common.machine.engine.BatchDiagnostics;
 import com.gtlmodular.common.machine.engine.BatchFinder;
 import com.gtlmodular.common.machine.engine.ConcurrentRecipeEngine;
+import com.gtlmodular.common.machine.engine.CrossRecipeTrait;
 import com.gtlmodular.common.machine.engine.IBatchLogicOwner;
 import com.gtlmodular.common.machine.engine.IThreadBatchLogic;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
+import com.gtlmodular.common.machine.engine.RecipeCharge;
+import com.gtlmodular.common.machine.engine.Thread;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import com.gtlmodular.common.machine.fuel.DualFluidTax;
 import com.gtlmodular.common.machine.thread.IThreadHatchPart;
@@ -357,6 +360,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
          * </ul>
          */
         private final BatchDiagnostics diag;
+        private final CrossRecipeTrait trait;
         private final BatchFinder finder;
 
         /** 状态串同步节流。 */
@@ -368,7 +372,9 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             super(module, dataCheck);
             this.module = module;
             this.diag = new BatchDiagnostics(module);
-            this.finder = new BatchFinder(module, module, this, engine, diag);
+            this.trait = new CrossRecipeTrait(module, module, engine);
+            this.finder = new BatchFinder(module, this, engine, diag, trait);
+            this.trait.attachFinder(finder);
         }
 
         // ================= IBatchLogicOwner：把「机器特有」的答案交回共享引擎 =================
@@ -441,7 +447,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         /** 引擎线程上限（= 机器给的 engineThreads）。 */
         @Override
         public int threadLimit() {
-            return Math.max(1, module.engineThreads());
+            return trait.getThread();
         }
 
         /**
@@ -452,7 +458,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         public List<ThreadedRecipeLogic.BatchView> snapshotBatches() {
             List<ThreadedRecipeLogic.BatchView> list = new ArrayList<>(engine.size());
             for (int i = 0; i < engine.size(); i++) {
-                ConcurrentRecipeEngine.Batch batch = engine.get(i);
+                Thread batch = engine.get(i);
                 list.add(new ThreadedRecipeLogic.BatchView(batch.recipe, batch.progress, batch.duration,
                         (int) Math.min(Integer.MAX_VALUE, Math.max(1L, batch.use))));
             }
@@ -480,6 +486,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 if (engine.size() > 0) {
                     engine.clear();
                     finder.reset();
+                    trait.onStructureInvalid();
                     module.setEngineSummary("");
                 }
                 super.serverTick();
@@ -497,12 +504,13 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             EngineHost host = new EngineHost();
             // ★ 2026-11-25：扫描纪律交给通用引擎的 BatchFinder（跨表轮转起点每 tick 归零 + 开批限速复位）
             finder.beginTick();
+            trait.onEngineTick();
             engine.tick(host);
             // 空转时「为什么没配方」的诊断（与通用引擎同一份实现，每种原因只打一次）
             diag.logIdle(module.engineCrossTable(), engine.size());
             if (engine.size() > 0) {
                 // 展示回写：把第 0 条批次镜像进基类字段（GUI/Jade 的单进度条免费可用）
-                ConcurrentRecipeEngine.Batch primary = engine.get(0);
+                Thread primary = engine.get(0);
                 this.lastRecipe = primary.recipe;
                 this.progress = primary.progress;
                 this.duration = primary.duration;
@@ -539,15 +547,33 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
 
             @Override
             public int slots() {
-                return Math.max(1, module.engineThreads());
+                return trait.getThread();
             }
 
+            /** GTO 式开线程：扫描 / 折算 / 预留 / 扣料都由 trait + charge 完成。 */
             @Override
-            public GTRecipe findBatch() {
-                // ★ 2026-11-25：扫描 / 折算全部交给通用引擎的 BatchFinder。
-                //   本机只通过 IBatchLogicOwner 回答「哪些候选允许」与「怎么折算」，
-                //   游标、冷却、跨表轮转、每 tick 开批上限都不再各写一份。
-                return finder.findBatch();
+            public Thread openThread() {
+                GTRecipe recipe = trait.lookupRecipe(new RecipeCharge() {
+
+                    private GTRecipe reserved;
+
+                    @Override
+                    public boolean check(GTRecipe recipe) {
+                        this.reserved = recipe;
+                        return RecipeRunnerHelper.matchRecipeInput(machine, recipe);
+                    }
+
+                    @Override
+                    public boolean commit() {
+                        return reserved != null && EngineHost.this.consumeInputs(reserved);
+                    }
+
+                    @Override
+                    public void rollback() {
+                        // commit 前无副作用
+                    }
+                });
+                return recipe == null ? null : new Thread(recipe, Thread.nextId());
             }
 
             /**
@@ -603,8 +629,8 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
 
             /** 「并行重复配方」关时：同一条配方只许占一条线程（现由 {@link BatchFinder} 统一处理）。 */
 
-            @Override
-            public boolean consumeInputs(GTRecipe recipe) {
+            /** {@link RecipeCharge#commit()} 的真正扣料实现。 */
+            private boolean consumeInputs(GTRecipe recipe) {
                 if (!machine.beforeWorking(recipe)) {
                     return false;
                 }
@@ -618,7 +644,8 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             }
 
             @Override
-            public boolean tickInputs(GTRecipe recipe) {
+            public boolean tickInputs(Thread thread) {
+                GTRecipe recipe = thread.recipe;
                 if (!module.isHostReady()) {
                     waitReason = Component.translatable("gtlmodular.recipe.fail.host_unavailable");
                     return false;
@@ -635,7 +662,8 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             }
 
             @Override
-            public void finishOutputs(GTRecipe recipe) {
+            public void finishOutputs(Thread thread) {
+                GTRecipe recipe = thread.recipe;
                 machine.afterWorking();
                 recipe.postWorking(machine);
                 RecipeRunnerHelper.handleRecipeOutput(machine, recipe);
@@ -658,7 +686,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             sb.append("上限 ").append(threadLimit()).append(" · 在用 ").append(size);
             int shown = Math.min(4, size);
             for (int i = 0; i < shown; i++) {
-                ConcurrentRecipeEngine.Batch batch = engine.get(i);
+                Thread batch = engine.get(i);
                 sb.append('\n').append(i + 1).append(". ")
                         .append(shortRecipeName(batch.recipe)).append(' ')
                         .append(batch.duration <= 0 ? 0 : Math.min(100, batch.progress * 100 / batch.duration))
@@ -721,6 +749,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             super.resetRecipeLogic();
             engine.clear();
             finder.reset();
+            trait.onStructureInvalid();
         }
 
         @Override
