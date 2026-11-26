@@ -5,14 +5,18 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
- * ★ <b>独立线程引擎 · 机器侧契约</b>。
+ * ★ <b>跨配方机器 · 机器侧契约</b>（GTO {@code ICrossRecipeMachine} 的等价物）。
  *
- * <p>「独立线程引擎」指的是<b>同一台机器上同时推进多条配方</b>：每条配方各有各的
- * {@code progress}／{@code duration}，互不排队，由 {@link ConcurrentRecipeEngine} 统一调度，
- * 由 {@link ThreadedRecipeLogic} 接到 GTCEu 的 {@code RecipeLogic} 上。
+ * <p>GTO 的层次是：<b>跨配方（cross recipe）是机器属性，线程是它的一个读数</b> ——
+ * 一台机器同时推进多条不同配方，每条各有 {@code progress}／{@code duration}／{@code use}，
+ * 由线程仓提供条数与额度语义。本接口就是这一层在本工程的实现：并发条数
+ * ({@link #baseThreads()} / {@link #threadHatchThreads()})、每线程并行额度
+ * ({@link #parallelMultiplier()} / {@link #usesParallelHatch()})、额度是否独立
+ * ({@link #threadHatchIndependent()}) 与重复配方许可
+ * ({@link #threadHatchRepeatedRecipes()}) 都是跨配方机器的属性，而不是某台功能仓的私有逻辑。
  *
- * <p>本接口只回答两个「机器相关」的问题；引擎本体（{@link ConcurrentRecipeEngine}）
- * <b>不依赖任何机器类</b>，只认这两个数字 ⇒ 调度逻辑可以被单独看懂、单独核对。
+ * <p>调度由 {@link ConcurrentRecipeEngine} 统一负责，{@link ThreadedRecipeLogic} 接到 GTCEu 的
+ * {@code RecipeLogic} 上。引擎本体<b>不依赖任何机器类</b>，只认本接口给出的数字与开关。
  *
  * <p><b>实现方约定</b>：实现本接口的类必须同时实现
  * {@link com.gregtechceu.gtceu.api.machine.feature.IRecipeLogicMachine}

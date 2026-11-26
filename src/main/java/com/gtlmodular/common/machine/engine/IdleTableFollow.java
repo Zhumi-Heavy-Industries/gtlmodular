@@ -47,7 +47,7 @@ import com.gtlmodular.common.machine.MoltenPatternAssemblyPartMachine;
  *       本类再插一脚只会打架）；</li>
  *   <li><b>没挂样板仓不动</b>：普通输入仓机器靠手动切模式就好，轮换只会让界面上的模式乱跳；</li>
  *   <li><b>单表机器不动</b>：{@code getRecipeTypes().length <= 1} 直接返回；</li>
- *   <li><b>要机器显式选择加入</b>：只认实现 {@link IIndependentThreadHost} 的多表主机
+ *   <li><b>要机器显式选择加入</b>：只认带 {@link IIndependentThreadHost} 标记的多表跨配方主机
  *       （高维等离子聚变核心 / 奈亚拉托提普之触），别的机器<b>一律不轮换</b> ——
  *       NAC 主机按订单自己跨表派工、单表机器没有第二张表，都不该被这里碰；</li>
  *   <li><b>一行回退</b>：{@link #ENABLED} 置 {@code false} ⇒ 立刻逐字回到加本类之前的行为
@@ -107,11 +107,10 @@ final class IdleTableFollow {
 
     /** 多表 + 已成形 + 挂了 ME 样板仓 + 那台仓不是本模组的猪咪。 */
     private static boolean isEligible(IRecipeLogicMachine machine) {
-        // ★ 选择加入（不是「凡是多表机器都轮换」）：只有自己声明了「我是多表主机」的机器才轮换。
-        //   判据复用既有标记接口 {@link IIndependentThreadHost} —— 它的 javadoc 本来就写着
-        //   「每条线程各自找配方、可以跨机器当前选中的那张配方表，奈亚之触与高维等离子聚变核心
-        //   都有两张表」。⇒ 单表机器（力场压模零件工厂之类）与 NAC 主机（走自己的外壳逻辑、
-        //   主机按订单跨表派工）都不在轮换范围内，零影响。
+        // ★ 选择加入（不是「凡是多表机器都轮换」）：只有自己声明了「我是多表跨配方主机」的机器才轮换。
+        //   判据复用 {@link IIndependentThreadHost} 标记接口（2026-11-26 起它只作标记，
+        //   原 isIndependentThreadActive() 已随跨表口径统一而删除）。⇒ 单表机器与 NAC 主机
+        //   （走自己的外壳逻辑、按订单跨表派工）都不在轮换范围内，零影响。
         if (!(machine.self() instanceof IIndependentThreadHost)) {
             return false;
         }

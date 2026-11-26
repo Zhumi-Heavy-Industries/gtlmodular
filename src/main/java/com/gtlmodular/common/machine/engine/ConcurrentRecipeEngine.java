@@ -76,9 +76,18 @@ public final class ConcurrentRecipeEngine {
         /** 这一条批次<b>自己的</b>进度（tick）——「各自计时」就是这一格。 */
         public int progress;
 
+        /**
+         * ★ 2026-11-26：这条线程占用的并行额度（对齐 GTO {@code ICrossRecipeMachine.Thread.use}）。
+         *
+         * <p>开批时从已经折算好的 {@code recipe.parallels} 钉死：之后 {@code recipe} 可能被配方
+         * 修改器/Jade 快照换过对象，占用量不能跟着漂；共享额度判定与 Jade 的「R」读数都读这一格。
+         */
+        public final long use;
+
         private Batch(GTRecipe recipe) {
             this.recipe = recipe;
             this.duration = Math.max(1, recipe.duration);
+            this.use = Math.max(1L, recipe.parallels);
         }
 
         /** 涨满了没有。 */

@@ -223,17 +223,6 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
         return independentThread;
     }
 
-    /**
-     * 独立线程的<b>有效</b>状态 = 开关本身。
-     *
-     * <p>★ 0.3.286：上一版这里是 {@code independentThread && controllerHasWirelessEnergy()}
-     * （GTO 的 WIRELESS 前置）；用户要求去掉 ⇒ 现在开关打开即生效，
-     * 控制器侧（{@link NyarlathotepsTentacleMachine#isThreadDedupeActive()}）也不再问无线能源仓。
-     */
-    public boolean isIndependentThreadEffective() {
-        return independentThread;
-    }
-
     // ---------------- 设值（只在服务端真正改） ----------------
 
     /** 设置线程数；越界自动夹到 {@code 1..本档上限}。 */
@@ -268,7 +257,7 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
         if (!isRemote()) {
             markDirty();
             GTLModular.LOGGER.info("[gtlmodular] 线程仓 @{} 独立线程 → {}（{}）",
-                    getPos(), value, value ? "全部配方表里独立找配方" : "只用当前选中的配方表");
+                    getPos(), value, value ? "每条线程独立额度" : "所有线程共享额度");
         }
     }
 

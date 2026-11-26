@@ -184,40 +184,6 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
         return true;
     }
 
-    // ------------------------------------------------------------------ 独立线程（IIndependentThreadHost）
-
-    private int threadStateTick = -1;
-    private boolean threadStateIndependent;
-
-    /**
-     * 结构里是否至少有一个线程仓把「独立线程」开关打开。
-     *
-     * <p>语义照 {@link IIndependentThreadHost}：<b>没有线程仓 ⇒ {@code false}</b>
-     * （退回「只用当前选中那张配方表」的行为）。按 {@code getOffsetTimer()} 每 tick 最多重算一次
-     * （与力场压模零件工厂 / 高维等离子聚变核心同款做法）。</p>
-     */
-    @Override
-    public boolean isIndependentThreadActive() {
-        if (getLevel() == null) {
-            return false;
-        }
-        long now = getOffsetTimer();
-        if (now == threadStateTick) {
-            return threadStateIndependent;
-        }
-        threadStateTick = (int) now;
-        boolean independent = false;
-        for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart part : getParts()) {
-            if (part instanceof com.gtlmodular.common.machine.thread.IThreadHatchPart hatch
-                    && hatch.isIndependentThread()) {
-                independent = true;
-                break;
-            }
-        }
-        threadStateIndependent = independent;
-        return independent;
-    }
-
     /**
      * 引擎常驻（不要求先装线程仓）—— 与奈亚拉托提普之触 / 力场压模零件工厂同口径
      * （gtladditions 给 {@code MultipleRecipesLogic} 打了 mixin，走「没仓就交回原逻辑」那条路会崩，

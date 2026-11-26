@@ -2,7 +2,6 @@ package com.gtlmodular.common.machine.petrochem;
 
 import com.gregtechceu.gtceu.api.block.ICoilType;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
-import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.multiblock.CoilWorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.common.machine.engine.IIndependentThreadHost;
@@ -23,7 +22,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
  * 集成石油化工处理工厂（{@code gtlmodular:petrochemical_plant}）—— GTO「石化工厂」
@@ -181,39 +179,6 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
     @Override
     public boolean usesParallelHatch() {
         return true;
-    }
-
-    // ------------------------------------------------------------------ 独立线程（IIndependentThreadHost）
-
-    private int threadStateTick = -1;
-    private boolean threadStateIndependent;
-
-    /**
-     * 结构里是否至少有一个线程仓把「独立线程」开关打开。
-     *
-     * <p>语义照 {@link IIndependentThreadHost}：<b>没有线程仓 ⇒ {@code false}</b>（退回「只用当前选中
-     * 那张配方表」的行为）。按 {@code getOffsetTimer()} 每 tick 最多重算一次（与木化工厂 / 力场压模
-     * 零件工厂 / 高维等离子聚变核心同款做法）。
-     */
-    @Override
-    public boolean isIndependentThreadActive() {
-        if (getLevel() == null) {
-            return false;
-        }
-        long now = getOffsetTimer();
-        if (now == threadStateTick) {
-            return threadStateIndependent;
-        }
-        threadStateTick = (int) now;
-        boolean independent = false;
-        for (IMultiPart part : getParts()) {
-            if (part instanceof IThreadHatchPart hatch && hatch.isIndependentThread()) {
-                independent = true;
-                break;
-            }
-        }
-        threadStateIndependent = independent;
-        return independent;
     }
 
     /**

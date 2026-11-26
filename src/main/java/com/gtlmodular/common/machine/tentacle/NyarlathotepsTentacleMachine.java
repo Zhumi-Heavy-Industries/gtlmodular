@@ -197,24 +197,18 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
         return threadStateIndependent;
     }
 
-    /** 「独立线程」<b>是否真生效</b>：有仓打开即生效（0.3.286 起不再看无线能源仓）。 */
-    public boolean isIndependentThreadActive() {
-        refreshThreadState();
-        return threadStateIndependent;
-    }
-
     /**
      * 是否要<b>逐线程去重</b>（同一配方不允许被两条线程同时跑）。
      *
      * <p>★ 2026-11-03 起只有一个来源：「并行重复配方」被关 ⇒ 去重；
      * 开（默认）⇒ 同一配方可以填满所有线程。
-     * 「独立线程」只负责「每条线程独立找配方（可跨全部配方表）」，<b>不</b>再顺带禁止重复。
+     * 「独立线程」只负责「每条线程独立额度」，<b>不</b>再顺带禁止重复。
      */
     public boolean isThreadDedupeActive() {
         refreshThreadState();
         // ★ 2026-11-03（玩家：「线程仓那两个按钮真的有用吗」）：
         //   去重只由「并行重复配方」决定 —— 关 = 同一配方只许占一条线程；
-        //   独立线程只负责「跨配方表找配方」。旧逻辑写的是 OR（独立线程开也去重），
+        //   独立线程只负责「每线程独立额度」，不参与去重。旧逻辑写的是 OR（独立线程开也去重），
         //   默认两个开关都开 ⇒ 默认就在去重，单配方机器多余线程全空转，
         //   而且「并行重复配方」怎么点都看不出变化。
         return !threadStateRepeated;

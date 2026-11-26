@@ -93,42 +93,6 @@ public class FieldExtruderFactoryMachine extends WorkableElectricMultiblockMachi
         return true;
     }
 
-    // ------------------------------------------------------------------ 独立线程（IIndependentThreadHost）
-
-    private int threadStateTick = -1;
-    private boolean threadStateIndependent;
-
-    /**
-     * 结构里是否至少有一个线程仓把「独立线程」开关打开。
-     *
-     * <p>语义照 {@link IIndependentThreadHost} 的约定：<b>没有线程仓 ⇒ {@code false}</b>
-     * （退回「只用当前选中那张配方表」的行为）。本机只有一张配方表，所以即便返 {@code true}
-     * 也只是不再受表切换限制，不会跨表乱跑。</p>
-     *
-     * <p>按 {@code getOffsetTimer()} 每 tick 最多重算一次（与高维等离子聚变核心同款做法）。</p>
-     */
-    @Override
-    public boolean isIndependentThreadActive() {
-        if (getLevel() == null) {
-            return false;
-        }
-        long now = getOffsetTimer();
-        if (now == threadStateTick) {
-            return threadStateIndependent;
-        }
-        threadStateTick = (int) now;
-        boolean independent = false;
-        for (com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart part : getParts()) {
-            if (part instanceof com.gtlmodular.common.machine.thread.IThreadHatchPart hatch
-                    && hatch.isIndependentThread()) {
-                independent = true;
-                break;
-            }
-        }
-        threadStateIndependent = independent;
-        return independent;
-    }
-
     /**
      * 引擎常驻（不要求先装线程仓）。
      *

@@ -236,27 +236,15 @@ public class HyperdimensionalPlasmaFusionCoreMachine extends CoilWorkableElectri
     }
 
     /**
-     * 「独立线程」是否真生效（有仓打开即生效；与奈亚同口径，不看无线能源仓）。
-     *
-     * <p>★ 2026-11-03：实现 {@code IIndependentThreadHost} —— 引擎据此把「找配方」扩到
-     * 本机的全部配方表（超维度熔炼 + 恒星热能熔炼），不再是「只用当前选中那张」。
-     */
-    @Override
-    public boolean isIndependentThreadActive() {
-        refreshThreadState();
-        return threadStateIndependent;
-    }
-
-    /**
      * 是否逐线程去重：只由「并行重复配方」决定 —— 关 ⇒ 同一配方只允许占一条线程；
-     * 开（默认）⇒ 同一配方可以填满所有线程。独立线程只管跨配方表找配方。
+     * 开（默认）⇒ 同一配方可以填满所有线程。独立线程只管每线程独立额度。
      * （与 {@code NyarlathotepsTentacleMachine#isThreadDedupeActive()} 同一口径。）
      */
     public boolean isThreadDedupeActive() {
         refreshThreadState();
         // ★ 2026-11-03（玩家：「线程仓那两个按钮真的有用吗」）：
         //   去重只由「并行重复配方」决定 —— 关 = 同一配方只许占一条线程；
-        //   独立线程只负责「跨配方表找配方」。旧逻辑写的是 OR（独立线程开也去重），
+        //   独立线程只负责「每线程独立额度」，不参与去重。旧逻辑写的是 OR（独立线程开也去重），
         //   默认两个开关都开 ⇒ 默认就在去重，单配方机器多余线程全空转，
         //   而且「并行重复配方」怎么点都看不出变化。
         return !threadStateRepeated;

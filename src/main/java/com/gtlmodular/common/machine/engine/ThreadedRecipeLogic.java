@@ -111,6 +111,18 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     /** ★ 2026-11-08：{@link #pokeScan()} 置位 ⇒ 下一次调度立即扫描（不等扫描冷却）。 */
     private boolean scanForced;
 
+    /**
+     * ★ 2026-11-26：<b>本 tick 的线程槽数快照</b>。
+     *
+     * <p>{@code effectiveThreads()} 每次都要遍历结构部件表找线程仓；引擎填槽时每个空槽问一次，
+     * 256 槽的机器首轮就是 256 次全表遍历。同一 tick 内部件表与仓的设定不会变
+     * （玩家改仓发生在 tick 之外，且会走 {@link #pokeScan()} 立刻清快照），所以按 tick 缓存一次。
+     */
+    private int slotCache = -1;
+
+    /** 槽数快照对应的 tick（{@link #cachedSlots()}）。 */
+    private long slotCacheTick = Long.MIN_VALUE;
+
     /** ★ 2026-11-10：<b>电网取电身份</b>（放置者 UUID；能源缓冲优先从无线电网扣电）。 */
     private java.util.UUID gridUser;
 
@@ -507,6 +519,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void pokeScan() {
         finder.clearCooldowns();
         diag.onPoke();
+        slotCache = -1;   // ★ 2026-11-26：仓设定/电路可能刚变，线程数快照立刻作废
         // ★ 2026-11-08：原逻辑代跑时，AE 推样板 / 换电路同样要叫醒它（它不是本引擎的批次表）
         if (originalActive()) {
             original.markLastRecipeDirty();
@@ -556,6 +569,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void resetRecipeLogic() {
         super.resetRecipeLogic();
         engine.clear();
+        slotCache = -1;   // ★ 2026-11-26：结构变了，旧部件表算出来的线程数不能再用
         // ★ 2026-11-10：复位时把缓存的电退回能源仓（不能凭空留/丢）
         if (energyBuffer != null) {
             energyBuffer.flushBack();
@@ -683,7 +697,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         /** 同时能跑几条 = 线程仓当前设定值；没装线程仓才退回机器自己的固定值。 */
         @Override
         public int slots() {
-            return Math.max(1, threaded.effectiveThreads());
+            return cachedSlots();
         }
 
         /** 找一条能开的新配方（见 {@link BatchFinder#findBatch()}）。 */
@@ -734,7 +748,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         }
         long sum = 0L;
         for (int i = 0; i < engine.size(); i++) {
-            sum += Math.max(1, engine.get(i).recipe.parallels);
+            sum += engine.get(i).use;
             if (sum < 0) {
                 return Long.MAX_VALUE;
             }
@@ -746,7 +760,34 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public int threadLimit() {
         // ★ 2026-11-08：原逻辑代跑 ⇒ 报 1（Jade 的线程显示判据是「limit>1 或 有批次」，
         //   报 1 + runningBatches=0 就不会画出「独立线程」那一节）。
-        return originalActive() ? 1 : Math.max(1, threaded.effectiveThreads());
+        return originalActive() ? 1 : cachedSlots();
+    }
+
+    /**
+     * ★ 2026-11-26：按 tick 缓存的 {@code effectiveThreads()}（见字段注释）。
+     *
+     * <p>拿不到世界/时间时退化为「不缓存」，逐字保留旧行为；{@link #pokeScan()} 与
+     * {@link #resetRecipeLogic()} 会主动清快照，避免同一 tick 里改仓后出现旧值。
+     */
+    private int cachedSlots() {
+        long tick = Long.MIN_VALUE;
+        try {
+            var self = machine.self();
+            if (self != null && self.getLevel() != null) {
+                tick = self.getOffsetTimer();
+            }
+        } catch (Throwable ignored) {
+            // 未成形/未加载：不缓存
+        }
+        if (tick != Long.MIN_VALUE && tick == slotCacheTick && slotCache >= 0) {
+            return slotCache;
+        }
+        int value = Math.max(1, threaded.effectiveThreads());
+        if (tick != Long.MIN_VALUE) {
+            slotCacheTick = tick;
+            slotCache = value;
+        }
+        return value;
     }
 
     /** 当前在跑的批次数（Jade/面板读取用）。 */
@@ -777,12 +818,18 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         for (int i = 0; i < engine.size(); i++) {
             ConcurrentRecipeEngine.Batch batch = engine.get(i);
             list.add(new BatchView(batch.recipe, batch.progress, batch.duration,
-                    Math.max(1, batch.recipe.parallels)));
+                    (int) Math.min(Integer.MAX_VALUE, Math.max(1L, batch.use))));
         }
         return list;
     }
 
-    /** 一条批次快照：配方对象 / 进度 / 已钉死的时长 / 并行份数。 */
+    /**
+     * 一条批次快照：配方对象 / 进度 / 已钉死的时长 / 占用额度。
+     *
+     * <p>{@code parallels} 这个分量名保留给 Jade 的既有读法；它现在取的是
+     * {@link ConcurrentRecipeEngine.Batch#use}（GTO {@code Thread.use} 口径），
+     * 即开批时钉死的占用量，而不是从可能已被改过的 recipe 上现读。
+     */
     public record BatchView(GTRecipe recipe, int progress, int duration, int parallels) {}
 
     /**

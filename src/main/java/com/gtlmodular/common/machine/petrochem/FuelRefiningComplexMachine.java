@@ -3,7 +3,6 @@ package com.gtlmodular.common.machine.petrochem;
 import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.block.ICoilType;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
-import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.machine.multiblock.CoilWorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.common.machine.engine.IIndependentThreadHost;
@@ -24,7 +23,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 
-import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
  * 燃料精炼复合体（{@code gtlmodular:fuel_refining_complex}）—— GTO 同名机器
@@ -195,33 +193,6 @@ public class FuelRefiningComplexMachine extends CoilWorkableElectricMultiblockMa
     @Override
     public boolean usesParallelHatch() {
         return true;
-    }
-
-    // ------------------------------------------------------------------ 独立线程（IIndependentThreadHost）
-
-    private int threadStateTick = -1;
-    private boolean threadStateIndependent;
-
-    /** 同 {@link PetrochemicalPlantMachine#isIndependentThreadActive()}：至少一个线程仓的开关打开才生效。 */
-    @Override
-    public boolean isIndependentThreadActive() {
-        if (getLevel() == null) {
-            return false;
-        }
-        long now = getOffsetTimer();
-        if (now == threadStateTick) {
-            return threadStateIndependent;
-        }
-        threadStateTick = (int) now;
-        boolean independent = false;
-        for (IMultiPart part : getParts()) {
-            if (part instanceof IThreadHatchPart hatch && hatch.isIndependentThread()) {
-                independent = true;
-                break;
-            }
-        }
-        threadStateIndependent = independent;
-        return independent;
     }
 
     /** 引擎常驻（不要求先装线程仓），同 {@link PetrochemicalPlantMachine}。 */

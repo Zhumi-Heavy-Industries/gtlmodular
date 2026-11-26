@@ -200,16 +200,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
         return true;
     }
 
-    /** 线程仓「独立线程」：任一仓打开即生效（每条线程在全部配方表里找配方）。 */
-    public boolean threadHatchIndependentThread() {
-        for (IMultiPart part : getParts()) {
-            if (part instanceof IThreadHatchPart hatch && hatch.isIndependentThread()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * 独立线程引擎的线程数（&le;0 ⇒ 不启用，继续走 gtlcore 的「合并成一条配方」机制）。
      *
@@ -263,7 +253,12 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     /** 「独立线程」开关交给通用引擎读（名字对齐 IThreadedRecipeMachine 的默认方法）。 */
     @Override
     public boolean threadHatchIndependent() {
-        return threadHatchIndependentThread();
+        for (IMultiPart part : getParts()) {
+            if (part instanceof IThreadHatchPart hatch && hatch.isIndependentThread()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 引擎模式是否启用（服务端/客户端都现读结构部件，判定一致）。 */
@@ -286,7 +281,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
      * 关 = 所有线程共用同一份额度（在跑批次并行之和 ≤ {@link #engineParallelPerBatch()}）。
      */
     public final boolean engineIndependent() {
-        return threadHatchIndependentThread();
+        return threadHatchIndependent();
     }
 
     /** 引擎模式：配方每 tick 的原价 EU。 */
@@ -333,7 +328,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
      *       gtlcore {@link MultipleRecipesLogic} 的「一次把所有能跑的配方合并成一条、共用一个进度」；</li>
      *   <li><b>独立线程引擎</b>（装了线程仓）：改由 {@link ConcurrentRecipeEngine} 调度，
      *       <b>每条线程一条批次、各有各的进度/时长</b>，线程数 = {@code module.engineThreads()}；
-     *       两条线程仓开关在这里生效（「并行重复配方」= 逐线程去重，「独立线程」= 跨配方表找配方）。</li>
+     *       两条线程仓开关在这里生效（「并行重复配方」= 逐线程去重，「独立线程」= 每线程独立额度）。</li>
      * </ul>
      * 两条路径的耗电都走「主机中央供电 + 主机线圈减免」，并行都按模块自己的口径折算。
      */
@@ -459,7 +454,7 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             for (int i = 0; i < engine.size(); i++) {
                 ConcurrentRecipeEngine.Batch batch = engine.get(i);
                 list.add(new ThreadedRecipeLogic.BatchView(batch.recipe, batch.progress, batch.duration,
-                        Math.max(1, batch.recipe.parallels)));
+                        (int) Math.min(Integer.MAX_VALUE, Math.max(1L, batch.use))));
             }
             return list;
         }
@@ -468,14 +463,14 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
          * 当前在跑批次占用的并行之和 —— 「独立线程」关闭时用来算剩余共享额度。
          */
         private int runningParallelSum() {
-            int sum = 0;
+            long sum = 0L;
             for (int i = 0; i < engine.size(); i++) {
-                sum += Math.max(1, engine.get(i).recipe.parallels);
-                if (sum < 0) {
+                sum += engine.get(i).use;
+                if (sum >= Integer.MAX_VALUE) {
                     return Integer.MAX_VALUE;
                 }
             }
-            return sum;
+            return (int) sum;
         }
 
         @Override

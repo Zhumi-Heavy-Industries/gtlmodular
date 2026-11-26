@@ -6,9 +6,11 @@ import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiController;
 import com.gregtechceu.gtceu.api.machine.feature.multiblock.IMultiPart;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
-import com.gregtechceu.gtceu.api.recipe.RecipeHelper;
 import com.gregtechceu.gtceu.common.data.GTRecipeModifiers;
 import com.mojang.datafixers.util.Pair;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
+import net.minecraft.resources.ResourceLocation;
 import org.gtlcore.gtlcore.api.recipe.RecipeRunnerHelper;
 
 import java.util.ArrayList;
@@ -90,6 +92,32 @@ public final class BatchFinder {
         int idlePasses;
     }
 
+    /**
+     * ★ 2026-11-26：<b>一轮 findBatch 的只读快照</b>（GTO 的 {@code CrossRecipeTrait} 在结构扫描时
+     * 就把线程仓/并行仓/无线能源仓的引用收进 trait 里，不逐候选重新遍历部件表）。
+     *
+     * <p>这里不做跨 tick 缓存，只在<b>一次 findBatch 调用内</b>把同 tick 不会变的值算一次：
+     * 部件表、线程仓两个开关、在跑批次的并行占用与配方 id。扫描途中引擎不会收新批次
+     * （{@link ConcurrentRecipeEngine#tick} 是先扫完再扣料入表），所以语义与逐候选现算完全一致；
+     * 收益是把「候选数 × 部件数」的重复遍历压成「1 × 部件数」。
+     */
+    private static final class ScanContext {
+        final boolean repeatedAllowed;
+        final boolean independent;
+        final int parallelPerThread;
+        final int usedParallel;
+        final ObjectSet<ResourceLocation> runningIds;
+
+        ScanContext(boolean repeatedAllowed, boolean independent, int parallelPerThread,
+                    int usedParallel, ObjectSet<ResourceLocation> runningIds) {
+            this.repeatedAllowed = repeatedAllowed;
+            this.independent = independent;
+            this.parallelPerThread = parallelPerThread;
+            this.usedParallel = usedParallel;
+            this.runningIds = runningIds;
+        }
+    }
+
     private final Map<GTRecipeType, TableScanState> scanStates = new IdentityHashMap<>();
 
     /** 上次成功开出配方的配方表下标（跨表轮转的起点）。 */
@@ -162,8 +190,9 @@ public final class BatchFinder {
         // ★ 2026-11-25：是否跨表由逻辑壳决定（owner.crossTableScan()）—— 熔岩模块按
         //   engineCrossTable() 开关走，通用引擎恒 true，两边判定口径由此统一到一处。
         boolean allTypes = owner.crossTableScan() && types != null && types.length > 1;
+        ScanContext ctx = newScanContext();
         if (!allTypes) {
-            return findBatchForType(current);
+            return findBatchForType(current, ctx);
         }
         int n = types.length;
         int startIdx = lastSuccessfulTypeIdx % n;
@@ -172,7 +201,7 @@ public final class BatchFinder {
         for (int i = 0; i < n; i++) {
             int idx = (startIdx + i) % n;
             diag.forgetScannedThisCall();
-            GTRecipe recipe = findBatchForType(types[idx]);
+            GTRecipe recipe = findBatchForType(types[idx], ctx);
             if (recipe != null) {
                 lastSuccessfulTypeIdx = idx;
                 return recipe;
@@ -193,8 +222,33 @@ public final class BatchFinder {
         return null;
     }
 
+    /**
+     * 生成本轮扫描快照：线程仓开关、并行仓并行数、在跑批次的占用与配方 id 各读一次。
+     */
+    private ScanContext newScanContext() {
+        boolean repeated = threaded.threadHatchRepeatedRecipes();
+        boolean independent = threaded.threadHatchIndependent();
+        long mult = Math.max(1, threaded.parallelMultiplier());
+        if (threaded.usesParallelHatch()) {
+            mult *= Math.max(1, parallelHatchCount());
+        }
+        int perThread = (int) Math.min(Integer.MAX_VALUE, mult);
+        ObjectSet<ResourceLocation> runningIds = null;
+        if (!repeated) {
+            runningIds = new ObjectOpenHashSet<>();
+            for (int i = 0; i < engine.size(); i++) {
+                GTRecipe recipe = engine.get(i).recipe;
+                if (recipe != null && recipe.getId() != null) {
+                    runningIds.add(recipe.getId());
+                }
+            }
+        }
+        return new ScanContext(repeated, independent, perThread,
+                independent ? 0 : runningParallelSum(), runningIds);
+    }
+
     /** 单张配方表的候选搜索。 */
-    private GTRecipe findBatchForType(GTRecipeType type) {
+    private GTRecipe findBatchForType(GTRecipeType type, ScanContext ctx) {
         long now = machine.self().getOffsetTimer();
         TableScanState state = scanStates.computeIfAbsent(type, t -> new TableScanState());
         if (now < state.cooldownUntil) {
@@ -259,7 +313,8 @@ public final class BatchFinder {
             diag.addCandidate();
             // ★ 2026-11-07 GTO 口径：「并行重复配方」关 ⇒ 同一配方只许占一条线程。
             //   放到引擎里做，机器类不用再各写一份 fullModifyRecipe 去重。
-            if (!threaded.threadHatchRepeatedRecipes() && isRecipeRunningElsewhere(raw)) {
+            if (!ctx.repeatedAllowed && raw != null && raw.getId() != null
+                    && ctx.runningIds != null && ctx.runningIds.contains(raw.getId())) {
                 diag.noteScanReject(type, raw, "并行重复配方关闭：该配方已在别的线程", null);
                 continue;
             }
@@ -298,19 +353,14 @@ public final class BatchFinder {
                 continue;
             }
             // 普通多方块 = 线程倍率 × 并行仓；巨构（usesParallelHatch=false）只看线程倍率。
-            // long 乘再钳到 int：温度倍率可能很大，不能把 int 乘爆成负数。
-            long multLong = Math.max(1, threaded.parallelMultiplier());
-            if (threaded.usesParallelHatch()) {
-                multLong *= Math.max(1, parallelHatchCount());
-            }
-            int perThread = (int) Math.min(Integer.MAX_VALUE, multLong);
+            // perThread 由 newScanContext() 在整轮扫描开头算一次（long 乘再钳到 int）。
             // ★ 2026-11-07 GTO 口径「独立线程」：
             //   开 = 每条线程各自一份完整并行/功率额度（perThread）；
             //   关 = 所有线程共用同一份额度（在跑批次的并行之和不得超过 perThread）。
-            int parallelBudget = perThread;
-            if (!threaded.threadHatchIndependent()) {
-                int used = runningParallelSum();
-                parallelBudget = perThread - used;
+            //   usedParallel / runningIds 同样取自本轮快照：扫描途中引擎不会收新批次。
+            int parallelBudget = ctx.parallelPerThread;
+            if (!ctx.independent) {
+                parallelBudget = ctx.parallelPerThread - ctx.usedParallel;
                 if (parallelBudget <= 0) {
                     diag.noteScanReject(type, raw, "独立线程关闭：并行额度已被在跑线程占满", null);
                     continue;
@@ -389,30 +439,16 @@ public final class BatchFinder {
         return selected;
     }
 
-    /** 「并行重复配方」关闭时：同一条配方是否已被别的线程占用。 */
-    private boolean isRecipeRunningElsewhere(GTRecipe raw) {
-        if (raw == null || raw.getId() == null) {
-            return false;
-        }
-        for (int i = 0; i < engine.size(); i++) {
-            GTRecipe running = engine.get(i).recipe;
-            if (running != null && raw.getId().equals(running.getId())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /** 当前在跑批次占用的并行之和（「独立线程」关闭时用来算剩余共享额度）。 */
     private int runningParallelSum() {
-        int sum = 0;
+        long sum = 0L;
         for (int i = 0; i < engine.size(); i++) {
-            sum += Math.max(1, engine.get(i).recipe.parallels);
-            if (sum < 0) {
+            sum += engine.get(i).use;   // 开批时钉死的占用量，不再回读可能被改过的 recipe
+            if (sum >= Integer.MAX_VALUE) {
                 return Integer.MAX_VALUE;
             }
         }
-        return sum;
+        return (int) sum;
     }
 
     /**

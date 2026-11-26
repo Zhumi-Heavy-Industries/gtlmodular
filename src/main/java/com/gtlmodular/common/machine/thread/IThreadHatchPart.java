@@ -51,7 +51,7 @@ public interface IThreadHatchPart {
      * 「重复配方」开关（GTO {@code repeatedRecipes}，默认 <b>true</b>）。
      *
      * <p>开 = 多条线程<b>可以</b>同时跑同一条配方；关 = 同一配方只允许占一条线程。
-     * 控制器取「所有制线程仓都为真」才允许重复（{@link NyarlathotepsTentacleMachine}）。
+     * 引擎取「所有线程仓都为真」才允许重复（{@code IThreadedRecipeMachine#threadHatchRepeatedRecipes()}）。
      */
     default boolean isRepeatedRecipes() {
         return true;
@@ -60,8 +60,9 @@ public interface IThreadHatchPart {
     /**
      * 「独立线程」开关（GTO {@code iThread}，默认 <b>true</b>）。
      *
-     * <p>开 = 各线程尽量挑<b>不同</b>的配方（控制器逐线程匹配时排除已被占用的配方，
-     * 取不到就留空线程）。
+     * <p>开 = 每条线程各有<b>一份完整并行/功率额度</b>；关 = 所有线程共用同一份额度
+     * （在跑批次的 {@code use} 之和不得超过每线程额度）。这是跨配方机器的<b>额度属性</b>，
+     * <b>不</b>再决定「跨不跨配方表」——跨表由 {@code IBatchLogicOwner#crossTableScan()} 决定。
      *
      * <p>★ 0.3.286：<b>不再要求</b>结构里有无线能源仓 —— 开关打开即生效
      * （上一版照 GTO 的 {@code gtocore.machine.wireless_enable} 文案加过这个前置，
