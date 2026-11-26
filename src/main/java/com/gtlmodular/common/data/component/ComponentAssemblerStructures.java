@@ -30,16 +30,12 @@ import java.util.List;
  * 以满足 Add 3.6.2 对二级格 "不能是控制器或计数部件" 的硬约束。
  *
  * <p>方块按 GTO 原结构的符号映射；GTO 专属方块里只有
- * {@code TITANIUM_NITRIDE_CERAMIC_IMPACT_RESISTANT_MECHANICAL_BLOCK}（符号 {@code l}）在包里没有，
+ * {@code TITANIUM_NITRIDE_CERAMIC_IMPACT_RESISTANT_MECHANICAL_BLOCK}（原符号 {@code l}、现二级位 {@code L}）在包里没有，
  * 按需求替换成 GTCEu 的「激光安全机械方块」（{@code gtceu:laser_safe_engraving_casing}）。
  * 其余 GTO 方块（multifunctional / process / oxidation-resistant hastelloy N）在本包由 gtlcore 提供，
  * 按 id 取；取不到时回落到钢制机壳。
  */
 final class ComponentAssemblerStructures {
-
-    static final int FULL_WIDTH = 29;
-    static final int FULL_HEIGHT = 6;
-    static final int FULL_LENGTH = 13;
 
     private static final String[] CAL_TIERS = {
             "lv", "mv", "hv", "ev", "iv", "luv", "zpm", "uv", "uhv", "uev", "uiv", "uxv", "opv", "max"
@@ -49,7 +45,7 @@ final class ComponentAssemblerStructures {
 
     static BlockPattern buildFull(MultiblockMachineDefinition definition) {
         // 结构外壳仍接受 LV~MAX 任意档；IV 只约束「配方里的外壳输入」，不约束结构。
-        return build(definition, FULL_SLICES, true, null);
+        return build(definition, FULL_SLICES);
     }
 
     /** 结构升级分类用：完整型的切片表。 */
@@ -68,15 +64,13 @@ final class ComponentAssemblerStructures {
         return TIER1_CHARS.indexOf(ch) < 0;
     }
 
-    private static BlockPattern build(MultiblockMachineDefinition definition, String[][] slices, boolean laser,
-                                      String casingTier) {
+    private static BlockPattern build(MultiblockMachineDefinition definition, String[][] slices) {
         FactoryBlockPattern pattern = FactoryBlockPattern.start();
         for (String[] slice : slices) {
             pattern.aisle(slice);
         }
 
         TraceabilityPredicate io = Predicates.autoAbilities(definition.getRecipeTypes());
-        TraceabilityPredicate laserHatch = Predicates.abilities(PartAbility.INPUT_LASER).setMaxGlobalLimited(2);
         TraceabilityPredicate extra = Predicates.abilities(PartAbility.MAINTENANCE).setExactLimit(1)
                 .or(Predicates.abilities(PartAbility.PARALLEL_HATCH).setMaxGlobalLimited(1))
                 // ★ 2026-11-05：线程仓（自定义 PartAbility，autoAbilities 不带它）。
@@ -87,13 +81,8 @@ final class ComponentAssemblerStructures {
                 // 超频仓：凡可插线程仓的机器都同样可插
                 .or(com.gtlmodular.common.data.fuel.OverclockHatches.predicate())
                 .or(com.gtlmodular.common.data.fuel.AccelerateHatches.predicate());
-        // ★ 2026-10-31：激光输入仓只允许放在 l 位（激光安全机械方块），a/q/A/d 都不再接受。
         TraceabilityPredicate hatchable = Predicates.blocks(GTBlocks.CASING_STEEL_SOLID.get()).or(io).or(extra);
-        TraceabilityPredicate laserSafe = Predicates.blocks(GCyMBlocks.CASING_LASER_SAFE_ENGRAVING.get());
         TraceabilityPredicate steel = Predicates.blocks(GTBlocks.CASING_STEEL_SOLID.get());
-        if (laser) {
-            laserSafe = laserSafe.or(laserHatch);
-        }
 
         // ★ 结构升级二级格的舱面/激光位必须不带计数限制：Add 3.6.2 的
         //   StructureTierLayout.collect() 对二级格强制 predicate.limited.isEmpty()。
@@ -114,7 +103,7 @@ final class ComponentAssemblerStructures {
         TraceabilityPredicate laserSafeNoLimit = Predicates.blocks(GCyMBlocks.CASING_LASER_SAFE_ENGRAVING.get())
                 .or(Predicates.abilities(PartAbility.INPUT_LASER));
 
-        TraceabilityPredicate calCasings = calCasings(casingTier);
+        TraceabilityPredicate calCasings = calCasings();
         Block multiFunctional = block("gtlcore:multi_functional_casing", GTBlocks.CASING_STEEL_SOLID.get());
         Block processCasing = block("gtlcore:process_machine_casing", GTBlocks.CASING_STEEL_SOLID.get());
         Block oxidation = block("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing",
@@ -134,7 +123,6 @@ final class ComponentAssemblerStructures {
                 .where('I', Predicates.blocks(Blocks.IRON_BARS))
                 .where('J', Predicates.blocks(GTBlocks.CASING_STEEL_GEARBOX.get()))
                 // ASSEMBLY 扩展
-                .where('q', hatchable)
                 .where('b', calCasings)
                 .where('c', Predicates.blocks(GCyMBlocks.CASING_NONCONDUCTING.get()))
                 .where('d', steel)
@@ -145,7 +133,6 @@ final class ComponentAssemblerStructures {
                 .where('i', Predicates.blocks(ChemicalHelper.getBlock(TagPrefix.frameGt, GTMaterials.Trinium)))
                 .where('j', Predicates.blocks(processCasing))
                 .where('k', Predicates.blocks(oxidation))
-                .where('l', laserSafe)
                 .where('m', Predicates.blocks(GTBlocks.CASING_LAMINATED_GLASS.get()))
                 .where('n', Predicates.blocks(GTBlocks.CASING_TEMPERED_GLASS.get()))
                 .where('o', Predicates.blocks(GTBlocks.CASING_POLYTETRAFLUOROETHYLENE_PIPE.get()))
@@ -156,19 +143,10 @@ final class ComponentAssemblerStructures {
                 .build();
     }
 
-    /** gtlcore 的部件装配线外壳；{@code minTier == null} 接受 LV~MAX 任意档，否则接受“该档及以上”。 */
-    private static TraceabilityPredicate calCasings(String minTier) {
-        int start = 0;
-        if (minTier != null) {
-            for (int i = 0; i < CAL_TIERS.length; i++) {
-                if (CAL_TIERS[i].equals(minTier)) {
-                    start = i;
-                    break;
-                }
-            }
-        }
-        List<Block> list = new ArrayList<>(CAL_TIERS.length - start);
-        for (int i = start; i < CAL_TIERS.length; i++) {
+    /** gtlcore 的部件装配线外壳，接受 LV~MAX 任意档；缺失时回落钢制机壳。 */
+    private static TraceabilityPredicate calCasings() {
+        List<Block> list = new ArrayList<>(CAL_TIERS.length);
+        for (int i = 0; i < CAL_TIERS.length; i++) {
             Block block = BuiltInRegistries.BLOCK.get(
                     new ResourceLocation("gtlcore", "component_assembly_line_casing_" + CAL_TIERS[i]));
             if (block != Blocks.AIR) {

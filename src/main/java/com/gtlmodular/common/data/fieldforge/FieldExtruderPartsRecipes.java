@@ -45,7 +45,7 @@ import java.util.function.Consumer;
  * <h2>调用点</h2>
  * {@code IGTAddon#addRecipes(Consumer<FinishedRecipe>)} —— GTCEu 在数据包配方生成阶段
  * 通过 {@code GTRecipes} 遍历 {@code AddonFinder.getAddons()} 调到，是本模组
- * {@code ComponentAssemblerAddon} 已在用的同一套写法。不走服务端启动注入，
+ * 本模组装配线配方已在用的同一套写法。不走服务端启动注入，
  * 也就不会再有「注册晚了 / 反射取 byType / 与数据包重复」这类老坑。
  */
 public final class FieldExtruderPartsRecipes {

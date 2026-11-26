@@ -120,7 +120,7 @@ public class GTLModularAddon implements IGTAddon {
     /**
      * ★ <b>配方生成的正式入口</b>：GTCEu 在数据包配方生成阶段遍历 {@code AddonFinder.getAddons()}
      * 逐个调 {@code addon.addRecipes(consumer)}（证据：GTCEu 1.4.4 {@code GTRecipes.java:91}）。
-     * 本模组 {@code ComponentAssemblerAddon} 已在用同一套写法。
+     * 本模组装配线配方已在用同一套写法。
      *
      * <p>{@code 2026-11-25}：力场压模零件工厂的「零部件加工」配方从 112 个手写 JSON
      * 改成按材料注册表现场生成，见
