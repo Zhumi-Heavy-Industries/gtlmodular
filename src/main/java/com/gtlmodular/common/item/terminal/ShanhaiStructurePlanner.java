@@ -77,10 +77,17 @@ public final class ShanhaiStructurePlanner {
         List<ShanhaiStructurePatternAdapter.Slot> slots =
                 ShanhaiStructurePatternAdapter.map(controller, repeatCount, mirrored);
         List<ShanhaiStructurePlan.Entry> entries = new ArrayList<>(slots.size());
+        int[] requiredChambers = new int[ShanhaiChamberClassifier.Type.values().length];
         BlockPos controllerPos = controller.self().getPos();
         for (ShanhaiStructurePatternAdapter.Slot slot : slots) {
             if (slot.pos().equals(controllerPos)) continue;
             PreparedCandidates prepared = candidateCache.prepared(slot.predicate(), priority);
+            // 结构谓词 minCount>0 = 成型必需；按 8 类舱室取最大值汇总，
+            // 让终端「成型所需舱室」显示这台机器真实的必需项，而不是写死的 6 必需。
+            int[] slotRequired = prepared.requiredByType();
+            for (int i = 0; i < requiredChambers.length; i++) {
+                requiredChambers[i] = Math.max(requiredChambers[i], slotRequired[i]);
+            }
             entries.add(classify(level, slot.pos(), prepared,
                     replacementFamily, replacementTarget, replacementCandidate, replaceMode, absoluteReplace,
                     noChambers, reportOnly));
@@ -89,7 +96,7 @@ public final class ShanhaiStructurePlanner {
         var machineId = ForgeRegistries.BLOCKS.getKey(controllerBlock);
         return new ShanhaiStructurePlan(
                 GlobalPos.of(level.dimension(), controllerPos),
-                machineId == null ? "" : machineId.toString(), mirrored, repeatCount, entries);
+                machineId == null ? "" : machineId.toString(), mirrored, repeatCount, entries, requiredChambers);
     }
 
     private static ShanhaiStructurePlan.Entry classify(Level level, BlockPos pos,
@@ -171,7 +178,8 @@ public final class ShanhaiStructurePlanner {
     }
 
     private record PreparedCandidates(List<Candidate> all, List<Candidate> ordinary,
-                                      List<ItemStack> items, boolean chamberCapable) {}
+                                      List<ItemStack> items, boolean chamberCapable,
+                                      int[] requiredByType) {}
 
     private static List<Candidate> readCandidates(SimplePredicate simple) {
         if (simple.candidates == null) return Collections.emptyList();
@@ -208,7 +216,23 @@ public final class ShanhaiStructurePlanner {
             PreparedCandidates cached = byPattern.get(predicate);
             if (cached != null) return cached;
             List<Candidate> all = new ArrayList<>();
-            for (SimplePredicate simple : predicate.limited) all.addAll(get(simple));
+            int[] requiredByType = new int[ShanhaiChamberClassifier.Type.values().length];
+            for (SimplePredicate simple : predicate.limited) {
+                List<Candidate> forPredicate = get(simple);
+                all.addAll(forPredicate);
+                // minCount>0 才是必需；minCount==0 是本 Mod 常见的「显式可选」。
+                // OR 分支是不同 SimplePredicate 实例，按类型取最大值而非相加。
+                if (simple.minCount > 0) {
+                    for (Candidate candidate : forPredicate) {
+                        Block block = candidate.state().getBlock();
+                        if (!ShanhaiChamberClassifier.isChamberBlock(block)) continue;
+                        var id = ForgeRegistries.BLOCKS.getKey(block);
+                        if (id == null) continue;
+                        ShanhaiChamberClassifier.Type type = ShanhaiChamberClassifier.classifyPath(id.getPath());
+                        requiredByType[type.ordinal()] = Math.max(requiredByType[type.ordinal()], simple.minCount);
+                    }
+                }
+            }
             for (SimplePredicate simple : predicate.common) all.addAll(get(simple));
             List<Candidate> ordinary = new ArrayList<>(all.size());
             List<ItemStack> items = new ArrayList<>(all.size());
@@ -223,7 +247,7 @@ public final class ShanhaiStructurePlanner {
                 ordinary.sort(Comparator.comparingInt(candidate -> priority.priority(candidate.item())));
             }
             PreparedCandidates result = new PreparedCandidates(List.copyOf(all), List.copyOf(ordinary),
-                    items.isEmpty() ? List.of() : List.copyOf(items), chamber);
+                    items.isEmpty() ? List.of() : List.copyOf(items), chamber, requiredByType);
             // Some patterns share predicates across many positions. Bound the cache so a pathological
             // generated pattern with unique predicates cannot pin the whole scan in memory.
             if (byPattern.size() >= MAX_PREPARED) byPattern.clear();

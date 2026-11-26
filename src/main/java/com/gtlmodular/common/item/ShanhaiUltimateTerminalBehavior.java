@@ -432,9 +432,20 @@ public final class ShanhaiUltimateTerminalBehavior implements IInteractionItem, 
                 + " §b| 手动 §f" + manual + " §b| 可放仓室 §f" + chambers));
 
         // 聊天栏只放前几条；完整条目走报告封包，由聊天连结开启界面查看。
+        // counts[5..12] 携带 8 类舱室的结构最低需求（minCount），让选项页能显示真实「必需/可选」，
+        // 取代网页原型写死的「6 必需」。decode 的 readVarIntArray(16) 上限足够，无需改封包。
+        int[] counts = new int[13];
+        counts[0] = (int) place;
+        counts[1] = (int) replace;
+        counts[2] = (int) blocked;
+        counts[3] = (int) manual;
+        counts[4] = (int) chambers;
+        int[] required = plan.requiredChambers();
+        for (int i = 0; i < required.length && 5 + i < counts.length; i++) {
+            counts[5 + i] = Math.max(0, required[i]);
+        }
         ShanhaiTerminalReport.Builder report = new ShanhaiTerminalReport.Builder(
-                ShanhaiTerminalReport.Type.SCAN, plan.target().pos(),
-                (int) place, (int) replace, (int) blocked, (int) manual, (int) chambers)
+                ShanhaiTerminalReport.Type.SCAN, plan.target().pos(), counts)
                 .elapsed(elapsedMs);
         int lines = 0;
         long expiry = System.currentTimeMillis() + 15000;

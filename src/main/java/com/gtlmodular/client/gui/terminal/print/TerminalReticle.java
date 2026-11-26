@@ -17,6 +17,8 @@ public final class TerminalReticle {
     private final List<Ripple> ripples = new ArrayList<>();
     private float bx, by, bw, bh;
     private boolean primed;
+    /** 上一次是否处于吸附态：从自由态切到吸附态时直接落位，避免框在 0.2s 内与真实点击范围错位。 */
+    private boolean wasLocked;
     /** 上一帧的时间戳，用来把缓动换成时间基准（网页 k=.22/帧）。 */
     private float lastSec = Float.NaN;
 
@@ -50,7 +52,11 @@ public final class TerminalReticle {
             tw = 30f;
             th = 30f;
         }
-        if (!primed) {
+        // 吸附瞬间直接贴合目标：缓动只用于「在同态内移动」，不能让框在新锁定的按钮上
+        // 慢慢追——那段追帧时间里画出来的框根本不标记任何真实可点区域。
+        boolean snap = locked && !wasLocked;
+        wasLocked = locked;
+        if (!primed || snap) {
             bx = tx; by = ty; bw = tw; bh = th; primed = true;
         }
         // 网页是每帧 k=.22 的指数缓动（≈60fps ⇒ 时间常数约 76ms）。

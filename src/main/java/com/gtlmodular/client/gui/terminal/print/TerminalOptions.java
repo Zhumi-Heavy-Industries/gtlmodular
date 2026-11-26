@@ -12,7 +12,6 @@ public final class TerminalOptions {
 
     private static final String[] TYPES = {"INPUT", "OUTPUT", "ENERGY", "MAINTENANCE", "PARALLEL", "MUFFLER", "DATA", "OTHER"};
     private static final String[] CN = {"输入仓室", "输出仓室", "电源仓", "维护仓", "并行仓", "消声仓", "数据仓", "其他仓室"};
-    private static final String[] NEED = {"必需", "必需", "必需", "必需", "可选", "可选", "必需", "可选"};
     private static final int[] COLORS = {
             TerminalTheme.CH_INPUT, TerminalTheme.CH_OUTPUT, TerminalTheme.CH_ENERGY, TerminalTheme.CH_MAINTENANCE,
             TerminalTheme.CH_PARALLEL, TerminalTheme.CH_MUFFLER, TerminalTheme.CH_DATA, TerminalTheme.CH_OTHER
@@ -26,7 +25,8 @@ public final class TerminalOptions {
         TerminalFonts.drawMixedHeavy(g, Fam.CN, 18f,
                 TerminalFonts.clip(Fam.CN, 18f, s.machineName, 170f), 20, 60, 2f, TerminalTheme.INK);
         if (!s.switchesView) {
-            TerminalFonts.drawMixed(g, Fam.MONO, 6f, "8 类 · 6 必需", 230, 64, 1.2f, TerminalTheme.INK_FAINT);
+            TerminalFonts.drawMixed(g, Fam.MONO, 6f, "8 类 · " + s.requiredCount() + " 必需",
+                    230, 64, 1.2f, TerminalTheme.INK_FAINT);
         }
         TerminalFonts.draw(g, Fam.SERIF, 30f, "S", 300, 44, alpha(TerminalTheme.INK, 15));
 
@@ -48,10 +48,11 @@ public final class TerminalOptions {
         TerminalFonts.drawMixed(g, Fam.MONO, 6f, "MINIMUM / REQUIRED", 20, 116, 2f, TerminalTheme.INK_FAINT);
         TerminalDraw.rect(g, 20, 126, 2, 38, TerminalTheme.COBALT);
         TerminalFonts.drawMixedHeavy(g, Fam.CN, 23f, "成型所需舱室", 30, 124, 2f, TerminalTheme.INK);
-        TerminalFonts.drawMixed(g, Fam.MONO, 8f, "8 TYPES · 6 REQUIRED", 30, 158, 1.2f, TerminalTheme.INK_SOFT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 8f, "8 TYPES · " + s.requiredCount() + " REQUIRED",
+                30, 158, 1.2f, TerminalTheme.INK_SOFT);
         TerminalDraw.hline(g, 20, 170, 186, TerminalTheme.RULE);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "只列舱室类型", 20, 194, 0.6f, TerminalTheme.INK_FAINT);
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "点击切换状态", 20, 204, 0.6f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "只列舱室类型 · 只读", 20, 194, 0.6f, TerminalTheme.INK_FAINT);
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, "状态来自扫描 · 属性据结构", 20, 204, 0.6f, TerminalTheme.INK_FAINT);
 
         plant(g, 18, 236, 56, 56, s.seconds);
 
@@ -79,7 +80,9 @@ public final class TerminalOptions {
             int alpha = on ? 255 : 178;
             TerminalFonts.drawMixed(g, Fam.CN, 9f, CN[i], 220, y + 3, 0f, withAlpha(TerminalTheme.INK, alpha));
             TerminalFonts.drawMixed(g, Fam.MONO, 5f, TYPES[i], 300, y + 6, 0.5f, withAlpha(TerminalTheme.INK_FAINT, alpha));
-            TerminalFonts.drawMixed(g, Fam.MONO, 5f, NEED[i], 430, y + 5.5f, 1f, withAlpha(TerminalTheme.INK_SOFT, alpha));
+            // 必需/可选来自扫描报告里的结构谓词 minCount，不再是网页原型写死的 6 必需。
+            TerminalFonts.drawMixed(g, Fam.MONO, 5f, s.chamberRequired(i) ? "必需" : "可选",
+                    430, y + 5.5f, 1f, withAlpha(TerminalTheme.INK_SOFT, alpha));
             TerminalFonts.drawMixed(g, Fam.MONO, 6f, on ? "已放" : "缺失", 496, y + 5, 0f,
                     on ? TerminalTheme.COBALT : TerminalTheme.INK_FAINT);
         }

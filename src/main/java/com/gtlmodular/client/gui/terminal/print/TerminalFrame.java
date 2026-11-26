@@ -22,10 +22,15 @@ public final class TerminalFrame {
     };
 
     public static void draw(GuiGraphics g, Page page) {
+        draw(g, page, -1);
+    }
+
+    /** @param required 本次扫描到的必需舱室类型数；-1 表示无报告，沿用原稿文案。 */
+    public static void draw(GuiGraphics g, Page page, int required) {
         crops(g);
         header(g, page);
         rail(g);
-        footer(g, page);
+        footer(g, page, required);
         micro(g, page);
     }
 
@@ -83,7 +88,7 @@ public final class TerminalFrame {
 
     // ────────────────────────────── 页脚
 
-    private static void footer(GuiGraphics g, Page page) {
+    private static void footer(GuiGraphics g, Page page, int required) {
         int idx = page.ordinal();
 
         // 套准加号 ×2
@@ -106,8 +111,10 @@ public final class TerminalFrame {
         // REF 落款
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, REF[idx], 60, 289, 0.5f, TerminalTheme.INK_SOFT);
 
-        // 状态印章（旋转 -6°）
-        stamp(g, 456, 286, STAMP[idx]);
+        // 状态印章（旋转 -6°）：第二页印章的必需舱室数随扫描报告变化。
+        String stampText = idx == 1 && required >= 0
+                ? required + " / 8 REQUIRED" : STAMP[idx];
+        stamp(g, 456, 286, stampText);
 
         // 页签
         navTabs(g, page);

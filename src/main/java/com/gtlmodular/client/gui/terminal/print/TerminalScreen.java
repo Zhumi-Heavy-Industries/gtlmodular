@@ -82,11 +82,15 @@ public final class TerminalScreen extends Screen {
     public int reportOmitted;
     public final int[] flags = {1, 1, 0, 1, 0, 0, 1, 0};
     public final boolean[] chamberOn = {true, true, true, false, true, false, true, false};
+    /** 本次扫描报告里每种舱室的 minCount（>0 = 结构必需）。下标与 ShanhaiChamberClassifier.Type 一致。 */
+    public final int[] chamberRequired = new int[8];
     public List<ReportRow> reportRows = new ArrayList<>();
     public boolean[] expanded = new boolean[0];
 
     private final List<Hit> hits = new ArrayList<>();
     private int overlayHitStart = -1;
+    /** 当前正在绘制的内容层（页框/正文/弹层）的纵向位移；命中注册必须带上它，否则过场 0.55s 内点击范围比画面高 5px。 */
+    private float hitOffsetY;
     private final TerminalReticle reticle = new TerminalReticle();
     private final MineMenu menu = new MineMenu();
     private long openedAt;
@@ -245,6 +249,11 @@ public final class TerminalScreen extends Screen {
                 missingCount = Math.max(0, c[0]);
                 conflictCount = Math.max(0, c[2]);
                 placeCount = Math.max(0, c[4]);
+                // c[5..12] = 8 类舱室的最低需求（来自结构谓词 minCount）。
+                // 旧报告/施工报告没有这几位时回退为「未知」，界面按可选显示，不再瞎写 6 必需。
+                for (int i = 0; i < chamberRequired.length; i++) {
+                    chamberRequired[i] = c.length > 5 + i ? Math.max(0, c[5 + i]) : 0;
+                }
             } else if (c.length >= 3) {
                 placeCount = c[0];
                 conflictCount = c[1];
@@ -278,6 +287,7 @@ public final class TerminalScreen extends Screen {
             conflictCount = 0;
             missingCount = 0;
             java.util.Arrays.fill(chamberOn, false);
+            java.util.Arrays.fill(chamberRequired, 0);
         }
         expanded = new boolean[reportRows.size()];
         if (expanded.length > 0) expanded[0] = true; // 网页端默认展开第一行
@@ -432,6 +442,10 @@ public final class TerminalScreen extends Screen {
         float fadeIn = transition.crossfade(this.seconds);
         if (crossfading && prevPage >= 0 && prevPage != page.ordinal()) {
             final Page oldPage = Page.values()[prevPage];
+            this.hitOffsetY = 0f; // 旧页无进场位移
+            // 旧页只是视觉残影，绝不登记命中：否则 0.5s 内旧页独有的按钮（如「开始扫描」）
+            // 仍可点，用户看到的是新页、点到的却是旧页——典型的「UI 与点击范围不符」。
+            int crossfadeHits = hits.size();
             // 旧页完整画一遍，再用纸色盖掉 fadeIn 那么多 → 剩余 (1-fadeIn) 可见
             g.drawManaged(() -> {
                 g.pose().pushPose();
@@ -441,27 +455,31 @@ public final class TerminalScreen extends Screen {
                     g.pose().popPose();
                 }
             });
+            hits.subList(crossfadeHits, hits.size()).clear();
             g.drawManaged(() -> washPage(g, fadeIn));
             // 旧页的洗白必须落地，否则接着画的新页会与它同批排序混乱
             g.flush();
         }
 
         // 新页：纸底 + 页框先落（与网页 .grain/.crop 在前一致），再画内容
+        // 入场 5px 位移：命中框必须跟着同一层一起位移，否则过场期画面与可点范围差 0–5px。
+        this.hitOffsetY = transition.shiftY(this.seconds, 0);
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                g.pose().translate(0f, transition.shiftY(this.seconds, 0), 0f);
+                g.pose().translate(0f, hitOffsetY, 0f);
                 drawPaper(g);
-                TerminalFrame.draw(g, page);
+                TerminalFrame.draw(g, page, requiredCount());
                 navHits();
             } finally {
                 g.pose().popPose();
             }
         });
+        this.hitOffsetY = transition.shiftY(this.seconds, 3);
         g.drawManaged(() -> {
             g.pose().pushPose();
             try {
-                g.pose().translate(0f, transition.shiftY(this.seconds, 3), 0f);
+                g.pose().translate(0f, hitOffsetY, 0f);
                 switch (page) {
                     case MAIN -> drawMain(g);
                     case OPTIONS -> TerminalOptions.draw(g, this);
@@ -471,6 +489,7 @@ public final class TerminalScreen extends Screen {
                 g.pose().popPose();
             }
         });
+        this.hitOffsetY = 0f;
         if (crossfading) {
             // 新页也从 fadeIn 开始（等效于 .sw-slot.active 从 0 淡到 1）。
             // 必须先 flush，否则新页的纸底/色块与洗白层可能按 RenderType 重新排序，
@@ -524,7 +543,7 @@ public final class TerminalScreen extends Screen {
     /** 画一整页（纸底 + 页框 + 内容），不带任何进场位移。交叉淡化时要画旧页。 */
     private void drawPageBody(GuiGraphics g, Page p) {
         drawPaper(g);
-        TerminalFrame.draw(g, p);
+        TerminalFrame.draw(g, p, requiredCount());
         switch (p) {
             case MAIN -> drawMain(g);
             case OPTIONS -> TerminalOptions.draw(g, this);
@@ -608,8 +627,8 @@ public final class TerminalScreen extends Screen {
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "OPERATOR", 46 + sigW + 8, 108, 2f, TerminalTheme.INK_FAINT);
         TerminalDraw.hline(g, 36, 266, 126, TerminalTheme.RULE);
 
-        // 三卡
-        String[] titles = {"开始扫描", "配置舱室", "选择档位"};
+        // 三卡：首卡改为「拆除结构」——开启拆解模式并收起界面，玩家右击控制器执行拆解。
+        String[] titles = {"拆除结构", "配置舱室", "选择档位"};
         // 网页端第三卡：未选时显示总档位数与「需扫描」，点选后写回「<档位名> · 已选」。
         // 副标可用宽度只有 60px（卡宽 72、左右各 6 内边距），长档位名先按实宽截断。
         boolean picked = tierPicked != null && !tierPicked.isEmpty();
@@ -617,7 +636,7 @@ public final class TerminalScreen extends Screen {
                 ? tierPicked + " · 已选"
                 : TerminalTierPanel.totalTiers() + " 档可选 · 需扫描";
         tierSub = TerminalFonts.clip(Fam.MONO, 5.5f, tierSub, 60f);
-        String[] subs = {"手持终端 · 世界扫描", "8 类 · 6 必需", tierSub};
+        String[] subs = {"开启拆解 · 右击控制器", "8 类 · " + requiredCount() + " 必需", tierSub};
         for (int i = 0; i < 3; i++) {
             float x = 36 + i * 78;
             boolean hover = isHover(x, 136, 72, 36);
@@ -631,13 +650,8 @@ public final class TerminalScreen extends Screen {
             TerminalFonts.draw(g, Fam.MONO, 9f, "›", x + 61, 150, TerminalTheme.COBALT);
             final int idx = i;
             hit(x, 136, 72, 36, titles[i], () -> {
-                if (idx == 0) {                     // 手持扫描：收起界面并提示
-                    Minecraft mc = Minecraft.getInstance();
-                    if (mc.player != null && !preview) {
-                        mc.player.displayClientMessage(
-                                Component.literal("§b[哦鲸鲸终端] 终端收起 · 请左键控制器开始扫描"), true);
-                    }
-                    onClose();
+                if (idx == 0) {                     // 拆除结构：开启拆解模式并收起界面
+                    startDismantle();
                 }
                 else if (idx == 1) page = Page.OPTIONS;
                 else tierOpen = true;
@@ -665,7 +679,8 @@ public final class TerminalScreen extends Screen {
             g.pose().pushPose();
             try {
                 g.pose().translate(menu.px, menu.py, 0);
-                TerminalPlate.draw(g, seconds, isHover(264, 26, 270, 270), flags);
+                // 圆盘整体随视差平移，悬停判定必须跟着同一偏移量，否则高亮框与盘面错位。
+                TerminalPlate.draw(g, seconds, isHover(264 + menu.px, 26 + menu.py, 270, 270), flags);
             } finally {
                 g.pose().popPose();
             }
@@ -697,7 +712,11 @@ public final class TerminalScreen extends Screen {
         cx += TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 缺失 ", ls);
         cx = echoValue(g, cx, y, String.valueOf(missingCount));
         TerminalFonts.drawMixed(g, Fam.MONO, 6.5f, " 查看详情 ›", cx, y, ls, TerminalTheme.COBALT);
-        hit(x, y - 2, 230, 12, "查看详情", () -> page = Page.REPORT, false);
+        // 命中区只覆盖「查看详情 ›」这段可见文字，不是整行 230px：
+        // 之前点数值/「上次扫描」字样也会跳报告页，准星却把整行框起来，视觉与点击范围对不上。
+        float linkStart = cx;
+        float linkW = TerminalFonts.mixedWidth(Fam.MONO, 6.5f, " 查看详情 ›", ls) + 2f;
+        hit(linkStart, y - 2, linkW, 12, "查看详情", () -> page = Page.REPORT, false);
     }
 
     private float echoValue(GuiGraphics g, float x, float y, String v) {
@@ -769,11 +788,13 @@ public final class TerminalScreen extends Screen {
         boolean goHover = isHover(x + 4 + ox, y + 19 + oy, 124, 12);
         if (goHover) TerminalDraw.rect(g, x + 4, y + 19, 124, 12, 0x123A5BC2);
         // 网页 .cfg-go-label (x+6,y+21)、.cfg-go-ar 右内边距 2
-        TerminalFonts.drawMixed(g, Fam.MONO, 6f, placed >= 8 ? "开始扫描" : "完成配置",
+        // SYSTEM 卡与主界面首卡口径一致：满配态也走「拆除结构」，不再出现旧的「开始扫描」。
+        String goLabel = placed >= 8 ? "拆除结构" : "完成配置";
+        TerminalFonts.drawMixed(g, Fam.MONO, 6f, goLabel,
                 x + 6, y + 21, 0f, TerminalTheme.COBALT);
         TerminalFonts.draw(g, Fam.MONO, 7f, "›", x + 122, y + 20, TerminalTheme.COBALT);
-        hit(x + 4 + ox, y + 19 + oy, 124, 12, placed >= 8 ? "开始扫描" : "完成配置",
-                () -> { if (placed >= 8) onClose(); else page = Page.OPTIONS; }, false);
+        hit(x + 4 + ox, y + 19 + oy, 124, 12, goLabel,
+                () -> { if (placed >= 8) startDismantle(); else page = Page.OPTIONS; }, false);
 
         TerminalDraw.hline(g, x + 4, x + 128, y + 31, TerminalTheme.RULE);
         // 网页 .layer-open：结构层数(x+6,y+35)、读数(x+57,y+34) 8px、/ 648(x+85,y+35) 5.5px、› 右 2
@@ -791,7 +812,8 @@ public final class TerminalScreen extends Screen {
     // ────────────────────────────── 命中 / 输入
 
     public void hit(float x, float y, float w, float h, String label, Runnable action, boolean ink) {
-        hits.add(new Hit(x, y, w, h, label, ink, action));
+        // y 由调用方按设计稿给出；绘制时那层还叠加了入场位移 hitOffsetY，命中框要一起平移。
+        hits.add(new Hit(x, y + hitOffsetY, w, h, label, ink, action));
     }
 
     private Target lockedTarget() {
@@ -810,7 +832,8 @@ public final class TerminalScreen extends Screen {
     }
 
     public boolean isHover(float x, float y, float w, float h) {
-        return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+        float oy = y + hitOffsetY;
+        return mouseX >= x && mouseX <= x + w && mouseY >= oy && mouseY <= oy + h;
     }
 
     @Override
@@ -878,9 +901,37 @@ public final class TerminalScreen extends Screen {
         return n;
     }
 
+    /** 报告里真实「必需」的舱室类型数（minCount>0），取代写死的「6 必需」。 */
+    public int requiredCount() {
+        int n = 0;
+        for (int v : chamberRequired) if (v > 0) n++;
+        return n;
+    }
+
+    /** 某类舱室是否必需；无扫描报告时按「可选」处理，避免拿网页原型假数据骗人。 */
+    public boolean chamberRequired(int index) {
+        return index >= 0 && index < chamberRequired.length && chamberRequired[index] > 0;
+    }
+
     public void toggleFlag(int i) {
         flags[i] = flags[i] == 0 ? 1 : 0;
         sendSwitch(i, flags[i] != 0);
+    }
+
+    /**
+     * 主界面首卡「拆除结构」：把终端切到拆解模式（服务端下次右击控制器即回收结构），
+     * 本地同步开关状态并收起界面。原来这里是「开始扫描」只关 GUI + 一句提示，
+     * 现在给出真实动作，避免用户以为点了就能扫描/拆解却什么都没发生。
+     */
+    private void startDismantle() {
+        flags[6] = 1;
+        sendSwitch(6, true);
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null && !preview) {
+            mc.player.displayClientMessage(
+                    Component.literal("§b[哦鲸鲸终端] 拆解模式已开启 · 请右击控制器拆除结构并回收方块"), true);
+        }
+        onClose();
     }
 
     private void sendSwitch(int i, boolean on) {

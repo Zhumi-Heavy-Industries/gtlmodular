@@ -129,15 +129,23 @@ public final class ShanhaiStructurePlan {
     private final boolean mirrored;
     private final int repeatCount;
     private final List<Entry> entries;
+    /** 每种舱室类型的最低需求量（下标＝ShanhaiChamberClassifier.Type.ordinal()）；用于终端显示真实必需项。 */
+    private final int[] requiredChambers;
     private final String fingerprint;
 
     public ShanhaiStructurePlan(GlobalPos target, String machineId, boolean mirrored,
                                 int repeatCount, List<Entry> entries) {
+        this(target, machineId, mirrored, repeatCount, entries, new int[0]);
+    }
+
+    public ShanhaiStructurePlan(GlobalPos target, String machineId, boolean mirrored,
+                                int repeatCount, List<Entry> entries, int[] requiredChambers) {
         this.target = target;
         this.machineId = machineId == null ? "" : machineId;
         this.mirrored = mirrored;
         this.repeatCount = repeatCount;
         this.entries = Collections.unmodifiableList(new ArrayList<>(entries));
+        this.requiredChambers = requiredChambers == null ? new int[0] : requiredChambers.clone();
         this.fingerprint = createFingerprint();
     }
 
@@ -159,6 +167,11 @@ public final class ShanhaiStructurePlan {
 
     public List<Entry> entries() {
         return entries;
+    }
+
+    /** 返回副本，调用方改动不会影响 plan。 */
+    public int[] requiredChambers() {
+        return requiredChambers.clone();
     }
 
     public String fingerprint() {

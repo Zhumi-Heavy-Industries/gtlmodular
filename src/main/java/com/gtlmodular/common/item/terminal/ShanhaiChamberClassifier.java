@@ -97,7 +97,8 @@ public final class ShanhaiChamberClassifier {
         return result;
     }
 
-    static Type classifyPath(String path) {
+    /** 供结构规划器按方块 id 归类舱室类型，统计每种类型的结构最低需求量。 */
+    public static Type classifyPath(String path) {
         String value = path == null ? "" : path.toLowerCase(Locale.ROOT);
         if (value.contains("parallel")) return Type.PARALLEL;
         if (value.contains("maintenance")) return Type.MAINTENANCE;

@@ -46,7 +46,10 @@ public final class TerminalLayerPopup {
         TerminalDraw.rect(g, cursor, ry - 2, 2, 10, TerminalTheme.COBALT);
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "1", rx + 1, ry + 9, 0f, TerminalTheme.INK_FAINT);
         TerminalFonts.drawRight(g, Fam.MONO, 5f, String.valueOf(MAX), rx + rw, ry + 9, TerminalTheme.INK_FAINT);
-        s.hit(rx, ry - 4, rw, 14, "刻度", s::layerFromMouse, false);
+        // 命中区严格贴齐刻度线与游标的可动范围（横向与 layerFromMouse 的 310..486 一致，
+        // 纵向 ry..ry+10）：之前 ry-4 起算，刻度线上方 4px 空白也能改值，
+        // 准星框比可见刻度高一截。
+        s.hit(rx + 2, ry, rw - 4, 10, "刻度", s::layerFromMouse, false);
 
         // PRESET
         TerminalFonts.drawMixed(g, Fam.MONO, 5f, "PRESET / 预设", x + 7, y + 87, 1.2f, TerminalTheme.INK_SOFT);
