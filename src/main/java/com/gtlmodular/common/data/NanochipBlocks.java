@@ -86,27 +86,11 @@ public final class NanochipBlocks {
                     .build()
                     .register();
 
-    /**
-     * 复合体玻璃（Nanochip Complex Glass）—— 透明、不遮挡、不透光判定。
-     *
-     * <p><b>用 {@link com.gtlmodular.common.block.NanochipComplexGlassBlock} 而不是裸 {@code Block}</b>：
-     * 只有覆写 {@code skipRendering} 才能让相邻玻璃的<b>共享面不重复绘制</b>，
-     * 玻璃的花纹才会连成一片（见该类的注释与施工记录 §24.4）。贴图/模型/结构判定都不变。
+    /*
+     * ★ 2026-11-26：复合体玻璃已由 GTL Additions 3.6.2+ 自带
+     * （gtladditions:nanochip_complex_glass），本模组不再注册同 id 的方块/材质，
+     * 结构判定与配方改走 AddCompatBlocks。自有配方保留，只是产物指向 Add 的物品。
      */
-    public static final BlockEntry<com.gtlmodular.common.block.NanochipComplexGlassBlock> COMPLEX_GLASS =
-            GTLModularMachines.REGISTRATE
-                    .block("nanochip_complex_glass", com.gtlmodular.common.block.NanochipComplexGlassBlock::new)
-                    .initialProperties(() -> Blocks.GLASS)
-                    .properties(p -> p.strength(3.0F)
-                            .sound(SoundType.GLASS)
-                            .noOcclusion()
-                            .isValidSpawn((s, l, p2, e) -> false)
-                            .isRedstoneConductor((s, l, p2) -> false)
-                            .isSuffocating((s, l, p2) -> false)
-                            .isViewBlocking((s, l, p2) -> false))
-                    .item()
-                    .build()
-                    .register();
 
     // ---------- ★ 2026-09-17 缺件方块（P0–P4）：全部是"追加候选"，不动任何既有映射 ----------
 

@@ -51,7 +51,7 @@ public final class NanochipSelfCheck {
             "nanochip_reinforcement_casing",
             "nanochip_computational_matrix_casing",
             "nanochip_firewall_projection_casing",
-            "nanochip_complex_glass",
+            "gtladditions:nanochip_complex_glass",
     };
 
     /** 4 个带耗材的模块用到的流体。 */
@@ -95,7 +95,8 @@ public final class NanochipSelfCheck {
     private static void blockChecks(List<String> out) {
         int ok = 0;
         for (String id : CASING_IDS) {
-            ResourceLocation rl = new ResourceLocation(GTLModular.MOD_ID, id);
+            ResourceLocation rl = id.contains(":") ? new ResourceLocation(id)
+                    : new ResourceLocation(GTLModular.MOD_ID, id);
             boolean block = ForgeRegistries.BLOCKS.containsKey(rl);
             boolean item = ForgeRegistries.ITEMS.containsKey(rl);
             if (block && item) {

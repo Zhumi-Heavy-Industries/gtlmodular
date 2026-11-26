@@ -1,12 +1,26 @@
 package com.gtlmodular.common.machine.woodfactory;
 
 import com.gregtechceu.gtceu.api.block.ICoilType;
+import com.gregtechceu.gtceu.api.gui.fancy.TabsWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.multiblock.CoilWorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
+import com.gregtechceu.gtceu.api.pattern.BlockPattern;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
+import com.gtladd.gtladditions.api.machine.feature.TierRequirement;
+import com.gtladd.gtladditions.common.machine.trait.StructureTierTrait;
 import com.gtlmodular.common.machine.engine.IIndependentThreadHost;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
+import com.gtlmodular.common.machine.upgrade.StructureUpgradeSupport;
+import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
+import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
+import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
+import net.minecraft.network.chat.Component;
+
+import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * 集成木质生物质工厂（{@code gtlmodular:wood_biomass_factory}）—— GTO「木化工厂」
@@ -43,7 +57,7 @@ import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
  * 所以本机<b>必须</b>在结构里保留 {@code K} 位（192 格加热线圈），一换线圈并行立刻变。
  */
 public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine, IIndependentThreadHost {
+        implements IThreadedRecipeMachine, IIndependentThreadHost, IStructureTierMachine, com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine {
 
     /** 没有线程仓时的并发线程数（一颗线程仓都不装只有 1 条）。 */
     public static final int BASE_THREADS = 1;
@@ -51,8 +65,77 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
     /** GTO 并行公式的分母：线圈温度每高 900K，并行 ×2。 */
     public static final int PARALLEL_TEMPERATURE_STEP = 900;
 
-    public WoodBiomassFactoryMachine(IMachineBlockEntity holder) {
+    @Persisted
+    @DescSynced
+    private final StructureTierTrait structureTierTrait;
+    private static ManagedFieldHolder FIELD_HOLDER;
+
+    public WoodBiomassFactoryMachine(IMachineBlockEntity holder,
+                                     Supplier<BlockPattern> pattern, Supplier<String[][]> slices) {
         super(holder);
+        // H 位（聚变玻璃）作为二级结构专属格；老结构不强制这一位。
+        this.structureTierTrait = new StructureTierTrait(this,
+                StructureUpgradeSupport.layout(pattern, slices, 'H'),
+                null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
+    }
+
+    @Override
+    public StructureTierTrait getStructureTierTrait() {
+        return structureTierTrait;
+    }
+
+    @Override
+    public TierRequirement tierRequirement(int tier) {
+        if (tier != 2) {
+            return null;
+        }
+        return StructureUpgradeSupport.requirement(
+                StructureUpgradeSupport.cost("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing", 64),
+                StructureUpgradeSupport.cost("gtceu:fusion_glass", 32),
+                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4));
+    }
+
+    @Override
+    public boolean checkPattern() {
+        return structureTierTrait.checkPattern();
+    }
+
+    @Override
+    public ManagedFieldHolder getFieldHolder() {
+        if (FIELD_HOLDER == null) {
+            FIELD_HOLDER = new ManagedFieldHolder(WoodBiomassFactoryMachine.class, super.getFieldHolder());
+        }
+        return FIELD_HOLDER;
+    }
+
+    @Override
+    public void onStructureFormed() {
+        super.onStructureFormed();
+        structureTierTrait.onStructureFormed();
+    }
+
+    @Override
+    public void onStructureInvalid() {
+        super.onStructureInvalid();
+        structureTierTrait.onStructureInvalid();
+    }
+
+    @Override
+    public boolean saveBreak() {
+        return structureTierTrait.getHasDropData()
+                || com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine.super.saveBreak();
+    }
+
+    @Override
+    public void attachSideTabs(TabsWidget tabs) {
+        super.attachSideTabs(tabs);
+        StructureUpgradeSupport.attachTab(tabs, this);
+    }
+
+    @Override
+    public void addDisplayText(List<Component> textList) {
+        super.addDisplayText(textList);
+        textList.add(StructureUpgradeSupport.display(structureTierTrait));
     }
 
     @Override

@@ -64,7 +64,9 @@ public final class WoodFactoryMachines {
         }
 
         WOOD_BIOMASS_FACTORY = GTLModularMachines.REGISTRATE
-                .multiblock("wood_biomass_factory", WoodBiomassFactoryMachine::new)
+                .multiblock("wood_biomass_factory", holder -> new WoodBiomassFactoryMachine(holder,
+                        () -> WoodFactoryStructures.build(WOOD_BIOMASS_FACTORY),
+                        WoodFactoryStructures::slices))
                 // GTO 的 .nonYAxisRotation()
                 .rotationState(RotationState.NON_Y_AXIS)
                 // 控制器外壳 = 高能机壳族（GTO 原机 .block(GTBlocks.HIGH_POWER_CASING)）

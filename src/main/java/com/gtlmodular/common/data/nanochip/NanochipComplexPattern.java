@@ -1209,7 +1209,8 @@ public final class NanochipComplexPattern {
     }
 
     private static TraceabilityPredicate glass() {
-        return blocks(block(NanochipBlocks.COMPLEX_GLASS));
+        // 复合体玻璃由 GTL Additions 3.6.2+ 提供，延迟解析避免注册顺序问题。
+        return com.gtlmodular.common.data.AddCompatBlocks.glassPredicate();
     }
 
     /** {@code D}：GTCEu 自带的材料框架，<b>不新增方块</b>。 */

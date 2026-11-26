@@ -8,7 +8,22 @@ import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gtlmodular.common.machine.engine.IIndependentThreadHost;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
-import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
+import com.gregtechceu.gtceu.api.gui.fancy.TabsWidget;
+import com.gregtechceu.gtceu.api.pattern.BlockPattern;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
+import com.gtladd.gtladditions.api.machine.feature.TierRequirement;
+import com.gtladd.gtladditions.common.machine.trait.StructureTierTrait;
+import com.gtlmodular.common.machine.upgrade.StructureUpgradeSupport;
+import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
+import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
+import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
+import net.minecraft.network.chat.Component;
+
+import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
+
+import com.gtlmodular.common.machine.thread.IThreadHatchPart;
 
 /**
  * 集成石油化工处理工厂（{@code gtlmodular:petrochemical_plant}）—— GTO「石化工厂」
@@ -45,7 +60,12 @@ import com.gtlmodular.common.machine.tentacle.IThreadHatchPart;
  * （614 格加热线圈），一换线圈并行立刻变。
  */
 public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMachine
-        implements IThreadedRecipeMachine, IIndependentThreadHost {
+        implements IThreadedRecipeMachine, IIndependentThreadHost, IStructureTierMachine, com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine {
+
+    @Persisted
+    @DescSynced
+    private final StructureTierTrait structureTierTrait;
+    private static ManagedFieldHolder FIELD_HOLDER;
 
     /** 没有线程仓时的并发线程数（一颗线程仓都不装只有 1 条）。 */
     public static final int BASE_THREADS = 1;
@@ -53,8 +73,71 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
     /** GTO 并行公式的分母：线圈温度每高 900K，并行 ×2。 */
     public static final int PARALLEL_TEMPERATURE_STEP = 900;
 
-    public PetrochemicalPlantMachine(IMachineBlockEntity holder) {
+    public PetrochemicalPlantMachine(IMachineBlockEntity holder,
+                 Supplier<BlockPattern> pattern, Supplier<String[][]> slices) {
         super(holder);
+        this.structureTierTrait = new StructureTierTrait(this,
+                StructureUpgradeSupport.layout(pattern, slices, 'V'),
+                null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
+    }
+
+    @Override
+    public StructureTierTrait getStructureTierTrait() {
+        return structureTierTrait;
+    }
+
+    @Override
+    public TierRequirement tierRequirement(int tier) {
+        if (tier != 2) {
+            return null;
+        }
+        return StructureUpgradeSupport.requirement(
+                StructureUpgradeSupport.cost("gtlcore:iridium_casing", 64),
+                StructureUpgradeSupport.cost("gtceu:high_power_casing", 32),
+                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4));
+    }
+
+    @Override
+    public boolean checkPattern() {
+        return structureTierTrait.checkPattern();
+    }
+
+    @Override
+    public ManagedFieldHolder getFieldHolder() {
+        if (FIELD_HOLDER == null) {
+            FIELD_HOLDER = new ManagedFieldHolder(PetrochemicalPlantMachine.class, super.getFieldHolder());
+        }
+        return FIELD_HOLDER;
+    }
+
+    @Override
+    public void onStructureFormed() {
+        super.onStructureFormed();
+        structureTierTrait.onStructureFormed();
+    }
+
+    @Override
+    public void onStructureInvalid() {
+        super.onStructureInvalid();
+        structureTierTrait.onStructureInvalid();
+    }
+
+    @Override
+    public boolean saveBreak() {
+        return structureTierTrait.getHasDropData()
+                || com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine.super.saveBreak();
+    }
+
+    @Override
+    public void attachSideTabs(TabsWidget tabs) {
+        super.attachSideTabs(tabs);
+        StructureUpgradeSupport.attachTab(tabs, this);
+    }
+
+    @Override
+    public void addDisplayText(List<Component> textList) {
+        super.addDisplayText(textList);
+        textList.add(StructureUpgradeSupport.display(structureTierTrait));
     }
 
     @Override

@@ -60,6 +60,16 @@ final class ComponentAssemblerStructures {
         return build(definition, FULL_SLICES, true, null);
     }
 
+    /** 结构升级分类用：基础型的切片表。 */
+    public static String[][] baseSlices() {
+        return BASE_SLICES;
+    }
+
+    /** 结构升级分类用：完整型的切片表。 */
+    public static String[][] fullSlices() {
+        return FULL_SLICES;
+    }
+
     private static BlockPattern build(MultiblockMachineDefinition definition, String[][] slices, boolean laser,
                                       String casingTier) {
         FactoryBlockPattern pattern = FactoryBlockPattern.start();

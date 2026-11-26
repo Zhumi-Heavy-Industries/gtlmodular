@@ -46,7 +46,7 @@
           "type": "gtceu:sized",
           "count": 8,
           "ingredient": {
-            "item": "gtlmodular:nanochip_complex_glass"
+            "item": "gtladditions:nanochip_complex_glass"
           }
         }
       }

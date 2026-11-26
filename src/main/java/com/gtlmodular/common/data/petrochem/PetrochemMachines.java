@@ -100,7 +100,9 @@ public final class PetrochemMachines {
         }
 
         PETROCHEMICAL_PLANT = GTLModularMachines.REGISTRATE
-                .multiblock("petrochemical_plant", PetrochemicalPlantMachine::new)
+                .multiblock("petrochemical_plant", holder -> new PetrochemicalPlantMachine(holder,
+                        () -> PetrochemicalPlantStructures.build(PETROCHEMICAL_PLANT),
+                        PetrochemicalPlantStructures::slices))
                 // GTO 的 .nonYAxisRotation()
                 .rotationState(RotationState.NON_Y_AXIS)
                 .tier(GTValues.UEV)
@@ -133,7 +135,9 @@ public final class PetrochemMachines {
         }
 
         FUEL_REFINING_COMPLEX = GTLModularMachines.REGISTRATE
-                .multiblock("fuel_refining_complex", FuelRefiningComplexMachine::new)
+                .multiblock("fuel_refining_complex", holder -> new FuelRefiningComplexMachine(holder,
+                        () -> FuelRefiningComplexStructures.build(FUEL_REFINING_COMPLEX),
+                        FuelRefiningComplexStructures::slices))
                 .rotationState(RotationState.NON_Y_AXIS)
                 .tier(GTValues.UEV)
                 .recipeType(recipeType)

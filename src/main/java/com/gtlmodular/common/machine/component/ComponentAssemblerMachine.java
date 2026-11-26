@@ -1,16 +1,30 @@
 package com.gtlmodular.common.machine.component;
 
+import com.gregtechceu.gtceu.api.gui.fancy.TabsWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
 import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
+import com.gregtechceu.gtceu.api.pattern.BlockPattern;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.logic.OCParams;
 import com.gregtechceu.gtceu.api.recipe.logic.OCResult;
+import com.gtladd.gtladditions.api.machine.feature.IStructureTierMachine;
+import com.gtladd.gtladditions.api.machine.feature.TierRequirement;
+import com.gtladd.gtladditions.common.machine.trait.StructureTierTrait;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
+import com.gtlmodular.common.machine.upgrade.StructureUpgradeSupport;
+import com.lowdragmc.lowdraglib.syncdata.annotation.DescSynced;
+import com.lowdragmc.lowdraglib.syncdata.annotation.Persisted;
+import com.lowdragmc.lowdraglib.syncdata.field.ManagedFieldHolder;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * GTO「部件组装机」的通用机器类：两台多方块共用，只差线程数与配方等级上限。
@@ -28,8 +42,12 @@ import org.jetbrains.annotations.Nullable;
  */
 public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
         implements IThreadedRecipeMachine, org.gtlcore.gtlcore.api.machine.multiblock.ParallelMachine,
-        com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
+        com.gregtechceu.gtceu.api.machine.feature.IMachineLife, IStructureTierMachine, com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine {
 
+    @Persisted
+    @DescSynced
+    private final StructureTierTrait structureTierTrait;
+    private static ManagedFieldHolder FIELD_HOLDER;
 
     @Override
     public int getMaxParallel() {
@@ -43,10 +61,56 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     private final int threads;
     private final int maxRecipeTier;
 
-    public ComponentAssemblerMachine(IMachineBlockEntity holder, int threads, int maxRecipeTier, Object... args) {
+    public ComponentAssemblerMachine(IMachineBlockEntity holder, int threads, int maxRecipeTier,
+                                     Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
+                                     Object... args) {
         super(holder, args);
         this.threads = threads;
         this.maxRecipeTier = maxRecipeTier;
+        this.structureTierTrait = new StructureTierTrait(this,
+                StructureUpgradeSupport.layout(pattern, slices, 'I'),
+                null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
+    }
+
+    @Override
+    public StructureTierTrait getStructureTierTrait() {
+        return structureTierTrait;
+    }
+
+    @Override
+    public TierRequirement tierRequirement(int tier) {
+        if (tier != 2) {
+            return null;
+        }
+        return StructureUpgradeSupport.requirement(
+                StructureUpgradeSupport.cost("gtlcore:multi_functional_casing", 64),
+                StructureUpgradeSupport.cost("gtlcore:process_machine_casing", 64),
+                StructureUpgradeSupport.cost("gtladditions:thread_modifier_hatch", 4));
+    }
+
+    @Override
+    public boolean checkPattern() {
+        return structureTierTrait.checkPattern();
+    }
+
+    @Override
+    public ManagedFieldHolder getFieldHolder() {
+        if (FIELD_HOLDER == null) {
+            FIELD_HOLDER = new ManagedFieldHolder(ComponentAssemblerMachine.class, super.getFieldHolder());
+        }
+        return FIELD_HOLDER;
+    }
+
+    @Override
+    public void attachSideTabs(TabsWidget tabs) {
+        super.attachSideTabs(tabs);
+        StructureUpgradeSupport.attachTab(tabs, this);
+    }
+
+    @Override
+    public void addDisplayText(List<Component> textList) {
+        super.addDisplayText(textList);
+        textList.add(StructureUpgradeSupport.display(structureTierTrait));
     }
 
     @Override
@@ -68,14 +132,22 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     @Override
     public void onStructureFormed() {
         super.onStructureFormed();
-        GTLModular.LOGGER.info("[gtlmodular] 部件组装机已成形 @{}（线程 {}，配方等级上限 {}）",
-                getPos(), effectiveThreads(), maxRecipeTier);
+        structureTierTrait.onStructureFormed();
+        GTLModular.LOGGER.info("[gtlmodular] 部件组装机已成形 @{}（线程 {}，配方等级上限 {}，结构等级 {}）",
+                getPos(), effectiveThreads(), maxRecipeTier, structureTierTrait.getStructureTier());
     }
 
     @Override
     public void onStructureInvalid() {
         super.onStructureInvalid();
+        structureTierTrait.onStructureInvalid();
         GTLModular.LOGGER.info("[gtlmodular] 部件组装机失形 @{}", getPos());
+    }
+
+    @Override
+    public boolean saveBreak() {
+        return structureTierTrait.getHasDropData()
+                || com.gregtechceu.gtceu.api.machine.feature.IDropSaveMachine.super.saveBreak();
     }
 
     @Override

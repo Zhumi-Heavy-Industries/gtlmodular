@@ -99,10 +99,8 @@ public final class CtmClientSetup {
         TARGETS.put("nanochip_mesh_interface_casing", new Target(
                 "block/casings/ctm/nanochip_mesh_interface_casing", false,
                 () -> NanochipBlocks.MESH_INTERFACE_CASING.get()));
-        // 复合体玻璃：GTNH 是 method=compact，5 格（★ 已冻结：路径 / 5 张贴图 / 既有断言都不要动）
-        TARGETS.put("nanochip_complex_glass", new Target(
-                "block/ctm/nanochip_complex_glass", true,
-                () -> NanochipBlocks.COMPLEX_GLASS.get()));
+        // ★ 2026-11-26：复合体玻璃已由 GTL Additions 3.6.2+ 提供（自带 Fusion 连纹贴图），
+        //   本模组不再注册同 id 方块，也不再接管它的 CTM。
         // ★ 钠夸达线圈（NH 唯一一条跨命名空间例外；见 FOREIGN_ALLOWED 的取证）：
         //   底层 `coil.properties` tiles=0 1 1 0 1 ⇒ 槽 0/3 ← 0.png，槽 1/2/4 ← 1.png
         //   前景层 `litcoil.properties` tiles=10 11 11 10 11 ⇒ 槽 0/3 ← 10.png，槽 1/2/4 ← 11.png

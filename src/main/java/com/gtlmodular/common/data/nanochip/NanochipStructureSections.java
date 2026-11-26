@@ -642,7 +642,7 @@ public final class NanochipStructureSections {
                 "§7%d×%d×%d，原版 1:1，共 %d 个方块：", NAC_W, NAC_H, NAC_D, blockCount()));
         appendEntry(out, MESH, NanochipBlocks.MESH_INTERFACE_CASING, true);
         appendEntry(out, REINFORCEMENT, NanochipBlocks.REINFORCEMENT_CASING, false);
-        appendEntry(out, GLASS, NanochipBlocks.COMPLEX_GLASS, false);
+        appendEntry(out, GLASS, com.gtlmodular.common.data.AddCompatBlocks.NANOCHIP_COMPLEX_GLASS, false);
         appendEntry(out, MATRIX, NanochipBlocks.COMPUTATIONAL_MATRIX_CASING, false);
         appendEntry(out, FIREWALL, NanochipBlocks.FIREWALL_PROJECTION_CASING, false);
         out.append(Component.literal(" §7· 硅岩框架§f" + countOf(FRAME)));
@@ -677,7 +677,7 @@ public final class NanochipStructureSections {
         MutableComponent out = Component.empty();
         appendEntry(out, MESH, NanochipBlocks.MESH_INTERFACE_CASING, true);
         appendEntry(out, REINFORCEMENT, NanochipBlocks.REINFORCEMENT_CASING, false);
-        appendEntry(out, GLASS, NanochipBlocks.COMPLEX_GLASS, false);
+        appendEntry(out, GLASS, com.gtlmodular.common.data.AddCompatBlocks.NANOCHIP_COMPLEX_GLASS, false);
         appendEntry(out, MATRIX, NanochipBlocks.COMPUTATIONAL_MATRIX_CASING, false);
         appendEntry(out, FIREWALL, NanochipBlocks.FIREWALL_PROJECTION_CASING, false);
         out.append(Component.literal(" 硅岩框架 §7gtceu:naquadah_frame§f" + countOf(FRAME)));
@@ -708,6 +708,15 @@ public final class NanochipStructureSections {
         out.append(Component.literal(" §f" + countOf(ch)));
     }
 
+    /** 「翻译键只靠 id、不碰注册表」的追加方式，用于由其它 mod 提供的方块。 */
+    private static void appendEntry(MutableComponent out, char ch, ResourceLocation id, boolean first) {
+        if (!first) {
+            out.append(Component.literal(" §7· "));
+        }
+        out.append(Component.translatable("block." + id.getNamespace() + "." + id.getPath()));
+        out.append(Component.literal(" §f" + countOf(ch)));
+    }
+
     // ==================================================================================
     // ★★ 2026-09-19（队长）：「不要再一格一格报，一次把缺件清单给我」★★
     //
@@ -733,7 +742,7 @@ public final class NanochipStructureSections {
             case FIREWALL -> block(NanochipBlocks.FIREWALL_PROJECTION_CASING);
             case MESH -> block(NanochipBlocks.MESH_INTERFACE_CASING);
             case REINFORCEMENT -> block(NanochipBlocks.REINFORCEMENT_CASING);
-            case GLASS -> block(NanochipBlocks.COMPLEX_GLASS);
+            case GLASS -> com.gtlmodular.common.data.AddCompatBlocks.glassBlock();
             case MATRIX -> block(NanochipBlocks.COMPUTATIONAL_MATRIX_CASING);
             // D（硅岩框架）是 GTCEu 的材料框架，可能有多档变体 ⇒ 不列（只有 53 格，几乎不会是元凶）
             default -> null;
