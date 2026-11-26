@@ -1,5 +1,6 @@
 package com.gtlmodular.common.machine.component;
 
+import com.gregtechceu.gtceu.api.GTValues;
 import com.gregtechceu.gtceu.api.gui.fancy.TabsWidget;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.multiblock.WorkableElectricMultiblockMachine;
@@ -27,11 +28,10 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 /**
- * GTO「部件组装机」的通用机器类：两台多方块共用，只差线程数与配方等级上限。
- *
+ * GTO「部件组装机」——基础机与大型机已合并为一台，靠结构升级切换形态：
  * <ul>
- *   <li>v1（{@code component_assembler}）：4 线程，{@code CATier ≤ IV}；</li>
- *   <li>v2（{@code large_component_assembler}）：8 线程，{@code CATier ≤ UV}，允许激光仓。</li>
+ *   <li>1 级：BASE 本体 7×5×5，4 线程，{@code CATier ≤ IV}；</li>
+ *   <li>2 级：本体 + ASSEMBLY 扩展 29×6×13，8 线程，{@code CATier ≤ UV}，允许激光仓。</li>
  * </ul>
  *
  * <p>线程仍走本模组的独立线程引擎 {@link ThreadedRecipeLogic}；并行倍率固定 1，
@@ -58,20 +58,23 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     /** 部件装配配方写在 {@code data} 里的外壳等级键（GTO / gtlcore 同款键名）。 */
     public static final String RECIPE_TIER_KEY = "CATier";
 
-    private final int threads;
-    private final int maxRecipeTier;
-
-    public ComponentAssemblerMachine(IMachineBlockEntity holder, int threads, int maxRecipeTier,
+    public ComponentAssemblerMachine(IMachineBlockEntity holder,
                                      Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
-                                     String tierChars,
+                                     java.util.function.Predicate<Character> tierCells,
                                      Object... args) {
         super(holder, args);
-        this.threads = threads;
-        this.maxRecipeTier = maxRecipeTier;
         this.structureTierTrait = new StructureTierTrait(this,
-                StructureUpgradeSupport.layout(pattern, slices,
-                        ch -> tierChars.indexOf(ch) >= 0),
+                StructureUpgradeSupport.layout(pattern, slices, tierCells),
                 null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
+    }
+
+    /** 1 级 = 原基础机，2 级 = 原大型机。 */
+    private boolean upgraded() {
+        return structureTierTrait.getStructureTier() >= 2;
+    }
+
+    private int maxRecipeTier() {
+        return upgraded() ? GTValues.UV : GTValues.IV;
     }
 
     @Override
@@ -84,16 +87,12 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
         if (tier != 2) {
             return null;
         }
-        if (threads >= 8) {
-            // 大型机已带装配扩展段 ⇒ 对应 GTO 的 POWER 扩展（激光仓 ≤2 + 并行仓）。
-            return StructureUpgradeSupport.requirement(
-                    StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4),
-                    StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
-        }
-        // 基础机对应 GTO 的 ASSEMBLY 扩展：外壳档位上限 IV→UV，开放 IO 与加速仓。
+        // 一次升级同时拿到原大型机的装配扩展（档位/舱位）与动力扩展（并行/超频）。
         return StructureUpgradeSupport.requirement(
                 StructureUpgradeSupport.cost("gtlcore:multi_functional_casing", 64),
                 StructureUpgradeSupport.cost("gtlcore:process_machine_casing", 64),
+                StructureUpgradeSupport.cost("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing", 64),
+                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4),
                 StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
     }
 
@@ -143,8 +142,8 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     public void onStructureFormed() {
         super.onStructureFormed();
         structureTierTrait.onStructureFormed();
-        GTLModular.LOGGER.info("[gtlmodular] 部件组装机已成形 @{}（线程 {}，配方等级上限 {}，结构等级 {}）",
-                getPos(), effectiveThreads(), maxRecipeTier, structureTierTrait.getStructureTier());
+        GTLModular.LOGGER.info("[gtlmodular] 部件组装机已成形 @{}（结构等级 {}，线程 {}，配方等级上限 {}）",
+                getPos(), structureTierTrait.getStructureTier(), effectiveThreads(), maxRecipeTier());
     }
 
     @Override
@@ -162,9 +161,9 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
 
     @Override
     public int baseThreads() {
-        // 没装线程仓时的固定值（v1 = 4 / v2 = 8）。装了线程仓时引擎统一读仓
+        // 没装线程仓时：1 级 = 4，2 级 = 8。装了线程仓时引擎统一读仓
         // （IThreadedRecipeMachine#effectiveThreads()），机器类不再做额外适配。
-        return threads;
+        return upgraded() ? 8 : 4;
     }
 
     @Override
@@ -177,7 +176,7 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     public GTRecipe fullModifyRecipe(GTRecipe recipe, OCParams params, OCResult result) {
         CompoundTag data = recipe.data;
         if (data != null && data.contains(RECIPE_TIER_KEY)
-                && data.getInt(RECIPE_TIER_KEY) > maxRecipeTier) {
+                && data.getInt(RECIPE_TIER_KEY) > maxRecipeTier()) {
             return null;
         }
         return super.fullModifyRecipe(recipe, params, result);

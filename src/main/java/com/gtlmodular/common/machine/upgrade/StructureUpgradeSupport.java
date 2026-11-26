@@ -57,7 +57,9 @@ public final class StructureUpgradeSupport {
                     if (column < 0 || column >= line.length()) {
                         return 1;
                     }
-                    return tierCells.test(line.charAt(column)) ? 2 : 1;
+                    // Add 约定：tier 0 是永久基础格（可含控制器与计数舱面，
+                    // StructureTierLayout.collect() 只校验 tier > 0 的格子）。
+                    return tierCells.test(line.charAt(column)) ? 2 : 0;
                 });
     }
 

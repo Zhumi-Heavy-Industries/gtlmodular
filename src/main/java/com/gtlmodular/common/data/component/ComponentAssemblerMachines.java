@@ -15,16 +15,16 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * GTO「部件组装机」的两台静态多方块（不做 GTO 的可选模块/原地升级）。
+ * GTO「部件组装机」：基础机与大型机已合并为一台，靠 Add 3.6.2 的结构升级切换形态。
  *
  * <table border="1">
- *   <tr><th>id</th><th>结构</th><th>线程</th><th>配方等级</th></tr>
- *   <tr><td>{@code component_assembler}</td><td>GTO 本体 7×5×5</td><td>4</td><td>≤ IV</td></tr>
- *   <tr><td>{@code large_component_assembler}</td><td>本体 + ASSEMBLY 扩展合体 29×6×18</td><td>8</td><td>≤ UV（允许激光仓）</td></tr>
+ *   <tr><th>结构等级</th><th>结构</th><th>线程</th><th>配方等级</th></tr>
+ *   <tr><td>1 级</td><td>GTO 本体 7×5×5</td><td>4</td><td>≤ IV</td></tr>
+ *   <tr><td>2 级</td><td>本体 + ASSEMBLY 扩展合体 29×6×13</td><td>8</td><td>≤ UV（允许激光仓）</td></tr>
  * </table>
  *
- * <p>配方表仍按 id {@code gtceu:component_assembly_line} 现取，代码里不 import gtlcore / gtladditions 的类；
- * 结构里需要的 gtlcore 方块（CAL 外壳、多功能机壳、处理机壳、抗氧化哈氏合金机壳）也按 id 取，取不到时回落钢制机壳。
+ * <p>二级解锁后需要在侧栏「结构升级」页激活，并把扩展段搭建完整。
+ * 配方表仍按 id {@code gtceu:component_assembly_line} 现取，代码不 import gtlcore / gtladditions 的类。
  *
  * <p>注册调用点：{@link GTLModularMachines#init()}。
  */
@@ -38,7 +38,6 @@ public final class ComponentAssemblerMachines {
             new ResourceLocation("gtceu", "block/casings/solid/machine_casing_solid_steel");
 
     public static MultiblockMachineDefinition COMPONENT_ASSEMBLER;
-    public static MultiblockMachineDefinition LARGE_COMPONENT_ASSEMBLER;
 
     private ComponentAssemblerMachines() {}
 
@@ -51,16 +50,17 @@ public final class ComponentAssemblerMachines {
         }
 
         COMPONENT_ASSEMBLER = GTLModularMachines.REGISTRATE
-                .multiblock("component_assembler", holder -> new ComponentAssemblerMachine(holder, 4, GTValues.IV,
-                        () -> ComponentAssemblerStructures.buildBase(COMPONENT_ASSEMBLER),
-                        ComponentAssemblerStructures::baseSlices, "I"))
+                .multiblock("component_assembler", holder -> new ComponentAssemblerMachine(holder,
+                        () -> ComponentAssemblerStructures.buildFull(COMPONENT_ASSEMBLER),
+                        ComponentAssemblerStructures::fullSlices,
+                        ComponentAssemblerStructures::isTier2Cell))
                 .rotationState(RotationState.ALL)
                 .tier(GTValues.IV)
                 .recipeType(recipeType)
                 .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK
                         .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK))
                 .appearanceBlock(GTBlocks.CASING_STEEL_SOLID)
-                .pattern(ComponentAssemblerStructures::buildBase)
+                .pattern(ComponentAssemblerStructures::buildFull)
                 .workableCasingRenderer(
                         CASING_TEXTURE,
                         new ResourceLocation(GTLModular.MOD_ID, "block/multiblock/component_assembler"))
@@ -69,34 +69,12 @@ public final class ComponentAssemblerMachines {
                         Component.translatable("gtlmodular.component_assembler.tooltip.0"),
                         Component.translatable("gtlmodular.component_assembler.tooltip.1"),
                         Component.translatable("gtlmodular.component_assembler.tooltip.2"),
-                        Component.translatable("gtlmodular.component_assembler.tooltip.3"))
+                        Component.translatable("gtlmodular.component_assembler.tooltip.3"),
+                        Component.translatable("gtlmodular.component_assembler.tooltip.4"),
+                        Component.translatable("gtlmodular.component_assembler.tooltip.5"))
                 .register();
 
-        LARGE_COMPONENT_ASSEMBLER = GTLModularMachines.REGISTRATE
-                .multiblock("large_component_assembler",
-                        holder -> new ComponentAssemblerMachine(holder, 8, GTValues.UV,
-                                () -> ComponentAssemblerStructures.buildFull(LARGE_COMPONENT_ASSEMBLER),
-                                ComponentAssemblerStructures::fullSlices, "kn"))
-                .rotationState(RotationState.ALL)
-                .tier(GTValues.UV)
-                .recipeType(recipeType)
-                .recipeModifier(GTRecipeModifiers.ELECTRIC_OVERCLOCK
-                        .apply(OverclockingLogic.NON_PERFECT_OVERCLOCK))
-                .appearanceBlock(GTBlocks.CASING_STEEL_SOLID)
-                .pattern(ComponentAssemblerStructures::buildFull)
-                .workableCasingRenderer(
-                        CASING_TEXTURE,
-                        new ResourceLocation(GTLModular.MOD_ID, "block/multiblock/large_component_assembler"))
-                .langValue("大型部件组装机")
-                .tooltips(
-                        Component.translatable("gtlmodular.large_component_assembler.tooltip.0"),
-                        Component.translatable("gtlmodular.large_component_assembler.tooltip.1"),
-                        Component.translatable("gtlmodular.large_component_assembler.tooltip.2"),
-                        Component.translatable("gtlmodular.large_component_assembler.tooltip.3"),
-                        Component.translatable("gtlmodular.large_component_assembler.tooltip.4"))
-                .register();
-
-        GTLModular.LOGGER.info("[gtlmodular] 已注册部件组装机：{}(IV/4线程) / {}(UV/8线程/激光仓)",
-                COMPONENT_ASSEMBLER.getId(), LARGE_COMPONENT_ASSEMBLER.getId());
+        GTLModular.LOGGER.info("[gtlmodular] 已注册部件组装机：{}（1级 IV/4线程 → 2级 UV/8线程/激光仓）",
+                COMPONENT_ASSEMBLER.getId());
     }
 }

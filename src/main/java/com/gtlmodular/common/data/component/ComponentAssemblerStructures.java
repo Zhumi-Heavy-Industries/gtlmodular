@@ -20,15 +20,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * GTO「部件组装机」的两个静态结构（不做 GTO 的可选模块/原地升级，直接拆成两台多方块）。
+ * GTO「部件组装机」合并后的唯一结构：本体 + ASSEMBLY 扩展合体，29×6×13。
  *
- * <ul>
- *   <li><b>BASE</b>：GTO 本体 7×5×5；控制器在正面底部正中（GTO 的 {@code B}）。</li>
- *   <li><b>FULL</b>：本体 + ASSEMBLY 扩展合体，29×6×13。GTO 的 multiblockpro 把本体的
- *       {@code MODULE_OUT}（控制器、朝后）与扩展的 {@code MODULE_IN}（{@code @}、朝前）对接，
- *       本体的 {@code MODULE_OUT} 目标格 = 控制器格 + 朝向一步 ⇒ 本体正好嵌进扩展正面中央的凹槽
- *       （x 11..17、y 0..4、z 1..5，控制器在 z=1），扩展自身的包围盒仍是 29×6×13。</li>
- * </ul>
+ * <p>控制器在正面底部正中；BASE 本体（原基础机的 7×5×5）嵌在扩展正面中央的凹槽
+ * （x 11..17、y 0..4、z 1..5，控制器在 z=1）。结构升级 1 级只检查 BASE 格
+ * （大写 A~J / S，其余格被 Add 替换成 any()），2 级才检查扩展段格（小写）。
+ *
+ * <p>扩展段的舱面位 {@code Q} 与激光位 {@code L} 用<b>无计数</b>谓词，
+ * 以满足 Add 3.6.2 对二级格 "不能是控制器或计数部件" 的硬约束。
  *
  * <p>方块按 GTO 原结构的符号映射；GTO 专属方块里只有
  * {@code TITANIUM_NITRIDE_CERAMIC_IMPACT_RESISTANT_MECHANICAL_BLOCK}（符号 {@code l}）在包里没有，
@@ -38,9 +37,6 @@ import java.util.List;
  */
 final class ComponentAssemblerStructures {
 
-    static final int BASE_WIDTH = 7;
-    static final int BASE_HEIGHT = 5;
-    static final int BASE_LENGTH = 5;
     static final int FULL_WIDTH = 29;
     static final int FULL_HEIGHT = 6;
     static final int FULL_LENGTH = 13;
@@ -51,23 +47,25 @@ final class ComponentAssemblerStructures {
 
     private ComponentAssemblerStructures() {}
 
-    static BlockPattern buildBase(MultiblockMachineDefinition definition) {
-        return build(definition, BASE_SLICES, false, null);
-    }
-
     static BlockPattern buildFull(MultiblockMachineDefinition definition) {
         // 结构外壳仍接受 LV~MAX 任意档；IV 只约束「配方里的外壳输入」，不约束结构。
         return build(definition, FULL_SLICES, true, null);
     }
 
-    /** 结构升级分类用：基础型的切片表。 */
-    public static String[][] baseSlices() {
-        return BASE_SLICES;
-    }
-
     /** 结构升级分类用：完整型的切片表。 */
     public static String[][] fullSlices() {
         return FULL_SLICES;
+    }
+
+    /**
+     * 一级形态（原基础机）占用的符号：BASE 本体用大写 A~J 与控制器 S。
+     * 扩展段全用小写，二者无交集，因此按字符即可给 Add 的 StructureTierLayout 分类。
+     */
+    private static final String TIER1_CHARS = "AaCD EFGHIJS";
+
+    /** Add 结构升级的分类器：BASE 格 = 1 级，扩展段格 = 2 级。 */
+    public static boolean isTier2Cell(char ch) {
+        return TIER1_CHARS.indexOf(ch) < 0;
     }
 
     private static BlockPattern build(MultiblockMachineDefinition definition, String[][] slices, boolean laser,
@@ -96,6 +94,25 @@ final class ComponentAssemblerStructures {
         if (laser) {
             laserSafe = laserSafe.or(laserHatch);
         }
+
+        // ★ 结构升级二级格的舱面/激光位必须不带计数限制：Add 3.6.2 的
+        //   StructureTierLayout.collect() 对二级格强制 predicate.limited.isEmpty()。
+        //   这里只做能力识别（scan 仍能认出舱面），数量约束交给一级 BASE 的 hatchable。
+        TraceabilityPredicate ioNoLimit = Predicates.abilities(PartAbility.INPUT_ENERGY)
+                .or(Predicates.abilities(PartAbility.OUTPUT_ENERGY))
+                .or(Predicates.abilities(PartAbility.IMPORT_ITEMS))
+                .or(Predicates.abilities(PartAbility.EXPORT_ITEMS))
+                .or(Predicates.abilities(PartAbility.IMPORT_FLUIDS))
+                .or(Predicates.abilities(PartAbility.EXPORT_FLUIDS));
+        TraceabilityPredicate extraNoLimit = Predicates.abilities(PartAbility.MAINTENANCE)
+                .or(Predicates.abilities(PartAbility.PARALLEL_HATCH))
+                .or(Predicates.abilities(com.gtlmodular.common.data.thread.ThreadHatchMachines.THREAD_HATCH))
+                .or(Predicates.abilities(com.gtlmodular.common.data.fuel.OverclockHatches.OVERCLOCK_HATCH))
+                .or(Predicates.abilities(com.gtlmodular.common.data.fuel.AccelerateHatches.ACCELERATE_HATCH));
+        TraceabilityPredicate hatchableNoLimit = Predicates.blocks(GTBlocks.CASING_STEEL_SOLID.get())
+                .or(ioNoLimit).or(extraNoLimit);
+        TraceabilityPredicate laserSafeNoLimit = Predicates.blocks(GCyMBlocks.CASING_LASER_SAFE_ENGRAVING.get())
+                .or(Predicates.abilities(PartAbility.INPUT_LASER));
 
         TraceabilityPredicate calCasings = calCasings(casingTier);
         Block multiFunctional = block("gtlcore:multi_functional_casing", GTBlocks.CASING_STEEL_SOLID.get());
@@ -133,6 +150,9 @@ final class ComponentAssemblerStructures {
                 .where('n', Predicates.blocks(GTBlocks.CASING_TEMPERED_GLASS.get()))
                 .where('o', Predicates.blocks(GTBlocks.CASING_POLYTETRAFLUOROETHYLENE_PIPE.get()))
                 .where('p', Predicates.blocks(Blocks.IRON_BARS))
+                // 二级扩展段舱面/激光位（无计数版本，见上面的说明）
+                .where('Q', hatchableNoLimit)
+                .where('L', laserSafeNoLimit)
                 .build();
     }
 
@@ -167,43 +187,7 @@ final class ComponentAssemblerStructures {
         return block == Blocks.AIR ? fallback : block;
     }
 
-    private static final String[][] BASE_SLICES = {
-        {
-            "AaaaaaA",
-            "ACDDDCA",
-            "ACDDDCA",
-            "ACDDDCA",
-            "AAAAAAA",
-        },
-        {
-            "aAEEEAa",
-            "FG   GF",
-            "FG   GF",
-            "FG   GF",
-            "AACACAA",
-        },
-        {
-            "aAEEEAa",
-            "FHI IHF",
-            "FJI IJF",
-            "FG   GF",
-            "AACACAA",
-        },
-        {
-            "aAEEEAa",
-            "FG   GF",
-            "FG   GF",
-            "FG   GF",
-            "AACACAA",
-        },
-        {
-            "AaaSaaA",
-            "ACDDDCA",
-            "ACDDDCA",
-            "ACDDDCA",
-            "AAAAAAA",
-        },
-    };
+
 
     private static final String[][] FULL_SLICES = {
         {
@@ -215,59 +199,59 @@ final class ComponentAssemblerStructures {
             " ccccccccccccccccccccccccccc ",
         },
         {
-            "qdddddddddddddddddddddddddddq",
-            "qhmmmmmmmmhdhnnnhdhmmmmmmmmhq",
-            "qhmmmmmmmmhdhnnnhdhmmmmmmmmhq",
-            "qhmmmmmmmmhdhnnnhdhmmmmmmmmhq",
-            "qdddddddddddddddddddddddddddq",
+            "QdddddddddddddddddddddddddddQ",
+            "QhmmmmmmmmhdhnnnhdhmmmmmmmmhQ",
+            "QhmmmmmmmmhdhnnnhdhmmmmmmmmhQ",
+            "QhmmmmmmmmhdhnnnhdhmmmmmmmmhQ",
+            "QdddddddddddddddddddddddddddQ",
             " cffc  cffc cfffc cffc  cffc ",
         },
         {
-            "qeeeeeeeeeedeeeeedeeeeeeeeeeq",
+            "QeeeeeeeeeedeeeeedeeeeeeeeeeQ",
             "b                           b",
-            "q          j     j          q",
+            "Q          j     j          Q",
             "b                           b",
-            "qdhhddddhhdddhdhdddhhddddhhdq",
+            "QdhhddddhhdddhdhdddhhddddhhdQ",
             " chhc  chhc chfhc chhc  chhc ",
         },
         {
-            "qffffffffffdfffffdffffffffffq",
+            "QffffffffffdfffffdffffffffffQ",
             "biiiiiiiiii  p p  iiiiiiiiiib",
-            "q          j p p j          q",
+            "Q          j p p j          Q",
             "bjjjjjjjjjj       jjjjjjjjjjb",
-            "qdhhddddhhdddhdhdddhhddddhhdq",
+            "QdhhddddhhdddhdhdddhhddddhhdQ",
             " chhc  chhc chfhc chhc  chhc ",
         },
         {
-            "qggggggggggdgggggdggggggggggq",
+            "QggggggggggdgggggdggggggggggQ",
             "b                           b",
-            "qggggggggggjgggggjggggggggggq",
+            "QggggggggggjgggggjggggggggggQ",
             "b                           b",
-            "qdhhddddhhdddhdhdddhhddddhhdq",
+            "QdhhddddhhdddhdhdddhhddddhhdQ",
             " chhc  chhc chfhc chhc  chhc ",
         },
         {
-            "qffffffffffdfffffdffffffffffq",
+            "QffffffffffdfffffdffffffffffQ",
             "biiiiiiiiii  p p  iiiiiiiiiib",
-            "q          j p p j          q",
+            "Q          j p p j          Q",
             "bjjjjjjjjjj       jjjjjjjjjjb",
-            "qdhhddddhhdddhdhdddhhddddhhdq",
+            "QdhhddddhhdddhdhdddhhddddhhdQ",
             " chhc  chhc chfhc chhc  chhc ",
         },
         {
-            "qeeeeeeeeeedeeeeedeeeeeeeeeeq",
+            "QeeeeeeeeeedeeeeedeeeeeeeeeeQ",
             "b                           b",
-            "q          j     j          q",
+            "Q          j     j          Q",
             "b                           b",
-            "qdhhddddhhdddhdhdddhhddddhhdq",
+            "QdhhddddhhdddhdhdddhhddddhhdQ",
             " chhc  chhc chfhc chhc  chhc ",
         },
         {
-            "qddddddddddAaaaaaAddddddddddq",
-            "qhdo oo odhACDDDCAhdo oo odhq",
-            "qhdo oo odhACDDDCAhdo oo odhq",
-            "qhd      dhACDDDCAhd      dhq",
-            "qddddddddddAAAAAAAddddddddddq",
+            "QddddddddddAaaaaaAddddddddddQ",
+            "Qhdo oo odhACDDDCAhdo oo odhQ",
+            "Qhdo oo odhACDDDCAhdo oo odhQ",
+            "Qhd      dhACDDDCAhd      dhQ",
+            "QddddddddddAAAAAAAddddddddddQ",
             " cffc  cffc cfffc cffc  cffc ",
         },
         {
@@ -280,24 +264,24 @@ final class ComponentAssemblerStructures {
         },
         {
             " ckffffffkcaAEEEAackffffffkc ",
-            "  lo oo ol FHI IHF lo oo ol  ",
-            "  lo oo ol FJI IJF lo oo ol  ",
+            "  Lo oo oL FHI IHF Lo oo oL  ",
+            "  Lo oo oL FJI IJF Lo oo oL  ",
             "  knnnnnnk FG   GF knnnnnnk  ",
             "  c      c AACACAA c      c  ",
             "                             ",
         },
         {
             " ckffffffkcaAEEEAackffffffkc ",
-            "  lo oo ol FG   GF lo oo ol  ",
-            "  lo oo ol FG   GF lo oo ol  ",
+            "  Lo oo oL FG   GF Lo oo oL  ",
+            "  Lo oo oL FG   GF Lo oo oL  ",
             "  knnnnnnk FG   GF knnnnnnk  ",
             "  c      c AACACAA c      c  ",
             "                             ",
         },
         {
             " ckffffffkcAaaSaaAckffffffkc ",
-            "  l      l ACDDDCA l      l  ",
-            "  l      l ACDDDCA l      l  ",
+            "  L      L ACDDDCA L      L  ",
+            "  L      L ACDDDCA L      L  ",
             "  knnnnnnk ACDDDCA knnnnnnk  ",
             "  c      c AAAAAAA c      c  ",
             "                             ",
