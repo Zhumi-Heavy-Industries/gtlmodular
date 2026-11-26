@@ -65,10 +65,10 @@ public final class StructureUpgradeSupport {
 
     /** 惰性物品成本：注册表在机器运行期才解析，避免注册窗口取到 null。 */
     public static TierCost cost(String id, long amount) {
-        return new TierCost(() -> {
-            Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(id));
-            return item == null ? Ingredient.EMPTY : Ingredient.of(item);
-        }, amount);
+        // Add 3.6.2-fix1 起 TierCost 构造器改为 (amount, tag, ingredientSupplier)，
+        // 且新增 Companion.of(String, long) 工厂（按物品 id 构建 Ingredient，语义与原实现一致）。
+        // 用官方工厂避免依赖私有构造签名，同时让新增的 tag 字段保持 null（item 成本无 tag）。
+        return TierCost.Companion.of(id, amount);
     }
 
     public static TierRequirement requirement(TierCost... costs) {
