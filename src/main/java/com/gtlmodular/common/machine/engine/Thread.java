@@ -10,7 +10,7 @@ import com.gregtechceu.gtceu.api.recipe.GTRecipe;
  *   <li>{@code recipe} —— 已经套过修改器/并行、由 {@link RecipeCharge} 提交过的最终配方；</li>
  *   <li>{@code duration} —— 开线程时钉死的总时长，不每 tick 回读，避免进度条跳；</li>
  *   <li>{@code progress} —— 本线程自己的进度；</li>
- *   <li>{@code use} —— 本线程占用的并行额度（GTO 同名字段），共享额度判定只读它；</li>
+ *   <li>{@code use} —— 本线程实际吃到的并行额度（GTO 同名字段），Jade/Waila 的 R 读数只读它；</li>
  *   <li>{@code id} —— 稳定的槽位号，给 Jade/Waila 编号用（GTO 的 {@code getID}）。</li>
  * </ul>
  *

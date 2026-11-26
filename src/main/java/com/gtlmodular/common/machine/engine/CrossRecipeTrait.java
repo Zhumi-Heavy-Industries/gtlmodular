@@ -167,6 +167,33 @@ public final class CrossRecipeTrait {
         return cachedIndependent;
     }
 
+    /**
+     * ★ GTO 口径的<b>实际并发槽数</b>。
+     *
+     * <p>独立线程开（GTO：装了无线能源仓）⇒ 线程数 N，每条各跑一条配方；
+     * 独立线程关（GTO：没有无线能源仓）⇒ <b>只有 1 条线程</b>——GTO Wiki 原文
+     * 「不再有多线程，最大并行数乘以线程数」。两者产能相同，差别只在并发条数。
+     */
+    public int slotCount() {
+        return isIndependentThread() ? getThread() : 1;
+    }
+
+    /**
+     * ★ GTO 口径的<b>单条线程并行额度</b>。
+     *
+     * <p>独立线程开 ⇒ 每条各自 {@link #getParallel()}；关 ⇒ 唯一那条吃下
+     * {@code getParallel() × 线程数}，把 N 条的额度并到 1 条上，产能不打折。
+     * long 乘再钳到 int，避免倍率乘爆。
+     */
+    public int parallelBudget() {
+        int per = getParallel();
+        if (isIndependentThread()) {
+            return per;
+        }
+        long merged = (long) per * getThread();
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(1L, merged));
+    }
+
     /** 已在跑的线程数（GTO 的 {@code useThread}）。 */
     public int useThread() {
         return engine.size();

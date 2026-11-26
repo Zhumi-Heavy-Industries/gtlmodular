@@ -687,10 +687,14 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             return ThreadedRecipeLogic.this.machine;
         }
 
-        /** 同时能跑几条 = trait 从线程仓读到的当前设定值。 */
+        /**
+         * 同时能跑几条（GTO 口径）：独立线程开 = 线程数 N；关 = 1
+         * ——「不再有多线程，最大并行数乘以线程数」，额度由 {@link CrossRecipeTrait#parallelBudget()}
+         * 合到那唯一一条上，产能不打折。
+         */
         @Override
         public int slots() {
-            return trait.getThread();
+            return trait.slotCount();
         }
 
         /**
@@ -774,7 +778,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public int threadLimit() {
         // ★ 2026-11-08：原逻辑代跑 ⇒ 报 1（Jade 的线程显示判据是「limit>1 或 有批次」，
         //   报 1 + runningBatches=0 就不会画出「独立线程」那一节）。
-        return originalActive() ? 1 : trait.getThread();
+        return originalActive() ? 1 : trait.slotCount();
     }
 
     /** 当前在跑的批次数（Jade/面板读取用）。 */

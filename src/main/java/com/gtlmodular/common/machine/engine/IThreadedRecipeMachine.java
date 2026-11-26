@@ -111,8 +111,9 @@ public interface IThreadedRecipeMachine {
     /**
      * 线程仓「独立线程」（GTO 语义）：全部仓都打开才算独立；没装仓 ⇒ 独立。
      *
-     * <p>开 = 每条线程各自有一份完整的并行/功率额度（GTO：「每个线程都能独立拉取机器最大功率」）；
-     * 关 = 所有线程共用同一份额度（整机并行不再随线程数翻倍）。
+     * <p>开 = N 条线程，每条各自有完整的并行/功率额度（GTO：「每个线程都能独立拉取机器最大功率」）；
+     * 关 = <b>只有 1 条线程</b>，但它的并行额度 = 每线程并行 × N
+     * （GTO Wiki：「不再有多线程，最大并行数乘以线程数」）——产能守恒，只是不再并发跑多条配方。
      */
     default boolean threadHatchIndependent() {
         if (!(this instanceof IMultiController controller)) {

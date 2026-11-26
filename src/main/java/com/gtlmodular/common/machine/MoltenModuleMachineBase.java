@@ -280,8 +280,9 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
     }
 
     /**
-     * 「独立线程」（GTO 语义）：开 = 每条线程各有一份完整并行额度；
-     * 关 = 所有线程共用同一份额度（在跑批次并行之和 ≤ {@link #engineParallelPerBatch()}）。
+     * 「独立线程」（GTO 语义）：开 = N 条线程各有一份完整并行额度；
+     * 关 = 只有 1 条线程，但它的并行额度 = {@code engineParallelPerBatch() × 线程数}
+     * （单线程大并行，产能守恒）。
      */
     public final boolean engineIndependent() {
         return threadHatchIndependent();
@@ -444,10 +445,10 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             return engine.size();
         }
 
-        /** 引擎线程上限（= 机器给的 engineThreads）。 */
+        /** 引擎线程上限（GTO 口径：独立线程开 = N，关 = 1）。 */
         @Override
         public int threadLimit() {
-            return trait.getThread();
+            return trait.slotCount();
         }
 
         /**
@@ -463,20 +464,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                         (int) Math.min(Integer.MAX_VALUE, Math.max(1L, batch.use))));
             }
             return list;
-        }
-
-        /**
-         * 当前在跑批次占用的并行之和 —— 「独立线程」关闭时用来算剩余共享额度。
-         */
-        private int runningParallelSum() {
-            long sum = 0L;
-            for (int i = 0; i < engine.size(); i++) {
-                sum += engine.get(i).use;
-                if (sum >= Integer.MAX_VALUE) {
-                    return Integer.MAX_VALUE;
-                }
-            }
-            return (int) sum;
         }
 
         @Override
@@ -545,9 +532,12 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 return MoltenModuleRecipeLogic.this.machine;
             }
 
+            /**
+             * GTO 口径：独立线程开 = 线程数 N；关 = 1（额度合到那一条上，产能不打折）。
+             */
             @Override
             public int slots() {
-                return trait.getThread();
+                return trait.slotCount();
             }
 
             /** GTO 式开线程：扫描 / 折算 / 预留 / 扣料都由 trait + charge 完成。 */
@@ -590,15 +580,11 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
                 if (modified == null) {
                     return null;
                 }
-                long limit = Math.max(1, module.engineParallelPerBatch());
-                // ★ 2026-11-07 GTO 口径「独立线程」：
-                //   开 = 每条线程各自一份完整并行额度；关 = 所有线程共用同一份额度。
-                if (!module.engineIndependent()) {
-                    limit -= runningParallelSum();
-                    if (limit <= 0) {
-                        return null;
-                    }
-                }
+                // ★ GTO 口径「独立线程」：
+                //   开 = 每条线程各自一份完整并行额度（N 条 × perBatch）；
+                //   关 = 只有 1 条线程，但它的并行额度 = perBatch × N（单线程大并行，产能守恒）。
+                //   与通用引擎 CrossRecipeTrait#parallelBudget() 同口径。
+                long limit = trait.parallelBudget();
                 long parallel = IParallelLogic.getMaxParallel(machine, modified, limit);
                 if (parallel <= 0) {
                     return null;

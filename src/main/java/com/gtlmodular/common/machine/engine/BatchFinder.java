@@ -27,7 +27,8 @@ import java.util.Map;
  *   <li>候选来源：ME 样板仓缓存优先；没有缓存才退回整表分片轮扫；</li>
  *   <li>原配方只读输入匹配（不够就不必 copy/超频/精确并行）；</li>
  *   <li>机器准入门槛 + 配方修改器；</li>
- *   <li>额度 = {@link CrossRecipeTrait#getParallel()}，非独立线程再扣掉在跑占用；</li>
+ *   <li>额度 = {@link CrossRecipeTrait#parallelBudget()}：独立线程开 = 每线程并行，
+ *       关 = 每线程并行 × 线程数（GTO「单线程大并行」，产能守恒）；</li>
  *   <li>精确并行后的输入、每 tick 输入、配方条件三重匹配；</li>
  *   <li>{@link RecipeCharge#check(GTRecipe)} → {@link RecipeCharge#commit()}。</li>
  * </ol>
@@ -101,17 +102,11 @@ public final class BatchFinder {
 
         // 本轮只读快照：trait 已经按 tick 缓存了部件读数，这里只取一次标量。
         boolean repeated = trait.isRepeatedRecipes();
-        boolean independent = trait.isIndependentThread();
-        int perThread = trait.getParallel();
-        int usedParallel = 0;
+        // ★ GTO 口径：单条线程的并行额度由 trait 一次给出。
+        //   独立线程开 = 每线程并行；关 = 每线程并行 × 线程数（唯一一条吃下全部额度）。
+        //   不再有「在跑占用扣减」——非独立模式只有 1 条线程，引擎不会同时开第二条抢额度。
+        int parallelBudget = trait.parallelBudget();
         ObjectSet<ResourceLocation> runningIds = null;
-        if (!independent) {
-            long sum = 0L;
-            for (int i = 0; i < engine.size(); i++) {
-                sum += engine.get(i).use;
-            }
-            usedParallel = (int) Math.min(Integer.MAX_VALUE, sum);
-        }
         if (!repeated) {
             runningIds = trait.runningRecipeIds();
         }
@@ -119,7 +114,7 @@ public final class BatchFinder {
         GTRecipeType[] types = machine.getRecipeTypes();
         boolean allTypes = owner.crossTableScan() && types != null && types.length > 1;
         if (!allTypes) {
-            return findForType(current, charge, repeated, independent, perThread, usedParallel, runningIds);
+            return findForType(current, charge, repeated, parallelBudget, runningIds);
         }
         int n = types.length;
         int startIdx = lastSuccessfulTypeIdx % n;
@@ -128,8 +123,7 @@ public final class BatchFinder {
         for (int i = 0; i < n; i++) {
             int idx = (startIdx + i) % n;
             diag.forgetScannedThisCall();
-            GTRecipe recipe = findForType(types[idx], charge, repeated, independent,
-                    perThread, usedParallel, runningIds);
+            GTRecipe recipe = findForType(types[idx], charge, repeated, parallelBudget, runningIds);
             if (recipe != null) {
                 lastSuccessfulTypeIdx = idx;
                 return recipe;
@@ -148,8 +142,8 @@ public final class BatchFinder {
     }
 
     private GTRecipe findForType(GTRecipeType type, @Nullable RecipeCharge charge,
-                                 boolean repeated, boolean independent, int perThread,
-                                 int usedParallel, @Nullable ObjectSet<ResourceLocation> runningIds) {
+                                 boolean repeated, int parallelBudget,
+                                 @Nullable ObjectSet<ResourceLocation> runningIds) {
         long now = machine.self().getOffsetTimer();
         TableScanState state = scanStates.computeIfAbsent(type, t -> new TableScanState());
         if (now < state.cooldownUntil) {
@@ -215,14 +209,6 @@ public final class BatchFinder {
                 if (modified == null) {
                     diag.noteScanReject(type, raw, "配方修改器返回 null（去重/门槛拒绝）", null);
                     continue;
-                }
-                int parallelBudget = perThread;
-                if (!independent) {
-                    parallelBudget = perThread - usedParallel;
-                    if (parallelBudget <= 0) {
-                        diag.noteScanReject(type, raw, "独立线程关闭：并行额度已被在跑线程占满", null);
-                        continue;
-                    }
                 }
                 Pair<GTRecipe, Integer> par = GTRecipeModifiers.accurateParallel(
                         machine.self(), modified, parallelBudget, false);

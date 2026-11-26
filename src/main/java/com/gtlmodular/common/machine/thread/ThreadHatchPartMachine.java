@@ -130,7 +130,8 @@ import java.util.List;
  *       关 = 同一配方只占一条线程，多余线程去跑别的配方（<b>只有一种配方时这些线程会空转</b>）。</li>
  *   <li><b>独立线程</b>（{@code independentThread}，默认开）：
  *       开 = 每条线程<b>各有一份完整的并行/功率额度</b>（GTO：「每个线程都能独立拉取机器最大功率」）；
- *       关 = 所有线程<b>共用同一份额度</b>，整机并行不再随线程数翻倍。
+ *       关 = <b>只有 1 条线程</b>，但它的并行额度 = 每线程额度 × N
+ *       （GTO Wiki：「不再有多线程，最大并行数乘以线程数」，产能守恒、只是不并发跑多条）。
  *       不再要求无线能源仓（0.3.286 起，{@code gtocore.machine.wireless_enable} 前置已删）。</li>
  * </ul>
  * 落地位置：两开关都由引擎统一从部件现读（{@code IThreadedRecipeMachine#threadHatchRepeatedRecipes()} /
@@ -257,7 +258,7 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
         if (!isRemote()) {
             markDirty();
             GTLModular.LOGGER.info("[gtlmodular] 线程仓 @{} 独立线程 → {}（{}）",
-                    getPos(), value, value ? "每条线程独立额度" : "所有线程共享额度");
+                    getPos(), value, value ? "N 条线程各一份额度" : "单线程大并行（额度×N）");
         }
     }
 
