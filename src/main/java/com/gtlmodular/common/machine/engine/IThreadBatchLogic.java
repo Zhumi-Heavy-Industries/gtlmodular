@@ -30,4 +30,21 @@ public interface IThreadBatchLogic {
 
     /** 每条在跑批次的只读快照（服务端求值；客户端拿不到，读到的通常是空表）。 */
     List<ThreadedRecipeLogic.BatchView> snapshotBatches();
+
+    /**
+     * ★ 0.3.514：三个并行读数（GTO {@code CrossRecipeTrait} 的同名字段）。
+     *
+     * <p>默认 {@code 0} ⇒ 不实现它的老逻辑（NAC 外壳等）在 Jade 里不显示这三个数，行为不变。
+     */
+    default long maxParallel() {
+        return 0L;
+    }
+
+    default long availableParallel() {
+        return 0L;
+    }
+
+    default long lastParallel() {
+        return 0L;
+    }
 }

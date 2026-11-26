@@ -451,6 +451,22 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             return trait.slotCount();
         }
 
+        // ★ 0.3.514：GTO 三个并行读数，转发自 trait。
+        @Override
+        public long maxParallel() {
+            return trait.maxParallel;
+        }
+
+        @Override
+        public long availableParallel() {
+            return trait.availableParallel;
+        }
+
+        @Override
+        public long lastParallel() {
+            return trait.lastParallel;
+        }
+
         /**
          * 每条在跑批次的只读快照 —— 供 Jade 的通用线程显示（{@code IThreadBatchLogic}）逐条画进度条。
          * 与通用引擎 {@code ThreadedRecipeLogic#snapshotBatches()} 同格式。

@@ -101,6 +101,7 @@ public final class BatchFinder {
         }
 
         // 本轮只读快照：trait 已经按 tick 缓存了部件读数，这里只取一次标量。
+        trait.refreshParallelStats();   // ★ 0.3.514：刷新 GTO 三个并行读数
         boolean repeated = trait.isRepeatedRecipes();
         // ★ GTO 口径：单条线程的并行额度由 trait 一次给出。
         //   独立线程开 = 每线程并行；关 = 每线程并行 × 线程数（唯一一条吃下全部额度）。
@@ -282,7 +283,7 @@ public final class BatchFinder {
             state.cursor = (idx + 1) % candidates.size();
         }
         startsThisTick++;
-        trait.noteThreadOpened(selected);
+        trait.noteThreadOpened(raw, selected);
         return selected;
     }
 }

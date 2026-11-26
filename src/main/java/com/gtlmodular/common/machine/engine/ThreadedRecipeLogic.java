@@ -823,6 +823,22 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      */
     public record BatchView(GTRecipe recipe, int progress, int duration, int parallels) {}
 
+    // ★ 0.3.514：GTO 三个并行读数，转发自 trait（供 Jade/面板/诊断读取）。
+    @Override
+    public long maxParallel() {
+        return originalActive() ? 0L : trait.maxParallel;
+    }
+
+    @Override
+    public long availableParallel() {
+        return originalActive() ? 0L : trait.availableParallel;
+    }
+
+    @Override
+    public long lastParallel() {
+        return originalActive() ? 0L : trait.lastParallel;
+    }
+
     /**
      * 跨配方表是否生效：★ 2026-11-07 起与「独立线程」开关解耦 ——
      * 线程本来就该各自挑不同配方，多表机器默认全部扫（GTO 同义）。

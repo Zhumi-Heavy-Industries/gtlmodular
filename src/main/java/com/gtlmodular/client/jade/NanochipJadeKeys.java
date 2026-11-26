@@ -125,6 +125,11 @@ public final class NanochipJadeKeys {
     /** 线程明细列表的 serverData 根键（每项一个 {@code CompoundTag}）。 */
     public static final String KEY_THREAD_LIST = "gtlmodular_jade_thread_list";
 
+    /** ★ 0.3.514：GTO 三个并行读数的 serverData 键（上限 / 可用 / 上次实际）。 */
+    public static final String KEY_MAX_PARALLEL = "gtlmodular_jade_max_parallel";
+    public static final String KEY_AVAILABLE_PARALLEL = "gtlmodular_jade_available_parallel";
+    public static final String KEY_LAST_PARALLEL = "gtlmodular_jade_last_parallel";
+
     /** 线程明细里「槽位」的键。 */
     public static final String KEY_SLOT = "slot";
 

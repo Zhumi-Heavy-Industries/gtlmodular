@@ -12,7 +12,9 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ★ 2026-11-26：<b>跨配方状态中枢</b>（GTO {@code CrossRecipeTrait} 的等价物）。
@@ -25,7 +27,10 @@ import java.util.List;
  *   <li>{@link #getThread()} / {@link #getParallel()} / {@link #isRepeatedRecipes()} /
  *       {@link #isIndependentThread()} 是唯一的额度读数口；</li>
  *   <li>{@link #lookupRecipe(RecipeCharge)} 是唯一的开线程入口，把 {@link BatchFinder} 藏在后面；</li>
- *   <li>{@link #lastRecipes} 记录最近开过的配方 id，供去重与诊断（GTO 的 {@code lastRecipes}）。</li>
+ *   <li>{@link #lastRecipes} 记录最近开过的配方 id，供去重与诊断（GTO 的 {@code lastRecipes}）；</li>
+ *   <li>{@link #getRealRecipe}（0.3.514）把改写后的配方还原成配方表原始 id（GTO 同款钩子）；</li>
+ *   <li>{@link #maxParallel} / {@link #availableParallel} / {@link #lastParallel}（0.3.514）
+ *       是 GTO 三个并行读数，每轮扫描刷新、供 Jade/诊断读取。</li>
  * </ul>
  *
  * <p>结构失形由 {@link #onStructureInvalid()} 清缓存；机器类没有统一的 onPartScan 钩子，
@@ -44,6 +49,20 @@ public final class CrossRecipeTrait {
 
     /** GTO 的 {@code lastRecipes}：本工程用配方 id 代替定义对象，避免依赖 GTM 内部结构。 */
     public final ObjectSet<ResourceLocation> lastRecipes = new ObjectOpenHashSet<>();
+
+    /**
+     * ★ GTO {@code getRealRecipe} 的还原映射（0.3.514）：改写后的配方 id → 配方表原始 id。
+     *
+     * <p>{@link BatchFinder} 找到的 {@code selected} 经过修改器/准确并行改写，
+     * 它的 id 可能已被换掉；这里记下「selected → raw」的对应关系，让
+     * {@link #lastRecipes} 与去重/显示都按<b>原始配方</b>的身份记账（GTO 同款口径）。
+     */
+    private final Map<ResourceLocation, ResourceLocation> realRecipeIds = new HashMap<>();
+
+    /** GTO 的三个并行读数（0.3.514）：本轮上限 / 当前可用 / 上次实际并行。 */
+    public long maxParallel = 0L;
+    public long availableParallel = 0L;
+    public long lastParallel = 0L;
 
     private BatchFinder finder;
 
@@ -86,6 +105,10 @@ public final class CrossRecipeTrait {
         threadHatches.clear();
         parallelHatches.clear();
         lastRecipes.clear();
+        realRecipeIds.clear();
+        maxParallel = 0L;
+        availableParallel = 0L;
+        lastParallel = 0L;
         checkedTick = Long.MIN_VALUE;
         cachedThreads = 1;
         cachedParallel = 1;
@@ -210,16 +233,62 @@ public final class CrossRecipeTrait {
         return engine.isEmpty() ? null : engine.get(0).recipe;
     }
 
-    /** 在跑线程占用的配方 id（GTO {@code duplicateCheck} 用的同一份口径）。 */
+    /**
+     * ★ GTO {@code getRealRecipe(RecipeHandlerUnit, GTRecipe)} 的等价物（0.3.514）。
+     *
+     * <p>{@code raw} 是配方表里的原始配方，{@code selected} 是经修改器/准确并行改写后的副本
+     * （它的 id 可能已被换掉）。本方法把两者登记进还原表，并返回<b>原始配方 id</b>——
+     * 让去重与诊断都按配方定义记账，而不是按某次改写的临时 id。
+     *
+     * <p>GTO 用这个钩子把 {@code RecipeHandlerUnit} 里的处理态配方还原成
+     * {@code GTRecipeDefinition}；本工程不依赖 GTM 内部结构，用 id 映射达到同一目的。
+     */
+    public ResourceLocation getRealRecipe(@Nullable GTRecipe raw, @Nullable GTRecipe selected) {
+        ResourceLocation rawId = raw == null ? null : raw.getId();
+        ResourceLocation selectedId = selected == null ? null : selected.getId();
+        if (rawId != null && selectedId != null && !rawId.equals(selectedId)) {
+            if (realRecipeIds.size() >= 256) {
+                realRecipeIds.clear();   // 上限保护：机器长期换配方不该无限攒映射
+            }
+            realRecipeIds.put(selectedId, rawId);
+        }
+        return rawId != null ? rawId : selectedId;
+    }
+
+    /** 把（可能被改写的）配方 id 还原成配方表原始 id；没登记过就原样返回。 */
+    public ResourceLocation realIdOf(@Nullable ResourceLocation id) {
+        if (id == null) {
+            return null;
+        }
+        ResourceLocation real = realRecipeIds.get(id);
+        return real != null ? real : id;
+    }
+
+    /** 在跑线程占用的配方 id（GTO {@code duplicateCheck} 口径：按原始配方身份）。 */
     public ObjectSet<ResourceLocation> runningRecipeIds() {
         ObjectSet<ResourceLocation> ids = new ObjectOpenHashSet<>();
         for (int i = 0; i < engine.size(); i++) {
             GTRecipe recipe = engine.get(i).recipe;
             if (recipe != null && recipe.getId() != null) {
-                ids.add(recipe.getId());
+                ids.add(realIdOf(recipe.getId()));
             }
         }
         return ids;
+    }
+
+    /**
+     * ★ 每轮扫描前刷新三个并行读数（0.3.514）：
+     * {@code maxParallel} = 整机本轮并行上限 = 单条额度 × 槽数（两种独立模式下这个值相同）；
+     * {@code availableParallel} = 上限 − 在跑线程已占；{@code lastParallel} 在开线程时单独记。
+     */
+    public void refreshParallelStats() {
+        long cap = (long) parallelBudget() * slotCount();
+        maxParallel = Math.min(Integer.MAX_VALUE, Math.max(1L, cap));
+        long used = 0L;
+        for (int i = 0; i < engine.size(); i++) {
+            used += engine.get(i).use;
+        }
+        availableParallel = Math.max(0L, maxParallel - Math.max(0L, used));
     }
 
     /** 唯一的开线程入口（GTO {@code lookupRecipe(@Nullable RecipeCharge)}）。 */
@@ -228,14 +297,20 @@ public final class CrossRecipeTrait {
         return finder == null ? null : finder.lookupRecipe(charge);
     }
 
-    /** 记住这条线程开的配方（去重/诊断用，最多保留 64 条）。 */
-    public void noteThreadOpened(GTRecipe recipe) {
-        ResourceLocation id = recipe == null ? null : recipe.getId();
+    /**
+     * 记住这条线程开的配方（去重/诊断用，最多保留 64 条）；按原始配方身份记账。
+     * 同时刷新 {@code lastParallel} / {@code availableParallel} 两个读数。
+     */
+    public void noteThreadOpened(@Nullable GTRecipe raw, @Nullable GTRecipe selected) {
+        ResourceLocation id = getRealRecipe(raw, selected);
         if (id != null) {
             if (lastRecipes.size() >= 64) {
                 lastRecipes.clear();
             }
             lastRecipes.add(id);
         }
+        long use = selected == null ? 1L : Math.max(1L, selected.parallels);
+        lastParallel = use;
+        availableParallel = Math.max(0L, availableParallel - use);
     }
 }

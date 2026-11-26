@@ -1380,6 +1380,10 @@ public class NanochipThreadedJadeProvider implements IBlockComponentProvider, IS
             runs += batch.parallels();
         }
         data.putLong(NanochipJadeKeys.KEY_THREAD_RUNS, runs);
+        // ★ 0.3.514：GTO 三个并行读数（上限 / 可用 / 上次实际）；不实现的老逻辑写 0，客户端据此不显示。
+        data.putLong(NanochipJadeKeys.KEY_MAX_PARALLEL, logic.maxParallel());
+        data.putLong(NanochipJadeKeys.KEY_AVAILABLE_PARALLEL, logic.availableParallel());
+        data.putLong(NanochipJadeKeys.KEY_LAST_PARALLEL, logic.lastParallel());
         data.put(NanochipJadeKeys.KEY_THREAD_LIST, list);
         // 原生条会被 mixin 按 KEY_THREAD_LIMIT 取消；这里把所有批次都交给自绘。
         data.putInt(NanochipJadeKeys.KEY_MIRRORED_SLOT, -1);
