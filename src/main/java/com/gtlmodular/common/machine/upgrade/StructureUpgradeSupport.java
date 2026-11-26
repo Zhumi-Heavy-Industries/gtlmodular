@@ -36,6 +36,16 @@ public final class StructureUpgradeSupport {
     public static StructureTierLayout layout(Supplier<BlockPattern> pattern,
                                              Supplier<String[][]> slices,
                                              char tierSymbol) {
+        return layout(pattern, slices, ch -> ch == tierSymbol);
+    }
+
+    /**
+     * GTO 的可选模块往往占多个符号位（例如木化工厂跨配方模块的 {@code a/b/t/d} 舱面），
+     * 因此分类器按「符号是否属于模块」判定。
+     */
+    public static StructureTierLayout layout(Supplier<BlockPattern> pattern,
+                                             Supplier<String[][]> slices,
+                                             java.util.function.Predicate<Character> tierCells) {
         return new StructureTierLayout(1, 2,
                 pattern::get,
                 (aisle, row, column) -> {
@@ -47,7 +57,7 @@ public final class StructureUpgradeSupport {
                     if (column < 0 || column >= line.length()) {
                         return 1;
                     }
-                    return line.charAt(column) == tierSymbol ? 2 : 1;
+                    return tierCells.test(line.charAt(column)) ? 2 : 1;
                 });
     }
 

@@ -101,8 +101,8 @@ public final class PetrochemMachines {
 
         PETROCHEMICAL_PLANT = GTLModularMachines.REGISTRATE
                 .multiblock("petrochemical_plant", holder -> new PetrochemicalPlantMachine(holder,
-                        () -> PetrochemicalPlantStructures.build(PETROCHEMICAL_PLANT),
-                        PetrochemicalPlantStructures::slices))
+                        () -> PetrochemicalPlantStructures.buildUpgraded(PETROCHEMICAL_PLANT),
+                        PetrochemicalPlantStructures::upgradedSlices, "!#$%&()*123456789"))
                 // GTO 的 .nonYAxisRotation()
                 .rotationState(RotationState.NON_Y_AXIS)
                 .tier(GTValues.UEV)
@@ -112,7 +112,7 @@ public final class PetrochemMachines {
                 .recipeModifier((machine, recipe, params, result) ->
                         OverclockProfiles.apply(machine, recipe, params, result))
                 .appearanceBlock(PetrochemMachines::appearanceBlock)
-                .pattern(PetrochemicalPlantStructures::build)
+                .pattern(PetrochemicalPlantStructures::buildUpgraded)
                 .workableCasingRenderer(CASING_TEXTURE, PETROCHEM_OVERLAY)
                 .langValue("集成石油化工处理工厂")
                 .tooltips(tooltips("petrochemical_plant", PETROCHEM_TOOLTIP_LINES))
@@ -136,8 +136,8 @@ public final class PetrochemMachines {
 
         FUEL_REFINING_COMPLEX = GTLModularMachines.REGISTRATE
                 .multiblock("fuel_refining_complex", holder -> new FuelRefiningComplexMachine(holder,
-                        () -> FuelRefiningComplexStructures.build(FUEL_REFINING_COMPLEX),
-                        FuelRefiningComplexStructures::slices))
+                        () -> FuelRefiningComplexStructures.buildUpgraded(FUEL_REFINING_COMPLEX),
+                        FuelRefiningComplexStructures::upgradedSlices, "!#$013456789"))
                 .rotationState(RotationState.NON_Y_AXIS)
                 .tier(GTValues.UEV)
                 .recipeType(recipeType)
@@ -145,7 +145,7 @@ public final class PetrochemMachines {
                 // 并行由 FuelRefiningComplexMachine#parallelMultiplier 用同一温度式子给出。
                 .recipeModifier(GTRecipeModifiers::ebfOverclock)
                 .appearanceBlock(PetrochemMachines::appearanceBlock)
-                .pattern(FuelRefiningComplexStructures::build)
+                .pattern(FuelRefiningComplexStructures::buildUpgraded)
                 .workableCasingRenderer(CASING_TEXTURE, FUEL_OVERLAY)
                 .langValue("燃料精炼复合体")
                 .tooltips(tooltips("fuel_refining_complex", FUEL_TOOLTIP_LINES))

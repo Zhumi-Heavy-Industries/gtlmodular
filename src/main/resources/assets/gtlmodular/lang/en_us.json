@@ -1735,5 +1735,9 @@
   "gtlmodular.fuel_refining_complex.tooltip.4": "§cLaser hatch: up to 4 inputs; exactly one maintenance hatch",
   "gtlmodular.fuel_refining_complex.tooltip.5": "§dModule port: the 26 ^ faces accept thread (<=1) / overclock / parallel (<=1) hatches",
   "gtlmodular.fuel_refining_complex.tooltip.6": "§9Recipe type: Fuel Refining (gtceu:fuel_refining)",
-  "gtlmodular.fuel_refining_complex.tooltip.7": "§8Runs the pack's existing fuel refining recipes; no duplicate recipe table"
+  "gtlmodular.fuel_refining_complex.tooltip.7": "§8Runs the pack's existing fuel refining recipes; no duplicate recipe table",
+  "gtlmodular.structure_upgrade.component_assembler": "§7Tier 2: GTO assembly/power extension (unlocks hatch slots and higher casings)",
+  "gtlmodular.structure_upgrade.wood_biomass_factory": "§7Tier 2: GTO cross-recipe module (thread and overclock hatches)",
+  "gtlmodular.structure_upgrade.petrochemical_plant": "§7Tier 2: GTO multithreading extension (thread and overclock hatches)",
+  "gtlmodular.structure_upgrade.fuel_refining_complex": "§7Tier 2: GTO cross-recipe module (thread and overclock hatches)"
 }

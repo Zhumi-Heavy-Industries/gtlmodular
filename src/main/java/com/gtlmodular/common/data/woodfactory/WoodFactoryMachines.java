@@ -65,8 +65,8 @@ public final class WoodFactoryMachines {
 
         WOOD_BIOMASS_FACTORY = GTLModularMachines.REGISTRATE
                 .multiblock("wood_biomass_factory", holder -> new WoodBiomassFactoryMachine(holder,
-                        () -> WoodFactoryStructures.build(WOOD_BIOMASS_FACTORY),
-                        WoodFactoryStructures::slices))
+                        () -> WoodFactoryStructures.buildUpgraded(WOOD_BIOMASS_FACTORY),
+                        WoodFactoryStructures::upgradedSlices, "!#$%&012356789"))
                 // GTO 的 .nonYAxisRotation()
                 .rotationState(RotationState.NON_Y_AXIS)
                 // 控制器外壳 = 高能机壳族（GTO 原机 .block(GTBlocks.HIGH_POWER_CASING)）
@@ -79,7 +79,7 @@ public final class WoodFactoryMachines {
                 .recipeModifier((machine, recipe, params, result) ->
                         com.gtlmodular.common.machine.fuel.OverclockProfiles.apply(machine, recipe, params, result))
                 .appearanceBlock(WoodFactoryMachines::appearanceBlock)
-                .pattern(WoodFactoryStructures::build)
+                .pattern(WoodFactoryStructures::buildUpgraded)
                 .workableCasingRenderer(CASING_TEXTURE, OVERLAY_TEXTURE)
                 .langValue("集成木质生物质工厂")
                 .tooltips(tooltips())

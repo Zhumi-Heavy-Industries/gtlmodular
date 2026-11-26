@@ -63,12 +63,14 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
 
     public ComponentAssemblerMachine(IMachineBlockEntity holder, int threads, int maxRecipeTier,
                                      Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
+                                     String tierChars,
                                      Object... args) {
         super(holder, args);
         this.threads = threads;
         this.maxRecipeTier = maxRecipeTier;
         this.structureTierTrait = new StructureTierTrait(this,
-                StructureUpgradeSupport.layout(pattern, slices, 'I'),
+                StructureUpgradeSupport.layout(pattern, slices,
+                        ch -> tierChars.indexOf(ch) >= 0),
                 null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
     }
 
@@ -82,10 +84,17 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
         if (tier != 2) {
             return null;
         }
+        if (threads >= 8) {
+            // 大型机已带装配扩展段 ⇒ 对应 GTO 的 POWER 扩展（激光仓 ≤2 + 并行仓）。
+            return StructureUpgradeSupport.requirement(
+                    StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4),
+                    StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
+        }
+        // 基础机对应 GTO 的 ASSEMBLY 扩展：外壳档位上限 IV→UV，开放 IO 与加速仓。
         return StructureUpgradeSupport.requirement(
                 StructureUpgradeSupport.cost("gtlcore:multi_functional_casing", 64),
                 StructureUpgradeSupport.cost("gtlcore:process_machine_casing", 64),
-                StructureUpgradeSupport.cost("gtladditions:thread_modifier_hatch", 4));
+                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
     }
 
     @Override
@@ -111,6 +120,7 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     public void addDisplayText(List<Component> textList) {
         super.addDisplayText(textList);
         textList.add(StructureUpgradeSupport.display(structureTierTrait));
+        textList.add(Component.translatable("gtlmodular.structure_upgrade.component_assembler"));
     }
 
     @Override

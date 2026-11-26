@@ -53,7 +53,7 @@ public final class ComponentAssemblerMachines {
         COMPONENT_ASSEMBLER = GTLModularMachines.REGISTRATE
                 .multiblock("component_assembler", holder -> new ComponentAssemblerMachine(holder, 4, GTValues.IV,
                         () -> ComponentAssemblerStructures.buildBase(COMPONENT_ASSEMBLER),
-                        ComponentAssemblerStructures::baseSlices))
+                        ComponentAssemblerStructures::baseSlices, "I"))
                 .rotationState(RotationState.ALL)
                 .tier(GTValues.IV)
                 .recipeType(recipeType)
@@ -76,7 +76,7 @@ public final class ComponentAssemblerMachines {
                 .multiblock("large_component_assembler",
                         holder -> new ComponentAssemblerMachine(holder, 8, GTValues.UV,
                                 () -> ComponentAssemblerStructures.buildFull(LARGE_COMPONENT_ASSEMBLER),
-                                ComponentAssemblerStructures::fullSlices))
+                                ComponentAssemblerStructures::fullSlices, "kn"))
                 .rotationState(RotationState.ALL)
                 .tier(GTValues.UV)
                 .recipeType(recipeType)

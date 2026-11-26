@@ -71,11 +71,13 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
     private static ManagedFieldHolder FIELD_HOLDER;
 
     public WoodBiomassFactoryMachine(IMachineBlockEntity holder,
-                                     Supplier<BlockPattern> pattern, Supplier<String[][]> slices) {
+                                     Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
+                                     String tierChars) {
         super(holder);
-        // H 位（聚变玻璃）作为二级结构专属格；老结构不强制这一位。
+        // GTO wood_dist_crossrecipe 的模块舱面（a/b/t/d）作为二级结构格；老结构不强制这一位。
         this.structureTierTrait = new StructureTierTrait(this,
-                StructureUpgradeSupport.layout(pattern, slices, 'H'),
+                StructureUpgradeSupport.layout(pattern, slices,
+                        ch -> tierChars.indexOf(ch) >= 0),
                 null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
     }
 
@@ -90,9 +92,10 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
             return null;
         }
         return StructureUpgradeSupport.requirement(
+                // GTO wood_dist_crossrecipe（跨配方模块）：解锁线程仓 / 超频仓。
                 StructureUpgradeSupport.cost("gtlcore:oxidation_resistant_hastelloy_n_mechanical_casing", 64),
-                StructureUpgradeSupport.cost("gtceu:fusion_glass", 32),
-                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4));
+                StructureUpgradeSupport.cost("gtlmodular:thread_hatch_uv", 1),
+                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
     }
 
     @Override
@@ -136,6 +139,7 @@ public class WoodBiomassFactoryMachine extends CoilWorkableElectricMultiblockMac
     public void addDisplayText(List<Component> textList) {
         super.addDisplayText(textList);
         textList.add(StructureUpgradeSupport.display(structureTierTrait));
+        textList.add(Component.translatable("gtlmodular.structure_upgrade.wood_biomass_factory"));
     }
 
     @Override

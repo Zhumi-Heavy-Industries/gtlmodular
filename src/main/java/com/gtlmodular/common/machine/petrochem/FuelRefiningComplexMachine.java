@@ -76,10 +76,12 @@ public class FuelRefiningComplexMachine extends CoilWorkableElectricMultiblockMa
     public static final int TEMPERATURE_BONUS_PER_TIER = 100;
 
     public FuelRefiningComplexMachine(IMachineBlockEntity holder,
-                 Supplier<BlockPattern> pattern, Supplier<String[][]> slices) {
+                 Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
+                                     String tierChars) {
         super(holder);
         this.structureTierTrait = new StructureTierTrait(this,
-                StructureUpgradeSupport.layout(pattern, slices, 'W'),
+                StructureUpgradeSupport.layout(pattern, slices,
+                        ch -> tierChars.indexOf(ch) >= 0),
                 null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
     }
 
@@ -94,9 +96,10 @@ public class FuelRefiningComplexMachine extends CoilWorkableElectricMultiblockMa
             return null;
         }
         return StructureUpgradeSupport.requirement(
+                // GTO fuel_refining_crossrecipe（跨配方模块）：开放线程仓 / 超频仓。
                 StructureUpgradeSupport.cost("gtlcore:iridium_casing", 64),
-                StructureUpgradeSupport.cost("gtceu:clean_machine_casing", 32),
-                StructureUpgradeSupport.cost("gtladditions:thread_modifier_hatch", 4));
+                StructureUpgradeSupport.cost("gtlmodular:thread_hatch_uv", 1),
+                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
     }
 
     @Override
@@ -140,6 +143,7 @@ public class FuelRefiningComplexMachine extends CoilWorkableElectricMultiblockMa
     public void addDisplayText(List<Component> textList) {
         super.addDisplayText(textList);
         textList.add(StructureUpgradeSupport.display(structureTierTrait));
+        textList.add(Component.translatable("gtlmodular.structure_upgrade.fuel_refining_complex"));
     }
 
     @Override

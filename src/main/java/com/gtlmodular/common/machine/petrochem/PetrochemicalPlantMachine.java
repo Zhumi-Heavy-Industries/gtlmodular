@@ -74,10 +74,12 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
     public static final int PARALLEL_TEMPERATURE_STEP = 900;
 
     public PetrochemicalPlantMachine(IMachineBlockEntity holder,
-                 Supplier<BlockPattern> pattern, Supplier<String[][]> slices) {
+                 Supplier<BlockPattern> pattern, Supplier<String[][]> slices,
+                                     String tierChars) {
         super(holder);
         this.structureTierTrait = new StructureTierTrait(this,
-                StructureUpgradeSupport.layout(pattern, slices, 'V'),
+                StructureUpgradeSupport.layout(pattern, slices,
+                        ch -> tierChars.indexOf(ch) >= 0),
                 null, Set.of("CoilType"), StructureUpgradeSupport.noOpSync());
     }
 
@@ -92,9 +94,10 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
             return null;
         }
         return StructureUpgradeSupport.requirement(
+                // GTO petrochem_crossrecipe（多线程扩展段）：开放线程仓 / 超频仓。
                 StructureUpgradeSupport.cost("gtlcore:iridium_casing", 64),
-                StructureUpgradeSupport.cost("gtceu:high_power_casing", 32),
-                StructureUpgradeSupport.cost("gtladditions:super_parallel_hatch", 4));
+                StructureUpgradeSupport.cost("gtlmodular:thread_hatch_uv", 1),
+                StructureUpgradeSupport.cost("gtlmodular:overclock_hatch_uv", 1));
     }
 
     @Override
@@ -138,6 +141,7 @@ public class PetrochemicalPlantMachine extends CoilWorkableElectricMultiblockMac
     public void addDisplayText(List<Component> textList) {
         super.addDisplayText(textList);
         textList.add(StructureUpgradeSupport.display(structureTierTrait));
+        textList.add(Component.translatable("gtlmodular.structure_upgrade.petrochemical_plant"));
     }
 
     @Override
