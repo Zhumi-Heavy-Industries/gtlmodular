@@ -58,6 +58,27 @@ public final class BatchFinder {
     private final Map<GTRecipeType, TableScanState> scanStates = new IdentityHashMap<>();
     private int lastSuccessfulTypeIdx;
 
+    /**
+     * ★ 0.3.517（spark q4h63KgJFZ）：整表候选的<b>按 tick 缓存</b>。
+     *
+     * <p>{@code getRecipes(true)} 每次都要展开 GTCEu 的 lookup 树并 flatMap，
+     * 同一 tick 内开 8 条线程就要重复展开 8 次；spark 里这一项占引擎自身耗时的约 1/3。
+     * 配方表在同一个 tick 内不会变，按 tick 缓存即可省掉重复展开；
+     * 跨 tick 自动失效 ⇒ 数据包 reload 最多一个 tick 后生效，无功能风险。
+     */
+    private long recipeListTick = Long.MIN_VALUE;
+    private final Map<GTRecipeType, List<GTRecipe>> tickRecipeLists = new IdentityHashMap<>();
+
+    private List<GTRecipe> recipesFor(GTRecipeType type) {
+        long now = machine.self().getOffsetTimer();
+        if (now != recipeListTick) {
+            tickRecipeLists.clear();
+            recipeListTick = now;
+        }
+        return tickRecipeLists.computeIfAbsent(type,
+                t -> t.getLookup().getLookup().getRecipes(true).filter(r -> !r.isFuel()).toList());
+    }
+
     public BatchFinder(IRecipeLogicMachine machine, IBatchLogicOwner owner,
                        ConcurrentRecipeEngine engine, BatchDiagnostics diag, CrossRecipeTrait trait) {
         this.machine = machine;
@@ -165,8 +186,7 @@ public final class BatchFinder {
                 state.cooldownUntil = now + idleCooldown(state);
                 return null;
             }
-            candidates = type.getLookup().getLookup().getRecipes(true)
-                    .filter(r -> !r.isFuel()).toList();
+            candidates = recipesFor(type);
             int total = candidates.size();
             if (total == 0) {
                 diag.reject("候选=0（配方表为空）", null, null);
