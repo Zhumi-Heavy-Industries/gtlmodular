@@ -35,9 +35,14 @@ public class SmallPcbFactoryMachine extends WorkableElectricMultiblockMachine
         com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
 
 
+    /**
+     * ★ 2026-11-27 修复：原来硬编码 1，但引擎按 {@link #PARALLEL} = 1024 在跑 ⇒
+     * Jade「同时处理至多 N 个配方」与 gtlcore 批处理都读到 1，与真实并行不符。
+     * 改为委托引擎与显示共用的口径（本机 {@code usesParallelHatch=false} ⇒ 恒 1024）。
+     */
     @Override
     public int getMaxParallel() {
-        return 1;
+        return effectiveParallel();
     }
 
 

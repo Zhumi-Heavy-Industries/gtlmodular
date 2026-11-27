@@ -70,10 +70,8 @@ public final class CrossRecipeTrait {
     private int cachedThreads = 1;
     private int cachedParallel = 1;
     private boolean cachedRepeated = true;
-    private boolean cachedIndependent = true;
-
-    /** 简单线程循环计时（GTO 的 {@code TickTimeMonitor} 口径：只计数，不做纳秒采样）。 */
-    private long monitoredTicks;
+    /** ★ 0.3.524：独立线程默认关（对齐 GTO 未装无线能源仓的初始态）；refresh() 会覆盖为部件现值。 */
+    private boolean cachedIndependent = false;
 
     public CrossRecipeTrait(IRecipeLogicMachine machine, IThreadedRecipeMachine threaded,
                             ConcurrentRecipeEngine engine) {
@@ -113,16 +111,7 @@ public final class CrossRecipeTrait {
         cachedThreads = 1;
         cachedParallel = 1;
         cachedRepeated = true;
-        cachedIndependent = true;
-    }
-
-    /** 每 tick 的循环计数（诊断用）。 */
-    public void onEngineTick() {
-        monitoredTicks++;
-    }
-
-    public long monitoredTicks() {
-        return monitoredTicks;
+        cachedIndependent = false;
     }
 
     private void refresh() {
@@ -215,16 +204,6 @@ public final class CrossRecipeTrait {
         }
         long merged = (long) per * getThread();
         return (int) Math.min(Integer.MAX_VALUE, Math.max(1L, merged));
-    }
-
-    /** 已在跑的线程数（GTO 的 {@code useThread}）。 */
-    public int useThread() {
-        return engine.size();
-    }
-
-    /** 还能开几条（GTO 的 {@code availableThread}）。 */
-    public int availableThread() {
-        return Math.max(0, getThread() - useThread());
     }
 
     /** 当前显示用的配方（第 0 条线程）。 */

@@ -15,6 +15,7 @@ import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSet;
 import net.minecraft.nbt.CompoundTag;
+import org.jetbrains.annotations.Nullable;
 import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 import org.gtlcore.gtlcore.api.machine.trait.MEPatternRecipeHandlePart;
 import org.gtlcore.gtlcore.api.machine.trait.MEPart.IMEPatternPartMachine;
@@ -86,6 +87,12 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
 
     /** 找配方（跨表 / 分片 / 并行额度）。 */
     private final BatchFinder finder;
+
+    /**
+     * ★ 0.3.528：共享配方预取队列（Java 21 虚拟线程后台展开静态配方表）。
+     * 只在「独立线程开」时启用；关（合并模式）走 {@link BatchFinder#lookupMerged} 不用它。
+     */
+    private final RecipePrefetchQueue prefetch = new RecipePrefetchQueue();
 
     /** 诊断（拒绝原因 / 扫描明细 / 缺料探测）。 */
     private final BatchDiagnostics diag;
@@ -238,6 +245,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
                 energyBuffer.flushBack();
             }
             engine.resetRecipeLogic();     // 交回原逻辑：批次清空（已扣料不退）
+            resetPrefetch();               // ★ 0.3.528：交回原逻辑时停虚拟线程预取
         }
     }
 
@@ -314,6 +322,9 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             return;
         }
         scanForced = false;
+        // ★ 0.3.528：维护共享预取队列——独立线程开 + 引擎有空位时才让虚拟线程展开配方表。
+        //   队列只装静态配方表候选，主线程取用时仍走完整匹配/扣料链（见 BatchFinder.prefetchedCandidate）。
+        updatePrefetchQueue();
         // ★ 2026-11-10：能源缓冲——安装检查 + 到点批量补能（每 N tick 才穿一次能源仓）。
         if (energyBuffer != null) {
             energyBuffer.tick();
@@ -327,7 +338,6 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         }
         // ①②③：逐条推进 → 摘掉涨满的 → 有空位就通过 trait.lookupRecipe 开新线程
         finder.beginTick();
-        trait.onEngineTick();
         engine.tick(new HostImpl());
 
         // ③.4 停滞看门狗（★ 2026-11-07）：引擎里还有批次、却连续 200 tick 一点进度都没有 ⇒ 打 WARN。
@@ -342,6 +352,50 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         writeDisplay();
         // ★ 2026-11-08（按需订阅）：本 tick 收尾时，空表 + 无料 + 没被强制 ⇒ 退订。
         maybeIdleUnsubscribe();
+    }
+
+    /**
+     * ★ 0.3.528：维护共享预取队列的虚拟线程生命周期与扫描范围。
+     *
+     * <p>只在「独立线程开 + 还有空位」时需要预取：虚拟线程后台展开<b>静态配方表</b>，
+     * 主线程 {@code BatchFinder} 从队列 poll 候选。关（合并模式）或线程开满时停线程省 CPU。
+     */
+    private void updatePrefetchQueue() {
+        boolean independent = trait.isIndependentThread();
+        boolean need = independent && engine.size() < Math.max(1, trait.slotCount());
+        if (!independent) {
+            prefetch.enable();   // 保持可用，切回来时能立刻启动
+        }
+        if (need) {
+            prefetch.setScanTypes(machine.getRecipeTypes());
+        }
+        prefetch.tick(need);
+    }
+
+    /** 供 {@link BatchFinder} 从共享队列取预取候选（null = 队列空，回退原扫描）。 */
+    @Override
+    @Nullable
+    public GTRecipe prefetchedCandidate() {
+        return prefetch.poll();
+    }
+
+    /** Jade/诊断用：预取队列状态。 */
+    public int prefetchQueued() {
+        return prefetch.queued();
+    }
+
+    public long prefetchCount() {
+        return prefetch.prefetched();
+    }
+
+    public long prefetchConsumed() {
+        return prefetch.consumed();
+    }
+
+    /** 切模式 / 拆机 / 结构失形：停线程并清空队列。 */
+    public void resetPrefetch() {
+        prefetch.reset();
+        prefetch.enable();
     }
 
     /** ④ 展示回写：第 0 条批次 → 基类同步字段；空表 → 清零并置 IDLE。 */
@@ -512,6 +566,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
      */
     public void pokeScan() {
         finder.clearCooldowns();
+        engine.pokeOpen();   // ★ 0.3.530：放料叫醒开批冷却，立即按新料开线程
         diag.onPoke();
         // ★ 2026-11-08：原逻辑代跑时，AE 推样板 / 换电路同样要叫醒它（它不是本引擎的批次表）
         if (originalActive()) {
@@ -562,6 +617,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
     public void resetRecipeLogic() {
         super.resetRecipeLogic();
         engine.clear();
+        engine.pokeOpen();   // ★ 0.3.530：复位清掉开批冷却
         trait.onStructureInvalid();   // ★ 2026-11-26：结构变了，trait 的部件缓存一起作废
         // ★ 2026-11-10：复位时把缓存的电退回能源仓（不能凭空留/丢）
         if (energyBuffer != null) {
@@ -572,6 +628,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
             original.resetRecipeLogic();
         }
         finder.reset();
+        resetPrefetch();   // ★ 0.3.528：停虚拟线程预取、清队列（拆机/失形不留后台线程）
         diag.resetForReload();
     }
 
@@ -615,6 +672,7 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         }
         super.loadCustomPersistedData(tag);
         finder.reset();
+        resetPrefetch();   // ★ 0.3.528：读档时旧队列作废，虚拟线程下一 tick 按需重启
         diag.resetForReload();
         engine.load(tag);
         // ★ 2026-11-10：读回电网取电身份（缺键 ⇒ 保持 null，只有能源仓可用）
@@ -704,7 +762,25 @@ public class ThreadedRecipeLogic extends RecipeLogic implements IThreadBatchLogi
         @Override
         public Thread openThread() {
             GTRecipe recipe = trait.lookupRecipe(new ThreadCharge());
-            return recipe == null ? null : new Thread(recipe, Thread.nextId());
+            if (recipe == null) {
+                return null;
+            }
+            // ★ 0.3.529：独立线程开 + 预付费开 ⇒ 一次性把该批全程总电从电网拉进缓存。
+            //   之后每 tick 的 EU 从缓存付，绕过机器功率上限 ≈ GTO「每线程独立拉满功率」。
+            //   电网不够时 prepay 返回不足额/0，逐 tick 补电兜底，不卡开批。
+            if (trait.isIndependentThread() && energyBuffer != null && energyBuffer.prepayEnabled()) {
+                long eut = com.gregtechceu.gtceu.api.recipe.RecipeHelper.getInputEUt(recipe);
+                if (eut > 0L && recipe.duration > 0) {
+                    long total;
+                    try {
+                        total = Math.multiplyExact(eut, (long) recipe.duration);
+                    } catch (ArithmeticException overflow) {
+                        total = Long.MAX_VALUE;
+                    }
+                    energyBuffer.prepay(total);
+                }
+            }
+            return new Thread(recipe, Thread.nextId());
         }
 
         /** 每 tick 输入（见 {@link BatchIo#tickInputs}）。 */

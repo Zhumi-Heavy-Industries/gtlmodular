@@ -201,6 +201,36 @@ public final class EnergyBufferHandler implements IRecipeHandler<Long> {
         return null;
     }
 
+    // ------------------------------------------------------------------ 预付（0.3.529）
+
+    /**
+     * ★ 0.3.529：一次性从电网拉 {@code amount} EU 进缓存（追平 GTO「每线程独立拉满功率」）。
+     *
+     * <p>调用方（独立线程开）在开批时把该批全程总电预付进来 ⇒ 之后每 tick 的 EU 从缓存付，
+     * 不再受机器功率上限约束（缓存足够时 {@link #handleRecipeInner} 的 simulate 直接放行）。
+     * 预付的电记进 {@link #gridEU}，复位/存档时由 {@link #flushBack()} 原路退回电网。
+     *
+     * @return 实际预付到的量（电网不足时小于 amount；0 = 没拉到，调用方回退逐 tick 补电）
+     */
+    public long prepay(long amount) {
+        if (amount <= 0L || disabled || !GTLModularConfig.isThreadingGridPrepay()
+                || !GTLModularConfig.isThreadingGridPower()) {
+            return 0L;
+        }
+        long taken = takeFromGrid(amount);
+        if (taken > 0L) {
+            cachedEU = saturatedAdd(cachedEU, taken);
+            gridEU = saturatedAdd(gridEU, taken);
+        }
+        return taken;
+    }
+
+    /** 是否处于预付模式（配置开 + 电网取电开 + 缓冲可用）。 */
+    public boolean prepayEnabled() {
+        return !disabled && GTLModularConfig.isThreadingGridPrepay()
+                && GTLModularConfig.isThreadingGridPower();
+    }
+
     // ------------------------------------------------------------------ 电网
 
     @Nullable
@@ -354,8 +384,4 @@ public final class EnergyBufferHandler implements IRecipeHandler<Long> {
         return 1;
     }
 
-    /** 只读：当前缓存余额（诊断/显示用）。 */
-    public long getCachedEU() {
-        return cachedEU;
-    }
 }

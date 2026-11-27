@@ -3,6 +3,7 @@ package com.gtlmodular.common.machine.multiblock;
 import com.gregtechceu.gtceu.api.block.ICoilType;
 import com.gregtechceu.gtceu.api.machine.IMachineBlockEntity;
 import com.gregtechceu.gtceu.api.machine.multiblock.CoilWorkableElectricMultiblockMachine;
+import com.gregtechceu.gtceu.api.pattern.MultiblockState;
 import com.gregtechceu.gtceu.common.block.CoilBlock;
 import com.gtlmodular.GTLModular;
 import com.gtlmodular.common.config.GTLModularConfig;
@@ -118,8 +119,15 @@ public class CoilLargeChemicalReactorMachine extends CoilWorkableElectricMultibl
         if (getLevel() == null || getLevel().isClientSide()) {
             return;
         }
+        // ★ 2026-11-27 崩溃修复：结构被拆/失效的瞬间 isFormed() 可能仍为 true，
+        //   但 MultiblockState.cache 已被清成 null（getCache() 会直接 .stream() 空指针）。
+        //   没有缓存可查就本轮跳过，等下一秒巡检或重新成型即可，绝不能让巡检崩服。
+        MultiblockState state = getMultiblockState();
+        if (state == null || state.cache == null) {
+            return;
+        }
         ICoilType found = null;
-        for (BlockPos pos : getMultiblockState().getCache()) {
+        for (BlockPos pos : state.getCache()) {
             Block block = getLevel().getBlockState(pos).getBlock();
             if (block instanceof CoilBlock coil && coil.coilType != null) {
                 found = coil.coilType;

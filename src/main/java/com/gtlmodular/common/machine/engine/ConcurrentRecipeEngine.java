@@ -79,6 +79,19 @@ public final class ConcurrentRecipeEngine {
     /** ★ 0.3.521：每 tick 收尾线程的复用暂存（避免 Iterator 与临时 list 分配）。 */
     private final List<Thread> finishedScratch = new ArrayList<>();
 
+    /**
+     * ★ 0.3.530：<b>料驱动按需开线程</b>——上次开批断档后的冷却截止 tick。
+     *
+     * <p>料只够开 3 条时，开满 3 条后第 4 次 openThread 会返回 null（断档）。
+     * 若不冷却，每 tick 都会重试 8 次空扫。这里在断档后暂停开批若干 tick，
+     * 直到 {@link #pokeOpen()}（玩家放料 / AE 推样板）或冷却到期才重试。
+     * ⇒ 实际线程数 = 真正有料能跑的条数，不空转、不预开；slots 只是天花板。
+     */
+    private long openCooldownUntil = Long.MIN_VALUE;
+
+    /** 断档冷却 tick 数（短，避免断档后新料晚一个窗口才被看到）。 */
+    private static final int OPEN_COOLDOWN_TICKS = 5;
+
     public int size() {
         return threads.size();
     }
@@ -131,13 +144,38 @@ public final class ConcurrentRecipeEngine {
         }
 
         int slots = Math.max(1, host.slots());
-        while (threads.size() < slots) {
-            Thread thread = host.openThread();
-            if (thread == null) {
-                break;
-            }
-            threads.add(thread);
+        // ★ 0.3.530：冷却期内不开新批（上次已断档 ⇒ 料不够，避免每 tick 空扫 MAX_STARTS_PER_TICK 次）。
+        long now = 0L;
+        try {
+            var self = host.machine() == null ? null : host.machine().self();
+            now = self == null ? 0L : self.getOffsetTimer();
+        } catch (Throwable ignored) {
+            // 取不到时钟就当作一直在冷却外（退回旧的每 tick 尝试，功能不丢）
+            now = Long.MAX_VALUE;
         }
+        if (threads.size() < slots && now >= openCooldownUntil) {
+            boolean openedAny = false;
+            while (threads.size() < slots) {
+                Thread thread = host.openThread();
+                if (thread == null) {
+                    break;
+                }
+                threads.add(thread);
+                openedAny = true;
+            }
+            // 没开出来且有空位 ⇒ 断档：冷却一小段，等放料/ME 推样板（pokeOpen）叫醒。
+            if (!openedAny && threads.size() < slots && now != Long.MAX_VALUE) {
+                openCooldownUntil = now + OPEN_COOLDOWN_TICKS;
+            }
+        }
+    }
+
+    /**
+     * ★ 0.3.530：放料 / AE 推样板后立刻清掉开批冷却（下一次 tick 马上重新找配方）。
+     * 由 {@link ThreadedRecipeLogic#pokeScan()} 转发。
+     */
+    public void pokeOpen() {
+        openCooldownUntil = Long.MIN_VALUE;
     }
 
     /** 存每条线程的配方本体、单独存的配方 id、进度。 */

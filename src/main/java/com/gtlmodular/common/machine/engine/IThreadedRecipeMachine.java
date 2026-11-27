@@ -58,6 +58,25 @@ public interface IThreadedRecipeMachine {
     }
 
     /**
+     * ★ 2026-11-27：引擎与 Jade 共用的<b>并行上限唯一口径</b>。
+     *
+     * <p>{@code max(1, parallelMultiplier()) × (usesParallelHatch() ? 并行仓数 : 1)}，
+     * long 乘后钳到 int。实现 {@code ParallelMachine} 的机器请直接把
+     * {@code getMaxParallel()} 委托到这里，避免再出现「Jade 显示 1、引擎实际按 1024 跑」的错配。
+     */
+    default int effectiveParallel() {
+        long parallel = Math.max(1L, parallelMultiplier());
+        if (usesParallelHatch()
+                && this instanceof org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine capabilityMachine) {
+            var hatch = capabilityMachine.getParallelHatch();
+            if (hatch != null) {
+                parallel *= Math.max(1L, hatch.getCurrentParallel());
+            }
+        }
+        return (int) Math.min(Integer.MAX_VALUE, parallel);
+    }
+
+    /**
      * ★ 2026-11-05：<b>结构里线程仓的当前设定值之和</b>（没装 / 未成形 ⇒ 0）。
      *
      * <p>「通用引擎的线程数跟线程仓相关」的统一读口：所有实现本接口的机器都可以写成

@@ -59,39 +59,66 @@ public final class BatchFinder {
     private int lastSuccessfulTypeIdx;
 
     /**
+     * ★ 0.3.528：从共享队列 poll 出来但不属于本表的候选，暂存到下次轮转（避免跨表时白丢）。
+     * 只在主线程单 tick 内读写，无并发问题；beginTick 时不清，跨 tick 保留。
+     */
+    private final List<GTRecipe> prefetchPending = new ArrayList<>();
+
+    /**
+     * ★ 0.3.531：预取候选的复用暂存。{@link #findForType} 每 tick 会被跨表轮转调用多次，
+     * 原先每次都 {@code new ArrayList<>()}；这里复用同一份，函数开头 clear、返回的只是 GTRecipe 引用，
+     * 不存在跨调用持有 list 的路径（不匹配的候选逐个转存 {@link #prefetchPending}）。
+     */
+    private final List<GTRecipe> prefetchScratch = new ArrayList<>();
+
+    /**
      * ★ 0.3.521：整表候选的<b>全局共享缓存</b>（0.3.517 的按机器 tick 缓存再进一步）。
      *
      * <p>0.3.517 的缓存是每台机器一份、每 tick 清空：机器多时同一 tick 仍有 N 次重复展开。
      * 配方表是全局只读的，改成 {@code static} 共享后所有机器只展开一次；用
      * {@code Branch} 引用 + 两个节点表的 size 做指纹，reload/换表下一 tick 自动重建。
-     * WeakHashMap ⇒ 配方表被卸载时条目自动回收，不泄漏。
+     * ★ 0.3.528：WeakHashMap → ConcurrentHashMap。虚拟线程预取与主线程扫描会并发读写这张表，
+     * WeakHashMap 非线程安全，并发 put 会破坏内部链。配方表是注册表全局对象、生命周期随游戏，
+     * 用强引用不泄漏（条目数 = 配方表种类数，通常个位数）。
      */
     private static final class CachedTable {
-        Object branch;
-        int nodes;
-        int specialNodes;
-        List<GTRecipe> recipes;
+        final Object branch;
+        final int nodes;
+        final int specialNodes;
+        final List<GTRecipe> recipes;
+
+        CachedTable(Object branch, int nodes, int specialNodes, List<GTRecipe> recipes) {
+            this.branch = branch;
+            this.nodes = nodes;
+            this.specialNodes = specialNodes;
+            this.recipes = recipes;
+        }
+
+        boolean matches(Object branch, int nodes, int specialNodes) {
+            return this.branch == branch && this.nodes == nodes && this.specialNodes == specialNodes;
+        }
     }
 
-    private static final Map<GTRecipeType, CachedTable> TABLE_CACHE = new java.util.WeakHashMap<>();
+    private static final Map<GTRecipeType, CachedTable> TABLE_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 
-    private static List<GTRecipe> recipesFor(GTRecipeType type) {
-        CachedTable cached = TABLE_CACHE.get(type);
+    /** ★ 0.3.528：改为包可见，供虚拟线程预取队列读全局静态配方表（只读，安全）。 */
+    static List<GTRecipe> recipesFor(GTRecipeType type) {
         var branch = type.getLookup().getLookup();
         int nodes = branch.getNodes().size();
         int special = branch.getSpecialNodes().size();
-        if (cached != null && cached.branch == branch && cached.nodes == nodes
-                && cached.specialNodes == special && cached.recipes != null) {
+        CachedTable cached = TABLE_CACHE.get(type);
+        if (cached != null && cached.matches(branch, nodes, special)) {
             return cached.recipes;
         }
-        List<GTRecipe> recipes = branch.getRecipes(true).filter(r -> !r.isFuel()).toList();
-        CachedTable fresh = new CachedTable();
-        fresh.branch = branch;
-        fresh.nodes = nodes;
-        fresh.specialNodes = special;
-        fresh.recipes = recipes;
-        TABLE_CACHE.put(type, fresh);
-        return recipes;
+        // compute：并发下同一张表只展开一次；返回的 recipes 是不可变 toList()，多线程读安全。
+        CachedTable fresh = TABLE_CACHE.compute(type, (k, old) -> {
+            if (old != null && old.matches(branch, nodes, special)) {
+                return old;
+            }
+            List<GTRecipe> recipes = branch.getRecipes(true).filter(r -> !r.isFuel()).toList();
+            return new CachedTable(branch, nodes, special, recipes);
+        });
+        return fresh.recipes;
     }
 
     public BatchFinder(IRecipeLogicMachine machine, IBatchLogicOwner owner,
@@ -118,6 +145,7 @@ public final class BatchFinder {
     public void reset() {
         scanStates.clear();
         lastSuccessfulTypeIdx = 0;
+        prefetchPending.clear();
     }
 
     private static long idleCooldown(TableScanState state) {
@@ -139,9 +167,14 @@ public final class BatchFinder {
         // 本轮只读快照：trait 已经按 tick 缓存了部件读数，这里只取一次标量。
         trait.refreshParallelStats();   // ★ 0.3.514：刷新 GTO 三个并行读数
         boolean repeated = trait.isRepeatedRecipes();
-        // ★ GTO 口径：单条线程的并行额度由 trait 一次给出。
-        //   独立线程开 = 每线程并行；关 = 每线程并行 × 线程数（唯一一条吃下全部额度）。
-        //   不再有「在跑占用扣减」——非独立模式只有 1 条线程，引擎不会同时开第二条抢额度。
+
+        // ★ 0.3.524：独立线程关 ⇒ 合并模式——扫出所有能跑的配方，合成一条、单进度条。
+        //   判定等级 → 合并配方 → 算超频（对用户截图口径的实现）。
+        if (!trait.isIndependentThread()) {
+            return lookupMerged(charge, repeated);
+        }
+
+        // ★ GTO 口径：单条线程的并行额度由 trait 一次给出（独立线程开 = 每线程并行）。
         int parallelBudget = trait.parallelBudget();
         ObjectSet<ResourceLocation> runningIds = null;
         if (!repeated) {
@@ -178,6 +211,85 @@ public final class BatchFinder {
         return null;
     }
 
+    /**
+     * ★ 0.3.524：独立线程关的合并模式。
+     *
+     * <p>判定等级 → 合并配方 → 算超频：
+     * 扫出所有表的可跑配方（逐条输入匹配 + 机器准入门槛），
+     * 用 {@link RecipeMerger} 合成一条（输入/产物/每 tick 输入全汇总），
+     * 再对合并结果走一次机器配方修改器（超频/等级折算），最后按 charge 提交。
+     */
+    private GTRecipe lookupMerged(@Nullable RecipeCharge charge, boolean repeated) {
+        List<GTRecipe> accepted = new ArrayList<>();
+        GTRecipeType[] types = machine.getRecipeTypes();
+        List<GTRecipeType> scanTypes = (owner.crossTableScan() && types != null && types.length > 1)
+                ? List.of(types) : List.of(machine.getRecipeType());
+        ObjectSet<ResourceLocation> seenIds = repeated ? null
+                : new it.unimi.dsi.fastutil.objects.ObjectOpenHashSet<>();
+
+        for (GTRecipeType type : scanTypes) {
+            if (type == null) {
+                continue;
+            }
+            diag.startTableScan(type);
+            List<GTRecipe> candidates = owner.meCachedCandidates(type);
+            if (candidates.isEmpty()) {
+                if (!owner.hasRealItemOrFluidInput() && !BatchSupport.hasWaitingMePattern(machine)) {
+                    continue;
+                }
+                candidates = recipesFor(type);
+            }
+            int limit = Math.min(SCAN_BUDGET, candidates.size());
+            for (int i = 0; i < limit; i++) {
+                GTRecipe raw = candidates.get(i);
+                if (raw == null) {
+                    continue;
+                }
+                diag.addCandidate();
+                // 同配方关：合并里同一种配方只收一份。
+                if (!repeated && raw.getId() != null && !seenIds.add(raw.getId())) {
+                    continue;
+                }
+                if (!RecipeRunnerHelper.matchRecipeInput(machine, raw)) {
+                    diag.noteScanReject(type, raw, "合并：原料不足", null);
+                    continue;
+                }
+                if (!owner.acceptsCandidate(raw)) {
+                    diag.noteScanReject(type, raw, "合并：机器准入门槛拒绝", null);
+                    continue;
+                }
+                accepted.add(raw);
+            }
+        }
+
+        GTRecipe merged = RecipeMerger.merge(accepted);
+        if (merged == null) {
+            diag.reject("合并模式：没有可合并的配方", null, null);
+            return null;
+        }
+        // 算超频：对合并后的整条配方走一次机器修改器。
+        GTRecipe selected = owner.modifyRecipe(merged);
+        if (selected == null) {
+            diag.reject("合并模式：合并配方修改器返回 null", null, null);
+            return null;
+        }
+        if (!RecipeRunnerHelper.matchRecipeInput(machine, selected)) {
+            diag.reject("合并模式：合并后输入不足", null, null);
+            return null;
+        }
+        if (charge != null) {
+            if (!charge.check(selected) || !charge.commit()) {
+                charge.rollback();
+                diag.reject("合并模式：资源预留失败", null, null);
+                return null;
+            }
+        }
+        startsThisTick++;
+        diag.reject("合并配方已就绪（" + accepted.size() + " 条）", null, null);
+        trait.noteThreadOpened(merged, selected);
+        return selected;
+    }
+
     private GTRecipe findForType(GTRecipeType type, @Nullable RecipeCharge charge,
                                  boolean repeated, int parallelBudget,
                                  @Nullable ObjectSet<ResourceLocation> runningIds) {
@@ -192,7 +304,37 @@ public final class BatchFinder {
         boolean fromMeCache = !candidates.isEmpty();
         int start = 0;
         int limit;
-        if (fromMeCache) {
+        // ★ 0.3.528：优先消费虚拟线程预取的候选（只含本表的）。它们来自全局静态配方表，
+        //   主线程拿到后仍走下面完整的「匹配→折算→预留→commit」链，安全边界不变。
+        //   不属本表的放进 prefetchPending，等轮到那张表时用，不白丢。
+        List<GTRecipe> prefetched = null;
+        if (!fromMeCache) {
+            prefetched = prefetchScratch;
+            prefetched.clear();
+            for (int i = prefetchPending.size() - 1; i >= 0; i--) {
+                GTRecipe held = prefetchPending.get(i);
+                if (held.getType() == type) {
+                    prefetched.add(held);
+                    prefetchPending.remove(i);
+                }
+            }
+            for (int p = 0; p < SCAN_BUDGET && prefetched.size() < SCAN_BUDGET; p++) {
+                GTRecipe pre = owner.prefetchedCandidate();
+                if (pre == null) {
+                    break;
+                }
+                if (pre.getType() == type) {
+                    prefetched.add(pre);
+                } else {
+                    prefetchPending.add(pre);
+                }
+            }
+        }
+        if (prefetched != null && !prefetched.isEmpty()) {
+            candidates = prefetched;
+            limit = candidates.size();
+            diag.setCandidates(limit);
+        } else if (fromMeCache) {
             limit = candidates.size();
         } else {
             if (!owner.hasRealItemOrFluidInput() && !BatchSupport.hasWaitingMePattern(machine)) {

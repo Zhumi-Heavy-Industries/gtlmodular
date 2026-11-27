@@ -114,7 +114,7 @@ import java.util.List;
  *   <li>三个字段带 LDLib 的 {@code @DescSynced}（服务端权威 → 客户端显示；控件回调在服务端执行）；</li>
  *   <li>落盘走 {@link #saveCustomPersistedData}/{@link #loadCustomPersistedData} 的<b>追加键</b>
  *       （{@code GTLModularThreadCount} / {@code GTLModularRepeatedRecipes} /
- *       {@code GTLModularIndependentThread}），老存档没有这些键 ⇒ 回落成「上限 / 开 / 开」，与 GTO 默认一致；</li>
+ *       {@code GTLModularIndependentThread}），老存档没有这些键 ⇒ 回落成「上限 / 开 / 关」，独立线程默认关（GTO 口径：没装无线能源仓时不生效）；</li>
  *   <li>读档夹区间 {@code 1..上限}（上限由电压档位决定，见 {@link #threadsForTier(int)}）。</li>
  * </ul>
  *
@@ -128,11 +128,14 @@ import java.util.List;
  *   <li><b>并行重复配方</b>（{@code repeatedRecipes}，默认开）：
  *       开 = <b>同一条配方可以被多条线程同时跑</b>（吞吐优先；只有一种配方时也能吃满线程）；
  *       关 = 同一配方只占一条线程，多余线程去跑别的配方（<b>只有一种配方时这些线程会空转</b>）。</li>
- *   <li><b>独立线程</b>（{@code independentThread}，默认开）：
- *       开 = 每条线程<b>各有一份完整的并行/功率额度</b>（GTO：「每个线程都能独立拉取机器最大功率」）；
- *       关 = <b>只有 1 条线程</b>，但它的并行额度 = 每线程额度 × N
+ *   <li><b>独立线程</b>（{@code independentThread}，★ 0.3.524 起<b>默认关</b>，对齐 GTO 线程仓）：
+ *       开 = N 条线程并发，每条各一份完整并行/功率额度（GTO：「每个线程都能独立拉取机器最大功率」）；
+ *       关 = <b>只有 1 条线程、1 条进度条</b>，但它的并行额度 = 每线程额度 × N
  *       （GTO Wiki：「不再有多线程，最大并行数乘以线程数」，产能守恒、只是不并发跑多条）。
- *       不再要求无线能源仓（0.3.286 起，{@code gtocore.machine.wireless_enable} 前置已删）。</li>
+ *       ★ 跨配方要同时满足「独立线程开 + 并行重复配方关」：一条线程只做一个配方，
+ *       再来一种材料才解锁第 2 条线程（玩家截图逐字口径）。
+ *       不再要求无线能源仓（0.3.286 起，{@code gtocore.machine.wireless_enable} 前置已删）；
+ *       默认值改用「关」来表达 GTO 那句「独立线程需要安装无线能源仓后启用」的效果。</li>
  * </ul>
  * 落地位置：两开关都由引擎统一从部件现读（{@code IThreadedRecipeMachine#threadHatchRepeatedRecipes()} /
  * {@code threadHatchIndependent()}）—— 机器只要在结构里允许线程仓就直接生效，不需要任何额外适配。
@@ -176,9 +179,9 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
     @DescSynced
     private boolean repeatedRecipes = true;
 
-    /** 「独立线程」开关（GTO {@code iThread}，默认开；0.3.286 起不再有无线能源仓前置）。 */
+    /** 「独立线程」开关（GTO {@code iThread}；★ 0.3.524 起默认关，对齐 GTO 未装无线能源仓的初始态）。 */
     @DescSynced
-    private boolean independentThread = true;
+    private boolean independentThread = false;
 
     /**
      * @param holder 机器方块实体（GTCEu 标准）
@@ -281,7 +284,8 @@ public class ThreadHatchPartMachine extends TieredPartMachine implements IMultiP
                 ? Math.max(1, Math.min(max, tag.getInt(TAG_THREADS)))
                 : max;
         this.repeatedRecipes = !tag.contains(TAG_REPEATED) || tag.getBoolean(TAG_REPEATED);
-        this.independentThread = !tag.contains(TAG_INDEPENDENT) || tag.getBoolean(TAG_INDEPENDENT);
+        // ★ 0.3.524：缺键 ⇒ 回落成「关」（对齐 GTO 未装无线能源仓的初始态）；有键 ⇒ 尊重玩家已有设定。
+        this.independentThread = tag.contains(TAG_INDEPENDENT) && tag.getBoolean(TAG_INDEPENDENT);
     }
 
     // ---------------- 控制器界面里的补行（IThreadHatchPart 的信息口径） ----------------

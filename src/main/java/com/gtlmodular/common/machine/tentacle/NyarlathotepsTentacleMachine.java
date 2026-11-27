@@ -13,6 +13,7 @@ import com.gtlmodular.common.machine.engine.IThreadedRecipeMachine;
 import com.gtlmodular.common.machine.engine.ThreadedRecipeLogic;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import org.gtlcore.gtlcore.api.machine.trait.IRecipeCapabilityMachine;
 
 import java.util.HashSet;
 import java.util.List;
@@ -37,10 +38,11 @@ import com.gtlmodular.common.machine.thread.IThreadHatchPart;
  *       {@code gtceu:assembly_line}、{@code gtceu:circuit_assembly_line}（本整合包三张都在；
  *       取不到的自动跳过并告警，见 {@link com.gtlmodular.common.data.tentacle.NyarlathotepsTentacleMachines}）。
  *       表间切换走 GTCEu 原生的 {@code getActiveRecipeType()/setActiveRecipeType(int)}。</li>
- *   <li><b>并行只看线圈温度</b>（GTO 的 {@code coilParallel}）：GTO 的文案是
- *       「线圈温度每高出 900K，并行 ×2」，基准取第一档线圈 1800K ⇒
- *       {@code 并行 = 2^((温度-1800)/900)}，**再乘结构里并行仓的并行数**，
- *       乘积钳到 int 上限 21 亿（{@link #MAX_PARALLEL}）。</li>
+ *   <li><b>并行由并行仓决定，线圈温度再放大</b>（2026-11-27 队长口径）：
+ *       没有并行仓时并行恒为 1（不再因为高温线圈显示 10.7 亿）；
+ *       装了并行仓后 {@code 并行 = 并行仓数 × 2^((线圈温度-1800)/900)}，
+ *       乘积钳到 int 上限 21 亿（{@link #MAX_PARALLEL}）。
+ *       Jade 的「同时处理至多 N 个配方」与引擎的并行额度共用这一套口径。</li>
  *   <li><b>多条配方并发</b>：走本模组独立线程引擎 {@link ThreadedRecipeLogic}；
  *       <b>2026-11-01（0.3.281）起线程数 = 结构里 GTO 线程仓的线程数之和</b>，
  *       没有线程仓时 = 1，见 {@link #baseThreads()}。</li>
@@ -65,18 +67,26 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
 
 
     /**
-     * 本机并行上限：<b>线圈温度倍率 × 结构里并行仓的并行数</b>（long 乘再钳到 int）。
+     * 本机并行上限：<b>结构里并行仓的并行数 × 线圈温度倍率</b>（long 乘再钳到 int）。
      *
-     * <p>★ 2026-11-08 修正：原来恒返回 1，Jade 的「同时处理至多 N 个配方」与 gtlcore
-     * {@code BatchProcessing} 的常规并行上限都会读到 1（实际引擎按线圈倍率 × 并行仓在跑）。
+     * <p>★ 2026-11-27 修正（队长口径）：并行数随并行仓而变；<b>没装并行仓就是 1</b>，
+     * 不再因为线圈温度高而显示 1,073,741,824（2^30 饱和值）。线圈只在真的装了并行仓时
+     * 才进一步放大（见 {@link #parallelMultiplier()}）。
      * 实际并行应用仍只在 {@link ThreadedRecipeLogic} 里乘一次，本方法只如实报同一口径
      * （与 gtlcore {@code WorkableElectricParallelHatchMultipleRecipesMachine} 同构）。
      */
     @Override
     public int getMaxParallel() {
-        long hatch = org.gtlcore.gtlcore.common.data.GTLRecipeModifiers.getHatchParallel(this);
-        long total = Math.max(1L, (long) this.parallelMultiplier()) * Math.max(1L, hatch);
-        return (int) Math.min(Integer.MAX_VALUE, total);
+        return effectiveParallel();
+    }
+
+    /**
+     * 结构里是否真的装了标准并行仓（不是「仓的设定值 > 1」）。
+     * gtlcore 的 mixin 在没有并行仓 / 未成型时返回 null。
+     */
+    private boolean hasParallelHatch() {
+        return this instanceof IRecipeCapabilityMachine capabilityMachine
+                && capabilityMachine.getParallelHatch() != null;
     }
 
 
@@ -314,10 +324,15 @@ public class NyarlathotepsTentacleMachine extends CoilWorkableElectricMultiblock
     /**
      * 线圈温度 → 并行倍率：{@code 2^((温度-1800)/900)}，向下取整、封顶 {@link #MAX_PARALLEL}。
      *
-     * <p>未成形（线圈为 null）时按基准温度算 ⇒ 返回 1，不会 NPE。
+     * <p>★ 2026-11-27：线圈倍率<b>只在装了并行仓时生效</b>。没有并行仓 ⇒ 恒返回 1，
+     * 引擎（{@code CrossRecipeTrait} / {@code BatchFinder}）和 Jade 显示都跟着回到 1，
+     * 高温线圈不再凭空给出 10 亿并行。未成形（线圈为 null）时也返回 1，不会 NPE。
      */
     @Override
     public int parallelMultiplier() {
+        if (!hasParallelHatch()) {
+            return 1;
+        }
         ICoilType coil = getCoilType();
         int temperature = coil == null ? BASE_COIL_TEMPERATURE : coil.getCoilTemperature();
         int steps = Math.max(0, (temperature - BASE_COIL_TEMPERATURE) / TEMPERATURE_STEP);

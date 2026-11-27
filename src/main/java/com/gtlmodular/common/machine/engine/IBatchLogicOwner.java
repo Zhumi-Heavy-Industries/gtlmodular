@@ -5,6 +5,7 @@ import com.gregtechceu.gtceu.api.machine.trait.RecipeLogic;
 import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Map;
@@ -74,6 +75,17 @@ public interface IBatchLogicOwner {
     /** 多配方表的机器是否跨表轮转扫描（单表机器恒 false 也无所谓）。 */
     default boolean crossTableScan() {
         return true;
+    }
+
+    /**
+     * ★ 0.3.528：从共享预取队列取一条候选（虚拟线程后台展开的静态配方表条目）。
+     *
+     * <p>默认 {@code null} = 没有队列（熔岩模块等壳不走预取）。{@link ThreadedRecipeLogic}
+     * 覆写它从虚拟线程预取的队列 poll；主线程拿到候选后仍走完整的匹配/扣料链。
+     */
+    @Nullable
+    default GTRecipe prefetchedCandidate() {
+        return null;
     }
 
     /**

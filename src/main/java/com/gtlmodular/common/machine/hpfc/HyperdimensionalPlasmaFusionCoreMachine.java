@@ -75,9 +75,7 @@ public class HyperdimensionalPlasmaFusionCoreMachine extends CoilWorkableElectri
      */
     @Override
     public int getMaxParallel() {
-        long hatch = org.gtlcore.gtlcore.common.data.GTLRecipeModifiers.getHatchParallel(this);
-        long total = Math.max(1L, (long) this.parallelMultiplier()) * Math.max(1L, hatch);
-        return (int) Math.min(Integer.MAX_VALUE, total);
+        return effectiveParallel();
     }
 
 

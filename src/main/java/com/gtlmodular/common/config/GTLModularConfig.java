@@ -893,6 +893,17 @@ public final class GTLModularConfig {
                             "电网身份 = 放置者 UUID（IMachineLife.onMachinePlaced 记录，随机器存档）。")
                     .define("threading.gridPower", true);
 
+    /** ★ 0.3.529：独立线程开时「一次性从电网拉全程总电」预付（追平 GTO 每线程独立拉满功率）。 */
+    private static final ForgeConfigSpec.BooleanValue THREADING_GRID_PREPAY =
+            BUILDER.comment("通用独立线程引擎：电网预付费（追平 GTO 吞吐，默认开）",
+                            "开：独立线程开时，开每条线程就一次性把该批全程总电（EU/t×时长）从无线电网",
+                            "    扣进内部缓存，之后每 tick 从缓存付——绕开机器功率上限，N 条线程能同时",
+                            "    满功率跑（等价 GTO「每个线程都能独立拉取机器最大功率」）。需 gridPower 开且",
+                            "    电网余额足够；不够则回退逐 tick 补电（不卡住开批）。",
+                            "关：维持旧的逐 tick 补电口径。",
+                            "账目：余额随存档/拆机退回电网，绝不灌进能源仓。")
+                    .define("threading.gridPrepay", true);
+
     // ==================================================================
     // 大型化学反应釜 · 线圈加成（lcrCoil）
     //
@@ -1688,6 +1699,15 @@ public final class GTLModularConfig {
             return THREADING_GRID_POWER.get();
         } catch (IllegalStateException notLoaded) {
             return THREADING_GRID_POWER.getDefault();
+        }
+    }
+
+    /** ★ 0.3.529：电网预付费（独立线程开时一次性拉全程总电）；配置未加载回落 true。 */
+    public static boolean isThreadingGridPrepay() {
+        try {
+            return THREADING_GRID_PREPAY.get();
+        } catch (IllegalStateException notLoaded) {
+            return THREADING_GRID_PREPAY.getDefault();
         }
     }
 

@@ -1,6 +1,5 @@
 package com.gtlmodular.common.machine.engine;
 
-import com.gregtechceu.gtceu.api.recipe.GTRecipe;
 import com.gregtechceu.gtceu.api.recipe.GTRecipeType;
 import com.gtlmodular.GTLModular;
 
@@ -95,48 +94,4 @@ public final class HostTableRule {
         return hostIndex >= 0 && hostIndex == index;
     }
 
-    /**
-     * 两遍扫描里「本遍是否应跳过该下标」。
-     *
-     * <p>语义与机器类原有写法逐字一致：
-     * <pre>
-     * boolean isHostTable = (下标 == 主机表下标);
-     * if (isHostTable == skipHostTable) continue;
-     * </pre>
-     *
-     * @param skipHostTable {@code true} = 第一遍（跳过主机表）；{@code false} = 第二遍（只看主机表）
-     */
-    public static boolean shouldSkip(int hostIndex, int index, boolean skipHostTable) {
-        return isHost(hostIndex, index) == skipHostTable;
-    }
-
-    /** 主机表的 id（日志用；取不到返回 {@code "?"}）。 */
-    public static String nameOf(List<GTRecipeType> types, int hostIndex) {
-        try {
-            if (types == null || hostIndex < 0 || hostIndex >= types.size()) {
-                return "?";
-            }
-            GTRecipeType type = types.get(hostIndex);
-            return type == null || type.registryName == null ? "?" : type.registryName.toString();
-        } catch (Throwable t) {
-            return "?";
-        }
-    }
-
-    /**
-     * 诊断用：某条配方是否属于给定类型表（第二遍只看主机表时用来核对）。
-     *
-     * <p>仅日志使用，不参与判定。
-     */
-    static boolean belongsTo(GTRecipe recipe, List<GTRecipeType> types) {
-        if (recipe == null || types == null) {
-            return false;
-        }
-        for (GTRecipeType type : types) {
-            if (type != null && recipe.getType() == type) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

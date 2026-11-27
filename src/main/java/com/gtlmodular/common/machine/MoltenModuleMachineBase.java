@@ -518,7 +518,6 @@ public abstract class MoltenModuleMachineBase<M extends MoltenModuleMachineBase<
             EngineHost host = new EngineHost();
             // ★ 2026-11-25：扫描纪律交给通用引擎的 BatchFinder（跨表轮转起点每 tick 归零 + 开批限速复位）
             finder.beginTick();
-            trait.onEngineTick();
             engine.tick(host);
             // 空转时「为什么没配方」的诊断（与通用引擎同一份实现，每种原因只打一次）
             diag.logIdle(module.engineCrossTable(), engine.size());
