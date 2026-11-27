@@ -49,9 +49,10 @@ public class ComponentAssemblerMachine extends WorkableElectricMultiblockMachine
     private final StructureTierTrait structureTierTrait;
     private static ManagedFieldHolder FIELD_HOLDER;
 
+    /** ★ 2026-11-27：本机并行全靠结构里的标准并行仓，改为与引擎一致地如实上报。 */
     @Override
     public int getMaxParallel() {
-        return 1;
+        return effectiveParallel();
     }
 
 

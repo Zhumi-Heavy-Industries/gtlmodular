@@ -22,9 +22,10 @@ public class DisposableToolPrinterMultiblockMachine extends WorkableElectricMult
         com.gregtechceu.gtceu.api.machine.feature.IMachineLife {
 
 
+    /** ★ 2026-11-27：并行全靠结构里的标准并行仓，改为与引擎一致地如实上报。 */
     @Override
     public int getMaxParallel() {
-        return 1;
+        return effectiveParallel();
     }
 
 

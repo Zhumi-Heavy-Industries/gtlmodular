@@ -96,10 +96,14 @@ public abstract class RecipeLogicGainHatchTickMixin {
         if (recipe == null) {
             return;
         }
-        // ★ 2026-11-25：诊断 —— 时长离谱（> 1,000,000 tick ≈ 13.9 游戏小时）时每台机器 5 分钟打一条 WARN。
+        // ★ 2026-11-25 / 27：诊断 —— 时长离谱（> 100,000 tick ≈ 83 分钟）时每台机器 5 分钟打一条 WARN。
         //   这次事故（11/72000000）的写入点不在本模组，日志是为了把它钉在「哪台机器、哪条配方、哪套逻辑」上。
         //   ★ 放在「有没有仓」的早退之前：出事的通用组装厂-plus 就没有加速/超频仓。
         gtlmodular$warnSuspiciousDuration(self, machine, recipe);
+        // ★★ 2026-11-27：兜底钳制。11-25 只切断了「写进 recipe.data 再被别的机器重放」这条传播链，
+        //   上游「总 EU ÷ 功率」写入点仍未修（通用组装厂-plus 造小型PCB工厂显示 15,000 秒 = 300,000 tick）。
+        //   只对「远超原配方时长」的离谱值动手，正常并行/超频放大的时长不受影响。
+        gtlmodular$clampRunawayDuration(self, machine, recipe, field);
         // ★★ 2026-11-25（队长：「组装机制作部件组装机，配方耗时异常（11/72000000）」）：
         //   **没有任何影响时长的仓 ⇒ 一个字都不写。**
         //   旧版不管装没装仓都会走到下面：original 从 recipe.data 取、adjusted 与 current 不等就写回
@@ -170,12 +174,66 @@ public abstract class RecipeLogicGainHatchTickMixin {
     private static final java.util.Map<MetaMachine, java.util.Map<Object, Integer>> ORIGINALS =
             java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
-    /** 时长超过这个值就当成异常（1,000,000 tick ≈ 13.9 游戏小时），打一条限频 WARN。 */
-    private static final int SUSPICIOUS_DURATION = 1_000_000;
+    /** 时长超过这个值就当成异常（100,000 tick ≈ 83 分钟），打一条限频 WARN。 */
+    private static final int SUSPICIOUS_DURATION = 100_000;
+
+    /** 合法并行/超频放大的最大倍数：超过这个倍数且绝对值离谱，才判定为「总EU÷功率」写坏。 */
+    private static final int RUNAWAY_RATIO = 64;
 
     /** 每台机器上一次打异常时长日志的 gameTime（5 分钟限频）。 */
     private static final java.util.Map<MetaMachine, Long> LAST_WARN =
             java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * 把「总EU ÷ 功率」引擎写坏的离谱时长拉回配方自身时长。
+     *
+     * <p>只在两个条件同时成立时动手：绝对值 &gt; 100,000 tick（≈83 分钟），且超过配方自身时长的
+     * {@value #RUNAWAY_RATIO} 倍。正常的大并行/批处理时长仍然保留；本模组自己的引擎和增强版
+     * IV 引擎（本来就按总能耗换算长任务）跳过。
+     */
+    private static void gtlmodular$clampRunawayDuration(RecipeLogic self, MetaMachine machine, GTRecipe recipe, Field field) {
+        try {
+            int current = field.getInt(self);
+            int original = recipe.duration;
+            if (current <= SUSPICIOUS_DURATION || original <= 0) {
+                return;
+            }
+            String logicName = self.getClass().getName();
+            if (logicName.startsWith("com.gtlmodular.")
+                    || logicName.contains("IvRecipeLogic") || logicName.contains("IvNative")) {
+                return;
+            }
+            // 配方对象本身也可能已被上游写坏 ⇒ 优先用注册表中的原配方时长作参照。
+            int reference = original;
+            var level = machine.getLevel();
+            if (recipe.id != null && level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+                try {
+                    var registered = serverLevel.getRecipeManager().byKey(recipe.id).orElse(null);
+                    if (registered instanceof GTRecipe gt && gt.duration > 0) {
+                        reference = gt.duration;
+                    }
+                } catch (Throwable ignored) {
+                    // 取不到就退回配方对象上的值
+                }
+            }
+            if ((long) current <= (long) reference * RUNAWAY_RATIO) {
+                return;
+            }
+            field.setInt(self, Math.max(1, reference));
+            long now = level == null ? 0L : level.getGameTime();
+            Long last = LAST_WARN.get(machine);
+            if (last == null || now - last >= 6000L) {
+                LAST_WARN.put(machine, now);
+                com.gtlmodular.GTLModular.LOGGER.warn(
+                        "[gtlmodular] 配方时长离谱已钳制：{} → {} tick @{} logic={} recipe={}"
+                                + "（上游「总EU÷功率」写入点未修；以下堆栈供定位）",
+                        current, Math.max(1, reference), machine.self().getPos(), logicName, recipe.id,
+                        new RuntimeException("gtlmodular runaway duration"));
+            }
+        } catch (Throwable ignored) {
+            // 兜底逻辑绝不能影响配方正常运行
+        }
+    }
 
     private static void gtlmodular$warnSuspiciousDuration(RecipeLogic self, MetaMachine machine, GTRecipe recipe) {
         try {
